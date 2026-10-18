@@ -353,8 +353,8 @@ def test_la_cuenta_verdadera_divide_por_las_barajas_que_quedan() -> None:
     assert bj.true_count([]) == 0
 
 
-def test_la_carta_de_corte_esta_a_tres_cuartos_del_zapato() -> None:
-    assert bj.CUT_CARD == bj.DECKS * 52 // 4
+def test_la_carta_de_corte_esta_a_una_baraja_del_final() -> None:
+    assert bj.CUT_CARD == 52
     assert not bj.needs_shuffle([bj.Card(7, 0)] * bj.CUT_CARD)
     assert bj.needs_shuffle([bj.Card(7, 0)] * (bj.CUT_CARD - 1))
 

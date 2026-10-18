@@ -54,10 +54,10 @@ from discord.ext import commands, tasks
 from bot.cogs import pets as mascotas
 from bot.repositories.achievements import AchievementRepository, Profile
 from bot.services.achievements import (
-    AVAILABLE,
     BY_ID,
     CATALOG,
     CATEGORY_BY_KEY,
+    COUNTED,
     GROUPS,
     Achievement,
     Category,
@@ -74,7 +74,9 @@ from bot.services.achievements import (
     newly_unlocked,
     points,
     progress,
+    reaction_stats,
     total_reward,
+    voice_minute_stats,
     voice_move_stats,
 )
 from bot.services.economy import (
@@ -83,10 +85,12 @@ from bot.services.economy import (
     EconomyService,
     IncomeResult,
     format_amount,
-    short_tax_note,
+    tax_tag,
 )
 from bot.services.levels import TIMEZONE, calculate_level_progress
 from bot.services.pets import Event, Moment
+from bot.services.robuso import ROBUSO_ID
+from bot.services.robuso import echoes as robuso_echoes
 from bot.utils.cogs import find_cog
 from bot.utils.interactions import ack, edit
 
@@ -101,8 +105,8 @@ logger = logging.getLogger(__name__)
 REACTION_MEMORY = 5_000
 #: Derrotas seguidas en el casino para que reírse cuente como «Ríe por no llorar».
 LOSING_STREAK = 5
-#: Logros que se listan en un aviso; si se desbloquean más a la vez, se resumen.
-ANNOUNCE_LIMIT = 8
+#: Personas en un canal de voz para que quien lo abrió vacío cuente como anfitrión.
+VOICE_FULL_ROOM = 5
 #: Segundos que la vista de logros sigue respondiendo.
 VIEW_TIMEOUT = 300
 RANKING_SIZE = 10
@@ -148,54 +152,54 @@ def with_unlocked_count(stats: Mapping[str, int], unlocked: Mapping[str, float])
     return full
 
 
-def unlock_embed(
+def unlock_embeds(
     name: str,
     avatar_url: str | None,
     achievement_ids: Sequence[str],
     income: IncomeResult | None,
-) -> discord.Embed:
+) -> list[discord.Embed]:
     """Aviso público de logros recién desbloqueados, con el premio cobrado.
 
-    Compacto para no llenar el chat: el trofeo va junto al nombre, el premio en la
-    línea del logro y Hacienda detrás de la descripción. Con un logro son tres
-    líneas:
+    Compacto para no llenar el chat: el trofeo va junto al nombre y el premio, con
+    la retención de Hacienda si la hay, en la línea del logro. Con un logro son
+    tres líneas:
 
         Diego · 🏆 ¡Logro desbloqueado!
-        ▫️ **Cinco veces** · Común · 🪙 **+50 Y$**
-        -# Cobra en ×5 o más. · 🐶 Perro Sanxe no te retiene nada: no llegas al mínimo.
+        ▫️ **Cinco veces** · Raro · 🪙 **+162 Y$** · 🐶 −38 Y$ (19,00 %)
+        -# Cobra en ×5 o más.
+
+    Lista todos los logros; si no caben en un embed, siguen en los siguientes.
     """
     achievements = [BY_ID[i] for i in achievement_ids if i in BY_ID]
     best = max(achievements, key=lambda a: list(Rarity).index(a.rarity))
-    shown = achievements[:ANNOUNCE_LIMIT]
     headline = (
         "🏆 ¡Logro desbloqueado!"
         if len(achievements) == 1
         else f"🏆 ¡{len(achievements)} logros desbloqueados!"
     )
-    money = f"{CURRENCY_EMOJI} **+{format_amount(income.net)}**" if income else ""
-    tax = short_tax_note(income.gross, income.tax, income.rate) if income else ""
+    money = ""
+    if income is not None:
+        tax = tax_tag(income.tax, income.rate)
+        money = f"{CURRENCY_EMOJI} **+{format_amount(income.net)}**" + (f" · {tax}" if tax else "")
     if len(achievements) == 1:
         a = achievements[0]
         head = f"{a.rarity.emoji} **{a.name}** · {a.rarity.label}"
         lines = [
-            f"{head} · {money}\n-# {a.description} · {tax}"
-            if income
-            else f"{head}\n-# {a.description}"
+            f"{head} · {money}\n-# {a.description}" if money else f"{head}\n-# {a.description}"
         ]
     else:
         lines = [
-            f"{a.rarity.emoji} **{a.name}** · {a.rarity.label}\n-# {a.description}" for a in shown
+            f"{a.rarity.emoji} **{a.name}** · {a.rarity.label}\n-# {a.description}"
+            for a in achievements
         ]
-        if len(achievements) > ANNOUNCE_LIMIT:
-            lines.append(f"-# …y {len(achievements) - ANNOUNCE_LIMIT} más. Míralos en `perfil`.")
-        if income is not None:
-            lines.append(f"{money}\n-# {tax}")
-    lines += [f"\n{a.story}" for a in shown if a.story]
-    embed = discord.Embed(
-        description="\n".join(lines), color=discord.Color.from_rgb(*best.rarity.rgb)
-    )
-    embed.set_author(name=f"{name} · {headline}", icon_url=avatar_url)
-    return embed
+        if money:
+            lines.append(money)
+    lines += [f"\n{a.story}" for a in achievements if a.story]
+    color = discord.Color.from_rgb(*best.rarity.rgb)
+    # Páginas de 3.800 caracteres: el último embed deja sitio a las skins y la mascota.
+    embeds = [discord.Embed(description="\n".join(page), color=color) for page in paginate(lines)]
+    embeds[0].set_author(name=f"{name} · {headline}", icon_url=avatar_url)
+    return embeds
 
 
 def _achievement_line(
@@ -330,9 +334,10 @@ def summary_embed(
 ) -> discord.Embed:
     """Portada de los logros (🏆 en `perfil`): total, puntos, categorías y los últimos."""
     unlocked = {i: t for i, t in profile.unlocked.items() if i in BY_ID}
-    available_ids = {a.id for a in AVAILABLE}
+    # Las categorías secretas van aparte del total (`Category.secret`).
+    available_ids = {a.id for a in COUNTED}
     done = sum(1 for i in unlocked if i in available_ids)
-    total = len(AVAILABLE)
+    total = len(COUNTED)
     embed = discord.Embed(
         title="🏆 Logros",
         description=(
@@ -344,7 +349,7 @@ def summary_embed(
     embed.set_author(name=name, icon_url=avatar_url)
 
     per_category = []
-    for key, title in menu_entries():
+    for key, title in menu_entries(unlocked):
         if key in GROUPS:
             keys = {c.key for c in group_sections(key) if not c.upcoming}
         elif CATEGORY_BY_KEY[key].upcoming:
@@ -369,7 +374,7 @@ def summary_embed(
 
     stats = with_unlocked_count(profile.stats, unlocked)
     candidates = []
-    for achievement in AVAILABLE:
+    for achievement in COUNTED:
         if achievement.id in unlocked or achievement.secret:
             continue
         current, goal = progress(achievement, stats)
@@ -416,6 +421,14 @@ def ranking_embed(entries: Sequence[tuple[str, int, int]]) -> discord.Embed:
     )
 
 
+def _with_echoes(user_id: int, delta: StatDelta) -> StatDelta:
+    """Lo de Robuso suma además su eco en 🎸 Robuso (`bot.services.robuso.ECHOES`)."""
+    extra = robuso_echoes(delta.add) if user_id == ROBUSO_ID else {}
+    if not extra:
+        return delta
+    return StatDelta(add={**delta.add, **extra}, peak=dict(delta.peak))
+
+
 # -- Vista de logros -------------------------------------------------------------------
 
 
@@ -424,7 +437,7 @@ class CategorySelect(discord.ui.Select):
 
     def __init__(self, view: AchievementsView) -> None:
         options = [discord.SelectOption(label="Resumen", value="summary", emoji="🏆")]
-        for key, full_title in menu_entries():
+        for key, full_title in menu_entries(view.profile.unlocked):
             emoji, _, title = full_title.partition(" ")
             options.append(discord.SelectOption(label=title, value=key, emoji=emoji))
         super().__init__(
@@ -627,6 +640,10 @@ class Achievements(commands.Cog):
         self._mute_streaks: dict[tuple[int, int], int] = {}
         #: Cuándo entró cada miembro a voz, para pillar a los que entran y salen.
         self._voice_joined: dict[tuple[int, int], float] = {}
+        #: Emojis que ya ha puesto cada persona en cada mensaje (para no contarlos dos veces).
+        self._emoji_reactors: OrderedDict[int, set[int]] = OrderedDict()
+        #: Quién abrió cada canal de voz vacío y si ya se le ha contado la sala llena.
+        self._voice_openers: dict[int, tuple[int, bool]] = {}
 
     async def cog_load(self) -> None:
         """Arranca la tarea de cada minuto (voz y escritura de lo pendiente)."""
@@ -656,7 +673,7 @@ class Achievements(commands.Cog):
                 sí; la voz solo si no había otro).
         """
         pending = self._pending.setdefault(guild_id, {})
-        pending.setdefault(user_id, StatDelta()).merge(delta)
+        pending.setdefault(user_id, StatDelta()).merge(_with_echoes(user_id, delta))
         if channel_id is not None:
             channels = self._pending_channels.setdefault(guild_id, {})
             if replace_channel or user_id not in channels:
@@ -675,7 +692,7 @@ class Achievements(commands.Cog):
             Ids de los logros recién conseguidos.
         """
         now = self._clock()
-        updates = {user_id: delta}
+        updates = {user_id: _with_echoes(user_id, delta)}
         await self._add_seeds(guild_id, updates)
         unlocked = await self.repository.record(guild_id, updates, newly_unlocked, now=now)
         ids = unlocked.get(user_id, [])
@@ -839,6 +856,22 @@ class Achievements(commands.Cog):
                         add["voice_duo"] = 1
                     if channel.id == music:
                         add["voice_music"] = 1
+                    games = [
+                        a.name
+                        for a in getattr(member, "activities", ())
+                        if a.type is discord.ActivityType.playing and a.name
+                    ]
+                    spotify = any(
+                        isinstance(a, discord.Spotify) for a in getattr(member, "activities", ())
+                    )
+                    add.update(
+                        voice_minute_stats(
+                            local,
+                            others=(m.id for m in listening if m.id != member.id),
+                            games=games,
+                            spotify=spotify,
+                        )
+                    )
                     self.note(
                         guild.id,
                         member.id,
@@ -915,14 +948,17 @@ class Achievements(commands.Cog):
         member = guild.get_member(user_id) if guild is not None else None
         name = member.display_name if member is not None else f"Miembro {user_id}"
         avatar = member.display_avatar.url if member is not None else None
-        embed = unlock_embed(name, avatar, ids, income)
+        embeds = unlock_embeds(name, avatar, ids, income)
+        embed = embeds[-1]
         if skins:
             gifts = ", ".join(f"**{skin.label}**" for skin in skins)
             embed.description = f"{embed.description}\n🎨 De regalo, en la mochila: {gifts}."
         if pet := await mascotas.cameo(self.bot, guild_id, user_id, Moment(Event.ACHIEVEMENT)):
             embed.description = f"{embed.description}\n{pet}"
         try:
-            await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+            # Uno por mensaje: Discord no deja más de 6.000 caracteres entre todos sus embeds.
+            for embed in embeds:
+                await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
         except (discord.Forbidden, discord.HTTPException):
             logger.warning("No se pudo anunciar un logro en el servidor %s", guild_id)
 
@@ -983,6 +1019,10 @@ class Achievements(commands.Cog):
             own_birthday=own_birthday,
             mention_everyone=message.mention_everyone,
             people_mentioned=len(people),
+            files=[(a.content_type or "", a.filename, a.is_spoiler()) for a in message.attachments],
+            voice_note=message.flags.voice,
+            poll=getattr(message, "poll", None) is not None,
+            voice=self._voice_context(author, message.channel.id),
         )
         laughed = bool(delta.add.get("msg_laughs"))
         # Reírse con una racha de derrotas en el casino: ríe por no llorar.
@@ -1013,6 +1053,14 @@ class Achievements(commands.Cog):
             for user_id, extra in changes.items():
                 # Al gracioso o a los de la cadena se les avisa en el mismo canal.
                 self.note(guild_id, user_id, extra, message.channel.id, replace_channel=False)
+
+    @staticmethod
+    def _voice_context(author: object, channel_id: int) -> tuple[bool, bool, bool] | None:
+        """`(en el chat del canal de voz, compartiendo pantalla, con cámara)` si está en voz."""
+        voice = getattr(author, "voice", None)
+        if voice is None or voice.channel is None:
+            return None
+        return voice.channel.id == channel_id, bool(voice.self_stream), bool(voice.self_video)
 
     @commands.Cog.listener()
     async def on_message_edit(self, before: discord.Message, after: discord.Message) -> None:
@@ -1046,6 +1094,20 @@ class Achievements(commands.Cog):
         if emoji is not None and is_laugh_emoji(emoji.name or str(emoji)):
             self._note_laugh_reaction(payload, author_id)
         reactors = self._remember(self._reactors, payload.message_id)
+        seen = self._remember(self._emoji_reactors, payload.message_id)
+        if emoji is not None and hash((payload.user_id, str(emoji))) not in seen:
+            seen.add(hash((payload.user_id, str(emoji))))
+            custom = emoji.id is not None and guild is not None and guild.get_emoji(emoji.id)
+            given, received = reaction_stats(
+                str(emoji) if emoji.id is None else (emoji.name or ""),
+                custom=bool(custom),
+                first=not reactors,
+            )
+            self.note(payload.guild_id, payload.user_id, given)
+            if received.add:
+                self.note(
+                    payload.guild_id, author_id, received, payload.channel_id, replace_channel=False
+                )
         if payload.user_id in reactors:
             return
         reactors.add(payload.user_id)
@@ -1112,6 +1174,25 @@ class Achievements(commands.Cog):
             self._voice_joined.pop(key, None)
         elif before.channel is None:
             self._voice_joined[key] = self._clock()
+        if before.channel is not None and before.channel != after.channel:
+            if not [m for m in before.channel.members if not m.bot]:
+                self._voice_openers.pop(before.channel.id, None)
+                # Cerrar la llamada: el último en irse de una sala en la que había compañía.
+                if key in self._sessions:
+                    delta.add["voice_last_out"] = 1
+        if after.channel is not None and before.channel != after.channel:
+            humans = [m for m in after.channel.members if not m.bot]
+            opener = self._voice_openers.get(after.channel.id)
+            if len(humans) == 1:
+                self._voice_openers[after.channel.id] = (member.id, False)
+            elif opener is not None and not opener[1] and len(humans) >= VOICE_FULL_ROOM:
+                self._voice_openers[after.channel.id] = (opener[0], True)
+                self.note(
+                    member.guild.id,
+                    opener[0],
+                    StatDelta(add={"voice_host": 1}),
+                    replace_channel=False,
+                )
         if delta:
             self.note(member.guild.id, member.id, delta, replace_channel=False)
 

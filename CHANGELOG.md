@@ -25,6 +25,179 @@ criterio.
 
 ## 7.x
 
+### 7.30.1 · 2026-10-18
+
+- Logros: el aviso enseña todos los que desbloqueas a la vez, no solo los ocho primeros
+
+### 7.30.0 · 2026-10-18
+
+- Logros: una categoría secreta con 132 logros
+
+### 7.29.1 · 2026-10-18
+
+- Interno: una línea del catálogo de logros demasiado larga
+
+### 7.29.0 · 2026-10-18
+
+- Logros de chat y voz: 384 nuevos. Enlaces y adjuntos, cifras y horas con guasa, temas con guasa (pizza con piña, la tortilla, ChatGPT, la 33…), ping-pong y respuestas rápidas, reacciones con emoji propio, racha de días en llamada, con quién hablas, abrir y cerrar llamadas, jugar en llamada, escribir desde la llamada y 84 de 🎭 Personajes
+
+### 7.28.0 · 2026-10-18
+
+- Logros: 1.604 nuevos (5.865 en total). Escalones intermedios en casi todos los contadores (chat, voz, música, memes, casino, juegos, trabajo, tienda, pisos, loterías…) y nueve secretos más en Allá tú, el Rastro y la Torre
+
+### 7.27.0 · 2026-10-18
+
+- Logros: 115 nuevos. Partidas en el casino y juegos distintos, fechas en cada juego (madrugada, viernes 13, Día de Canarias, Nochevieja) y en el casino entero, escalones más altos en chat, voz, música, memes, lista y juegos, y secretos con cifras con guasa. Seis logros que dependen de otros suben de rareza
+
+### 7.26.1 · 2026-10-18
+
+- Logros: los de Coleccionista por número de logros y por puntos bajan de rareza; con más de 4.000 logros en el catálogo, 400 ya no es mítico
+
+### 7.26.0 · 2026-10-18
+
+- Logros: 57 de Coleccionista que faltaban (hasta 4.000 logros, más escalones por rareza, secretos, puntos, premios y categorías, y uno nuevo por logros comunes)
+
+### 7.25.31 · 2026-10-18
+
+- Interno: las pruebas vigilan las reglas de tono (frases normales, lo boricua y la muleta «como»)
+
+### 7.25.30 · 2026-10-18
+
+- Interno: el informe de la auditoría de tono, al día, con las cifras de antes y después
+
+### 7.25.29 · 2026-10-18
+
+- Logros: 51 nombres que repetían el chiste de otra categoría, cambiados, y las historias sin «mi amor»
+
+### 7.25.28 · 2026-10-18
+
+- Interno: repaso de errores y avisos (casi todos ya iban en claro) y la auditoría deja de confundir «administrador» con «ministro»
+
+### 7.25.27 · 2026-10-18
+
+- Comunidad: bienvenidas, despedidas, cumpleaños y subidas de nivel con menos política y sin lo boricua; los errores, en claro
+
+### 7.25.26 · 2026-10-18
+
+- Tienda, Rastro y mascotas: frases nuevas, menos política y sin lo boricua genérico
+
+### 7.25.25 · 2026-10-18
+
+- Hacienda: las líneas de impuestos de cada cobro dicen la cifra con el 🐶, sin la frase de Perro Sanxe
+
+### 7.25.24 · 2026-10-18
+
+- Lotería, Porras y Botes: fuera los últimos «¡Ay, bendito!» y «mi amor» del casino
+
+### 7.25.23 · 2026-10-18
+
+- Botes y Caballos: frases nuevas, más normales y con Jovani
+
+### 7.25.22 · 2026-10-18
+
+- Dados y Pachinko: frases nuevas, más normales y con Jovani
+
+### 7.25.21 · 2026-10-18
+
+- Póker, Timba y Bacará: frases nuevas, más normales y con Jovani
+
+### 7.25.20 · 2026-10-18
+
+- 4 en raya y Backgammon: Jovani habla como Jovani y deja de copiar los chistes de un juego a otro
+
+### 7.25.19 · 2026-10-18
+
+- Gallos: frases nuevas para peleas, entrenos y funerales, con mucha menos política
+
+### 7.25.18 · 2026-10-18
+
+- Allá tú: frases nuevas; Perro Sanxe sigue de presentador, con menos política alrededor
+
+### 7.25.17 · 2026-10-18
+
+- Guerra, Cara o cruz y Autobús: frases nuevas, más normales y con Jovani
+
+### 7.25.16 · 2026-10-18
+
+- Pollo, Minas y Crash: frases nuevas, más normales y con Jovani
+
+### 7.25.15 · 2026-10-18
+
+- Torre: frases nuevas, más normales y con Jovani; menos Juego de Tronos y política
+
+### 7.25.14 · 2026-10-18
+
+- Interno: la auditoría de frases mide temas, frases normales y lo boricua por partes
+
+### 7.25.13 · 2026-10-18
+
+- Logros: fuera el «¡Wepa!» y el «¡Ay, bendito!», y más frases de Jovani en los nombres
+
+### 7.25.12 · 2026-10-18
+
+- Ruleta, blackjack y tragaperras: fuera el «¡Wepa!» y el «mi amor»; solo frases del cantante Jovani
+
+### 7.25.11 · 2026-10-18
+
+- Ruleta, blackjack y tragaperras: frases nuevas, más normales, más Jovani y de temas variados
+
+### 7.25.10 · 2026-10-18
+
+- Logros: 24 nombres pasan a humor de adultos donde el logro lo pedía
+
+### 7.25.9 · 2026-10-18
+
+- Logros: fuera las coletillas entre paréntesis y los «X, versión Y» en los nombres
+
+### 7.25.8 · 2026-10-18
+
+- Logros: fuera los nombres «X, como [referencia]»: 152 pasan a juegos de palabras
+
+### 7.25.7 · 2026-10-18
+
+- Logros: segunda pasada a todos los nombres: menos repetidos, más variados y ninguno soso
+
+### 7.25.6 · 2026-10-18
+
+- Interno: la política vuelve a ser una fuente de bromas como las demás, al mismo nivel
+
+### 7.25.5 · 2026-10-18
+
+- Logros: descripciones neutras que dicen qué hay que hacer, sin broma detrás
+- Logros: nombres con bromas de cine, series, deporte y cultura friki en vez de tanta política
+
+### 7.25.4 · 2026-10-18
+
+- Logros: el aviso pone la retención de Hacienda en la misma línea que el premio
+
+### 7.25.3 · 2026-10-18
+
+- Interno: la auditoría de tono sin prefijos obligatorios en commits ni changelog
+
+### 7.25.2 · 2026-10-18
+
+- Interno: la nueva norma de tono se puede revertir entera o por partes
+
+### 7.25.1 · 2026-10-18
+
+- Interno: nueva norma de tono: menos bromas, más espaciadas y de temas variados, y menos política
+
+### 7.25.0 · 2026-10-18
+
+- Admin: las listas de `admin` incluyen a todos los miembros, en páginas con ◀ y ▶
+- Admin: el panel `admin` usa textos serios, sin bromas
+
+### 7.24.0 · 2026-10-18
+
+- Admin: `admin`, panel de moderación con la actividad de cada miembro, sanciones, historial y notas
+
+### 7.23.0 · 2026-10-17
+
+- Blackjack: contar cartas da para ganar si te lo curras: el jefe de sala deja subir de 1 a 8
+- Blackjack: el zapato es de cada jugador y sigue al abrir otra mesa (una mesa por jugador)
+- Blackjack: la carta de corte va a una baraja del final: se reparten 5 de las 6
+- Blackjack: logros por contar cartas: la ficha a tope y, secretos, los desvíos de la cuenta
+
 ### 7.22.0 · 2026-10-17
 
 - Pisos: nueve inmuebles por barrio (180), cada barrio con su carácter y 10 tipos nuevos

@@ -321,7 +321,7 @@ SKINS: tuple[Skin, ...] = (
     }), price=25_000, aisle="canarias"),
     Skin("tapete_boricua", "tapete", "🇵🇷", "Tapete monoestrellado", (
         "Las cinco franjas, el triángulo y la estrella de Puerto Rico. Jovani juega "
-        "aquí descalzo y con la bocina a todo volumen. ¡Wepa!"
+        "aquí descalzo y con la bocina a todo volumen."
     ), _frozen({
         "felt": ("#f2163f", "#c90a33", "#5e0418"),
         "fiber": ("rgba(255,255,255,0.05)", "rgba(40,0,10,0.08)"),
@@ -500,8 +500,7 @@ SKINS: tuple[Skin, ...] = (
         "accessory": "estrellas",
     }), price=12_000, aisle="ventanilla"),
     Skin("gallo_boricua", "gallos", "🇵🇷", "Gallo boricua", (
-        "Con pañuelo de la monoestrellada, como los de las galleras de la isla. "
-        "¡Wepa!"
+        "Con pañuelo de la monoestrellada, como los de las galleras de la isla."
     ), _frozen({
         "body": "#c8202e", "hackle": "#f2f2f2", "wing": "#1a4ab0",
         "tail": ("#1a4ab0", "#f2f2f2", "#c8202e"), "accessory": "pañuelo",

@@ -259,7 +259,7 @@ def ineligibility(
         if not species.adoptable:
             return "Esa mascota no se vende: aparece sola cuando le da la gana."
     if item.sold_out:
-        return "Agotado, mi amor. Llegaste tarde."
+        return "Agotado. Llegaste tarde."
     if item.min_level and level < item.min_level:
         return f"Hace falta nivel {item.min_level} y vas por el {level}. ¡A yapear!"
     if item.permanent_role and owns_role:
@@ -597,6 +597,6 @@ def receipt(
         rule,
         "Contenido digital entregado:",
         "sin desistimiento (art. 103.m",
-        "TRLGDCU). Gracias, mi amor.",
+        "TRLGDCU). Gracias.",
     ]
     return "```\n" + "\n".join(lines) + "\n```"

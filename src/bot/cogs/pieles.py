@@ -67,9 +67,9 @@ NO_MENTIONS = discord.AllowedMentions.none()
 #: Lo que dice el bot al subir una imagen, por variar.
 UPLOADED_LINES = (
     "🖼️ Imagen puesta en {skin}. Desde la próxima jugada, la verás en la mesa.",
-    "🖼️ {skin} estrena imagen. Más personalizado que el Falcon de Sánchez.",
-    "🖼️ Hecho: {skin} ya lleva tu imagen. Ni el NO-DO tenía tanta producción.",
-    "🖼️ Imagen colgada en {skin}. Bruselas ya está redactando una directiva sobre ella.",
+    "🖼️ {skin} estrena imagen.",
+    "🖼️ Hecho: {skin} ya lleva tu imagen.",
+    "🖼️ Imagen colgada en {skin}. Más personalizado que el Falcon.",
     "🖼️ {skin} con imagen nueva. Yo soy yo… y así me tienes que soportar.",
 )
 

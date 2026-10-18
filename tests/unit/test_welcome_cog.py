@@ -251,7 +251,7 @@ async def test_saludar_por_encima_del_minimo_retiene_irpf_para_el_estado(
     tax = tracked.await_args.args[4].add["tax_paid"]
     assert tax > 0
     assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) - state_before == tax
-    assert "Perro Sanxe se lleva" in interaction.followup.send.await_args.args[0]
+    assert "🐶 IRPF: −" in interaction.followup.send.await_args.args[0]
 
 
 async def test_un_saludo_repetido_no_paga_otra_vez(tmp_path: Path, tracked: AsyncMock) -> None:

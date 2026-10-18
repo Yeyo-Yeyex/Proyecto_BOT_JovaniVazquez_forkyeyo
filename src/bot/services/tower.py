@@ -320,28 +320,28 @@ class TowerGame:
 MILESTONES: dict[int, tuple[str, ...]] = {
     3: (
         "🔥 Tres pisos: subes más rápido que el alquiler en Madrid.",
-        "🔥 Tres pisos sin quemarte: Ayuso lo vendería como un hito de gestión.",
+        "🔥 Tres pisos y sin quemarte.",
         "🔥 Tres pisos y todavía no te ha mordido ni Hacienda.",
     ),
     5: (
-        "🏯 ¡Mitad de torre! La de Babel se quedó en obras y tú vas por la mitad.",
-        "🏯 ¡Cinco pisos! Daenerys quemó ciudades enteras con menos mérito.",
-        "🏯 ¡Cinco pisos! Juego de Tronos acabó peor que esto.",
+        "🏯 ¡Mitad de torre!",
+        "🏯 ¡Cinco pisos! El dragón empieza a mirarte raro.",
+        "🏯 ¡Cinco pisos! Lagartijo, iguana, lagarto… dragón.",
     ),
     7: (
         "💪 ¡Siete pisos! Ya se ve el Teide desde aquí.",
-        "💪 ¡Siete pisos! El Dragón de Xi tomaría nota.",
-        "💪 ¡Siete pisos! Más alto que los fondos Next Generation… y de momento llegan.",
+        "💪 ¡Siete pisos! Esto ya es vértigo.",
+        "💪 ¡Siete pisos! Ni el ascensor de tu casa sube tanto.",
     ),
     8: (
         "😰 Solo queda el último piso… y ahí duerme el dragón gordo.",
-        "😰 Un piso para la cima. Respira, que el dragón rojo de Gales también se cansa.",
-        "😰 Ocho pisos y el último da vértigo, como una moción de censura.",
+        "😰 Un piso para la cima. Respira.",
+        "😰 Ocho pisos. El noveno ya huele a chamusquina.",
     ),
     FLOORS: (
         "🏁 ¡CIMA! Torre conquistada.",
-        "🏁 ¡CIMA! Ni el dragón rojo de Gales te tose.",
-        "🏁 ¡CIMA! Cobras sin pasar por el despacho de Moncloa.",
+        "🏁 ¡CIMA! El dragón te pide un autógrafo.",
+        "🏁 ¡CIMA! ¿Qué? ¿Qué? ¡Toma mangó!",
     ),
 }
 

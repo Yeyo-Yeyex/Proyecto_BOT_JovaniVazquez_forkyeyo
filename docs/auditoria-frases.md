@@ -1,38 +1,42 @@
-# Auditoría de las frases de Jovani (15/10/2026)
+# Auditoría de tono de las frases (18/10/2026)
 
-Resultado de `docs/auditoria_frases.py`, que junta las 226 listas de frases del bot
-(las tuplas de textos que se eligen al azar) y mira tres cosas: si las coletillas de
-Jovani salen «de vez en cuando» como pide la Biblia, si hay bromas copiadas de un juego
-a otro y cuánto sale cada fuente de ironía. `tests/unit/test_auditoria_frases.py`
-la pasa en cada prueba.
+Resultado de `docs/auditoria_frases.py` tras la auditoría de tono de la Biblia
+(«Personalidad», «Auditoría de tono»). El script junta las listas de frases del bot (las
+tuplas de textos que se eligen al azar) y mira coletillas de Jovani, bromas copiadas de un
+juego a otro, fuentes de ironía y, por partes (`--parte`), qué parte de cada lista es
+normal. `tests/unit/test_auditoria_frases.py` lo pasa en cada prueba.
 
-## Lo que salió
+## La norma
 
-- **Coletillas de más.** Once listas pasaban de un tercio de frases con coletilla. La
-  peor, el aviso de importar mensajes (4 de 5); luego las frases de Jovani contra
-  quien le usa un objeto, las del backgammon y el 4 en raya, el casi del volcán y los
-  premios gordos de las tragaperras. Se bajaron metiendo bromas nuevas sin coletilla,
-  no quitando las que había.
-- **Bromas copiadas.** El 4 en raya se hizo copiando las listas del backgammon: las
-  cuatro rendiciones, las cuatro siestas y media charla de Jovani eran idénticas. Las
-  tragaperras, el volcán y el pachinko compartían «Como el AVE a Extremadura», «La
-  máquina se hace la difícil» y «Quiero café.»; la ruleta y las tragaperras, «💥 ¡TOMA
-  MANGÓ!». Se reescribieron las del juego más nuevo. Las exclamaciones cortas («¡Eso
-  es!», «¡Toma mangó!») pueden repetirse entre juegos: no son una broma, son Jovani.
-- **Fuentes.** Netanyahu salía 18 veces y los groypers ninguna. Ahora Bibi sale en
-  casi todas las mesas (el juicio que se aplaza, los puros y el champán, el cartel de la
-  bomba en la ONU, el indulto, las coaliciones, la Cúpula de Hierro) y Nick Fuentes con
-  sus groypers también (el sótano de su madre, el ejército de ranas, la rana con la
-  barbilla en la mano, los baneos, las preguntas groyper a Charlie Kirk). Las que siguen
-  más flojas son Epstein, Kirk, Vox, África y Musk.
+- No todo es una broma: al menos la mitad de cada lista, frases normales; lo que informa
+  (reglas, cifras, errores) va en claro.
+- El bot es Jovani Vázquez, el cantante: sus frases («¡Toma mangó!», «¿Con pulpa? ¡Sin
+  pulpa!», «Hazme café… ¡Quiero café!»…) salen a menudo, hasta la mitad de una lista. Lo
+  típico de Puerto Rico («¡Wepa!», «mi amor», «¡Ay, bendito!», «papi») no es suyo y no sale.
+- Todas las fuentes de bromas al mismo nivel: la política es una más; lo que cansa es
+  repetir el mismo tema o la misma figura.
+- Nada de la muleta «X, como [referencia]».
+- El contenido se queda: solo cambian los textos que lo rodean.
 
-| Fuente | Antes | Después |
+## Antes y después
+
+| | Antes (15/10) | Después (18/10) |
 |---|---:|---:|
-| Netanyahu (Bibi) | 18 | 67 |
-| Groypers (Nick Fuentes) | 0 | 28 |
+| Frases normales en todo el bot | ~25 % | 73 % (1.923 frases, 301 listas) |
+| Casino | ~20-25 % | 69 % (960 frases) |
+| Casino con política | 42 % | ~9 % |
+| Comunidad (cumpleaños, niveles, importación) | 5 % | 48 % |
+| Tienda, Rastro y mascotas | 64 % | 76 % |
+| Bibi / Netanyahu | 67 | 18 |
+| Groypers | 28 | 0 |
 
-## Lo que no se toca
+«Sánchez y el PSOE» sigue arriba (429), pero casi todo es Perro Sanxe, el nombre del
+recaudador (`TAX_COLLECTOR`): es un personaje del juego, no una broma.
 
-La sátira sigue la Biblia: contra Netanyahu, su Gobierno y Nick Fuentes, nunca contra
-los judíos ni los israelíes; nada de víctimas ni de guerra, y
-nada de repetir los lemas del movimiento groyper.
+## Lo que queda
+
+- Los marrones y minijuegos de los oficios (`services/work_catalog.py`, ~3.900 textos): 9 %
+  de política, casi toda en las ramas de política y funcionariado, donde es el tema. Son
+  contenido; se revisan si se tocan.
+- Los carteles fijos de las escenas del casino y los textos sueltos que no son listas.
+- Los nombres de los artículos y sus descripciones en `services/shop_catalog.py`.

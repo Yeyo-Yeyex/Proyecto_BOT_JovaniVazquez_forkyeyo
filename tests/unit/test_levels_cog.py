@@ -102,7 +102,7 @@ async def test_subir_de_nivel_paga_yapdollars_y_lo_anuncia(tmp_path: Path) -> No
     text = channel.send.await_args.args[0]
     assert "nivel **1**" in text
     assert "+100 Y$" in text
-    assert "Perro Sanxe" in text
+    assert "🐶 Sin retención" in text
 
 
 def reaction(

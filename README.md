@@ -75,7 +75,7 @@ python -m bot
   | 🍻 Comunidad | `babel <texto \| @miembros #canales>` · `beernight [sonido] [archivo]` · `cumple [dd/mm] [miembro]` · `cumples` · `entrada [archivo] [volumen] [borrar]` · `hongkong` · `lista [tarea] [prioridad alta\|media\|baja]` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
   | ⚙️ General | `ayuda` · `latencia` |
-  | 🛡️ Admin | `abrir` · `apodo` · `banear` · `bienv` · `borrar` · `callar` · `cambios` · `catalogo` · `cerrar` · `decir` · `echar` · `hablar` · `indultar` · `lento` · `informe` · `niveles` · `rol` · `tajo` |
+  | 🛡️ Admin | `abrir` · `admin` · `apodo` · `banear` · `bienv` · `borrar` · `callar` · `cambios` · `catalogo` · `cerrar` · `decir` · `echar` · `hablar` · `indultar` · `lento` · `informe` · `niveles` · `robuso` · `rol` · `tajo` |
 
   La ayuda es un menú desplegable, como el de `perfil`: una portada con las
   categorías y una página por categoría con cada comando y lo que hace (la
@@ -454,9 +454,9 @@ python -m bot
   casino: la bandeja de descartes crece (con una muesca por baraja, sin números)
   y el zapato mengua con la carta de corte dentro hasta que sale. Mientras miras
   una jugada, la mesa ya ha pintado la de cada botón, así que al pulsar sale al
-  momento. Reglas: 6 barajas que duran entre manos hasta la carta de corte
-  (se pueden contar cartas, y el jefe de sala baraja si subes la ficha más de
-  ×4 con la cuenta alta), la banca se planta
+  momento. Reglas: 6 barajas que duran entre manos hasta la carta de corte,
+  a una baraja del final (se pueden contar cartas, y el jefe de sala baraja si
+  subes la ficha más de ×8 con la cuenta alta), la banca se planta
   en 17 (también blando) y mira si tiene blackjack; si lo tiene, pierdes la
   apuesta (empate si tú también lo tienes). Seguro con un as de la banca,
   también si tienes blackjack: cuesta media apuesta y paga 2:1 si ella lo
@@ -823,7 +823,11 @@ python -m bot
   conseguidos, los más cercanos y el más raro), un menú por categorías con
   el progreso de cada uno y el porcentaje del servidor que lo tiene (las
   largas, en hojas con ◀ y ▶), y un botón 🏆 Ranking por puntos; el botón
-  🏆 de la sección los abre en un mensaje aparte.
+  🏆 de la sección los abre en un mensaje aparte. Hay además una categoría
+  secreta, 🎸 Robuso, que no sale en el menú hasta conseguir uno de sus logros
+  y va aparte del total y de Coleccionista: unos solo los consigue Robuso y
+  otros quien trata con él. Lo de Hong Kong solo cuenta mientras está allí, y
+  eso lo apunta un administrador con `robuso hongkong` o `robuso madrid`.
   - Los mensajes y reacciones se cuentan en memoria y se guardan una vez por
     minuto en una sola escritura por servidor. Del mensaje solo se miran
     propiedades (largo, hora, enlace, mayúsculas…), nunca se guarda el texto.
@@ -938,7 +942,9 @@ Para que funcionen los comandos de texto con prefijo `.` (o el prefijo
 configurado), habilita también **Message Content Intent** en esa misma
 sección: sin él, el bot no puede leer el contenido de mensajes normales y
 esos comandos simplemente no se dispararán (los comandos de aplicación `/`
-no lo necesitan). El bot también necesita ver `#chat-general` y tener permiso
+no lo necesitan). Para la «última vez conectado» del panel `admin`, habilita
+**Presence Intent**: sin él el bot arranca igual (lo avisa en el log) y el
+panel no sabe cuándo se conectó cada miembro. El bot también necesita ver `#chat-general` y tener permiso
 para enviar mensajes y adjuntar archivos, además de permisos de **Conectar**
 y **Hablar** en los canales de voz donde se vaya a usar la música. Para los
 comandos de administración necesita además Gestionar mensajes, Aislar

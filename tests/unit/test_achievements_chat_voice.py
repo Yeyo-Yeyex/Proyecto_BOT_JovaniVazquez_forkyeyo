@@ -36,6 +36,8 @@ from bot.services.achievements import (
     music_queue_stats,
     music_volume_stats,
     newly_unlocked,
+    reaction_stats,
+    voice_minute_stats,
     voice_move_stats,
     with_derived,
 )
@@ -457,7 +459,7 @@ async def test_voz_suma_entradas_y_huidas(tmp_path: Path) -> None:
     cog._clock = lambda: next(clock)
     member = SimpleNamespace(id=7, bot=False, guild=guild)
     out = SimpleNamespace(channel=None, self_stream=False)
-    inside = SimpleNamespace(channel=SimpleNamespace(id=70), self_stream=False)
+    inside = SimpleNamespace(channel=SimpleNamespace(id=70, members=[]), self_stream=False)
 
     await cog.on_voice_state_update(member, out, inside)  # type: ignore[arg-type]
     await cog.on_voice_state_update(member, inside, out)  # type: ignore[arg-type]
@@ -490,6 +492,7 @@ def fake_message(
         stickers=[],
         content=content,
         channel=SimpleNamespace(id=channel_id),
+        flags=SimpleNamespace(voice=False),
     )
 
 
@@ -529,7 +532,7 @@ async def test_reacciones_de_risa_una_por_persona(tmp_path: Path) -> None:
             message_author_id=1,
             channel_id=50,
             member=SimpleNamespace(id=user_id, bot=False),
-            emoji=SimpleNamespace(name=emoji),
+            emoji=SimpleNamespace(name=emoji, id=None),
         )
 
     for user_id, emoji in ((2, "😂"), (2, "💀"), (3, "kekw"), (4, "👍")):
@@ -616,8 +619,11 @@ def test_logro_de_logros_de_logros_salta_con_el_ultimo_de_coleccionista() -> Non
 def test_chat_y_voz_son_grupos_con_secciones() -> None:
     chat = {c.key for c in group_sections(CHAT_GROUP.key)}
     voice = {c.key for c in group_sections(VOICE_GROUP.key)}
-    assert {"chat", "style", "laughs", "funny", "lengua", "convo", "time", "memes"} == chat
-    assert {"voice", "voice_mic", "voice_moves", "music"} == voice
+    assert {
+        "chat", "style", "laughs", "funny", "lengua", "convo", "time", "memes", "format",
+        "topics", "personajes",
+    } == chat  # fmt: skip
+    assert {"voice", "voice_mic", "voice_moves", "music", "voice_games", "voice_chat"} == voice
     for group in (CHAT_GROUP, VOICE_GROUP):
         embed = group_embed(group.key, "Diego", Profile(stats={}, unlocked={}))
         assert embed.description is not None
@@ -813,3 +819,177 @@ def test_ruleta_cuenta_rayos_casis_y_corazonadas() -> None:
 
     green = roulette_stats(play(0, "0"), table_streak=1, previous_pocket=None)
     assert green.add["roulette_lucky_zero"] == 1
+
+
+# -- Chat y voz, segunda tanda ---------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "stat"),
+    [
+        ("mira https://youtu.be/abc", "msg_youtube"),
+        ("https://www.tiktok.com/@x/video/1", "msg_tiktok"),
+        ("https://x.com/user/status/1", "msg_twitter"),
+        ("https://es.wikipedia.org/wiki/Gofio", "msg_wikipedia"),
+        ("https://tenor.com/view/gato", "msg_gif"),
+        ("la pizza con piña es un crimen", "msg_pineapple"),
+        ("tortilla sin cebolla, por favor", "msg_tortilla"),
+        ("eso lo dice un terraplanista", "msg_flat_earth"),
+        ("se lo he preguntado a ChatGPT", "msg_chatgpt"),
+        ("lo compré en el Mercadona", "msg_mercadona"),
+        ("los reptilianos gobiernan", "msg_conspiracy"),
+        ("es culpa de Mercurio retrógrado", "msg_horoscope"),
+        ("bitcoin to the moon", "msg_crypto"),
+        ("hoy toca día de pierna", "msg_gym"),
+        ("el lunes empiezo la dieta", "msg_diet"),
+        ("me ha escrito mi ex", "msg_ex"),
+        ("vaya resaca llevo", "msg_hangover"),
+        ("este año sí, la 33", "msg_alonso"),
+        ("ok boomer", "msg_boomer"),
+        ("qué calima hay hoy", "msg_calima"),
+        ("12345", "msg_only_digits"),
+        ("???", "msg_only_question"),
+        ("...", "msg_dots"),
+        ("brrrrr pfff", "msg_no_vowels"),
+        ("k", "msg_len_1"),
+        ("x" * 69, "msg_len_69"),
+    ],
+)
+def test_lo_nuevo_que_se_dice_cuenta(text: str, stat: str) -> None:
+    assert message_delta(text, when=at(12)).add.get(stat) == 1
+
+
+@pytest.mark.parametrize(
+    ("text", "stat"),
+    [
+        ("mañana tengo examen, mi examen es duro", "msg_ex"),  # «mi examen» no es la ex
+        ("me voy al cine", "msg_crypto"),
+        ("la criptografía es difícil", "msg_crypto"),
+        ("piña colada", "msg_pineapple"),
+        ("jsjsjsjsjs", "msg_no_vowels"),  # es una risa
+        ("xdddddd", "msg_no_vowels"),
+        ("ok", "msg_no_vowels"),
+        ("33 euros", "msg_alonso"),
+        ("https://youtube.example.com", "msg_youtube"),
+        ("🗿", "msg_len_1"),
+        ("12a", "msg_only_digits"),
+        ("¿qué?", "msg_only_question"),
+    ],
+)
+def test_lo_nuevo_que_no_cuenta(text: str, stat: str) -> None:
+    assert stat not in message_delta(text, when=at(12)).add
+
+
+def test_adjuntos_por_tipo_y_desde_la_llamada() -> None:
+    files = [("image/png", "Captura de pantalla.png", False)] * 4 + [("video/mp4", "a.mp4", True)]
+    delta = message_delta(
+        "jaja mira", when=at(12), files=files, poll=True, voice=(True, True, False)
+    )
+    for stat in (
+        "msg_images", "msg_videos", "msg_album", "msg_screenshot", "msg_image_spoiler",
+        "msg_poll", "msg_in_voice", "msg_voice_text", "msg_while_streaming", "laugh_in_voice",
+    ):  # fmt: skip
+        assert delta.add.get(stat) == 1, stat
+    assert "msg_on_camera" not in delta.add
+    note = message_delta(
+        "", when=at(12), files=[("audio/ogg", "voice.ogg", False)], voice_note=True
+    )
+    assert note.add.get("msg_voice_note") == 1
+    assert "msg_audio_files" not in note.add
+    assert "msg_in_voice" not in message_delta("hola", when=at(12)).add
+
+
+def test_las_horas_con_guasa() -> None:
+    assert message_delta("ya", when=at(11, 11)).add.get("msg_1111") == 1
+    assert message_delta("ya", when=at(16, 20)).add.get("msg_420") == 1
+    assert message_delta("ya", when=at(22, 22)).add.get("msg_2222") == 1
+    assert message_delta("ya", when=at(15, 14)).add.get("msg_pi") == 1
+    assert message_delta("ya", when=at(23, 59)).add.get("msg_2359") == 1
+    assert "msg_420" not in message_delta("ya", when=at(16, 21)).add
+
+
+def test_ping_pong_respuestas_rapidas_y_silencios() -> None:
+    tracker = ChatTracker()
+
+    def say(author: int, second: float) -> dict:
+        return tracker.observe(
+            GUILD, 9, author, at=second, local=at(12), content=f"m{second}", laughed=False
+        )
+
+    say(1, 0)
+    quick = say(2, 3)
+    assert quick[2].add.get("msg_quick") == 1
+    say(1, 30)
+    rally = say(2, 60)
+    assert rally[1].peak["msg_rally_max"] == 4
+    assert rally[2].peak["msg_rally_max"] == 4
+    assert "msg_rally_max" not in say(3, 90)[3].peak  # entra un tercero: se acaba el peloteo
+    assert "msg_rally_max" not in say(3, 120).get(3).peak  # el mismo autor corta la racha
+    silence = say(1, 120 + 3600)
+    assert silence[1].add.get("msg_silence_break") == 1
+    assert "msg_necro" not in silence[1].add
+
+
+def test_reacciones_con_emoji_propio_primero_y_corazon() -> None:
+    given, received = reaction_stats("❤️", custom=False, first=True)
+    assert given.add == {"reactions_first": 1, "react_heart": 1}
+    assert received.add == {"reacted_heart": 1}
+    given, received = reaction_stats("kekw", custom=True, first=False)
+    assert given.add == {"reactions_custom": 1}
+    assert not received
+
+
+def test_voz_por_minuto_con_quien_hora_y_juegos() -> None:
+    minute = voice_minute_stats(
+        datetime(2026, 3, 10, 13, 37, tzinfo=TIMEZONE),
+        others=[5, 6],
+        games=["Minecraft", "Juego raro"],
+        spotify=True,
+    )
+    assert minute == {
+        "voice_day_20260310": 1,
+        "voice_with_5": 1,
+        "voice_with_6": 1,
+        "voice_leet": 1,
+        "voice_gaming": 1,
+        "voice_game_minecraft": 1,
+        "voice_spotify": 1,
+    }
+
+
+def test_racha_de_voz_personas_y_companero_salen_de_los_contadores() -> None:
+    full = with_derived({
+        "voice_day_20261230": 5, "voice_day_20261231": 1, "voice_day_20270101": 2,
+        "voice_day_20270103": 1, "voice_with_5": 600, "voice_with_6": 30,
+        "voice_game_minecraft": 3, "react_moai": 1, "msg_youtube": 2, "msg_gym": 1,
+    })  # fmt: skip
+    assert full["voice_streak_max"] == 3  # cruza el cambio de año
+    assert full["voice_people"] == 2
+    assert full["voice_bestie_max"] == 600
+    assert full["voice_games"] == 1
+    assert full["react_kinds"] == 1
+    assert full["msg_link_kinds"] == 1
+    assert full["msg_topic_kinds"] == 1
+
+
+async def test_abrir_una_sala_que_se_llena_y_ser_el_ultimo_en_salir(tmp_path: Path) -> None:
+    guild = SimpleNamespace(id=GUILD)
+    cog = await make_cog(tmp_path, guild)
+    cog._clock = lambda: 1_000.0
+    room = SimpleNamespace(id=70, members=[])
+    out = SimpleNamespace(channel=None, self_stream=False)
+    inside = SimpleNamespace(channel=room, self_stream=False)
+    people = [SimpleNamespace(id=i, bot=False, guild=guild) for i in range(1, 6)]
+    for person in people:
+        room.members.append(person)
+        await cog.on_voice_state_update(person, out, inside)  # type: ignore[arg-type]
+    assert cog._pending[GUILD][1].add.get("voice_host") == 1
+    for person in people[:-1]:
+        room.members.remove(person)
+        await cog.on_voice_state_update(person, inside, out)  # type: ignore[arg-type]
+    last = people[-1]
+    cog._sessions[(GUILD, last.id)] = 3
+    room.members.remove(last)
+    await cog.on_voice_state_update(last, inside, out)  # type: ignore[arg-type]
+    assert cog._pending[GUILD][5].add.get("voice_last_out") == 1
+    assert "voice_last_out" not in cog._pending[GUILD][4].add

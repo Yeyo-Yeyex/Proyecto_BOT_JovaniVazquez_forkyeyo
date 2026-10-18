@@ -17,16 +17,24 @@ Lo que más se olvida:
   suerte del casino se calibran con `docs/auditoria_logros.py`. Sección "Logros" de
   `Biblia.txt`, que tiene la lista de familias de logros que hay que cubrir. Al
   rebautizar uno se cambian nombre y descripción, nunca la `key`.
-- **Personalidad:** todo lo que dice el bot (frases de Jovani, anuncios, logros) es
-  variado y jocoso, sin cupo: tantas bromas como cosas de las que reírse haya. Fuentes:
-  la España de Sánchez, la oposición (PP, Vox, Podemos y Sumar, Junts), la España de
-  Franco (el régimen, nunca apología ni víctimas), Europa (Macron, Boris, Erdoğan),
-  EE. UU. (Trump, los Clinton, Obama, Biden, Kamala, Musk), Putin, Kim Jong-un, África,
-  Sudamérica (Milei, Maduro, Bolsonaro), Xi y Netanyahu; siempre contra gobiernos y
-  figuras públicas, nunca contra pueblos. Las coletillas de Jovani («¡Toma mangó!»,
-  «¡Quiero café!», «¿Con pulpa? ¡Sin pulpa!», la motora de Víctor y Joel…; lista en la
-  Biblia) salen de vez en cuando, no en cada frase. Sección
-  «Personalidad: frases y fuentes de ironía» de `Biblia.txt`.
+- **Personalidad:** no todo lo que escribe el bot es una broma, en ningún sitio (menús,
+  tienda, juegos, logros). Lo que informa (reglas, cifras, errores, qué hace un artículo o
+  qué pide un logro) va normal y claro. En las listas de frases, al menos la mitad son
+  normales y las bromas se espacian. Todas las fuentes tienen el mismo protagonismo
+  (política, vida cotidiana, deporte, cine y series, cultura popular y friki, videojuegos,
+  tecnología, comida, Canarias, historia, el propio bot, el absurdo): ninguna
+  manda ni se aparta, y una buena broma se hace aunque su tema no venga muy a cuento. Lo
+  que cansa es repetir el mismo tema o la misma figura (Sánchez). Los nombres de los logros son siempre un juego de palabras o una broma ligada
+  al logro, nunca literales ni con la coletilla «X, como [referencia]»; su descripción,
+  neutral. Las coletillas de
+  Jovani (las frases del cantante, no lo típico de Puerto Rico: nada de «¡Wepa!» ni «mi
+  amor») son su voz y salen a menudo (hasta la mitad de una lista). El servidor es +18 verificado: valen las bromas de adultos y
+  las palabras fuertes, con los límites de la Biblia. Las herramientas de administración
+  (`admin`) van sin bromas. Sección «Personalidad: frases y fuentes de ironía» de `Biblia.txt`; la
+  auditoría de tono hecha y sus cifras, en `docs/auditoria-frases.md`
+  (`docs/auditoria_frases.py --parte` para medir una parte antes y después). Lo vigila
+  `tests/unit/test_auditoria_frases.py`: un aviso se arregla cambiando el texto, no
+  añadiendo excepciones.
 - **Tienda y mascotas:** un artículo nuevo sigue la ficha de alta de la Biblia (tipo por lo
   que hace, pasillo por su tema). Todo resultado nuevo deja hablar a la mascota activa:
   pasa un `Moment` a `renta.hint` o llama a `mascotas.cameo`. Sección «Mascotas y cameos»

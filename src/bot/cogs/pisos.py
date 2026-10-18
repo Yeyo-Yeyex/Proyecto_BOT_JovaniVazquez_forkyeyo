@@ -1302,7 +1302,7 @@ class Panel(ui.View):
             await notify(interaction, "No encuentro a ese miembro.")
             return
         if member.bot:
-            await notify(interaction, "Los bots no alquilan: viven en la nube, como Musk.")
+            await notify(interaction, "Los bots no alquilan: viven en la nube.")
             return
         if member.id in market.shares_of(key):
             await notify(interaction, "No puedes alquilarle el piso a uno de sus dueños.")

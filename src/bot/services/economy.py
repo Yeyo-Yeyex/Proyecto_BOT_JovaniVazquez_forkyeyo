@@ -166,7 +166,7 @@ __all__ = [
     "gambling_tax_line",
     "is_all_in",
     "parse_amount",
-    "short_tax_note",
+    "tax_tag",
     "tax_line",
     "treasury_embed",
 ]
@@ -225,40 +225,34 @@ def tax_line(gross: int, tax: int, rate: float) -> str:
     La usan los premios por nivel y cualquier otro cobro con retención.
     """
     if tax <= 0:
-        return (
-            f"-# 🐶 {TAX_COLLECTOR} no te retiene nada: con tu renta de la semana no "
-            "llegas al mínimo. Disfrútalo mientras dure (el lunes se hacen cuentas)."
-        )
+        return "-# 🐶 Sin retención: con tu renta de la semana no llegas al mínimo."
     return (
-        f"-# 🐶 {TAX_COLLECTOR} se lleva {format_amount(tax)} de IRPF "
-        f"({format_rate(rate)}, tu tipo esta semana, de {format_amount(gross)})."
+        f"-# 🐶 IRPF: −{format_amount(tax)} ({format_rate(rate)}, tu tipo esta semana, "
+        f"de {format_amount(gross)})."
     )
 
 
-def short_tax_note(gross: int, tax: int, rate: float) -> str:
-    """Lo mismo que `tax_line` en media línea y sin el `-# `, para avisos compactos.
+def tax_tag(tax: int, rate: float) -> str:
+    """La retención en pocas letras (`🐶 −38 Y$ (19,00 %)`), o vacío si no hay.
 
-    La usa el aviso de logros, que la pega detrás de la descripción.
+    La usa el aviso de logros, en la misma línea que el premio.
     """
     if tax <= 0:
-        return f"🐶 {TAX_COLLECTOR} no te retiene nada: no llegas al mínimo."
-    return (
-        f"🐶 {TAX_COLLECTOR} se lleva {format_amount(tax)} "
-        f"({format_rate(rate)} de {format_amount(gross)})."
-    )
+        return ""
+    return f"🐶 −{format_amount(tax)} ({format_rate(rate)})"
 
 
 def gambling_tax_line(settlement: BetSettlement) -> str | None:
     """Subtexto con lo que retiene o devuelve Hacienda en una jugada, si algo cambia."""
     if settlement.tax_delta > 0:
         return (
-            f"-# 🐶 {TAX_COLLECTOR} se lleva {format_amount(settlement.tax_delta)} de IRPF "
-            f"(el 19 %; el lunes, a tu tipo). Hoy vas {format_amount(settlement.day_net)} "
-            f"arriba y llevas {format_amount(settlement.day_withheld)} retenidos."
+            f"-# 🐶 IRPF: −{format_amount(settlement.tax_delta)} (el 19 %; el lunes, a tu "
+            f"tipo). Hoy vas {format_amount(settlement.day_net)} arriba y llevas "
+            f"{format_amount(settlement.day_withheld)} retenidos."
         )
     if settlement.tax_delta < 0:
         return (
-            f"-# 🐶 {TAX_COLLECTOR} te devuelve {format_amount(-settlement.tax_delta)}: "
+            f"-# 🐶 Hacienda te devuelve {format_amount(-settlement.tax_delta)}: "
             "tus pérdidas de hoy compensan lo que habías ganado."
         )
     return None

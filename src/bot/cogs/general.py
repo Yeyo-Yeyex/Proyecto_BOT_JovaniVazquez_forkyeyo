@@ -84,9 +84,10 @@ COMMAND_CATEGORIES: dict[str, str] = {
     "hacienda": "🏦 Dinero",
 }
 OTHER_CATEGORY = "📦 Otros"
-# Categoría de los comandos de administración: solo se muestra a quien es
-# administrador, para no enseñar a todo el mundo comandos que no puede usar.
-ADMIN_COG = "Admin"
+# Categoría de los comandos de administración (cogs `Admin` y `Moderation`, el
+# panel `admin`): solo se muestra a quien es administrador, para no enseñar a
+# todo el mundo comandos que no puede usar.
+ADMIN_COGS = frozenset({"Admin", "Moderation"})
 ADMIN_CATEGORY = "🛡️ Admin"
 # Página de portada del menú.
 HOME = "📋 Inicio"
@@ -178,7 +179,7 @@ def build_help_pages(bot: commands.Bot, *, include_admin: bool = False) -> list[
 
 def _category_title(command: commands.Command) -> str:
     """Título de la categoría a la que pertenece el comando."""
-    if command.cog_name == ADMIN_COG:
+    if command.cog_name in ADMIN_COGS:
         return ADMIN_CATEGORY
     if command.name in COMMAND_CATEGORIES:
         return COMMAND_CATEGORIES[command.name]

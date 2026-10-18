@@ -44,23 +44,17 @@ GUILD_ONLY_ERROR = "Este comando solo está disponible dentro de un servidor."
 ADMIN_ONLY_ERROR = "Solo los administradores pueden usar este comando."
 #: Aviso para un clic en botones que ya no atiende nadie.
 EXPIRED_CLICK = (
-    "Estos botones ya caducaron, como las promesas de campaña. Ábrelo otra vez con su comando.",
-    "Aquí ya no queda nadie, ni el Gobierno en agosto. Ábrelo otra vez con su comando.",
-    "Estos botones llevan más tiempo parados que una obra del AVE. Ábrelo otra vez con su comando.",
-    "Ese mensaje ya no responde: o se acabó el tiempo o me he reiniciado. ¡Quiero café! "
-    "Ábrelo otra vez con su comando.",
-    "Estos botones ya no van, como el juicio de Bibi: aplazados para siempre. Ábrelo otra vez "
+    "Estos botones ya caducaron. Ábrelo otra vez con su comando.",
+    "Este mensaje ya no responde: o se acabó el tiempo o me he reiniciado. Ábrelo otra vez "
     "con su comando.",
-    "Aquí no queda nadie, ni el groyper del sótano. Ábrelo otra vez con su comando.",
+    "Estos botones ya no van. Ábrelo otra vez con su comando.",
+    "Se acabó el tiempo de estos botones. Ábrelo otra vez con su comando.",
 )
 #: Aviso para un botón o formulario que revienta (el error queda en el log).
 BUTTON_ERROR = (
-    "Algo ha petado con ese botón, como la red eléctrica en abril. Ya está apuntado; "
-    "prueba otra vez.",
-    "Ese botón se ha liado más que un pacto de Junts. Ya está apuntado; prueba otra vez.",
-    "Error del sistema, y no es el de Hacienda. Ya está apuntado; prueba otra vez.",
-    "Ese botón lo ha tumbado algo que ni la Cúpula de Hierro para. Ya está apuntado; prueba "
-    "otra vez.",
+    "Algo ha fallado con ese botón. Ya está apuntado; prueba otra vez.",
+    "Ese botón ha dado un error. Ya está apuntado; prueba otra vez.",
+    "No he podido hacer eso. Ya está apuntado; prueba otra vez.",
 )
 # Marca de los métodos de discord.py ya envueltos (cada `load_extension` vuelve a
 # ejecutar este módulo, pero las clases son las mismas).

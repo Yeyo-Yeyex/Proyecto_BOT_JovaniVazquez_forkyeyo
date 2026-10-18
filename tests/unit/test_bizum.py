@@ -144,7 +144,7 @@ async def test_lo_enviado_hoy_se_suma_y_empieza_de_cero_al_dia_siguiente(tmp_pat
 
 def test_a_espaldas_de_sanchez_salta_al_pasar_el_maximo_por_operacion() -> None:
     espaldas = BY_ID["bizum_espaldas"]
-    assert espaldas.name == "A espaldas de Sánchez"
+    assert espaldas.name == "Bizum de los gordos"
     assert espaldas.story
 
     justo = bizum_stats(amount=MAX_OPERATION, sent_today=MAX_OPERATION, balance_after=1)

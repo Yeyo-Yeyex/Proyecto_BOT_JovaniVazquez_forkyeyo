@@ -5,10 +5,12 @@ que solo pulsa su dueño, dinero siempre a través de `EconomyService`,
 mismo control de canales (`CASINO_CHANNEL_IDS`) y fichas con ½ / ×2 /
 All-in. `.bj 500` reparte al momento.
 
-El zapato (6 barajas) dura entre manos en cada mesa y se baraja al llegar a la
-carta de corte, así que se pueden contar cartas; la mesa enseña cuántas quedan.
-Si la apuesta pasa de `PIT_BOSS_SPREAD` veces la más baja del zapato con la cuenta
-alta, el jefe de sala baraja antes de repartir (`bot.services.blackjack`).
+El zapato (6 barajas) es de cada jugador: dura entre manos, y entre mesas, y se
+baraja al llegar a la carta de corte, así que se pueden contar cartas; la mesa enseña
+cuántas quedan. Cada jugador tiene una mesa abierta: abrir otra cierra la anterior y
+sigue con el mismo zapato (si no, bastaría levantarse con la cuenta en contra para
+estrenar uno). Si la apuesta pasa de `PIT_BOSS_SPREAD` veces la más baja del zapato
+con la cuenta alta, el jefe de sala baraja antes de repartir (`bot.services.blackjack`).
 
 El dinero en juego se cobra al repartir (y al doblar o separar), y el premio
 se paga al terminar la mano. Para que nunca se quede dinero colgado, una
@@ -112,10 +114,10 @@ RULES_FOOTER = "Blackjack paga 3:2 · seguro 2:1 · la banca se planta en 17"
 #: Lo que dice el jefe de sala cuando baraja porque sospecha que cuentas.
 PIT_BOSS_LINES = (
     "🕵️ El jefe de sala te ha visto mover los labios contando. Baraja el zapato.",
-    "🕵️ «Aquí no se cuenta, que esto no es el CIS». El jefe de sala baraja.",
+    "🕵️ «Aquí no se cuenta, que esto es un casino». El jefe de sala baraja.",
     "🕵️ Subes la ficha justo cuando quedan figuras. Casualidad, seguro. Se baraja.",
     "🕵️ El jefe de sala llama a Rain Man por el pinganillo y baraja el zapato.",
-    "🕵️ Ni Montoro miraba tanto las cuentas. El jefe de sala baraja.",
+    "🕵️ El jefe de sala no te quita ojo. Zapato nuevo.",
     "🕵️ Te han reconocido del equipo del MIT. Zapato nuevo.",
 )
 #: Al llegar a la carta de corte.
@@ -125,62 +127,62 @@ BLACKJACK_LINES = (
     "🂡 ¡BLACKJACK!",
     "💥 ¡BLACKJACK!",
     "🔥 ¡BLACKJACK!",
-    "🂡 ¡VEINTIUNO, MI AMOR!",
-    "🂡 ¡21! Mayoría absoluta",
-    "🂡 ¡21! Ni Tezanos lo clava así",
-    "🂡 ¡BLACKJACK! Yes we can",
-    "🂡 ¡21! Atado y bien atado",
+    "🂡 ¡VEINTIUNO!",
     "🂡 ¡BLACKJACK! Toma mangó",
-    "🂡 ¡21! Trump dice que es el mejor de la historia",
-    "🂡 ¡BLACKJACK! Sale en el NO-DO",
-    "🂡 ¡21! Kim ordena aplaudir",
+    "🂡 ¡BLACKJACK! ¿Con pulpa? ¡Sin pulpa!",
+    "🂡 ¡21! Así, de salida",
+    "🂡 ¡21! Ni contando cartas sale tan bonito",
+    "🂡 ¡21! El as y su pareja de baile",
+    "🂡 ¡BLACKJACK! Sin despeinarte",
+    "🂡 ¡21! A la primera, como los valientes",
+    "🂡 ¡21! Esto es el Real Madrid en el minuto 93",
 )
 WIN_LINES = (
     "¡Ganas",
     "¡Le ganas a la banca!",
     "¡Cobras",
     "¡Toma ya!",
-    "¡Wepa!",
+    "¡Eso es!",
+    "La banca hoy paga la ronda.",
+    "La banca se queda con cara de tonta.",
+    "¿Qué? ¿Qué? ¡Toma mangó!",
     "La banca pide el rescate.",
-    "La banca convoca elecciones anticipadas.",
-    "Ganas, y sin colegio electoral.",
-    "Ganas por la mínima, como una investidura.",
-    "Ganas de verdad, no como Feijóo en 2023.",
-    "La banca se va al bar, como Rajoy en la moción.",
-    "Tremendo. Tremendo, de verdad. Pregúntale a Trump.",
-    "La banca, a Waterloo.",
-    "El Falcon ya calienta motores.",
-    "Arancel del 0 % a tus ganancias.",
+    "Plantado y cobrando.",
+    "El crupier ya no te mira igual.",
+    "Ganas por la mínima, que es como se gana con estilo.",
+    "Tremendo. Tremendo, de verdad.",
+    "Hoy la banca se va a casa con hambre.",
+    "Veintiuno de los buenos.",
 )
 LOSS_LINES = (
     "La banca gana.",
     "Casi.",
     "La próxima es tuya.",
-    "La banca gana. Como Hacienda: siempre.",
-    "Ganaste en votos, pero gobierna la banca. Feijóo te entiende.",
-    "Luis, sé fuerte.",
-    "La banca, como Maduro: las actas no las enseña.",
-    "La banca te pone un arancel del 100 %. Trump aplaude.",
-    "El NO-DO lo contará como una victoria.",
-    "Capítulo uno del «Manual de resistencia».",
-    "Ay, bendito. Quiero café.",
-    "Kim aplaude a la banca. Tú también, por si acaso.",
-    "Recurso a Bruselas: desestimado.",
-    "Hillary también ganó en votos, y mírala.",
+    "Otra mano, otra historia.",
+    "Hazme café… ¡Quiero café!",
     "Yo soy yo… y así me tienes que soportar.",
+    "La banca gana. Como siempre, la muy pesada.",
+    "Luis, sé fuerte.",
+    "La banca tenía un as escondido en el escote.",
+    "Otra vez será.",
+    "La banca no tiene corazón, solo figuras.",
+    "Hoy no es tu día. Mañana, a lo mejor.",
+    "Sofía, cállate, que me desconcentras.",
+    "La banca te ha hecho un Ocean's Eleven.",
+    "Te han ganado por un pelo.",
 )
 BUST_LINES = (
     "Te pasas.",
     "Demasiado.",
     "Una carta de más.",
-    "Te pasas como un arancel de Trump.",
-    "Te pasas como Putin contando votos.",
-    "Te pasas más que el déficit.",
-    "Te pasas como un misil de Kim.",
+    "Te pasas de frenada.",
+    "Estoy destruido, pero por fuera… por dentro estoy nuevo.",
+    "La avaricia rompe el saco.",
+    "Pediste una de más y vino un diez.",
+    "Te pasas. Veintidós ya no es veintiuno.",
     "Más cartas que promesas de campaña.",
-    "Una de más. Como las cuentas de Bárcenas en Suiza.",
-    "Te pasas de frenada, mi amor.",
-    "Te pasas. La UCO ya tiene el informe.",
+    "Te ha mirado el diez y te has venido arriba.",
+    "Una más y salías en el Guinness.",
 )
 
 EditFn = Callable[..., Awaitable[Any]]
@@ -381,13 +383,15 @@ class BlackjackTable(discord.ui.View):
         self.owner = owner
         self.stake = stake
         self.game: BlackjackGame | None = None
-        #: Zapato de la mesa: dura entre manos hasta la carta de corte (se cuentan cartas).
-        self.shoe: list[Card] = []
+        #: Zapato del jugador: dura entre manos hasta la carta de corte (se cuentan cartas)
+        #: y sigue en la próxima mesa que abra (`Blackjack.shoes`).
+        self.shoe: list[Card]
+        #: Apuesta más baja jugada con este zapato, para el jefe de sala.
+        self.lowest: int | None
+        self.shoe, self.lowest = cog.shoes.get((guild_id, owner.id), ([], None))
         #: Zapato ya barajado para cuando toque barajar, sorteado antes sin enseñarlo: así
         #: se pinta antes del clic la mano que sale de él. Solo con `cog.ahead`.
         self._next_shoe: list[Card] | None = None
-        #: Apuesta más baja jugada con este zapato, para el jefe de sala.
-        self.lowest: int | None = None
         #: Aviso de la mano en curso: se ha barajado o el jefe de sala ha sospechado.
         self.shoe_note: str | None = None
         #: Lo que pasó con el zapato al repartir la última mano, para los logros:
@@ -605,6 +609,7 @@ class BlackjackTable(discord.ui.View):
         self.shoe_note = random.choice(PIT_BOSS_LINES) if caught else SHUFFLE_LINE if cut else None
         self._shoe_event = (caught, cut, count, None if caught else spread)
         self.lowest = stake if self.lowest is None else min(self.lowest, stake)
+        self.cog.shoes[self.guild_id, self.owner.id] = (self.shoe, self.lowest)
         return self.shoe
 
     @staticmethod
@@ -1063,6 +1068,9 @@ class Blackjack(commands.Cog):
         # Mesas abiertas: para resolver sus manos si el bot se apaga. Cada
         # mesa sale de aquí al caducar, así que el tamaño está acotado.
         self.tables: set[BlackjackTable] = set()
+        #: Zapato de cada jugador `(servidor, miembro)` y su apuesta más baja: pasa de una
+        #: mesa a la siguiente. Vive en memoria (un reinicio baraja) y es uno por jugador.
+        self.shoes: dict[tuple[int, int], tuple[list[Card], int | None]] = {}
 
     async def cog_unload(self) -> None:
         """Al apagar, planta y paga las manos a medias para no quedarse con el dinero."""
@@ -1105,6 +1113,16 @@ class Blackjack(commands.Cog):
         if stake > balance:
             await send_error(insufficient_text(balance))
             return
+        # Una mesa por jugador: dos con el mismo zapato estropearían lo pintado por adelantado.
+        for old in [t for t in self.tables if (t.guild_id, t.owner.id) == (guild.id, user.id)]:
+            if old._busy or (old.game is not None and not old.game.settled):
+                where = getattr(old.message, "jump_url", None)
+                await send_error(
+                    "Acaba antes la mano de tu otra mesa" + (f": {where}" if where else ".")
+                )
+                return
+            old.stop()  # que no atienda más clics mientras se cierra
+            await old.on_timeout()
 
         table = BlackjackTable(self, guild_id=guild.id, owner=user, stake=stake)
 
@@ -1122,6 +1140,7 @@ class Blackjack(commands.Cog):
         # La mesa se apunta antes de cobrar: si Discord no deja enseñarla (la respuesta
         # llega tarde), la mano se cierra en el acto y nadie se queda con dinero colgado.
         self.tables.add(table)
+        table._busy = True  # otra mesa que se abra mientras reparte no puede cerrarla
         try:
             error = await table.start(first_edit, later)
         except discord.HTTPException:
@@ -1129,6 +1148,8 @@ class Blackjack(commands.Cog):
             table.stop()  # que no pinte por adelantado una mesa que nadie ve
             await table.force_settle()
             raise
+        finally:
+            table._busy = False
         if error is not None:
             self.tables.discard(table)
             await send_error(error)

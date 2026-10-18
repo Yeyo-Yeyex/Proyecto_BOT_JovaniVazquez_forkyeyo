@@ -299,7 +299,7 @@ def milestone(gems: int, safe_total: int) -> str | None:
     return {
         3: "🔥 ¡Tres limpias!",
         5: "🔥🔥 ¡Racha de cinco!",
-        7: "💪 ¡Siete, mi amor!",
+        7: "💪 ¡Siete!",
         10: "🚀 ¡Diez casillas!",
         15: "👑 ¡Quince! Esto ya es leyenda.",
         20: "🤯 ¡VEINTE!",

@@ -118,21 +118,21 @@ LIST_LIMIT = 10
 #: Coletilla de la mano jugada, según quién gana.
 COUP_LINES = {
     Side.BANKER: (
-        "La Banca gana. Botín sonríe desde el palco.",
+        "La Banca gana.",
+        "Gana la Banca. Botín sonríe desde el palco.",
+        "La Banca se lleva la mano.",
         "Gana la Banca: un rescate, pero al revés.",
-        "La Banca siempre gana, como el PRI.",
-        "Gana la Banca y Bruselas aplaude.",
     ),
     Side.PLAYER: (
+        "Gana el Jugador.",
         "Gana el pueblo, que dirían en Galapagar.",
-        "Gana el Jugador. ¡Viva la libertad, carajo!",
-        "Moción de censura a la Banca: gana el Jugador.",
-        "¡Wepa! El Jugador se lleva la mano.",
+        "El Jugador se lleva la mano.",
+        "¡Toma mangó! Gana el Jugador.",
     ),
     Side.TIE: (
+        "Empate.",
         "Empate. Ni sí ni no, sino todo lo contrario.",
-        "Empate técnico, como en el CIS.",
-        "Tablas: repetición electoral.",
+        "Tablas: nadie se lleva nada.",
     ),
 }
 #: Personas cuya mascota puede hablar en el resultado (para no llenar la mesa).

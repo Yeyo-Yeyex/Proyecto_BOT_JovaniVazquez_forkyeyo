@@ -3,7 +3,8 @@
 Comandos (todos con `/` y con `.`, mismo nombre; `tajo` elige dónde se usa `pala`):
 `purge`, `mute`, `unmute`, `kick`, `ban`, `unban`, `lock`, `unlock`,
 `slow`, `say`, `nick`, `role`, `bienv`, `niveles`, `cambios`, `catalogo`, `tajo`,
-`informe` (descarga la telemetría interna, ver `bot.cogs.telemetry`).
+`informe` (descarga la telemetría interna, ver `bot.cogs.telemetry`) y `robuso` (si
+Robuso está en Hong Kong o en Madrid, para sus logros: ver `bot.cogs.robuso`).
 
 Autorización: solo miembros con el permiso **Administrador** del servidor.
 Se comprueba en el servidor en cada invocación (`cog_check` para `.` e
@@ -19,7 +20,9 @@ que se venden con `catalogo`). Si falta
 alguno, el comando lo dice en vez de fallar en silencio.
 
 Cada acción queda en el registro de auditoría de Discord con el motivo y
-quién la pidió.
+quién la pidió. Las sanciones (`mute`, `unmute`, `kick`, `ban`, `unban`) se
+apuntan además en el historial del panel `admin` (`bot.cogs.moderation.record`),
+que junta estas mismas acciones en un menú.
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ import json
 import logging
 import math
 import re
+import sqlite3
 from collections.abc import Awaitable
 from datetime import timedelta
 
@@ -36,6 +40,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from bot.cogs import moderation as historial
+from bot.cogs import robuso as robuso_logros
 from bot.cogs.deploy import can_post, news_channel, resolve_target
 from bot.cogs.telemetry import Telemetry, report_inputs
 from bot.repositories.news import NewsSettings
@@ -72,6 +78,8 @@ MAX_NICK_LENGTH = 32
 SAY_MENTIONS = discord.AllowedMentions(everyone=False, roles=False, users=True)
 # Palabras que en `.tajo` permiten la pala en cualquier canal.
 TAJO_ALL_WORDS = {"todos", "todas", "cualquiera", "quitar"}
+# Lo que acepta `.robuso`: dónde está, sin espacios ni mayúsculas.
+ROBUSO_PLACES = {"hongkong": True, "madrid": False}
 # Palabras que en `bienv` quitan el GIF y vuelven al vídeo de Kratos.
 GIF_RESET_WORDS = {"quitar", "video", "vídeo", "ninguno"}
 
@@ -190,6 +198,20 @@ class Admin(commands.Cog):
             await responder.send_error(error)
             return False
         return True
+
+    async def _log(
+        self,
+        responder: CommandResponder,
+        user_id: int,
+        kind: str,
+        reason: str | None,
+        seconds: int | None = None,
+    ) -> None:
+        """Apunta la sanción en el historial del panel `admin` (tras contestar)."""
+        if responder.guild is not None and responder.member is not None:
+            await historial.record(
+                self.bot, responder.guild.id, user_id, responder.member.id, kind, reason, seconds
+            )
 
     # --- purge ------------------------------------------------------------
 
@@ -325,6 +347,7 @@ class Admin(commands.Cog):
             await responder.send(
                 f"🔇 {member.mention} aislado durante {format_duration(duration)}."
             )
+            await self._log(responder, member.id, "callar", reason, int(duration.total_seconds()))
 
     @app_commands.command(name="hablar", description="Quita el aislamiento a un miembro.")
     @app_commands.guild_only()
@@ -349,6 +372,7 @@ class Admin(commands.Cog):
             responder, member.timeout(None, reason=_audit_reason(responder.member, None))
         ):
             await responder.send(f"🔊 {member.mention} ya puede hablar.")
+            await self._log(responder, member.id, "hablar", None)
 
     # --- kick / ban / unban -----------------------------------------------
 
@@ -378,6 +402,7 @@ class Admin(commands.Cog):
             responder, member.kick(reason=_audit_reason(responder.member, reason))
         ):
             await responder.send(f"👢 {member} expulsado.")
+            await self._log(responder, member.id, "echar", reason)
 
     @app_commands.command(name="banear", description="Banea a un miembro del servidor.")
     @app_commands.guild_only()
@@ -406,6 +431,7 @@ class Admin(commands.Cog):
             member.ban(reason=_audit_reason(responder.member, reason), delete_message_seconds=0),
         ):
             await responder.send(f"🔨 {member} baneado.")
+            await self._log(responder, member.id, "banear", reason)
 
     @app_commands.command(name="indultar", description="Levanta el baneo de un usuario.")
     @app_commands.guild_only()
@@ -439,6 +465,7 @@ class Admin(commands.Cog):
         await responder.send(
             f"✅ Baneo levantado a <@{user_id}>.", allowed_mentions=discord.AllowedMentions.none()
         )
+        await self._log(responder, user_id, "indultar", None)
 
     # --- lock / unlock / slow ---------------------------------------------
 
@@ -1016,6 +1043,70 @@ class Admin(commands.Cog):
         await responder.send(
             "\n".join(lines), ephemeral=True, allowed_mentions=discord.AllowedMentions.none()
         )
+
+    # --- robuso -----------------------------------------------------------
+
+    @app_commands.command(
+        name="robuso", description="Dice si Robuso está en Hong Kong o en Madrid."
+    )
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(donde="Dónde está ahora; sin elegir, enseña dónde está apuntado.")
+    @app_commands.choices(
+        donde=[
+            app_commands.Choice(name="Hong Kong", value="hongkong"),
+            app_commands.Choice(name="Madrid", value="madrid"),
+        ]
+    )
+    async def robuso(
+        self, interaction: discord.Interaction, donde: app_commands.Choice[str] | None = None
+    ) -> None:
+        """Apunta dónde está Robuso: sus logros de Hong Kong solo cuentan allí (solo lo ves tú)."""
+        place = None if donde is None else ROBUSO_PLACES[donde.value]
+        await self._robuso_impl(InteractionResponder(interaction), place)
+
+    @commands.command(name="robuso")
+    async def robuso_text(self, ctx: commands.Context, *, arg: str = "") -> None:
+        """Versión de texto: `.robuso`, `.robuso hongkong` o `.robuso madrid`."""
+        word = arg.strip().lower().replace(" ", "")
+        if word and word not in ROBUSO_PLACES:
+            await ctx.send("Uso: `.robuso` (dónde está), `.robuso hongkong` o `.robuso madrid`.")
+            return
+        await self._robuso_impl(ContextResponder(ctx), ROBUSO_PLACES.get(word))
+
+    async def _robuso_impl(self, responder: CommandResponder, hong_kong: bool | None) -> None:
+        """Cambia o enseña dónde está Robuso y responde cómo queda."""
+        guild = responder.guild
+        if guild is None:
+            await responder.send_error("Esto solo funciona en un servidor.")
+            return
+        # Lee y escribe sus estadísticas de logros: se acepta el comando antes.
+        await responder.start_progress(ephemeral=True)
+        changed: bool | None = None
+        try:
+            if hong_kong is None:
+                hong_kong = await robuso_logros.in_hong_kong(self.bot, guild.id)
+                ready = hong_kong is not None
+            else:
+                changed = await robuso_logros.set_place(
+                    self.bot, guild.id, hong_kong=hong_kong, channel=responder.channel
+                )
+                ready = changed is not None
+        except (LookupError, OSError, sqlite3.Error):
+            logger.exception("No se pudo apuntar dónde está Robuso en %s", guild.id)
+            await responder.finish("No se ha podido guardar ahora mismo. Prueba en un rato.")
+            return
+        if not ready:
+            await responder.finish("Los logros de Robuso no están disponibles ahora mismo.")
+            return
+        where = "Hong Kong" if hong_kong else "Madrid"
+        if changed is None:
+            text = f"Robuso está apuntado en **{where}**."
+        elif changed:
+            text = f"Hecho: Robuso está ahora en **{where}**."
+        else:
+            text = f"Robuso ya estaba apuntado en **{where}**."
+        await responder.finish(text)
 
     # --- catalogo ---------------------------------------------------------
 

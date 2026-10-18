@@ -371,7 +371,7 @@ def milestone(crossed: int, lanes: int) -> str | None:
     return {
         3: "🔥 ¡Tres carriles!",
         5: "🔥🔥 ¡Cinco y sin un rasguño!",
-        7: "💪 ¡Siete, mi amor!",
+        7: "💪 ¡Siete!",
         10: "🚀 ¡Diez carriles! La DGT no se lo cree.",
         15: "👑 ¡Quince! Esto es un pollo de leyenda.",
         20: "🤯 ¡VEINTE!",

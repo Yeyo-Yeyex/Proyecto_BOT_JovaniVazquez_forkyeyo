@@ -454,7 +454,7 @@ class ItemEditor(ui.LayoutView):
                 changes["multiplier"] = parse_multiplier(values["multiplier"])
                 changes["duration"] = parse_span(values["duration"], "h")
                 if changes["duration"] is None:
-                    raise ValueError("Un potenciador tiene que durar algo, mi amor.")
+                    raise ValueError("Un potenciador tiene que durar algo.")
             await self._save(submit, "✅ Datos guardados.", **changes)
 
         await interaction.response.send_modal(ItemForm(f"Editar {item.name}", fields, save))
@@ -736,7 +736,7 @@ class AdminPanel(ui.LayoutView):
             emoji, name = _parse_name(values, Kind.BOOST)
             span = parse_span(values["duration"], "h")
             if span is None:
-                raise ValueError("Un potenciador tiene que durar algo, mi amor.")
+                raise ValueError("Un potenciador tiene que durar algo.")
             item = await self.cog.repository.create_item(
                 self.guild.id,
                 kind=Kind.BOOST,

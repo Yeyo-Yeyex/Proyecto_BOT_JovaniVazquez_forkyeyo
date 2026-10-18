@@ -20,7 +20,7 @@ from bot.cogs.achievements import (
     format_value,
     group_embed,
     summary_embed,
-    unlock_embed,
+    unlock_embeds,
 )
 from bot.repositories.achievements import AchievementRepository, Profile
 from bot.repositories.economy import EconomyRepository
@@ -28,17 +28,26 @@ from bot.repositories.message_stats import MessageStatsRepository
 from bot.services.achievements import (
     APUESTAS_PAGES,
     APUESTAS_PERIODS,
+    ATTACH_KINDS,
+    ATTACH_KINDS_STAT,
     AVAILABLE,
     BACKGAMMON_BEAT_PREFIX,
     BJ_HIGH_STAKE,
     BUS_WIN_PREFIX,
     BY_ID,
+    CASINO_DATES,
+    CASINO_GAMES_100_STAT,
+    CASINO_GAMES_1000_STAT,
+    CASINO_GAMES_STAT,
     CASINO_GROUP,
+    CASINO_NIGHT_GAMES_STAT,
     CATALOG,
     CATEGORIES,
     CHICKEN_VEHICLE_KINDS,
+    COUNTED,
     ENRAYA_BEAT_PREFIX,
     FIRST_TAX_WEEKLY,
+    FUNNY_TOPICS,
     GALLOS_BEAT_PREFIX,
     GALLOS_FREE_SKINS,
     GALLOS_SKIN_PREFIX,
@@ -51,6 +60,8 @@ from bot.services.achievements import (
     IMG_EFFECTS_STAT,
     IRONY_PATTERNS,
     LAUGH_KINDS,
+    LINK_KINDS_STAT,
+    LINK_SITES,
     MESSAGES_TOTAL_STAT,
     PET_SPAWN_KINDS_STAT,
     PET_SPECIES_PREFIX,
@@ -68,6 +79,10 @@ from bot.services.achievements import (
     PORRA_PROP_PREFIX,
     PORRA_PROPS,
     PORRA_STATS,
+    REACT_KINDS_STAT,
+    REACT_PREFIX,
+    REACTED_PREFIX,
+    REACTION_EMOJIS,
     ROULETTE_FAVOURITE_STAT,
     ROULETTE_HIT_PREFIX,
     ROULETTE_NUMBERS_STAT,
@@ -75,12 +90,22 @@ from bot.services.achievements import (
     SHOP_AISLES_STAT,
     SHOP_TRACKED_KEYS,
     SHOP_USE_KINDS_STAT,
+    TOPIC_KINDS_STAT,
     UNLOCKED_STAT,
+    VOICE_BESTIE_STAT,
+    VOICE_GAME_PREFIX,
+    VOICE_GAMES,
+    VOICE_GAMES_STAT,
+    VOICE_PEOPLE_STAT,
+    VOICE_STREAK_STAT,
+    VOICE_WITH_PREFIX,
     Rarity,
     StatDelta,
     beernight_close_stats,
     beernight_drink_stats,
+    blackjack_shoe_stats,
     blackjack_stats,
+    casino_record_stats,
     casino_stats,
     group_sections,
     housing_purchase_stats,
@@ -102,8 +127,9 @@ from bot.services.allatu import TABLES
 from bot.services.autoplay import StopReason
 from bot.services.backgammon import LEVELS as BACKGAMMON_LEVELS
 from bot.services.beernight import Reason as BeerReason
-from bot.services.blackjack import BlackjackGame, Card, Hand
+from bot.services.blackjack import PIT_BOSS_SPREAD, BlackjackGame, Card, Hand
 from bot.services.bus import Pick as BusPick
+from bot.services.casino_stats import GAMES as CASINO_GAMES
 from bot.services.chicken import DIFFICULTIES as CHICKEN_DIFFICULTIES
 from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService, IncomeResult
 from bot.services.enraya import LEVELS as ENRAYA_LEVELS
@@ -122,6 +148,9 @@ from bot.services.pachinko import Kind as PachinkoKind
 from bot.services.pachinko_motion import motion_for
 from bot.services.pets_catalog import SPECIES as PET_SPECIES
 from bot.services.poker import Rank as PokerRank
+from bot.services.robuso import DAILY as ROBUSO_DAILY
+from bot.services.robuso import ECHOES as ROBUSO_ECHOES
+from bot.services.robuso import ROBUSO_ID
 from bot.services.roulette import DOUBLE_ZERO, OUTSIDE_BETS, RoundOutcome, Wager, parse_bet
 from bot.services.shop_uses import USES as SHOP_USES
 from bot.services.slots import REEL_STRIPS, Kind, spin_at
@@ -276,7 +305,9 @@ PRODUCED_STATS = {
     "bj_streak_max",
     "bj_busts", "bj_pushes", "bj_21_multi", "bj_dealer_busts", "bj_dealer_naturals",
     "bj_dealer_bj_saved", "bj_max_stake", "bj_cut_cards", "bj_hot_wins", "bj_spread_max",
-    "bj_pit_boss", "bj_cold_shoe", "bj_insured", "bj_insurance_wasted", "bj_insured_bust",
+    "bj_pit_boss", "bj_cold_shoe", "bj_hot_shoe", "bj_whale_wins", "bj_whale_natural",
+    "bj_dev_insurance", "bj_dev_stand_16", "bj_dev_stand_12", "bj_dev_double_ten",
+    "bj_dev_split_tens", "bj_insured", "bj_insurance_wasted", "bj_insured_bust",
     "bj_natural_insured", "bj_natural_insured_saved", "bj_natural_greed",
     "bj_bad_beat", "bj_kamikaze", "bj_cards_max",
     "casino_wagered", "casino_win_max", "casino_loss_max", "casino_all_in",
@@ -677,10 +708,36 @@ PRODUCED_STATS = {
     "apuestas_denial", "apuestas_even", "apuestas_ruin", "apuestas_rich",
     *(f"apuestas_page_{page}" for page in APUESTAS_PAGES),
     *(f"apuestas_period_{period}" for period in APUESTAS_PERIODS),
+    # Cualquier jugada del casino (cogs/apuestas.py: casino_record_stats)
+    "casino_plays", *CASINO_DATES.values(),
+    *(
+        f"{prefix}{game}"
+        for prefix in ("casino_game_", "casino_night_", "casino_friday13_",
+                       "casino_canarias_", "casino_nochevieja_")
+        for game in CASINO_GAMES
+    ),
+    CASINO_GAMES_STAT, CASINO_GAMES_100_STAT, CASINO_GAMES_1000_STAT, CASINO_NIGHT_GAMES_STAT,
+    # Chat y voz, segunda tanda (message_delta, ChatTracker, reaction_stats y voz)
+    *LINK_SITES, *ATTACH_KINDS, *FUNNY_TOPICS, LINK_KINDS_STAT, ATTACH_KINDS_STAT,
+    TOPIC_KINDS_STAT, "msg_album", "msg_screenshot", "msg_image_spoiler", "msg_len_69",
+    "msg_len_420", "msg_len_1", "msg_only_digits", "msg_only_question", "msg_dots",
+    "msg_no_vowels", "msg_1111", "msg_2222", "msg_420", "msg_pi", "msg_2359", "msg_in_voice",
+    "msg_voice_text", "msg_while_streaming", "msg_on_camera", "laugh_in_voice",
+    "msg_rally_max", "msg_quick", "msg_silence_break", "reactions_first", "reactions_custom",
+    *(f"{prefix}{key}" for prefix in (REACT_PREFIX, REACTED_PREFIX)
+      for key in REACTION_EMOJIS.values()),
+    REACT_KINDS_STAT, "voice_midnight", "voice_leet", "voice_420", "voice_1111", "voice_gaming",
+    "voice_spotify", *(f"{VOICE_GAME_PREFIX}{key}" for key in VOICE_GAMES), VOICE_GAMES_STAT,
+    "voice_host", "voice_last_out", VOICE_STREAK_STAT, VOICE_PEOPLE_STAT, VOICE_BESTIE_STAT,
     # Porras (cogs/porras.py; test_porras.py comprueba que cada una sale de verdad)
     *PORRA_STATS,
     *(f"{PORRA_GAME_PREFIX}{game}" for game in PORRA_GAMES),
     *(f"{PORRA_PROP_PREFIX}{prop}" for prop in PORRA_PROPS),
+    # 🎸 Robuso (cogs/robuso.py y los ecos de services/robuso.py; test_robuso.py las suma)
+    *ROBUSO_ECHOES.values(), *ROBUSO_DAILY, f"{VOICE_WITH_PREFIX}{ROBUSO_ID}",
+    "robuso_hk_new_year", "robuso_silence_max", "robuso_voice_gap_max", "robuso_hk_vc_minutes",
+    "robuso_trips", "robuso_returns", "robuso_trip_days_max", "robuso_replies", "robuso_laughs",
+    "robuso_reacts", "robuso_reunions", "robuso_welcomes", "robuso_missed", "robuso_envy",
     UNLOCKED_STAT,
 }  # fmt: skip
 
@@ -709,9 +766,9 @@ def test_cada_pagina_de_cada_categoria_cabe_en_un_embed() -> None:
 
 
 def test_el_menu_de_logros_cabe_en_un_desplegable_de_discord() -> None:
-    # 25 opciones como mucho, y una es el Resumen.
-    assert len(menu_entries()) <= 24
-    keys = [key for key, _title in menu_entries()]
+    # 25 opciones como mucho, y una es el Resumen. Con las secretas a la vista.
+    assert len(menu_entries(BY_ID)) <= 24
+    keys = [key for key, _title in menu_entries(BY_ID)]
     assert len(keys) == len(set(keys))
 
 
@@ -743,7 +800,8 @@ def test_la_portada_del_casino_cabe_en_un_embed() -> None:
 
 
 def test_completista_pide_todos_los_logros_normales() -> None:
-    normal = [a for a in AVAILABLE if a.category != "meta"]
+    # Los de las categorías secretas (🎸 Robuso) van aparte: casi nadie puede tenerlos todos.
+    normal = [a for a in COUNTED if a.category != "meta"]
     assert BY_ID["completionist"].goal == len(normal)
 
 
@@ -1004,6 +1062,40 @@ def test_blackjack_separar_y_ganar_las_dos() -> None:
     assert delta.add["bj_split_sweeps"] == 1
 
 
+def shoe_stats(game: BlackjackGame, count: float, spread: int | None = 2) -> StatDelta:
+    return blackjack_shoe_stats(game, caught=False, cut=False, count=count, spread=spread)
+
+
+def test_blackjack_desvios_de_la_cuenta_jugados_y_ganados() -> None:
+    stand_16 = settled_game([[10, 6]], [10, 6, 10])
+    assert "bj_dev_stand_16" in shoe_stats(stand_16, 0).add
+    assert "bj_dev_stand_16" not in shoe_stats(stand_16, -1).add
+    assert "bj_dev_stand_16" not in shoe_stats(settled_game([[1, 5]], [10, 6, 10]), 0).add
+    stand_12 = settled_game([[10, 2]], [3, 9, 10])
+    assert "bj_dev_stand_12" in shoe_stats(stand_12, 3).add
+    assert "bj_dev_stand_12" not in shoe_stats(stand_12, 2).add
+    double_ten = settled_game([[6, 4, 10]], [13, 9], doubled=True)
+    assert "bj_dev_double_ten" in shoe_stats(double_ten, 4).add
+    assert "bj_dev_double_ten" not in shoe_stats(double_ten, 3).add
+    split_tens = settled_game([[13, 9], [12, 10]], [6, 10, 10], from_split=True)
+    assert "bj_dev_split_tens" in shoe_stats(split_tens, 4).add
+    insured = insured_game([10, 9], [1, 13])
+    assert "bj_dev_insurance" in shoe_stats(insured, 3).add
+    assert "bj_dev_insurance" not in shoe_stats(insured, 2).add
+    # Con la cuenta a favor, perder la mano no cuenta.
+    assert "bj_dev_stand_16" not in shoe_stats(settled_game([[10, 6]], [10, 8]), 5).add
+
+
+def test_blackjack_ficha_a_tope_y_zapato_hirviendo() -> None:
+    win = settled_game([[10, 9]], [10, 8])
+    assert shoe_stats(win, 4, PIT_BOSS_SPREAD).add["bj_whale_wins"] == 1
+    assert "bj_whale_wins" not in shoe_stats(win, 3, PIT_BOSS_SPREAD).add
+    assert "bj_whale_wins" not in shoe_stats(win, 4, PIT_BOSS_SPREAD - 1).add
+    natural = settled_game([[1, 13]], [9, 8])
+    assert shoe_stats(natural, 0, PIT_BOSS_SPREAD).add["bj_whale_natural"] == 1
+    assert shoe_stats(win, 6, None).add["bj_hot_shoe"] == 1
+
+
 # -- Repositorio -----------------------------------------------------------------------
 
 
@@ -1117,7 +1209,9 @@ async def test_desbloquear_paga_con_irpf_y_el_libro_cuadra(tmp_path: Path) -> No
     assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) == treasury.balance
     embed = channel.send.await_args.kwargs["embed"]
     assert "logros desbloqueados" in embed.author.name
-    assert "Perro Sanxe" in embed.description
+    # Con la vara única de la 8.0.0 un premio pequeño puede no llegar al mínimo: la línea de
+    # la retención sale si y solo si Hacienda se ha llevado algo.
+    assert ("🐶 −" in embed.description) == (treasury.collected_total > 0)
     # La retención cuenta para "Contribuyente" y compañía en la siguiente escritura.
     assert cog._pending[GUILD][USER].add["tax_paid"] == treasury.collected_total
 
@@ -1201,17 +1295,22 @@ async def test_voz_cuenta_minutos_con_gente_y_sesiones_seguidas(tmp_path: Path) 
     cog.collect_voice(NOON + 60)
 
     first = cog._pending[GUILD][1]
+    day = f"voice_day_{datetime.fromtimestamp(NOON, TIMEZONE):%Y%m%d}"
     # Dos escuchando: además de la llamada, cuenta como «cara a cara».
     assert first.add == {
         "voice_minutes": 2,
         "voice_muted": 2,
         "voice_stream": 2,
         "voice_duo": 2,
+        day: 2,
+        "voice_with_2": 2,
     }
     assert first.peak["voice_session_max"] == 2
     assert first.peak["voice_crowd_max"] == 2
     assert first.peak["voice_mute_streak_max"] == 2
-    assert cog._pending[GUILD][2].add == {"voice_minutes": 2, "voice_duo": 2}
+    assert cog._pending[GUILD][2].add == {
+        "voice_minutes": 2, "voice_duo": 2, day: 2, "voice_with_1": 2,
+    }  # fmt: skip
     # El ensordecido no suma llamada, solo «Estoy pero no estoy».
     assert cog._pending[GUILD][3].add == {"voice_deaf": 2}
     assert 4 not in cog._pending[GUILD]
@@ -1328,32 +1427,43 @@ def test_formato_de_horas_y_dinero() -> None:
     assert format_value(1_234) == "1.234"
 
 
-def test_aviso_de_muchos_logros_se_resume() -> None:
+def test_aviso_de_muchos_logros_los_lista_todos() -> None:
     ids = [a.id for a in AVAILABLE[:12]]
-    embed = unlock_embed("Diego", None, ids, None)
+    [embed] = unlock_embeds("Diego", None, ids, None)
     assert "12 logros" in (embed.author.name or "")
-    assert "y 4 más" in (embed.description or "")
+    assert all(f"**{a.name}**" in (embed.description or "") for a in AVAILABLE[:12])
+
+
+def test_aviso_que_no_cabe_sigue_en_mas_embeds() -> None:
+    chosen = AVAILABLE[:200]
+    embeds = unlock_embeds("Diego", None, [a.id for a in chosen], None)
+    assert len(embeds) > 1
+    assert "200 logros" in (embeds[0].author.name or "")
+    assert all(e.author.name is None for e in embeds[1:])
+    assert all(len(e.description or "") <= 4_096 for e in embeds)
+    text = "\n".join(e.description or "" for e in embeds)
+    assert all(f"**{a.name}**" in text for a in chosen)
 
 
 def test_aviso_de_un_logro_cabe_en_tres_lineas() -> None:
     achievement = next(a for a in AVAILABLE if not a.story and a.rarity is Rarity.COMMON)
     income = IncomeResult(gross=50, tax=0, rate=0.0, balance=1_050)
-    embed = unlock_embed("Diego", None, [achievement.id], income)
+    [embed] = unlock_embeds("Diego", None, [achievement.id], income)
     assert embed.author.name == "Diego · 🏆 ¡Logro desbloqueado!"
     assert embed.title is None
     lines = (embed.description or "").splitlines()
     assert lines == [
         f"{achievement.rarity.emoji} **{achievement.name}** · Común · 🪙 **+50 Y$**",
-        f"-# {achievement.description} · 🐶 Perro Sanxe no te retiene nada: no llegas al mínimo.",
+        f"-# {achievement.description}",
     ]
 
 
 def test_aviso_con_retencion_dice_cuanto_se_lleva_hacienda() -> None:
     achievement = next(a for a in AVAILABLE if not a.story and a.rarity is Rarity.RARE)
     income = IncomeResult(gross=200, tax=38, rate=0.19, balance=5_162)
-    description = unlock_embed("Diego", None, [achievement.id], income).description or ""
-    assert "🪙 **+162 Y$**" in description.splitlines()[0]
-    assert "se lleva 38 Y$ (19,00 % de 200 Y$)" in description.splitlines()[1]
+    description = unlock_embeds("Diego", None, [achievement.id], income)[0].description or ""
+    assert "🪙 **+162 Y$** · 🐶 −38 Y$ (19,00 %)" in description.splitlines()[0]
+    assert description.splitlines()[1] == f"-# {achievement.description}"
 
 
 def test_los_secretos_no_se_ven_hasta_conseguirlos() -> None:
@@ -1367,7 +1477,7 @@ def test_los_secretos_no_se_ven_hasta_conseguirlos() -> None:
 def test_resumen_sugiere_los_logros_mas_cercanos() -> None:
     embed = summary_embed("Diego", None, Profile({"messages": 95}, {}), {}, 3)
     near = next(f for f in embed.fields if f.name == "Casi lo tienes")
-    assert "Ya se te oye" in near.value
+    assert "Ya no hay quien te calle" in near.value
 
 
 # -- Ganchos en los juegos -------------------------------------------------------------
@@ -1674,3 +1784,41 @@ def test_pisos_cuenta_los_tipos_de_barrio_la_zona_tensionada_y_el_barrio_entero(
     )  # fmt: skip
     assert delta.add["pisos_tensed"] == delta.add["pisos_barrio_whole"] == 1
     assert delta.add[f"{PISOS_KIND_PREFIX}cueva"] == 1
+
+
+def test_cualquier_jugada_del_casino_cuenta_el_juego_y_la_fecha() -> None:
+    viernes13 = datetime(2026, 2, 13, 3, 0, tzinfo=TIMEZONE)
+    delta = casino_record_stats("minas", net=-50, when=viernes13)
+    assert delta.add == {
+        "casino_plays": 1,
+        "casino_game_minas": 1,
+        "casino_night_minas": 1,
+        "casino_friday13_minas": 1,
+    }
+    ganando = casino_record_stats("minas", net=50, when=viernes13)
+    assert "casino_friday13_minas" not in ganando.add
+    nochevieja = casino_record_stats(
+        "ruleta", net=0, when=datetime(2026, 12, 31, 20, tzinfo=TIMEZONE)
+    )
+    assert nochevieja.add["casino_nochevieja_ruleta"] == 1
+    assert (
+        casino_record_stats("pollo", net=0, when=datetime(2026, 12, 25, 12, tzinfo=TIMEZONE)).add[
+            "casino_navidad"
+        ]
+        == 1
+    )
+
+
+def test_los_juegos_distintos_del_casino_salen_de_los_contadores_por_juego() -> None:
+    stats = {
+        "casino_game_ruleta": 1_000,
+        "casino_game_minas": 100,
+        "casino_game_pollo": 1,
+        "casino_game_inventado": 5_000,
+        "casino_night_pollo": 1,
+    }
+    full = with_derived(stats)
+    assert full[CASINO_GAMES_STAT] == 3
+    assert full[CASINO_GAMES_100_STAT] == 2
+    assert full[CASINO_GAMES_1000_STAT] == 1
+    assert full[CASINO_NIGHT_GAMES_STAT] == 1

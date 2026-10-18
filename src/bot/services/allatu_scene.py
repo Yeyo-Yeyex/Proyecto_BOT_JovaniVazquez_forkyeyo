@@ -578,7 +578,7 @@ def final_states(game: AllatuGame, *, swap: bool) -> list[dict[str, Any]]:
     value = after.values[after.own] if after.own is not None else Fraction(0)
     kind = tier(value, game.gordo)
     good = after.net >= 0
-    text = "¡EL GORDO!" if kind == "gordo" else ("¡PREMIO!" if good else "¡AY, BENDITO!")
+    text = "¡EL GORDO!" if kind == "gordo" else ("¡PREMIO!" if good else "¡MALA SUERTE!")
     sub = f"TE LLEVAS {format_amount(after.payout)}"
     bkind = "gordo" if kind == "gordo" else ("good" if good else "bad")
     opened = {"lid": 1, "rise": 1}

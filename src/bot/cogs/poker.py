@@ -163,35 +163,35 @@ NO_MENTIONS = discord.AllowedMentions.none()
 DEALING_LINES = (
     "🃏 ¡No va más! Reparte la banca…",
     "🃏 Reparte el croupier del Casino del Estado…",
-    "📜 Un notario de Hacienda vigila la baraja…",
     "🕶️ Gafas de sol puestas, cara de póker…",
-    "📺 El NO-DO retransmite el reparto…",
-    "🍹 Jugo de china del bueno y a repartir…",
+    "🃏 Las cartas vuelan por el tapete…",
+    "🍹 Jugo de china de el bueno y a repartir…",
+    "🃏 Barajando…",
 )
 SHOWDOWN_LINES = (
     "👀 La banca levanta las cartas…",
     "🙏 Que no juegue la banca, que no juegue…",
-    "🛬 Aterriza el Falcon con el river…",
-    "😬 Tezanos ya tiene la encuesta del river…",
+    "😬 Llega el river…",
+    "🃏 Cartas boca arriba…",
     "🎙️ «Es el vecino el que elige al alcalde», y la banca la que enseña…",
 )
 QUIPS = {
     "win": (
         "La banca paga, por una vez.",
-        "Moción de censura a la banca.",
+        "Cara de póker y bolsillo lleno.",
         "Ni Felipe en el 82.",
         "¡Toma mangó!",
     ),
     "nq": (
-        "La banca no se presenta: está en Waterloo.",
+        "La banca no se presenta.",
         "La banca no da ni para pareja de cuatros.",
         "Incomparecencia de la banca, como en un debate.",
     ),
     "lose": (
-        "La banca siempre gana, como el PRI.",
-        "Rescate bancario, pero para la banca.",
+        "La banca gana.",
         "Sé fuerte, que dijo aquel.",
         "Estoy destruido, pero por fuera.",
+        "La banca llevaba mejores cartas.",
     ),
 }
 

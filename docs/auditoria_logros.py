@@ -180,6 +180,8 @@ RITMO: dict[str, float] = {
     "imv_claims": 1, "work_shifts": 6, "lottery_bets": 5, "lottery_scratches": 5,
     "shop_purchases": 1, "bizum_sent_count": 1, "bizum_received_count": 1,
     "renta_filed": 1 / 7, "interest_days": 1, "work_guards": 1, "work_hk_shifts": 6,
+    # Casino entero (`casino_record_stats`): jugadas de todos los juegos juntos
+    "casino_plays": 200,
 }  # fmt: skip
 
 

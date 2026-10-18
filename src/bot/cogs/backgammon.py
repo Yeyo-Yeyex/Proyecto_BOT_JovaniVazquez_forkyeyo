@@ -186,116 +186,116 @@ COLOR_DUEL = discord.Color.from_rgb(150, 34, 40)
 
 #: Lo que dice Jovani cuando te come una ficha.
 JOVANI_HITS = (
-    "«¡A la barra, como un diputado al Grupo Mixto!»",
-    "«Ficha expropiada. Lo dice el BOE.»",
+    "«¡A la barra!»",
+    "«Ficha comida.»",
     "«¿Qué? ¿Qué? ¡Toma mangó! A la barra.»",
-    "«Te la deporto en avión, como hace Trump.»",
-    "«Esa ficha estaba sola como Feijóo en la investidura.»",
+    "«Esa ficha estaba sola y con frío.»",
     "«Comida con más hambre que Hacienda en junio.»",
-    "«Al banquillo, que esto parece la UCO.»",
-    "«Te la mando a Waterloo, con Puigdemont.»",
-    "«Ficha suelta, ficha que vuela. Ley de vida, mi amor.»",
+    "«Ficha suelta, ficha que vuela.»",
+    "«Te la mando de vuelta a empezar.»",
+    "«Desayuna con huevo… y con ficha.»",
+    "«Ñam.»",
 )
 #: Lo que dice cuando le comes una suya.
 JOVANI_HIT = (
-    "«¡Ay, bendito! Me has comido una.»",
-    "«Eso no venía en el Manual de resistencia.»",
+    "«Me has comido una.»",
+    "«Eso duele.»",
     "«Recurro al Constitucional.»",
-    "«Me la has birlado como un fondo Next Generation.»",
     "«Sofía, cállate, que me desconcentro.»",
     "«Estoy destruido, pero por dentro estoy nuevo.»",
-    "«Me la has interceptado mejor que la Cúpula de Hierro.»",
-    "«Esto lo veo en la Knesset y me echan de la coalición.»",
-    "«Me la comes y te llevas los puros y el champán, como Bibi.»",
+    "«Vale, una a la barra. Ya volverá.»",
+    "«Me la has birlado delante de mis narices.»",
+    "«Eso no venía en el Manual de resistencia.»",
+    "«Lagartijo, iguana, lagarto… y ficha comida.»",
 )
 #: Lo que dice cuando saca dobles.
 JOVANI_DOUBLES = (
-    "«¡Dobles! Como los sueldos de los ministros.»",
+    "«¡Dobles!»",
     "«¡Dobles! Ni el Gordo de Navidad.»",
     "«Doble ración, como el café: ¡quiero café!»",
-    "«Dobles, papi. Esto ya es mayoría absoluta.»",
-    "«¡Wepa! Dobles y para casa.»",
-    "«¡Dobles! Más repetido que Bibi de primer ministro.»",
-    "«¡Dobles! Lo celebra el ejército de ranas de Nick Fuentes.»",
+    "«¡Dobles y para casa!»",
+    "«¡Dobles! ¡Azul, azul, como el mar azul!»",
+    "«¡Dobles! Esto está trucado… a mi favor.»",
+    "«¡Dobles! Como los sueldos de los ministros.»",
 )
 #: Lo que dice cuando no puede mover.
 JOVANI_STUCK = (
+    "«No me puedo mover.»",
     "«Bloqueado como el CGPJ.»",
-    "«No me deja mover ni la Junta Electoral.»",
     "«Atado y bien atado, pero al revés.»",
-    "«Esto es un tapón pegado a la botella.»",
+    "«Me has encerrado.»",
 )
 #: Lo que dice de vez en cuando en una jugada sin más.
 JOVANI_CHATTER = (
     "«¿Con pulpa? ¡Sin pulpa!»",
     "«Cuento los pips como Hacienda tus tiques.»",
-    "«Así se juega en Puerto Rico, mi amor.»",
-    "«Me lo ha recomendado el algoritmo de TikTok.»",
-    "«Muevo con la calma de un pleno del Senado.»",
-    "«Esta jugada la pago con fondos europeos.»",
     "«Yo soy yo… y así me tienes que soportar.»",
-    "«Lagartijo, iguana, lagarto… y ficha al seis.»",
     "«Y Víctor le dijo a Joel: móntate en mi ficha.»",
-    "«Muevo más ficha que Bibi para no ir al juzgado.»",
-    "«America First, y tus fichas, las últimas. Lo dice un groyper.»",
-    "«Esta ficha la tengo asegurada como el escaño de Bibi.»",
+    "«Muevo con calma.»",
+    "«Esta partida la tengo controlada.»",
+    "«Me lo ha recomendado el algoritmo de TikTok.»",
+    "«Hazme café, que esto es largo.»",
+    "«Ficha al seis y a esperar.»",
+    "«Jota Uve, ¡pre!»",
+    "«Muevo con la calma de un pleno del Senado.»",
+    "«Cinco mil años de juego y aún me sorprende.»",
 )
 WIN_LINES = (
     "¡Le ganas a Jovani!",
-    "¡Quince fuera y Jovani a la oposición!",
+    "¡Quince fuera!",
     "¡Toma mangó!",
-    "¡Victoria por mayoría absoluta!",
     "¡Jovani pide recuento de pips!",
-    "¡Jovani pide el indulto, como Bibi!",
-    "¡Wepa! ¡Fichas fuera y para casa!",
+    "¡Fichas fuera y para casa!",
+    "Jovani se rasca la cabeza.",
+    "¡Victoria en el tablero!",
 )
 GAMMON_LINES = (
     "¡Gammon! Jovani no ha sacado ni una.",
-    "¡Gammon! Más paliza que unas generales con el 87 %.",
+    "¡Gammon! Paliza doble.",
     "¡Gammon! Ni el NO-DO lo maquilla.",
 )
 BACKGAMMON_LINES = (
     "¡BACKGAMMON! Con una ficha suya todavía en tu casa.",
-    "¡BACKGAMMON! Esto ya es la motosierra de Milei.",
-    "¡BACKGAMMON! Jovani se exilia a Waterloo.",
+    "¡BACKGAMMON! Paliza triple.",
+    "¡BACKGAMMON! Jovani pide que no se lo cuentes a nadie.",
 )
 LOSE_LINES = (
-    "¡Jovani te pasa la motosierra!",
     "¡Jovani saca las quince antes!",
-    "¡Ay, bendito!",
-    "¡Jovani gobierna con mayoría absoluta!",
+    "Jovani gana esta.",
     "¡Te ha dejado más atrás que el AVE a Extremadura!",
-    "¡Jovani dura más en el cargo que Bibi!",
+    "Estoy destruido, pero por fuera… por dentro estoy nuevo.",
+    "Los dados no estaban de tu parte.",
+    "¡Jovani gobierna con mayoría absoluta!",
 )
 RESIGN_LINES = (
     "Dimisión irrevocable, como las de antes.",
-    "Se rinde antes que una moción de censura.",
-    "Bandera blanca. Más rápido que un ministro en un escándalo.",
-    "Rendición incondicional. Ni el Brexit fue tan rápido.",
+    "Se rinde.",
+    "Bandera blanca.",
+    "Se retira con dignidad.",
 )
 SLEEP_LINES = (
     "se ha dormido como el Senado en agosto",
     "se ha quedado frito como un funcionario en la siesta",
-    "se ha ido a por café (¡quiero café!) y no ha vuelto",
-    "se ha dormido más que el Consejo de Ministros en un pleno",
+    "se ha dormido con el cubilete en la mano",
+    "se ha ido a echar la siesta",
 )
 DOUBLE_LINES = (
-    "dobla la apuesta como Trump los aranceles",
+    "dobla la apuesta sin pestañear",
     "sube el cubo con más descaro que una subida de la luz",
     "dobla, que de algo hay que pagar el Falcon",
-    "pone el cubo encima de la mesa, como Ayuso la fruta",
+    "pone el cubo encima de la mesa",
 )
 DROP_LINES = (
-    "No acepta el doblado: retirada a tiempo, como Rajoy a Santa Pola.",
+    "No acepta el doblado: retirada a tiempo.",
     "Pasa del cubo. Más vale una derrota pequeña que un rescate.",
-    "Se baja del cubo. Ni con la amnistía se queda.",
+    "Se baja del cubo.",
 )
 WAITING_LINES = (
     "🎲 Los dados ruedan…",
     "⚪ Las fichas vuelan…",
     "👀 Todo el barrio mirando el tablero…",
-    "🐸 Una rana groyper apoya la barbilla y mira…",
-    "🎙️ El NO-DO ya tiene escrito el final…",
+    "🎲 Rueda, rueda…",
+    "☕ Jovani pide otro café…",
 )
 
 

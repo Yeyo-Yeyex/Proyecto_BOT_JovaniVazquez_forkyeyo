@@ -113,42 +113,42 @@ COLOR_BOOM = discord.Color.from_rgb(255, 128, 48)
 
 # Textos en el tono de Jovani Vázquez.
 TAKEOFF_LINES = (
-    "¡Despegamos, mi amor!",
-    "¡Wepa, arriba!",
+    "¡Despegamos!",
     "¡Agárrate!",
     "¡Pa' la Luna!",
     "¡Sube más que el IPC!",
-    "¡Rumbo a Marte con Elon!",
-    "¡Despega como un misil de Kim!",
-    "¡Sube como la factura de la luz!",
-    "¡Embarque en el Falcon!",
     "¡Y Víctor le dijo a Joel: móntate en mi cohete!",
     "¡Azul, azul, como el mar azul… y arriba!",
+    "¡Diez, nueve, ocho…!",
+    "¡Cinturones abrochados!",
+    "¡Rumbo a Marte!",
+    "¡Sube como la factura de la luz!",
+    "¡Arriba, arriba!",
 )
 CASH_LINES = (
     "¡Saltaste a tiempo!",
     "¡Eso es, cobras!",
-    "¡Wepa!",
     "¡Olfato de piloto!",
-    "¡Saltas del Falcon en marcha!",
-    "¡Te bajas antes que Bibi de una comparecencia!",
-    "¡Te bajas antes que Biden!",
+    "¡Toma mangó!",
+    "¡Paracaídas abierto!",
+    "¡Aterrizaje perfecto!",
     "¡Paracaídas dorado de consejero!",
-    "¡Te bajas como Boris del Gobierno!",
+    "¡Saltas del cohete con la cartera llena!",
     "¡Ni Fabra tiene ese olfato!",
+    "Saltar a tiempo también es ganar.",
 )
 BOOM_LINES = (
     "¡BOOM!",
     "¡Se fue!",
-    "¡Ay, bendito!",
     "¡Kaboom!",
+    "Houston, tenemos un problema.",
     "¡Musk dice que ha sido un éxito!",
-    "¡Otro ensayo de Kim!",
     "¡Pinchazo de la burbuja!",
+    "Estoy destruido, pero por fuera… por dentro estoy nuevo.",
     "¡Lehman Brothers!",
-    "¡Brexit!",
-    "¡Ni la Cúpula de Hierro lo intercepta!",
-    "¡Cohete groyper: despega en un sótano y aterriza en el baneo!",
+    "El cohete no llegó a la Luna.",
+    "¡Desmontaje rápido no planificado!",
+    "Ni una estrella fugaz dura tan poco.",
 )
 
 

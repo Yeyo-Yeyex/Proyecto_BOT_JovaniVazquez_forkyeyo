@@ -39,10 +39,56 @@ def test_la_auditoria_encuentra_las_listas_de_frases() -> None:
     places = {pl.where for pl in lists}
     assert "cogs/errors:EXPIRED_CLICK" in places
     assert "services/pets:CARE_LINES[Care.PET]" in places
-    assert sources["Netanyahu (Bibi)"] > 0 and sources["Groypers (Nick Fuentes)"] > 0
+    assert sources["Netanyahu (Bibi)"] > 0 and "Groypers (Nick Fuentes)" in sources
 
 
 def test_cuenta_las_coletillas_de_jovani() -> None:
     assert af.catchphrases_in("¿Qué? ¿Qué? ¡Toma mangó!") == ["Toma mangó"]
     assert af.catchphrases_in("Hazme café… ¡Quiero café!") == ["Quiero café"]
     assert af.catchphrases_in("La bola no quiso.") == []
+
+
+def test_reconoce_las_familias_de_temas_y_las_frases_normales() -> None:
+    assert af.families_in("La banca pide el rescate.") == ["Política"]
+    assert "Cine y series" in af.families_in("Te han hecho un Ocean's Eleven.")
+    assert af.is_plain("La banca gana.")
+    assert not af.is_plain("¿Con pulpa? ¡Sin pulpa!")
+    assert not af.is_plain("Te pasas como un arancel de Trump.")
+    assert not af.is_plain("¡Eso es, mi amor!")
+
+
+def test_la_tabla_por_partes_cuenta_solo_esa_parte() -> None:
+    lists, _ = af.collect()
+    rows = af.part_table(lists, ["cogs/slots"])
+    assert all("cogs/blackjack" not in row for row in rows)
+    assert any(row.startswith("\nTotal:") for row in rows)
+
+
+#: Frases hechas o de Jovani que llevan «como» y no son la muleta de la Biblia.
+COMO_IDIOMS = {"¡Azul, azul, como el mar azul!", "Al amanecer, como Dios manda"}
+
+
+def test_ningun_nombre_de_logro_usa_la_muleta_como_referencia() -> None:
+    """Biblia, «Logros»: nada de «X, como [referencia]» en los nombres."""
+    import re
+
+    from bot.services.achievements import AVAILABLE
+
+    bad = [
+        a.name for a in AVAILABLE if re.search(af.COMPARISON, a.name) and a.name not in COMO_IDIOMS
+    ]
+    assert bad == []
+
+
+def test_lo_boricua_solo_queda_en_el_contenido() -> None:
+    assert af.boricua_texts() == []
+
+
+def test_la_vigilancia_de_lo_boricua_salta_con_un_texto_nuevo(tmp_path) -> None:  # noqa: ANN001
+    (tmp_path / "cogs").mkdir()
+    # En UTF-8 a la fuerza: en Windows `write_text` escribe en cp1252 y el script lee UTF-8.
+    (tmp_path / "cogs" / "nuevo.py").write_text(
+        'LINES = ("¡Wepa! Ganas.", "La banca gana.")\n', encoding="utf-8"
+    )
+    (tmp_path / "cogs" / "beernight.py").write_text('X = "Quien diga «wepa»."\n', encoding="utf-8")
+    assert af.boricua_texts(tmp_path) == ["cogs/nuevo: ¡Wepa! Ganas."]

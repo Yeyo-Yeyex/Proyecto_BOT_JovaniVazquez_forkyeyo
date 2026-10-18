@@ -181,18 +181,18 @@ BONUS_TIER = {BonusKind.GREEN: Tier.GREEN, BonusKind.BLUE: Tier.BLUE, BonusKind.
 
 WIN_TITLES = {1: "¡GRAN PREMIO!", 2: "¡MEGA PREMIO!", 3: "¡PREMIO ÉPICO!"}
 WIN_LINES = (
-    "¡Wepa!",
-    "¡Eso es, mi amor!",
+    "¡Eso es!",
     "¡Cobras!",
     "¡Tilín, tilín!",
-    "¡Acho, qué bueno!",
-    "¡Monedas como en la cuenta de Bárcenas!",
-    "¡Lluvia de fondos europeos!",
-    "¡Esto es la Next Generation!",
     "¡Toma mangó!",
     "¡American people want mango!",
-    "¡Más monedas que regalos en el caso de los puros de Bibi!",
-    "¡Lluvia de monedas, y Nick Fuentes sin enterarse en su sótano!",
+    "¡Monedas como en la cuenta de Bárcenas!",
+    "¡Lluvia de monedas!",
+    "¡Al maletín!",
+    "¡La máquina suelta la pasta!",
+    "¿Con pulpa? ¡Sin pulpa! ¡Con monedas!",
+    "Monedas para todos.",
+    "¡Premio!",
 )
 COLLECT_LINES = {
     "volcan": (
@@ -203,80 +203,80 @@ COLLECT_LINES = {
     ),
     "mina": (
         "🚃 ¡La vagoneta sale cargada de oro!",
-        "🚃 ¡Filón! Y esta vez no se lo lleva una multinacional.",
+        "🚃 ¡Filón!",
         "🚃 ¡Se recoge el litio antes de que llegue la multinacional!",
-        "🚃 ¡La vagoneta vuelve a rodar, y sin que Bruselas la cierre!",
-        "🚃 ¡Un filón como el paraíso fiscal de Ayuso, pero para ti!",
+        "🚃 ¡La vagoneta vuelve a rodar!",
+        "🚃 ¡Pico, pala y monedas!",
     ),
     "olimpo": (
         "⚡ ¡Zeus recoge las monedas con el rayo!",
         "⚡ ¡Rescate griego, pero a tu favor!",
-        "⚡ ¡Varoufakis lo negoció y, por una vez, sale bien!",
-        "⚡ ¡Más monedas que préstamos le ha pedido Grecia a Bruselas!",
+        "⚡ ¡Monedas del Olimpo!",
+        "⚡ ¡Los dioses están de tu parte!",
         "⚡ ¡Esto la troika no lo vio venir!",
     ),
 }
 NEAR_MISS_LINES = (
-    "Tanta moneda y sin nadie que la recoja… ¡Ay, bendito!",
-    "Las monedas ahí tiradas. Al maletín van, mi amor.",
+    "Tanta moneda y sin nadie que la recoja…",
+    "Las monedas ahí tiradas. Al maletín van.",
     "Monedas sin recoger, como los fondos europeos sin ejecutar.",
-    "Monedas en la mesa, como las promesas de campaña: ahí se quedan.",
-    "Más monedas sueltas que causas pendientes de Netanyahu.",
-    "Ahí se quedan, como un groyper esperando que le devuelvan la cuenta de Twitter.",
+    "Monedas en la mesa, ahí se quedan.",
+    "Faltó el recogedor.",
+    "Mucha moneda suelta y ningún recogedor.",
 )
 #: Lo que se ve con animación (`bot.services.hold_win_scene`): el recogedor que llega al
 #: quinto rodillo tras la espera, el que pasa de largo y el cinco de fila que se hace esperar.
 RESCUE_LINES = (
-    "🛟 ¡Rescate en el último rodillo! Ni el FROB fue tan rápido.",
-    "🛟 ¡Llega in extremis, como los Presupuestos prorrogados!",
+    "🛟 ¡Rescate en el último rodillo!",
+    "🛟 ¡Llega in extremis!",
     "🛟 ¡Rescatado! Y sin hombres de negro en Moncloa.",
-    "🛟 ¡Al rescate, como la UME, pero sin esperar al decreto!",
+    "🛟 ¡Al rescate, como la UME!",
     "🛟 ¡Llegó! Más puntual que Rodalies, que tampoco es mucho decir.",
 )
 SLIP_LINES = (
-    "Pasó de largo, como el AVE por Extremadura.",
-    "Ni paró: como Puigdemont cruzando la frontera en un maletero.",
-    "Visto y no visto, como el Falcon de Sánchez.",
+    "Pasó de largo.",
+    "Ni paró.",
+    "Visto y no visto.",
     "Se fue sin frenar, como la factura de la luz.",
-    "Saludó y siguió, como Trump en una cumbre de la OTAN.",
+    "Pasó de largo, como el AVE por Extremadura.",
 )
 FIVE_WAIT_LINES = (
-    "¡Llega al quinto! Costó, como la investidura, pero llegó.",
+    "¡Llega al quinto! Costó, pero llegó.",
     "¡Cinco de fila tras la espera! Al quinto pino y de vuelta.",
 )
 #: En el bonus: algo cae en la última tirada, o cae la moneda que faltaba para un bote.
 LAST_SAVE_LINES = (
     "¡Salvada en la última!",
     "¡En el descuento, como el gol de Ramos en Lisboa!",
-    "¡Prórroga, como los Presupuestos!",
-    "¡Respiración asistida, como la legislatura!",
+    "¡Prórroga, y a seguir!",
+    "¡Salvada por la campana!",
 )
 JACKPOT_GOALS = ((MINI_COINS, "MINI"), (MAJOR_COINS, "MAJOR"), (20, "GRAND"))
 LOSS_LINES = (
-    "Ni una chispa, mi amor. Otra.",
+    "Ni una chispa. Otra.",
     "Calentando…",
     "Como el tren de Canarias: ni está ni se le espera.",
     "La máquina está en huelga de celo.",
-    "Hazme café, que esto no arranca.",
-    "Calentando, como el planeta.",
-    "Más frío que el debate de Nick Fuentes con su madre por el wifi.",
+    "Hazme café, que esto no arranca. ¡Quiero café!",
+    "Nada por aquí.",
+    "Estoy destruido, pero por fuera… por dentro estoy nuevo.",
 )
 #: Frases de una tirada sin premio que solo tienen gracia en su máquina.
 THEME_LOSS_LINES = {
     "volcan": (
         "El volcán duerme la siesta.",
-        "La lava se aplaza, como el juicio de Bibi.",
+        "La lava no sale hoy.",
     ),
     "mina": (
-        "Pura roca, mi amor. Ni una pepita.",
-        "Mina cerrada por Bruselas: reconversión y cero monedas.",
+        "Pura roca. Ni una pepita.",
+        "Mina cerrada por Bruselas: cero monedas.",
         "Aquí el litio se lo lleva otro, y a ti te toca la piedra.",
-        "Picar, picar y nada: como en la mina de carbón que cerraron.",
+        "Picar, picar y nada.",
     ),
     "olimpo": (
         "Zeus se ha ido a por otro rescate.",
-        "Ni un rayo, mi amor. Otra.",
-        "Grecia pide otro préstamo a Bruselas y tú, otra tirada.",
+        "Ni un rayo. Otra.",
+        "Los dioses están de siesta.",
         "Ha pasado la troika: recortes y cero monedas.",
         "Mucho estadio olímpico y ningún premio.",
     ),
@@ -528,7 +528,7 @@ def bonus_end_text(theme: Theme, payout: BonusPayout) -> str:
     for name, value in zip(result.jackpots, result.jackpot_values, strict=True):
         lines.append(f"### 🏆 ¡{name.upper()}! +{format_amount(to_amount(value, payout.stake))}")
     if result.coins == 19:
-        lines.append("¡Una moneda para el GRAND! ¡Ay, bendito!")
+        lines.append("¡Una moneda para el GRAND! Sofía, cállate, que no respiro.")
     return "\n".join(lines)
 
 

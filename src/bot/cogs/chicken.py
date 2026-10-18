@@ -119,29 +119,29 @@ COLOR_CASHED = discord.Color.from_rgb(255, 196, 0)
 
 # Textos en el tono de Jovani Vázquez.
 CASH_LINES = (
-    "¡Wepa!",
-    "¡Cobras, mi amor!",
+    "¡Cobras!",
     "¡Eso es!",
     "¡Pollo listo!",
     "¡Al corral con la plata!",
-    "¡Pollo de corral, cuenta en Suiza!",
-    "¡El pollo se planta a tiempo, no como Biden!",
-    "¡El pollo llega a Waterloo!",
-    "¡El pollo se salva como Bibi del banquillo!",
     "¡Toma mangó!",
+    "¡El pollo cruza y cobra!",
+    "¿Por qué cruzó el pollo la carretera? Para cobrar.",
+    "¡Pollo de corral, cuenta en Suiza!",
+    "¡Plantado a tiempo!",
+    "¡Y el pollo sin un rasguño!",
 )
 SPLAT_LINES = (
     "¡PLAF!",
-    "¡Ay, bendito!",
     "¡Pollo a la plancha!",
     "¡Se acabó el corral!",
     "¡Lo pilló el coche oficial!",
-    "¡Lo arrolló la comitiva de Trump!",
-    "¡Se lo llevó por delante el caballo de Abascal!",
     "¡Pollo en pepitoria!",
-    "¡Nuggets de Temu!",
+    "¡Nuggets!",
+    "Estoy destruido, pero por fuera… por dentro estoy nuevo.",
+    "No miró a los dos lados.",
     "¡Lo atropelló un Tesla sin conductor!",
-    "¡Lo arrolló la caravana de Nick Fuentes camino del sótano!",
+    "Un carril de más.",
+    "¡Pechuga fileteada!",
 )
 TENSION_LINES = (
     "😰 Se oye un motor…",
@@ -149,22 +149,22 @@ TENSION_LINES = (
     "🙏 Que no venga nada, que no venga nada…",
     "👀 Unos faros al fondo…",
     "🐔 El pollo mira a los dos lados…",
-    "😬 Ese ruido no me gusta, mi amor…",
+    "😬 Ese ruido no me gusta…",
     "🚔 Se acerca una comitiva oficial…",
-    "🐎 Se oyen cascos: Abascal viene a caballo…",
     "🚗 Un Seiscientos petardea al fondo…",
-    "🚜 Pasa un tractor con la PAC…",
-    "✈️ ¿Eso que suena es el Falcon?",
-    "☕ El pollo pide un café antes de seguir…",
+    "🚜 Pasa un tractor sin prisa…",
+    "☕ El pollo pide un café antes de seguir… ¡Quiero café!",
     "🦎 Lagartijo, iguana, lagarto… ¿y eso que viene?",
+    "🏍️ Y Víctor le dijo a Joel: móntate en mi motora…",
+    "🐔 El pollo respira hondo…",
 )
 AUTO_LINES = (
     "🎯 Piloto automático, agárrate…",
     "🎯 El pollo corre solo…",
     "🎯 ¡A toda pastilla!",
-    "🎯 Piloto automático de Tesla: que Dios nos pille confesados…",
+    "🎯 Sin manos…",
     "🎯 El pollo va con chófer, como un ministro…",
-    "🎯 Modo Falcon activado…",
+    "🎯 Que Dios nos pille confesados…",
 )
 #: Estadística de logros con el récord de carriles, por dificultad.
 RECORD_STAT = "chicken_lanes_max_{key}"

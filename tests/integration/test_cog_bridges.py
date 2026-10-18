@@ -13,6 +13,7 @@ import random
 import sys
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
@@ -24,10 +25,12 @@ from render_fakes import use_fake_drawings
 
 from bot.app import INITIAL_EXTENSIONS, BotClient
 from bot.repositories.economy import LedgerEntry
+from bot.services.achievements import StatDelta
 from bot.services.blackjack import Card
 from bot.services.coin import Outcome
 from bot.services.enraya import Board, Disc
 from bot.services.hold_win_render import Media
+from bot.services.robuso import ROBUSO_ID
 from bot.services.skins import SKIN_BY_KEY
 from bot.services.work import ShiftRecord
 
@@ -115,6 +118,37 @@ async def test_los_juegos_que_cargan_antes_encuentran_logros_y_renta(tmp_path: P
         await client.close()
 
 
+async def test_robuso_guarda_donde_esta_y_lo_suyo_llega_a_los_logros(tmp_path: Path) -> None:
+    """`robuso` de Admin llega al cog de Robuso, que lo apunta en sus logros, y lo de
+    Robuso suma su eco en 🎸 Robuso con los cogs cargados de verdad."""
+    client = await load_bot(tmp_path)
+    try:
+        responder = SimpleNamespace(
+            guild=SimpleNamespace(id=GUILD_ID),
+            channel=None,
+            start_progress=AsyncMock(),
+            finish=AsyncMock(),
+            send_error=AsyncMock(),
+        )
+        await client.get_cog("Admin")._robuso_impl(responder, True)
+        assert responder.finish.await_args.args[0] == "Hecho: Robuso está ahora en **Hong Kong**."
+        robuso = importer("Admin", client).robuso_logros
+        assert await robuso.in_hong_kong(client, GUILD_ID) is True
+        achievements = client.get_cog("Achievements")
+        achievements.note(GUILD_ID, ROBUSO_ID, StatDelta(add={"messages": 1}))
+        profile = await achievements.fresh_profile(GUILD_ID, ROBUSO_ID)
+        assert profile.stats["robuso_msgs"] == 1
+        assert profile.stats["robuso_trips"] == 1
+        assert {"robuso_hola", "robuso_viaje_1"} <= set(profile.unlocked)
+        # El cog de Robuso suma a los demás a través del puente de logros.
+        client.get_cog("Robuso")._note(GUILD_ID, OWNER_ID, {"robuso_pings": 1})
+        friend = await achievements.fresh_profile(GUILD_ID, OWNER_ID)
+        assert friend.stats["robuso_pings"] == 1
+        assert "robuso_mencion_1" in friend.unlocked
+    finally:
+        await client.close()
+
+
 async def test_los_juegos_que_cargan_antes_apuntan_sus_jugadas_en_apuestas(
     tmp_path: Path,
 ) -> None:
@@ -133,6 +167,10 @@ async def test_los_juegos_que_cargan_antes_apuntan_sus_jugadas_en_apuestas(
             GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
         )
         assert report.total.plays == len(GAMES) - 1
+        # Y cada jugada cuenta también para los logros del casino entero.
+        pending = client.get_cog("Achievements")._pending[GUILD_ID][OWNER_ID]
+        assert pending.add["casino_plays"] == len(GAMES) - 1
+        assert pending.add["casino_game_ruleta"] == len(GAMES) - 1
     finally:
         await client.close()
 
@@ -2144,5 +2182,44 @@ async def test_abrir_una_caja_apunta_logros_y_la_mascota_habla_con_el_bot_real(
         assert profile.stats[collection.stat] == 1
         assert {"box_open_1", "box_first_carton", "use_1"} <= set(profile.unlocked)
         assert "**Toby**" in message.edit.await_args.kwargs["content"]
+    finally:
+        await client.close()
+
+
+async def test_las_sanciones_de_admin_llegan_al_historial_del_panel_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """`Admin` importa el panel antes de que cargue: `record` tiene que encontrarlo."""
+    from types import SimpleNamespace
+
+    from bot.utils.responder import CommandResponder
+
+    client = await load_bot(tmp_path)
+    await client.moderation.initialize()
+    try:
+
+        def member(member_id: int, position: int) -> MagicMock:
+            fake = MagicMock(spec=discord.Member)
+            fake.id = member_id
+            fake.top_role = SimpleNamespace(position=position)
+            fake.kick = AsyncMock()
+            return fake
+
+        guild = SimpleNamespace(id=GUILD_ID, owner_id=OWNER_ID, me=member(3, 10))
+        target = member(20, 1)
+        target.guild = guild
+        responder = MagicMock(spec=CommandResponder)
+        responder.guild = guild
+        responder.member = member(OWNER_ID, 9)
+        responder.send = AsyncMock()
+
+        await client.get_cog("Admin")._kick_impl(responder, target, "por spam")
+
+        [sanction] = await client.moderation.sanctions(GUILD_ID, 20)
+        assert (sanction.kind, sanction.actor_id, sanction.reason) == (
+            "echar",
+            OWNER_ID,
+            "por spam",
+        )
     finally:
         await client.close()

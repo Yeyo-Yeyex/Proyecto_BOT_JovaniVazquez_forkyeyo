@@ -372,8 +372,8 @@ async def test_recaudacion_desde_una_fecha(tmp_path: Path) -> None:
 
 
 def test_linea_de_impuestos() -> None:
-    assert "Perro Sanxe se lleva 324 Y$" in tax_line(1_500, 324, 0.216)
-    assert "no te retiene nada" in tax_line(500, 0, 0.0)
+    assert "IRPF: −324 Y$" in tax_line(1_500, 324, 0.216)
+    assert "Sin retención" in tax_line(500, 0, 0.0)
 
 
 # -- IRPF del casino -----------------------------------------------------------------

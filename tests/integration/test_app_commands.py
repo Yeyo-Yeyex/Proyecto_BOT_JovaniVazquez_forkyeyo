@@ -77,6 +77,7 @@ EXPECTED_COMMANDS = {
 # Comandos de administración (cog `Admin`): también con `/` y con `.`.
 ADMIN_COMMANDS = {
     "borrar",
+    "admin",
     "bienv",
     "callar",
     "hablar",
@@ -93,6 +94,7 @@ ADMIN_COMMANDS = {
     "cambios",
     "catalogo",
     "tajo",
+    "robuso",
     "informe",
 }
 

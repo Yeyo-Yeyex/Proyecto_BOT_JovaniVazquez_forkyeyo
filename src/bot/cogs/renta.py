@@ -83,18 +83,19 @@ DETAIL = "detalle"
 
 #: Frases del anuncio del lunes, según cómo le haya ido a Hacienda.
 MONDAY_GOOD: tuple[str, ...] = (
-    "Montero sonríe desde Sevilla: la recaudación vuelve a batir récord.",
-    "Sanxe se compra otro Falcon con lo de esta semana. Bueno, el depósito.",
+    "Esta semana se recauda más de lo que se devuelve.",
+    "Cuentas cerradas: el Estado sale ganando esta semana.",
+    "La recaudación sube otra vez: buena semana para el Estado.",
     "Hacienda somos todos, pero esta semana unos más que otros.",
     "La Agencia Tributaria agradece su colaboración y le recuerda que no tenía elección.",
-    "Récord de recaudación: el Gobierno lo atribuye al «Manual de resistencia».",
     "Bruselas aplaude el ajuste. El ajuste eras tú.",
 )
 MONDAY_REFUND: tuple[str, ...] = (
-    "Hacienda devuelve dinero: el CIS lo llama «escudo social», Feijóo, «limosna».",
+    "Esta semana se devuelve más de lo que se cobra.",
+    "Semana de devoluciones: el Estado sale perdiendo.",
+    "Lo retenido de más vuelve a casa, si presentas la renta.",
     "Esta semana el Estado sale perdiendo. Ya lo recuperará con el IBI.",
-    "Devoluciones a mansalva: alguien en Moncloa ha confundido el botón.",
-    "Sanxe devuelve lo retenido de más. Tranquilos, solo es lo vuestro.",
+    "Devoluciones a mansalva: alguien en Hacienda ha pulsado el botón equivocado.",
 )
 #: Frases del aviso de que ya está la declaración (sin decir qué sale).
 NOTICE_LINES: tuple[str, ...] = (

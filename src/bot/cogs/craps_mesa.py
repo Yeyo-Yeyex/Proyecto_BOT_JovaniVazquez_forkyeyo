@@ -127,52 +127,52 @@ COLOR_LOST = discord.Color.from_rgb(80, 84, 92)
 
 # Frases de Jovani para la mesa compartida (las de la individual están en `bot.cogs.craps`).
 NATURAL_LINES = (
-    "Natural en la salida: Pase cobra y No pase se va a quejar a Bruselas.",
-    "Siete u once de entrada: los de Pase brindan con ron y los de No pase piden amnistía.",
-    "Natural, y la oposición de No pase se queda con el discurso y sin las fichas.",
+    "Natural en la salida: Pase cobra y No pase se queda mirando.",
+    "Siete u once de entrada: los de Pase brindan con ron.",
+    "Natural: Pase se lo lleva todo.",
     "¡Toma mangó! Natural: Pase se lo lleva todo antes del café.",
-    "Natural por mayoría absoluta: Pase gobierna sin necesitar a Junts.",
-    "Natural: el Falcon despega con los de Pase a bordo y los de No pase, en tierra.",
+    "Natural por mayoría absoluta: Pase gobierna sin necesitar a nadie.",
+    "Natural, y la mesa entera aplaude.",
 )
 CRAPS_LINES = (
-    "Pifia en la salida: No pase cobra y el 12 devuelve la ficha como quien devuelve un favor.",
-    "Craps de salida: cae Pase como un Gobierno sin Presupuestos y a No pase le sale la jugada.",
+    "Pifia en la salida: No pase cobra y el 12 devuelve la ficha.",
+    "Craps de salida: cae Pase y a No pase le sale la jugada.",
     "Pifia: Pase pierde y No pase brinda con cava catalán, que es de Sant Sadurní.",
     "Salida de pifia: Pase en la UCI y No pase pidiendo la cuenta con cara de póker.",
 )
 POINT_LINES = (
     "Hay punto: o se repite o llega el siete, que son dos formas de que alguien llore.",
-    "Punto puesto: Pase quiere repetirlo y No pase reza por un siete, como en el Gobierno.",
-    "El disco se enciende y la mesa se parte en dos como el Congreso.",
+    "Punto puesto: Pase quiere repetirlo y No pase reza por un siete.",
+    "El disco se enciende y la mesa se parte en dos.",
     "Se pone el punto. Las Odds pagan lo justo y sin comisión: lo mejor del bar.",
 )
 POINT_MADE_LINES = (
-    "¡Punto hecho! Pase cobra y No pase pide un recuento a la Junta Electoral.",
-    "El punto vuelve a salir: Pase celebra y No pase estudia recurrir al Constitucional.",
+    "¡Punto hecho! Pase cobra y No pase pide un recuento.",
+    "El punto vuelve a salir: Pase celebra.",
     "Punto hecho, y el cubilete sigue con su dueño. Cuñado, ¿qué dices ahora?",
     "¡Punto! Los de Pase, como en una verbena: a bailar.",
 )
 SEVEN_OUT_LINES = (
-    "¡Siete fuera! Cobra No pase y el cubilete cambia de manos, como la Moncloa cada cuatro años.",
+    "¡Siete fuera! Cobra No pase y el cubilete cambia de manos.",
     "Siete fuera: se acaba la mano, Pase llora y el siguiente tirador ya se frota las manos.",
     "El siete aparece sin avisar, como una inspección de Hacienda: cae Pase.",
-    "Siete fuera: Pase a Waterloo y No pase al bar a invitar. Quiero café, pero con hielo.",
+    "Siete fuera: No pase al bar a invitar. Quiero café, pero con hielo.",
 )
 NOTHING_LINES = (
     "No decide nada: otra tirada y que siga el baile.",
-    "Ni punto ni siete: la mesa aguanta la respiración, como en una moción de censura.",
+    "Ni punto ni siete: la mesa aguanta la respiración.",
     "Sigue sin decidirse. Si te atreves, ➕ Odds.",
-    "Tirada de trámite, como un pleno de diputación: nada.",
+    "Tirada de trámite.",
 )
 SHOOTER_LINES = (
-    "{who} coge el cubilete. Que Dios y el CIS le acompañen.",
-    "El cubilete es de {who}: mano firme y sin Pegasus.",
+    "{who} coge el cubilete.",
+    "El cubilete es de {who}: mano firme.",
     "{who} toma los dados, como quien toma posesión: con foto y sin programa.",
-    "Turno de {who} con el cubilete. Que la fuerza del tapete le acompañe.",
+    "Turno de {who} con el cubilete. Que la suerte le acompañe.",
 )
 CLOSE_LINES = (
     "Nadie apuesta: el crupier apaga las luces. `dados mesa` la vuelve a abrir.",
-    "Mesa vacía, como un pleno en agosto. `dados mesa` la reabre.",
+    "Mesa vacía. `dados mesa` la reabre.",
     "Se cierra la mesa por falta de quórum. `dados mesa` convoca otra.",
 )
 

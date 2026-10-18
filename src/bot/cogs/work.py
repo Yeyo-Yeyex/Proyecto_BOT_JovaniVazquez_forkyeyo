@@ -278,7 +278,7 @@ def payslip_text(
     if slip.net > 0 and slip.total_taxes:
         share = round(slip.total_taxes / slip.net * 100)
         lines.append(
-            f"-# 🐶 {TAX_COLLECTOR} se queda {format_amount(slip.total_taxes)} de este turno, "
+            f"-# 🐶 Impuestos de este turno: {format_amount(slip.total_taxes)}, "
             f"un {share} % de lo que te llega."
         )
     return "\n".join(lines)
@@ -306,7 +306,7 @@ def foreign_payslip_text(slip: ForeignPayslip, *, title: str) -> str:
     lines.append(f"## {CURRENCY_EMOJI} Neto: {format_amount(slip.net)}")
     lines.append(
         f"-# 🇭🇰 Hong Kong se queda {format_amount(slip.foreign)} (MPF de los dos y salaries "
-        f"tax). {TAX_COLLECTOR} se queda {format_amount(slip.irpf)} y está que trina."
+        f"tax). IRPF español: {format_amount(slip.irpf)}."
     )
     return "\n".join(lines)
 
@@ -1298,7 +1298,7 @@ class PalaPanel(ui.LayoutView):
             return
         self.notes.append(
             f"✍️ Firmas de **{status.position.title}** en {status.job.emoji} {status.job.name}. "
-            "¡A currar, mi amor!"
+            "¡A currar!"
         )
         if status.veteran:
             self.notes.append(
@@ -1344,7 +1344,7 @@ class PalaPanel(ui.LayoutView):
         """Atajo al pasillo de la familia de la tienda, en privado."""
         await ack(interaction, new_message=True)
         if not await tienda.open_aisle(self.cog.bot, interaction, GIFT_AISLE):
-            await edit(interaction, content="La tienda está cerrada ahora mismo, mi amor.")
+            await edit(interaction, content="La tienda está cerrada ahora mismo.")
 
     async def _buy_gift(self, interaction: discord.Interaction, key: str) -> None:
         """Caja de un regalo que no tiene, en el propio panel: compra y lo da en el acto."""
@@ -1368,7 +1368,7 @@ class PalaPanel(ui.LayoutView):
             return
         checkout = await tienda.prepare_checkout(self.cog.bot, interaction, key)
         if checkout is None:
-            await notify(interaction, "La tienda está cerrada ahora mismo, mi amor.")
+            await notify(interaction, "La tienda está cerrada ahora mismo.")
             return
         self.checkout = checkout
         price = checkout.price
@@ -1566,7 +1566,7 @@ class PalaPanel(ui.LayoutView):
             return
         note = (
             f"🎉 **¡Ascendido a {status.position.title}!** Ahora cobras "
-            f"{format_amount(status.position.base_pay)} brutos por turno. ¡Wepa!"
+            f"{format_amount(status.position.base_pay)} brutos por turno. ¡Toma mangó!"
         )
         if status.branch is not None and branch:
             note += f" Has elegido {status.branch.emoji} **{status.branch.name}**."
@@ -1710,9 +1710,7 @@ class PalaPanel(ui.LayoutView):
             if key in self.cog.working:
                 # Dos paneles abiertos no pueden fichar a la vez: el segundo se
                 # saltaría la jornada, la batería y la pregunta del B.
-                await notify(
-                    interaction, "Ya estás fichando en otro panel. Una pala cada vez, mi amor."
-                )
+                await notify(interaction, "Ya estás fichando en otro panel. Una pala cada vez.")
                 return
             owned = await tienda.owned_keys(self.cog.bot, self.guild_id, self.owner.id)
             try:
@@ -2090,7 +2088,7 @@ class Work(commands.Cog, name="Trabajo"):
         if channel_id in allowed or parent_id in allowed:
             return None
         where = ", ".join(f"<#{c}>" for c in sorted(allowed))
-        return f"La pala se coge en {where}, mi amor. Aquí se viene a hablar."
+        return f"La pala se coge en {where}. Aquí se viene a hablar."
 
     async def _open(
         self,

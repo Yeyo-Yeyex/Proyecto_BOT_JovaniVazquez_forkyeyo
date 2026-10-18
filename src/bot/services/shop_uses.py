@@ -114,20 +114,19 @@ class UseResult:
 #: Frase cuando alguien usa un objeto contra el propio bot.
 BOT_LINES: tuple[str, ...] = (
     "{who} intenta usar {item} contra Jovani. Jovani lo esquiva con un paso de perreo y le guiña "
-    "un ojo. Al bot no, mi amor.",
+    "un ojo. Al bot no.",
     "{who} apunta a Jovani con {item}. Jovani se agacha, sigue cantando y ni se despeina.",
     "{who} va a por Jovani con {item}. Rebota en el autotune y vuelve a su dueño. 🎤",
     "{who} intenta usar {item} contra Jovani. Jovani, sin despeinarse: «Yo soy yo… y así me "
     "tienes que soportar».",
     "{who} le lanza {item} a Jovani. Jovani lo coge al vuelo y pide: «Hazme café… ¡quiero café!».",
     "{who} va a por Jovani con {item}. Jovani se monta en la motora de Víctor y desaparece. 🏍️",
-    "{who} le lanza {item} a Jovani. Lo intercepta la Cúpula de Hierro del autotune. 🛡️",
-    "{who} intenta usar {item} contra Jovani. Jovani pide aplazar la vista, como Bibi, y se "
-    "va de gira.",
-    "{who} va a por Jovani con {item}. Jovani lo bloquea como Twitter a Nick Fuentes: tres veces.",
-    "{who} apunta a Jovani con {item}. Falla más que Feijóo en una investidura.",
-    "{who} le tira {item} a Jovani. Jovani lo declara fondo europeo y lo deja sin ejecutar.",
-    "{who} intenta usar {item} contra Jovani. Jovani lo manda a Waterloo en el maletero.",
+    "{who} le lanza {item} a Jovani. Jovani: «¿Qué? ¿Qué? ¡Toma mangó!», y lo devuelve.",
+    "{who} intenta usar {item} contra Jovani. Jovani se va de gira antes de que llegue.",
+    "{who} va a por Jovani con {item}. Jovani: «Sofía, cállate», y {item} se cae al suelo.",
+    "{who} apunta a Jovani con {item}. Falla.",
+    "{who} le tira {item} a Jovani. Jovani: «Estoy destruido, pero por fuera…». Ni un rasguño.",
+    "{who} intenta usar {item} contra Jovani. Jovani lo firma como autógrafo y se lo devuelve.",
 )
 #: Frase por defecto si te eliges a ti mismo.
 SELF_LINE = "{who} se aplica {item} a sí mismo. Nadie entiende nada, pero el colmado no devuelve."
@@ -579,7 +578,7 @@ _USES: tuple[Use, ...] = (
         outcomes=(
             _o(
                 70,
-                "💐 {who} le regala un ramo de flores a {target}. Qué detalle, mi amor. "
+                "💐 {who} le regala un ramo de flores a {target}. Qué detalle. "
                 "Esto se merece un perreo lento.",
                 "love",
             ),
@@ -998,8 +997,7 @@ _USES: tuple[Use, ...] = (
         outcomes=(
             _o(
                 70,
-                "💃 {who} saca a perrear a {target}. Hasta abajo, mi amor. ¡Wepa! "
-                "Jovani lo aprueba.",
+                "💃 {who} saca a perrear a {target}. Hasta abajo. Jovani lo aprueba.",
                 "yes",
             ),
             _o(
@@ -1020,7 +1018,7 @@ _USES: tuple[Use, ...] = (
         outcomes=(
             _o(
                 40,
-                "🔊 {who} pone reguetón a todo volumen. Dembow en el canal, mi amor. "
+                "🔊 {who} pone reguetón a todo volumen. Dembow en el canal. "
                 "Los vecinos tocan el techo con la escoba.",
             ),
             _o(30, "🔊 {who} pone un temazo de Jovani. Tres personas lloran. Una de emoción."),
@@ -1157,8 +1155,7 @@ _USES: tuple[Use, ...] = (
             ),
             _o(
                 20,
-                "🩲 {who} enseña la ropa interior roja a todo el canal. Nadie lo había "
-                "pedido, mi amor.",
+                "🩲 {who} enseña la ropa interior roja a todo el canal. Nadie lo había pedido.",
                 "flash",
             ),
         ),
@@ -1340,7 +1337,7 @@ FORTUNES: tuple[str, ...] = (
 )
 
 EIGHTBALL: tuple[tuple[str, str], ...] = (
-    ("Sí, mi amor. Clarísimo.", "yes"),
+    ("Sí. Clarísimo.", "yes"),
     ("Sin ninguna duda. Lo pone el BOE.", "yes"),
     ("Las encuestas del CIS dicen que sí.", "yes"),
     ("Pregúntale a Perro Sanxe, que es el que manda.", "maybe"),
@@ -1433,7 +1430,7 @@ def _d20(who: str, roll: int) -> UseResult:
     if roll == 20:
         return UseResult(
             f"🎲 {who} tira el d20... **¡20 NATURAL!** Crítico. El servidor entero se "
-            "pone en pie. Jovani suelta un «¡wepa!» que se oye en Puerto Rico.",
+            "pone en pie. Jovani suelta un «¡toma mangó!» que se oye en Puerto Rico.",
             frozenset({"nat20"}),
         )
     if roll == 1:
@@ -1542,12 +1539,12 @@ def mystery_text(who: str, prize: str, *, price: int, dupe: bool) -> UseResult:
     if dupe:
         flags.add("dupe")
     if price >= MYSTERY_JACKPOT:
-        lead = f"🎁 {who} abre la caja botín y... **¡EL GORDO!** Le toca {prize}. ¡WEPA!"
+        lead = f"🎁 {who} abre la caja botín y... **¡EL GORDO!** Le toca {prize}. ¡TOMA MANGÓ!"
     elif price <= 50:
         lead = f"🎁 {who} abre la caja botín con mucha ilusión. Le toca... {prize}. Ya."
     else:
         lead = f"🎁 {who} abre la caja botín. Le toca {prize}."
-    tail = " Repe, mi amor." if dupe else ""
+    tail = " Repe." if dupe else ""
     return UseResult(
         f"{lead}{tail}\n-# El anteproyecto de ley de cajas botín de 2022 sigue en un cajón: "
         f"{TAX_COLLECTOR} todavía no sabe cómo cobrarlas.",
@@ -1568,7 +1565,7 @@ def clean_shout(text: str, limit: int = MAX_SHOUT) -> str:
     """
     cleaned = _SPACES.sub(" ", text or "").strip()
     if not cleaned:
-        raise ValueError("Escribe algo, mi amor. El megáfono no grita silencios.")
+        raise ValueError("Escribe algo. El megáfono no grita silencios.")
     return cleaned[:limit]
 
 

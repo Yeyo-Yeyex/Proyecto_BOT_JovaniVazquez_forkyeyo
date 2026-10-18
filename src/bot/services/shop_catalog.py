@@ -522,7 +522,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
        "Arrancada de una guagua que bajaba por la GC-1. Se pita las veces que quieras; "
        "la guagua, en cambio, no viene.", use="bocina"),
     _t("lagarto_hierro", "canarias", "🦎", "Lagarto gigante de El Hierro", 2_200,
-       "De peluche. El de verdad está en peligro de extinción y no se vende, mi amor."),
+       "De peluche. El de verdad está en peligro de extinción y no se vende."),
     _t("miel_palma", "canarias", "🍯", "Miel de palma de La Gomera", 1_300,
        "Guarapo de palmera cocido a fuego lento. Para el queso asado, para el "
        "frangollo o para untar el micrófono de Jovani.", food=True),
@@ -715,7 +715,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
 
     # 🇵🇷 Rincón boricua ------------------------------------------------------------------
     _t("bandera_pr", "boricua", "🇵🇷", "Bandera de Puerto Rico", 500,
-       "Pa' colgarla en el balcón y que se entere el barrio entero. ¡Wepa!"),
+       "Pa' colgarla en el balcón y que se entere el barrio entero."),
     _t("micro_jovani", "boricua", "🎤", "Micro de Jovani", 7_770,
        "Sin cable, sin pilas y sin autotune. Bueno, con autotune. Edición numerada de "
        "50.", stock=50),
