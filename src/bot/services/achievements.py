@@ -12140,7 +12140,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("voice", VOICE_BESTIE_STAT, [
         (60, "vbestie_1h", "Compañero de llamada",
          "Pasa 1 hora en llamada con la misma persona.", C),
-        (600, "vbestie_10h", "Más pegados que un sello", "Pasa 10 horas en llamada con la misma persona.", R),
+        (600, "vbestie_10h", "Más pegados que un sello",
+         "Pasa 10 horas en llamada con la misma persona.", R),
         (3_000, "vbestie_50h", "Pareja de hecho de voz",
          "Pasa 50 horas en llamada con la misma persona.", E),
         (12_000, "vbestie_200h", "Matrimonio de Discord",

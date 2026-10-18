@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.29.1 · 2026-10-18
+
+- Interno: una línea del catálogo de logros demasiado larga
+
 ### 7.29.0 · 2026-10-18
 
 - Logros de chat y voz: 384 nuevos. Enlaces y adjuntos, cifras y horas con guasa, temas con guasa (pizza con piña, la tortilla, ChatGPT, la 33…), ping-pong y respuestas rápidas, reacciones con emoji propio, racha de días en llamada, con quién hablas, abrir y cerrar llamadas, jugar en llamada, escribir desde la llamada y 84 de 🎭 Personajes
