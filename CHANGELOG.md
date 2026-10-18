@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.26.1 · 2026-10-18
+
+- Logros: los de Coleccionista por número de logros y por puntos bajan de rareza; con más de 4.000 logros en el catálogo, 400 ya no es mítico
+
 ### 7.26.0 · 2026-10-18
 
 - Logros: 57 de Coleccionista que faltaban (hasta 4.000 logros, más escalones por rareza, secretos, puntos, premios y categorías, y uno nuevo por logros comunes)

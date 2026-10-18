@@ -9618,20 +9618,23 @@ def _build_catalog() -> tuple[Achievement, ...]:
     # 🏆 Coleccionista --------------------------------------------------------------------
     # Se miden con estadísticas virtuales que salen de los logros ya conseguidos
     # (`meta_stats`), nunca de contadores guardados.
+    # Rareza por la parte del catálogo que piden (unos 4.000 logros): hasta un 1 %, Común;
+    # un 2,5 %, Raro; un 10 %, Épico; un 25 %, Legendario; más, Mítico. Si el catálogo
+    # crece mucho, se revisan.
     a += _tiers("meta", UNLOCKED_STAT, [
         (10, "meta_10", "Hazte con todos", "Desbloquea 10 logros.", C),
-        (25, "meta_25", "Coleccionista de relojes de Camps", "Desbloquea 25 logros.", R),
-        (50, "meta_50", "Vitrina llena", "Desbloquea 50 logros.", E),
-        (69, "meta_69", "Postura de coleccionista", "Desbloquea 69 logros.", E, True),
-        (100, "meta_100", "Noche en el museo", "Desbloquea 100 logros.", L),
-        (150, "meta_150", "Hemeroteca", "Desbloquea 150 logros.", L),
-        (250, "meta_250", "Patrimonio de la Humanidad", "Desbloquea 250 logros.", L),
-        (400, "meta_400", "Álbum de Panini casi completo", "Desbloquea 400 logros.", M),
+        (25, "meta_25", "Coleccionista de relojes de Camps", "Desbloquea 25 logros.", C),
+        (50, "meta_50", "Vitrina llena", "Desbloquea 50 logros.", R),
+        (69, "meta_69", "Postura de coleccionista", "Desbloquea 69 logros.", R, True),
+        (100, "meta_100", "Noche en el museo", "Desbloquea 100 logros.", R),
+        (150, "meta_150", "Hemeroteca", "Desbloquea 150 logros.", E),
+        (250, "meta_250", "Patrimonio de la Humanidad", "Desbloquea 250 logros.", E),
+        (400, "meta_400", "Álbum de Panini casi completo", "Desbloquea 400 logros.", E),
         (600, "meta_600", "Ministerio de Logros",
-         "Desbloquea 600 logros.", M),
-        (666, "meta_666", "La bestia de la vitrina", "Desbloquea 666 logros.", M, True),
-        (800, "meta_800", "Más medallas que Phelps", "Desbloquea 800 logros.", M),
-        (1_000, "meta_1000", "Las mil y una vitrinas", "Desbloquea 1.000 logros.", M),
+         "Desbloquea 600 logros.", L),
+        (666, "meta_666", "La bestia de la vitrina", "Desbloquea 666 logros.", L, True),
+        (800, "meta_800", "Más medallas que Phelps", "Desbloquea 800 logros.", L),
+        (1_000, "meta_1000", "Las mil y una vitrinas", "Desbloquea 1.000 logros.", L),
         (1_250, "meta_1250", "El Rastro un domingo", "Desbloquea 1.250 logros.", M),
         (1_337, "meta_1337", "L33t c0l3c710n15t4", "Desbloquea 1.337 logros.", M, True),
         (1_500, "meta_1500", "Diógenes de las medallas", "Desbloquea 1.500 logros.", M),
@@ -9716,8 +9719,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1_000, "meta_pts_1k", "Mil puntos y sumando",
          "Suma 1.000 puntos de logros.", R),
         (5_000, "meta_pts_5k", "Carné por puntos impecable", "Suma 5.000 puntos.", E),
-        (15_000, "meta_pts_15k", "Matrícula de honor", "Suma 15.000 puntos de logros.", L),
-        (30_000, "meta_pts_30k", "Tarjeta Travel Club", "Suma 30.000 puntos de logros.", M),
+        (15_000, "meta_pts_15k", "Matrícula de honor", "Suma 15.000 puntos de logros.", E),
+        (30_000, "meta_pts_30k", "Tarjeta Travel Club", "Suma 30.000 puntos de logros.", L),
         (60_000, "meta_pts_60k", "Récord del Tetris", "Suma 60.000 puntos de logros.", M),
         (100_000, "meta_pts_100k", "Douze points", "Suma 100.000 puntos de logros.", M),
         (150_000, "meta_pts_150k", "Pinball de bar con todas las luces",
