@@ -4,8 +4,9 @@ Simula cada inmueble del catálogo durante `DAYS` días (meses del juego) con
 `housing.advance_day` y `housing.settle_day`, el nivel de renta de referencia y un
 dueño que solo tiene ese piso, y saca la renta neta media al día (después de vacíos,
 imprevistos, IBI, comunidad, seguro e IRPF) y los días que tarda en pagar lo que costó
-(precio, ITP y notaría). El IRPF se calcula con `taxes.compute_withholding` y la renta
-pasada a su escala con `housing.rent_to_fiscal`, como en el bot.
+(precio, ITP y notaría). El IRPF es el de la declaración de cada semana
+(`taxes.week_tax`), como en el bot desde la 8.0.0. Desde la 8.1.0 el seguro del hogar paga
+el impuesto de primas, las reparaciones su IGIC y cada desahucio el abogado y el procurador.
 
 Además dice cuánto dinero se crea de la nada si todo el servidor tiene alquilados los
 inmuebles más baratos, para compararlo con lo que pagan las nóminas de `pala` (Biblia,
@@ -39,7 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from bot.services import housing  # noqa: E402
 from bot.services.housing_catalog import BARRIOS, LISTINGS, Listing  # noqa: E402
-from bot.services.taxes import compute_withholding  # noqa: E402
+from bot.services.taxes import PropertyWeek, WeekIncome, week_tax  # noqa: E402
 
 #: Días simulados (meses del juego): dos años y medio de alquiler.
 DAYS = 30
@@ -49,29 +50,47 @@ PALA_PER_DAY = 765_138 // 30
 
 
 def simulate(listing: Listing, seed: int) -> float:
-    """Neto medio al día de un inmueble entero de un dueño que solo tiene eso."""
+    """Neto medio al día de un inmueble entero de un dueño que solo tiene eso.
+
+    El IRPF es el de la declaración de cada semana con solo esa renta (`taxes.week_tax`):
+    gastos devengados por inmueble, tope de reparaciones y reducción del art. 23.2.
+    """
     rng = random.Random(seed)
     start = date(2026, 10, 1)
     lease = housing.Lease(since=start)
     paid = housing.price(listing)
+    reduction = housing.contract_reduction(listing, lease.level, index=1.0, rent=1, last_rent=0)
     total = 0
-    week_fiscal: list[int] = []
+    week = PropertyWeek(ref=listing.key, reduction=reduction)
     for offset in range(DAYS):
         day = start + timedelta(days=offset)
         out = housing.advance_day(listing, lease, day, 1.0, rng)
-        payout = housing.settle_day(out.rent, out.costs, out.extra, lease.arrears,
-                                    lease.arrears_ibi)  # fmt: skip
-        lease = replace(out.lease, arrears=payout.arrears, arrears_ibi=payout.arrears_ibi)
-        lease = _evict(lease, day, rng)
-        gross = payout.net + payout.ibi + payout.costs
-        taxable = housing.taxable_rent(
-            gross, payout.ibi + payout.costs + housing.amortization(paid)
+        taxes = round(out.costs.insurance * housing.IPS_RATE) + round(
+            housing.repairs_of(out.events) * housing.SERVICES_IGIC
         )
-        fiscal = housing.rent_to_fiscal(taxable)
-        recent = sum(week_fiscal[-6:])
-        rate = compute_withholding(fiscal, recent).rate if fiscal else 0.0
-        week_fiscal.append(fiscal)
-        total += payout.net - round(taxable * rate)
+        payout = housing.settle_day(out.rent, out.costs, out.extra, lease.arrears,
+                                    lease.arrears_ibi, taxes=taxes)  # fmt: skip
+        lease = replace(out.lease, arrears=payout.arrears, arrears_ibi=payout.arrears_ibi)
+        evicting = lease.status == housing.EVICTING
+        lease = _evict(lease, day, rng)
+        if lease.status == housing.EVICTING and not evicting:
+            # Abogado y procurador (sin seguro de impago), con su IGIC: un gasto deducible.
+            fee = housing.eviction_fee(lease.rent or housing.reference_rent(listing))
+            total -= fee + round(fee * housing.SERVICES_IGIC)
+        gross = payout.net + payout.ibi + payout.costs + payout.taxes
+        week = week.merged(
+            PropertyWeek(
+                ref=listing.key,
+                income=gross,
+                finance=out.extra,
+                costs=out.costs.total + housing.amortization(paid),
+                reduction=reduction,
+            )
+        )
+        total += payout.net
+        if offset % 7 == 6 or offset == DAYS - 1:
+            total -= week_tax(WeekIncome(properties=(week,))).quota
+            week = PropertyWeek(ref=listing.key, reduction=reduction)
     return total / DAYS
 
 

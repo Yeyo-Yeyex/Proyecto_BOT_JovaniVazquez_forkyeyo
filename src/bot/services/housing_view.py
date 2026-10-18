@@ -24,6 +24,7 @@ nueva se añade aquí y en la escena a la vez.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from bot.repositories.housing import Holding, Market, MemberDay, News
@@ -34,13 +35,17 @@ from bot.services.housing_catalog import (
     BARRIOS,
     ISLANDS,
     KINDS,
+    REFORMS,
     RENT_LEVELS,
+    REVIEW_LINES,
     TENANT_BY_KEY,
     THEMES,
     VPO_BY_KEY,
     VPO_UNITS,
+    BarrioNews,
     Listing,
 )
+from bot.services.housing_furniture import FURNITURE, furniture_stars
 
 State = dict[str, Any]
 
@@ -58,6 +63,7 @@ STATUS_TEXT = {
     rules.EVICTING: "Desahucio en marcha",
     rules.SQUATTED: "Okupado",
     rules.HABITUAL: "Vive su dueño",
+    rules.OBRAS: "En obras",
 }
 
 #: Qué pasa en una noticia, en una línea. `{tenant}` y `{amount}` se rellenan.
@@ -70,7 +76,7 @@ NEWS_TEXT = {
     "impago": "{tenant} deja de pagar",
     "paga": "{tenant} se pone al día (milagro)",
     "okupa": "Entran okupas en el piso vacío",
-    "juicio": "Desahucio pedido: el juzgado da fecha",
+    "juicio": "Desahucio pedido: el juzgado da fecha (abogado: {amount})",
     "desahucio": "Desahucio hecho: el piso vuelve a estar libre",
     "averia": "Se rompe el termo: {amount}",
     "humedades": "Humedades en el baño: {amount}",
@@ -96,6 +102,29 @@ NEWS_TEXT = {
     "compra_vpo": "{who} compra la VPO por {amount}",
     "devuelve_vpo": "{who} devuelve la VPO a la Administración",
     "vpo_caducada": "A {who} se le pasa el plazo de la VPO",
+    "candidato": "Llega un candidato: {tenant}",
+    "seguro": "El seguro de impago paga la renta: {amount}",
+    "venta_miembro": "{who} vende participaciones a otro miembro por {amount}",
+    "compra_miembro": "{who} compra participaciones a otro miembro por {amount}",
+    "subasta": "{who} saca participaciones a subasta desde {amount}",
+    "subasta_judicial": "Subasta judicial por la hipoteca de {who} (vale {amount})",
+    "subasta_adjudicada": "{who} se lleva la subasta por {amount}",
+    "subasta_desierta": "Subasta desierta: nadie puja (mínima {amount})",
+    "ejecucion_subasta": "Remate de la subasta judicial de {who}: {amount}",
+    "obras": "{who} empieza una reforma de {amount}",
+    "obra_terminada": "Se acaban las obras: el piso está como nuevo",
+    "licencia_renovada": "Se renueva la licencia vacacional: 5 años más",
+    "licencia_caduca": "Caduca la licencia vacacional: en zona tensionada no se renueva",
+    "licencia_denegada": "La comunidad vota que no a la licencia vacacional",
+    "superanfitrion": "Superanfitrión: 4,8 de media, cobra un 10 % más",
+    "junta": "{who} propone algo a la junta",
+    "junta_aprueba": "La junta aprueba la propuesta de {who}",
+    "junta_rechaza": "La junta rechaza la propuesta de {who}",
+    "junta_falla": "La junta aprueba lo de {who}, pero no se puede hacer",
+    "fondo_reserva": "El fondo de reserva paga {amount}",
+    "division": "{who} pide la división: subasta desde {amount}",
+    "division_adjudicada": "{who} se queda el inmueble entero por {amount}",
+    "division_mercado": "Nadie puja en la división: se vende al mercado",
 }
 
 #: Cómo se llama cada noticia de las VPO (su `listing` es `vpo:<clave>`).
@@ -188,8 +217,78 @@ def news_line(
     return f"{item.day.strftime('%d/%m')} · {where}{text}"
 
 
-def map_state(market: Market, user_id: int, name: str, cash: int) -> State:
-    """El mapa: cada barrio con su índice, lo que queda libre y si tienes algo allí."""
+#: Cómo se dice lo que cambia un inquilino (`housing.TenantFactors`), de mejor a peor.
+RISK_TEXT = {"bajo": "Riesgo de impago bajo", "medio": "Riesgo de impago medio",
+             "alto": "Riesgo de impago alto"}  # fmt: skip
+
+
+def _scale(value: float, low: str, mid: str, high: str) -> str:
+    """Un multiplicador relativo (1 es la media) en tres palabras."""
+    if value < rules.RISK_LOW:
+        return low
+    if value > rules.RISK_HIGH:
+        return high
+    return mid
+
+
+def news_box(news: BarrioNews | None) -> State | None:
+    """La noticia de un barrio para las pantallas, o `None`."""
+    if news is None:
+        return None
+    return {"key": news.key, "title": news.title, "blurb": news.blurb}
+
+
+def tenant_card(
+    tenant_key: str,
+    listing: Listing,
+    level: str,
+    index: float,
+    *,
+    last_rent: int = 0,
+    until: date | None = None,
+    slot: int = 0,
+) -> State:
+    """La tarjeta de un inquilino (un candidato o el que vive en el piso).
+
+    Args:
+        last_rent: Renta del contrato anterior del inmueble (para la reducción).
+        until: Hasta cuándo espera, si es un candidato.
+        slot: Su número en la pantalla de candidatos (1 a 3).
+    """
+    tenant = TENANT_BY_KEY[tenant_key]
+    factors = rules.tenant_factors(tenant_key, level, listing.kind)
+    rent_level = RENT_LEVELS.get(level, RENT_LEVELS["referencia"])
+    rent = rules.asking_rent(listing, rent_level, index)
+    reduction = rules.contract_reduction(
+        listing, level, index=index, rent=rent, last_rent=last_rent,
+        young=rules.is_young(tenant_key),
+    )  # fmt: skip
+    lease = rules.Lease(level=level, tenant=tenant_key, rent=rent, status=rules.RENTED)
+    risk = rules.risk_tier(factors)
+    return {
+        "slot": slot,
+        "key": tenant.key,
+        "name": tenant.name,
+        "emoji": tenant.emoji,
+        "age": f"{tenant.age} años" if tenant.age else "",
+        "young": rules.is_young(tenant_key),
+        "traits": list(tenant.traits),
+        "risk": risk,
+        "risk_text": RISK_TEXT[risk],
+        "stay": _scale(factors.stay, "Se queda mucho", "Estabilidad normal", "Se va pronto"),
+        "wear": _scale(factors.wear, "Cuida la casa", "Desgaste normal", "Desgasta mucho"),
+        "insurable": rules.insurable(listing, lease),
+        "line": tenant.line,
+        "rent": format_amount(rent) + "/mes",
+        "reduction": _pct(reduction, 0) if reduction else "",
+        "until": until.strftime("%d/%m") if until else "",
+    }
+
+
+def map_state(
+    market: Market, user_id: int, name: str, cash: int, today: date | None = None
+) -> State:
+    """El mapa: cada barrio con su índice, lo que queda libre, si tienes algo y si hay noticia."""
     islands = []
     for island, island_name in ISLANDS.items():
         pins = []
@@ -212,21 +311,29 @@ def map_state(market: Market, user_id: int, name: str, cash: int) -> State:
                     "owned": any(user_id in market.holdings.get(i.key, {}) for i in items),
                     "free": sum(market.free_shares(i.key) for i in items),
                     "from": format_amount(min(rules.price(i, index) for i in items)),
+                    "news": bool(today and market.news_of(barrio.key, today)),
                 }
             )
         islands.append({"key": island, "name": island_name, "barrios": pins})
     worth = sum(market.value(h) for h in market.of_member(user_id))
     cheapest = [f"{pin['name']}: desde {pin['from']}" for i in islands for pin in i["barrios"]]
+    headlines = [
+        f"📰 {b.name}: {item.title}"
+        for b in BARRIOS
+        if today and (item := market.news_of(b.key, today)) is not None
+    ]
     return {
         "screen": "mapa",
         "title": "PISOS DE JOVANI",
         "subtitle": "El mercado inmobiliario de Canarias",
         "user": {"name": name, "cash": format_amount(cash), "worth": format_amount(worth)},
         "islands": islands,
+        "headlines": headlines,
         "footer": "Elige un barrio en el desplegable · precios reales × 10",
         "fallback": [
             "Pisos de Jovani: el mercado de Canarias",
             f"{name}: {format_amount(cash)} en efectivo, {format_amount(worth)} en ladrillo",
+            *headlines,
             *cheapest,
         ],
     }
@@ -283,7 +390,13 @@ def solar_card(barrio_key: str) -> State:
     }
 
 
-def barrio_state(market: Market, barrio_key: str, user_id: int, names: dict[int, str]) -> State:
+def barrio_state(
+    market: Market,
+    barrio_key: str,
+    user_id: int,
+    names: dict[int, str],
+    today: date | None = None,
+) -> State:
     """Un barrio con sus nueve inmuebles y su obra nueva (o el solar donde irá).
 
     Siempre `BARRIO_SLOTS` tarjetas: la décima es la promoción o, si aún no la hay, el
@@ -291,6 +404,7 @@ def barrio_state(market: Market, barrio_key: str, user_id: int, names: dict[int,
     """
     barrio = BARRIO_BY_KEY[barrio_key]
     index = market.index(barrio_key)
+    news = news_box(market.news_of(barrio_key, today)) if today else None
     cards = [_card(market, item, user_id, names) for item in market.listings_of(barrio_key)]
     if len(cards) < BARRIO_SLOTS:
         cards.append(solar_card(barrio_key))
@@ -312,10 +426,12 @@ def barrio_state(market: Market, barrio_key: str, user_id: int, names: dict[int,
             "price_m2": format_amount(round(barrio.price_m2 * index * 10)) + "/m²",
         },
         "cards": cards,
+        "news": news,
         "footer": "Toca un inmueble para ver su ficha",
         "fallback": [
             f"{barrio.name} ({barrio.town})",
             barrio.blurb,
+            *([f"📰 {news['title']}"] if news else []),
             *(
                 f"{c['title']}: {c['price']} · {c['rent']} · {c['status']}"
                 for c in cards
@@ -326,7 +442,12 @@ def barrio_state(market: Market, barrio_key: str, user_id: int, names: dict[int,
 
 
 def listing_state(
-    market: Market, key: str, user_id: int, names: dict[int, str], news: list[News]
+    market: Market,
+    key: str,
+    user_id: int,
+    names: dict[int, str],
+    news: list[News],
+    today: date | None = None,
 ) -> State:
     """La ficha de un inmueble: precio, renta, gastos, dueños, inquilino y noticias."""
     listing = market.listing(key)
@@ -355,7 +476,7 @@ def listing_state(
         "level_key": level.key,
         "costs": [
             {"label": "Comunidad", "amount": format_amount(costs.community)},
-            {"label": "Seguro con impago", "amount": format_amount(costs.insurance)},
+            {"label": "Seguro del hogar", "amount": format_amount(costs.insurance)},
             {"label": "IBI", "amount": format_amount(costs.ibi)},
         ],
         "payback": f"{full / max(net, 1) / 30:.1f}".replace(".", ",") + " meses",
@@ -416,6 +537,39 @@ def listing_state(
         rent * 12 / rules.price(listing, index), index, offer=bool(offer)
     )
     state["socimi"] = user_id in market.socimi
+    # Fase 2: quién es el inquilino, el seguro de impago y la noticia del barrio.
+    state["tenant_card"] = (
+        tenant_card(tenant.key, listing, lease.level, index, last_rent=lease.last_rent)
+        if tenant is not None and lease is not None
+        else None
+    )
+    if (
+        tenant is not None
+        and lease is not None
+        and lease.status in (rules.DEFAULTING, rules.EVICTING)
+    ):
+        state["tenant_line"] = tenant.unpaid or tenant.line
+    state["insured"] = bool(lease and lease.insured)
+    state["covered"] = bool(lease and listing and rules.covered(listing, lease))
+    state["pick"] = lease.pick if lease else rules.PICK_AGENCY
+    state["waiting"] = len(market.candidates_of(key, today)) if today else 0
+    state["barrio_news"] = news_box(market.news_of(listing.barrio, today)) if today else None
+    # Fase 4: el humor del inquilino, los imprevistos que esperan y las obras.
+    state["mood"] = mood_text(lease.mood) if tenant is not None and lease is not None else ""
+    state["mood_value"] = lease.mood if lease is not None else rules.MOOD_BASE
+    state["decisions"] = len(market.decisions.get(key, ()))
+    state["works_until"] = (
+        lease.works_until.strftime("%d/%m") if lease is not None and lease.works_until else ""
+    )
+    state["reformed"] = bool(market.reforms.get(key))
+    # Fase 5: la nota del vacacional y hasta cuándo vale la licencia.
+    state["rating"] = rating_text(lease) if lease is not None else ""
+    state["superhost"] = bool(lease and rules.superhost(lease.rating, lease.reviews))
+    state["license_until"] = (
+        lease.license_until.strftime("%d/%m/%Y")
+        if lease is not None and lease.license and lease.license_until
+        else ""
+    )
     state["fallback"] = [
         f"{listing.title} ({card['m2']}, {listing.floor})",
         f"{state['barrio']}: {card['price']} · {card['share_price']} la participación",
@@ -453,12 +607,14 @@ def portfolio_state(
     news: list[News],
     names: dict[int, str],
     effort: float | None = None,
+    today: date | None = None,
 ) -> State:
     """Lo que tiene un miembro: cada inmueble, lo cobrado en 7 días y las noticias.
 
     Args:
         effort: Si vive de alquiler en el piso de otro miembro, la parte de su sueldo que
             se le va en la renta (`housing.effort`), para la línea de dónde vive.
+        today: Hoy, para los candidatos que esperan.
     """
     items = []
     for holding in market.of_member(user_id):
@@ -483,6 +639,8 @@ def portfolio_state(
                 else "—",
                 "mortgage": _mortgage_line(market.mortgages_of(user_id, listing.key)),
                 "home": market.homes.get(user_id) == ("propia", listing.key),
+                "insured": bool(lease and lease.insured),
+                "waiting": len(market.candidates_of(listing.key, today)) if today else 0,
             }
         )
     unit = market.vpo_of(user_id)
@@ -528,6 +686,7 @@ def portfolio_state(
         "euribor": "Euríbor " + _pct(market.euribor, 2),
         "living": _living(market, home, names, effort),
         "socimi": user_id in market.socimi,
+        "waiting": sum(1 for i in items if i.get("waiting")),
         "footer": "Lo cobrado es antes del IRPF, que se retiene al cobrar",
     }
     state["fallback"] = [
@@ -696,3 +855,514 @@ def checkout_state(
             f"Saldo: {format_amount(balance)} → {format_amount(after)}",
         ],
     }
+
+
+def gestion_state(
+    market: Market, key: str, user_id: int, names: dict[int, str], today: date
+) -> State:
+    """🧰 Gestionar: quién elige al inquilino, el seguro de impago, el desahucio y la noticia.
+
+    Lo ve cualquier dueño; los botones que cambian algo son de quien decide (la mayoría).
+    """
+    listing = market.listing(key)
+    if listing is None:
+        raise KeyError(key)
+    index = market.index(listing.barrio)
+    lease = market.leases.get(key, rules.Lease())
+    boss = market.manager(key)
+    level = RENT_LEVELS.get(lease.level, RENT_LEVELS["referencia"])
+    rent = lease.rent or rules.asking_rent(listing, level, index)
+    premium = round(rent * rules.premium_rate(lease.level))
+    contract = lease.status in (rules.RENTED, rules.DEFAULTING, rules.EVICTING)
+    cover = rules.covered(listing, lease)
+    if not lease.insured:
+        insurance = "Sin seguro de impago"
+    elif not contract:
+        insurance = "Contratado: empieza a pagar con el próximo contrato"
+    elif cover:
+        insurance = f"Contratado: cubre a este inquilino ({lease.claims} meses pagados)"
+    else:
+        insurance = "Contratado, pero no cubre a este inquilino (no pasa el estudio de solvencia)"
+    fee = rules.eviction_fee(rent)
+    tense = rules.tense(index)
+    tips = []
+    if listing.kind in rules.HOME_KINDS:
+        if tense and lease.last_rent == 0:
+            tips.append("Zona tensionada y primer alquiler: con alguien de 18 a 35 años, el 70 %")
+        elif tense:
+            tips.append(
+                "Zona tensionada: bajar la renta más de un 5 % en el próximo contrato da el 90 %"
+            )
+        if lease.status == rules.VACANT:
+            tips.append("Si se alquila tras una semana vacía, deduce 1.000 € en la Renta (art. 16)")
+    waiting = market.candidates_of(key, today)
+    state: State = {
+        "screen": "gestion",
+        "key": listing.key,
+        "barrio_key": listing.barrio,
+        "theme": BARRIO_BY_KEY[listing.barrio].theme,
+        "kind": listing.kind,
+        "title": listing.title,
+        "barrio": BARRIO_BY_KEY[listing.barrio].name,
+        "boss": _name(names, boss) if boss is not None else "",
+        "decides": boss == user_id,
+        "pick": lease.pick,
+        "pick_text": (
+            "Eliges tú entre los candidatos que llegan"
+            if lease.pick == rules.PICK_SELF
+            else "La gestora elige al inquilino"
+        ),
+        "waiting": len(waiting),
+        "status": STATUS_TEXT.get(lease.status, ""),
+        "dwelling": listing.kind in rules.HOME_KINDS,
+        "insured": lease.insured,
+        "covered": cover,
+        "insurance": insurance,
+        "premium": format_amount(premium) + "/mes",
+        "premium_rate": _pct(rules.premium_rate(lease.level), 1),
+        "fee": format_amount(fee),
+        "fee_covered": cover,
+        "tips": tips,
+        "news": news_box(market.news_of(listing.barrio, today)),
+        "footer": "El seguro paga desde el 2.º mes sin cobrar, hasta 12, y el abogado",
+    }
+    state["fallback"] = [
+        f"Gestionar: {listing.title} ({state['barrio']})",
+        state["pick_text"] + (f" · {len(waiting)} candidatos esperando" if waiting else ""),
+        f"Seguro de impago: {insurance} · prima {state['premium']} + 8 % de primas",
+        f"Desahucio: abogado y procurador {state['fee']} + IGIC"
+        + (" (lo paga el seguro)" if cover else ""),
+        *tips,
+    ]
+    return state
+
+
+def candidates_state(market: Market, key: str, today: date) -> State:
+    """👥 Candidatos: los que esperan en un piso vacío cuyo dueño elige al inquilino."""
+    listing = market.listing(key)
+    if listing is None:
+        raise KeyError(key)
+    index = market.index(listing.barrio)
+    lease = market.leases.get(key, rules.Lease())
+    until = {tenant: day for tenant, day in market.candidates.get(key, ())}
+    cards = [
+        tenant_card(
+            tenant, listing, lease.level, index, last_rent=lease.last_rent,
+            until=until.get(tenant), slot=slot,
+        )
+        for slot, tenant in enumerate(market.candidates_of(key, today), start=1)
+    ]  # fmt: skip
+    state: State = {
+        "screen": "candidatos",
+        "key": listing.key,
+        "barrio_key": listing.barrio,
+        "theme": BARRIO_BY_KEY[listing.barrio].theme,
+        "kind": listing.kind,
+        "title": listing.title,
+        "barrio": BARRIO_BY_KEY[listing.barrio].name,
+        "cards": cards,
+        "empty": not cards,
+        "level": RENT_LEVELS.get(lease.level, RENT_LEVELS["referencia"]).name,
+        "footer": f"Cada candidato espera {rules.CANDIDATE_DAYS} días · llegan cada noche",
+    }
+    state["fallback"] = [
+        f"Candidatos para {listing.title}",
+        *(
+            f"{c['slot']}. {c['name']}{', ' + c['age'] if c['age'] else ''}: {c['risk_text']}"
+            f" · {c['rent']}"
+            for c in cards
+        ),
+    ] if cards else [f"Nadie espera en {listing.title}: llegan cada noche."]  # fmt: skip
+    return state
+
+
+def _remaining(seconds: float) -> str:
+    """Lo que falta para que acabe una subasta, en horas y minutos («3 h 05 min»)."""
+    seconds = max(0, int(seconds))
+    hours, minutes = seconds // 3600, seconds % 3600 // 60
+    return f"{hours} h {minutes:02d} min" if hours else f"{minutes} min"
+
+
+def auctions_state(
+    market: Market, user_id: int, names: dict[int, str], now: float, selected: int | None = None
+) -> State:
+    """🔨 Subastas: las abiertas del servidor, con la mejor puja y lo que falta.
+
+    Args:
+        now: Ahora (epoch), para lo que le queda a cada una.
+        selected: La subasta elegida en el desplegable (la de los botones).
+    """
+    items = []
+    for auction in market.auctions:
+        listing = market.listing(auction.listing)
+        if listing is None:
+            continue
+        index = market.index(listing.barrio)
+        value = rules.share_price(listing, index) * auction.shares
+        least = rules.next_bid(auction.best_bid, auction.min_bid)
+        items.append(
+            {
+                "id": auction.id,
+                "key": listing.key,
+                "barrio_key": listing.barrio,
+                "theme": BARRIO_BY_KEY[listing.barrio].theme,
+                "kind": listing.kind,
+                "title": listing.title,
+                "barrio": BARRIO_BY_KEY[listing.barrio].name,
+                "shares": auction.shares,
+                "judicial": auction.judicial,
+                "seller": _name(names, auction.seller),
+                "mine": auction.seller == user_id and not auction.division,
+                "division": auction.division,
+                "value": format_amount(value),
+                "min_bid": format_amount(auction.min_bid),
+                "next_bid": format_amount(least),
+                "best_bid": format_amount(auction.best_bid) if auction.best_bid else "",
+                "best_bidder": _name(names, auction.best_bidder) if auction.best_bidder else "",
+                "leading": auction.best_bidder == user_id,
+                "bids": auction.bids,
+                "left": _remaining(auction.ends_at - now),
+                "selected": auction.id == selected,
+                "pct": _pct(auction.best_bid / value, 0) if auction.best_bid and value else "",
+            }
+        )
+    state: State = {
+        "screen": "subastas",
+        "title": "SUBASTAS",
+        "subtitle": "Entre miembros y judiciales · un día · la última hora alarga una hora",
+        "items": items[:6],
+        "more": max(0, len(items) - 6),
+        "empty": not items,
+        "footer": "Lo pujado espera en el depósito con su ITP y se devuelve a quien superan",
+    }
+    state["fallback"] = [
+        "Subastas de pisos",
+        *(
+            f"{'⚖️ ' if i['judicial'] else ''}{i['title']} ({i['shares']} %): "
+            f"{i['best_bid'] or 'sin pujas'} · mínima {i['next_bid']} · quedan {i['left']}"
+            for i in items
+        ),
+    ] if items else ["Ninguna subasta abierta ahora mismo."]  # fmt: skip
+    return state
+
+
+def mood_text(mood: int) -> str:
+    """El humor del inquilino (`Lease.mood`) en una palabra."""
+    if mood >= 85:
+        return "Encantado"
+    if mood >= 60:
+        return "Contento"
+    if mood >= 40:
+        return "Regular"
+    if mood >= 20:
+        return "Molesto"
+    return "Harto"
+
+
+def reforms_state(market: Market, key: str, user_id: int) -> State:
+    """🏗️ Reformas: las que se le pueden hacer a un inmueble, lo que cuestan y lo que dan."""
+    listing = market.listing(key)
+    if listing is None:
+        raise KeyError(key)
+    index = market.index(listing.barrio)
+    lease = market.leases.get(key, rules.Lease())
+    done = market.reforms.get(key, {})
+    items = []
+    for reform in REFORMS:
+        if listing.kind not in reform.kinds:
+            continue
+        quote = rules.reform_quote(listing, reform, index)
+        made = done.get(reform.key)
+        status = "available" if made is None else "done" if made[2] else "works"
+        items.append(
+            {
+                "key": reform.key,
+                "name": reform.name,
+                "emoji": reform.emoji,
+                "blurb": reform.blurb,
+                "cost": format_amount(quote.cost),
+                "total": format_amount(quote.total),
+                "taxes": format_amount(quote.igic + quote.icio + quote.license),
+                "days": f"{reform.days} días",
+                "rent": "+" + _pct(reform.rent_bonus, 0) + " de renta",
+                "breakdowns": reform.breakdowns < 1 or reform.damp < 1,
+                "energy": reform.energy,
+                "rehab": quote.rehab,
+                "status": status,
+                "until": made[1].strftime("%d/%m") if made else "",
+            }
+        )
+    state: State = {
+        "screen": "reformas",
+        "key": listing.key,
+        "barrio_key": listing.barrio,
+        "theme": BARRIO_BY_KEY[listing.barrio].theme,
+        "kind": listing.kind,
+        "title": listing.title,
+        "barrio": BARRIO_BY_KEY[listing.barrio].name,
+        "items": items,
+        "whole": market.shares_of(key).get(user_id, 0) == rules.SHARES,
+        "vacant": lease.status == rules.VACANT,
+        "works": lease.status == rules.OBRAS,
+        "works_until": lease.works_until.strftime("%d/%m") if lease.works_until else "",
+        "rent_bonus": "+" + _pct(listing.rent_bonus, 0),
+        "value_bonus": "+" + _pct(listing.value_bonus, 0),
+        "energy": listing.energy,
+        "rehab_until": listing.rehab_until.strftime("%d/%m") if listing.rehab_until else "",
+        "footer": "IGIC 7 % · ICIO 4 % · licencia de obra · el valor sube el 60 % del coste",
+    }
+    state["fallback"] = [
+        f"Reformas: {listing.title} ({state['barrio']})",
+        f"Renta {state['rent_bonus']} · valor {state['value_bonus']} · certificado "
+        f"{listing.energy}",
+        *(f"{i['name']}: {i['total']} con impuestos · {i['days']} · {i['rent']}" for i in items),
+    ]
+    return state
+
+
+def decisions_state(market: Market, key: str, user_id: int) -> State:
+    """⚠️ Imprevistos: los que esperan decisión en un inmueble, con sus formas de arreglarlo."""
+    listing = market.listing(key)
+    if listing is None:
+        raise KeyError(key)
+    lease = market.leases.get(key, rules.Lease())
+    tenant = TENANT_BY_KEY.get(lease.tenant or "")
+    holders = market.shares_of(key)
+    boss = market.manager(key)
+    items = []
+    for slot, decision in enumerate(market.decisions.get(key, ())[:3], start=1):
+        options = []
+        for choice in rules.DECISIONS[decision.event]:
+            cost = round(decision.cost * choice.share) + choice.flat
+            if choice.claim:
+                cost = min(decision.cost, rules.HOME_CLAIM_EXCESS)
+            options.append(
+                {
+                    "key": choice.key,
+                    "label": choice.label,
+                    "cost": format_amount(cost),
+                    "mood": choice.mood,
+                    "relapse": _pct(choice.relapse, 0) if choice.relapse else "",
+                    "chosen": decision.choice == choice.key,
+                }
+            )
+        items.append(
+            {
+                "slot": slot,
+                "id": decision.id,
+                "event": decision.event,
+                "title": NEWS_TEXT.get(decision.event, decision.event).format(
+                    amount=format_amount(decision.cost), who="", tenant=""
+                ),
+                "complaint": tenant.complaint if tenant else "",
+                "until": decision.until.strftime("%d/%m"),
+                "options": options,
+            }
+        )
+    state: State = {
+        "screen": "imprevistos",
+        "key": listing.key,
+        "barrio_key": listing.barrio,
+        "theme": BARRIO_BY_KEY[listing.barrio].theme,
+        "kind": listing.kind,
+        "title": listing.title,
+        "barrio": BARRIO_BY_KEY[listing.barrio].name,
+        "items": items,
+        "empty": not items,
+        "decides": user_id in holders and (boss is None or boss == user_id),
+        "tenant": tenant.name if tenant else "",
+        "mood": mood_text(lease.mood) if tenant else "",
+        "mood_value": lease.mood,
+        "footer": "Si no decides en dos días, la gestora lo arregla bien · se paga por la noche",
+    }
+    state["fallback"] = [
+        f"Imprevistos: {listing.title}",
+        *(
+            f"{i['title']} · " + " / ".join(f"{o['label']} {o['cost']}" for o in i["options"])
+            for i in items
+        ),
+    ] if items else ["No hay nada pendiente en este piso."]  # fmt: skip
+    return state
+
+
+# -- Fase 5: reseñas del vacacional --------------------------------------------------------
+
+
+def rating_text(lease: rules.Lease) -> str:
+    """La nota media del vacacional («4,6 ★ · 12 reseñas»), o vacío si no hay reseñas."""
+    if not lease.reviews:
+        return ""
+    count = "1 reseña" if lease.reviews == 1 else f"{lease.reviews} reseñas"
+    return f"{lease.rating:.1f}".replace(".", ",") + f" ★ · {count}"
+
+
+def reviews_state(market: Market, key: str, furniture: frozenset[str]) -> State:
+    """⭐ Reseñas: la nota del vacacional, lo que mueve la ocupación y las últimas reseñas.
+
+    Args:
+        furniture: Los muebles del vacacional de quien mira (valen si es quien decide).
+    """
+    listing = market.listing(key)
+    if listing is None:
+        raise KeyError(key)
+    lease = market.leases.get(key, rules.Lease())
+    theme = BARRIO_BY_KEY[listing.barrio].theme
+    reviews = []
+    for review in market.reviews.get(key, ())[:5]:
+        guest = TENANT_BY_KEY.get(review.guest)
+        lines = REVIEW_LINES[review.stars]
+        reviews.append(
+            {
+                "stars": review.stars,
+                "guest": guest.name if guest else review.guest,
+                "emoji": guest.emoji if guest else "🧳",
+                "line": lines[review.line % len(lines)],
+                "day": review.day.strftime("%d/%m"),
+            }
+        )
+    factor = rules.rating_factor(lease.rating, lease.reviews)
+    state: State = {
+        "screen": "resenas",
+        "key": listing.key,
+        "barrio_key": listing.barrio,
+        "theme": theme,
+        "kind": listing.kind,
+        "title": listing.title,
+        "barrio": BARRIO_BY_KEY[listing.barrio].name,
+        "rating": rating_text(lease),
+        "rating_value": lease.rating,
+        "count": lease.reviews,
+        "superhost": rules.superhost(lease.rating, lease.reviews),
+        "occupancy": "×" + f"{factor:.2f}".replace(".", ","),
+        "license": lease.license,
+        "license_until": lease.license_until.strftime("%d/%m/%Y")
+        if lease.license and lease.license_until
+        else "",
+        "reviews": reviews,
+        "furniture": [
+            {"emoji": item.emoji, "name": item.name, "owned": item.key in furniture}
+            for item in FURNITURE
+        ],
+        "furniture_stars": "+"
+        + f"{furniture_stars(furniture, theme, None):.2f}".replace(".", ",")
+        + " ★",
+        "footer": (
+            f"Superanfitrión: {rules.SUPERHOST_RATING:.1f}".replace(".", ",")
+            + f" de media con {rules.SUPERHOST_REVIEWS} reseñas, +10 % de precio · "
+            "limpieza y 15 % de plataforma por estancia"
+        ),
+    }
+    state["fallback"] = [
+        f"Reseñas: {listing.title}",
+        state["rating"] or "Aún sin reseñas.",
+        *(f"{'★' * r['stars']} {r['guest']}: {r['line']}" for r in reviews),
+    ]
+    return state
+
+
+# -- Fase 6: junta de copropietarios -------------------------------------------------------
+
+#: Cómo se dice cada mayoría.
+THRESHOLD_TEXT = {
+    rules.MAJORITY: "Mayoría",
+    rules.THREE_FIFTHS: "3/5",
+    rules.UNANIMITY: "Unanimidad",
+}
+
+
+def motion_text(kind: str, value: str, amount: int, names: dict[int, str]) -> str:
+    """Lo que propone una votación, en una frase («Pedir la renta de mercado»)."""
+    if kind == "renta":
+        level = RENT_LEVELS.get(value)
+        return f"Pedir la renta {level.name.lower()}" if level else "Cambiar la renta"
+    if kind == "seguro":
+        return "Contratar el seguro de impago" if value == "1" else "Quitar el seguro de impago"
+    if kind == "eleccion":
+        return (
+            "Elegir nosotros al inquilino" if value == rules.PICK_SELF else "Que elija la gestora"
+        )
+    if kind == "administra":
+        return f"Que administre {_name(names, int(value))}" if value.isdigit() else "Administrar"
+    if kind == "derrama":
+        return f"Derrama de {format_amount(amount)} al fondo de reserva"
+    if kind == "reforma":
+        reform = next((r for r in REFORMS if r.key == value), None)
+        if reform is None:
+            return "Una reforma"
+        return (
+            reform.name if reform.name.lower().startswith("reforma") else f"Reforma: {reform.name}"
+        )
+    if kind == "licencia":
+        return f"Pedir la licencia vacacional ({format_amount(rules.LICENSE_FEE)})"
+    return "Vender el inmueble entero al mercado"
+
+
+def junta_state(market: Market, key: str, user_id: int, names: dict[int, str], now: float) -> State:
+    """🗳️ Junta: los dueños, quién administra, el fondo de reserva y lo que se vota."""
+    listing = market.listing(key)
+    if listing is None:
+        raise KeyError(key)
+    holders = market.shares_of(key)
+    total = sum(holders.values())
+    boss = market.manager(key)
+    votes = []
+    for slot, vote in enumerate(market.votes_of(key)[:4], start=1):
+        motion = rules.MOTION_BY_KEY[vote.kind]
+        against = sum(s for m, s in holders.items() if vote.ballots.get(m) is False)
+        yes = sum(s for m, s in holders.items() if vote.ballots.get(m) is True)
+        votes.append(
+            {
+                "slot": slot,
+                "id": vote.id,
+                "kind": vote.kind,
+                "name": motion.name,
+                "what": motion_text(vote.kind, vote.value, vote.amount, names),
+                "proposer": _name(names, vote.proposer),
+                "threshold": THRESHOLD_TEXT[motion.threshold],
+                "law": motion.law,
+                "yes": yes,
+                "no": against,
+                "silent": max(0, total - yes - against),
+                "total": total,
+                "passing": rules.passes(motion.threshold, total, against),
+                "mine": vote.ballots.get(user_id),
+                "left": _remaining(vote.ends_at - now),
+            }
+        )
+    division = market.division_of(key)
+    state: State = {
+        "screen": "junta",
+        "key": listing.key,
+        "barrio_key": listing.barrio,
+        "theme": BARRIO_BY_KEY[listing.barrio].theme,
+        "kind": listing.kind,
+        "title": listing.title,
+        "barrio": BARRIO_BY_KEY[listing.barrio].name,
+        "owners": [
+            {"name": _name(names, m), "shares": s, "admin": m == boss, "me": m == user_id}
+            for m, s in sorted(holders.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "admin": _name(names, boss) if boss is not None else "Nadie: no hay mayoría",
+        "elected": market.admins.get(key) == boss and boss is not None,
+        "reserve": format_amount(market.reserves.get(key, 0)),
+        "votes": votes,
+        "more": max(0, len(market.votes_of(key)) - 4),
+        "empty": not votes,
+        "division": {
+            "min_bid": format_amount(division.min_bid),
+            "best_bid": format_amount(division.best_bid) if division.best_bid else "",
+            "left": _remaining(division.ends_at - now),
+        }
+        if division is not None
+        else None,
+        "footer": "24 horas por votación · quien no vota cuenta a favor (art. 17.8 LPH)",
+    }
+    state["fallback"] = [
+        f"Junta: {listing.title} · administra {state['admin']} · fondo {state['reserve']}",
+        *(
+            f"{v['slot']}. {v['what']} ({v['threshold']}): sí {v['yes']} · no {v['no']} · "
+            f"sin votar {v['silent']} · quedan {v['left']}"
+            for v in votes
+        ),
+    ] if votes else ["No hay nada que votar. Propón algo en el desplegable."]  # fmt: skip
+    return state

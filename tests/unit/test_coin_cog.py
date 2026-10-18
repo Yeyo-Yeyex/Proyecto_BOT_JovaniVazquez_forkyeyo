@@ -308,7 +308,7 @@ async def test_acertar_dos_veces_y_cobrar_paga_la_apuesta_por_cuatro_y_el_libro_
     game = view.game
     assert game is not None and game.status is Status.CASHED
     assert game.payout == 2_000 and game.net == 1_500
-    tax = gambling_day_tax(game.net, 0)
+    tax = gambling_day_tax(game.net)
     assert tax > 0
     final = await balance(cog)
     assert final == STARTING_BALANCE - 500 + 2_000 - tax
@@ -484,7 +484,7 @@ async def test_force_settle_cobra_la_racha_a_medias(tmp_path: Path) -> None:
     await view.force_settle()
     game = view.game
     assert game is not None and game.status is Status.CASHED
-    assert await balance(cog) == STARTING_BALANCE - 100 + 200 - gambling_day_tax(100, 0)
+    assert await balance(cog) == STARTING_BALANCE - 100 + 200 - gambling_day_tax(100)
     assert ("moneda:premio", 200) in ledger(tmp_path)
     # Una segunda vez no cobra otra vez.
     await view.force_settle()
@@ -532,7 +532,7 @@ async def test_a_los_diez_aciertos_cobra_sola_la_moneda_de_oro(tmp_path: Path) -
     game = view.game
     assert game.status is Status.CASHED and game.maxed
     assert game.payout == 10_240
-    tax = gambling_day_tax(game.net, 0)
+    tax = gambling_day_tax(game.net)
     assert await balance(cog) == STARTING_BALANCE - 10 + 10_240 - tax
     embed = last.edit_original_response.await_args.kwargs["embed"]
     assert "DIEZ SEGUIDAS" in (embed.description or "")

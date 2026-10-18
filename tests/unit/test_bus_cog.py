@@ -25,6 +25,7 @@ from bot.services.blackjack import Card
 from bot.services.bus import Pick, Status
 from bot.services.bus_render import Media, Reveal
 from bot.services.economy import STARTING_BALANCE, EconomyService
+from bot.services.taxes import gambling_day_tax
 
 GUILD_ID = 1
 OWNER_ID = 10
@@ -267,7 +268,7 @@ async def test_cobrar_paga_y_dice_que_carta_venia(tmp_path: Path) -> None:
     interaction = make_interaction()
     await view._cash_out(interaction)
     assert view.game is not None and view.game.status is Status.CASHED
-    assert await balance(cog) == STARTING_BALANCE - 100 + 198
+    assert await balance(cog) == STARTING_BALANCE - 100 + 198 - gambling_day_tax(198 - 100)
     description = interaction.edit_original_response.await_args.kwargs["embed"].description
     assert "Cobras **198 Y$**" in description
     assert "La siguiente era **10♠**: con **mayor**" in description
@@ -314,7 +315,7 @@ async def test_al_caducar_cobra_la_partida_a_medias(tmp_path: Path) -> None:
     await press(view, Pick.RED)
     await view.on_timeout()
     assert view.game is not None and view.game.status is Status.CASHED
-    assert await balance(cog) == STARTING_BALANCE - 100 + 198
+    assert await balance(cog) == STARTING_BALANCE - 100 + 198 - gambling_day_tax(198 - 100)
     assert not cog.views
 
 

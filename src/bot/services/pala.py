@@ -14,7 +14,8 @@ Todo el dinero pasa por `EconomyService`:
 - Cuota de autónomos: `charge_self_employed_fee`, una vez por semana.
 - Baja por accidente: `pay_salary` con la prestación (tributa como
   rendimiento del trabajo, art. 17.1.b LIRPF).
-- Café, formación y billetes de avión: `purchase`, con IGIC general.
+- Café y formación: `purchase`, con IGIC general. Billetes de avión a Hong Kong:
+  `purchase` exento (transporte internacional).
 - Turnos desde Hong Kong: `pay_foreign_salary` (MPF y salaries tax a Hong
   Kong; IRPF español solo mientras sigue siendo residente, con la exención del
   art. 7.p LIRPF). Al irse, `set_residence` (sin IMV); al volver con 5 «años»
@@ -30,9 +31,13 @@ Todo el dinero pasa por `EconomyService`:
   Estudiar la oposición no paga nada.
 - Deseo del día: el turno que lo cumple paga `WISH_PAY` veces más; es el mismo
   bruto de la nómina, sin camino propio.
-- Pensión de jubilación (`claim_pension`): una vez al día, la suma de las
-  pensiones de las ramas de las que se jubiló, por `pay_salary(pension=True)`
-  (rendimiento del trabajo, art. 17.2.a.1ª LIRPF: IRPF sin cotizaciones).
+- Pensión de jubilación (`claim_pension`): una vez al día, la pensión de las ramas de
+  las que se jubiló (`work.pension_amount`; mientras trabaja, la parte de la jubilación
+  activa), por `pay_salary(pension=True)` (rendimiento del trabajo, art. 17.2.a.1ª
+  LIRPF: IRPF sin cotizaciones). Quien se jubiló antes de la 8.0.0 nunca cobra menos
+  que entonces.
+- Veteranía: las ramas completadas en otros oficios suben el bruto del turno
+  (`work.veteran_bonus`); es el mismo bruto de la nómina, sin camino propio.
 """
 
 from __future__ import annotations
@@ -53,10 +58,10 @@ from bot.services.levels import TIMEZONE, local_day
 from bot.services.taxes import (
     EXEMPT_7P_PER_DAY,
     IGIC_GENERAL_RATE,
-    WAGE_YAPDOLLARS_PER_EURO,
     ForeignPayslip,
     Payslip,
     igic,
+    weekly_yd,
 )
 from bot.services.telemetry import TimedLock
 from bot.services.work import (
@@ -78,6 +83,7 @@ from bot.services.work import (
     INSPECTION_CHANCE,
     INSPECTION_SURCHARGE,
     JET_LAG,
+    LEAVE_AFTER_DAYS,
     MAX_COFFEES,
     MISSED_GUARD_PENALTY,
     MOM_REPAY_SHARE,
@@ -110,10 +116,13 @@ from bot.services.work import (
     Wish,
     WishFacts,
     accident_chance,
+    active_share,
     apply_performance,
     battery_now,
     beckham_eligible,
+    catch_up,
     change_family,
+    contribution_quality,
     family_breakdown,
     family_now,
     family_ready_at,
@@ -124,6 +133,7 @@ from bot.services.work import (
     next_shift_kind,
     on_leave,
     open_branches,
+    pension_amount,
     performance_delta,
     promote,
     promotion_blockers,
@@ -138,6 +148,7 @@ from bot.services.work import (
     shift_cost,
     shift_pay,
     triennia,
+    veteran_bonus,
     viral_roll,
     weather,
     week_of,
@@ -171,13 +182,14 @@ from bot.services.work_tools import NO_PERKS, Perks, perks_for, with_rewards
 
 if TYPE_CHECKING:
     from bot.repositories.housing import HousingRepository
-    from bot.repositories.work import WorkRepository
+    from bot.repositories.work import RetiredBranch, WorkRepository
 
 logger = logging.getLogger(__name__)
 
-#: Exención de las acciones de empresas emergentes entregadas a empleados (Ley
-#: 28/2022): 50.000 € por trabajador y año. En el juego, por cada exit.
-OPTIONS_EXEMPT = 50_000 * WAGE_YAPDOLLARS_PER_EURO
+#: Exención de las acciones de empresas emergentes entregadas a empleados (art. 42.3.f
+#: LIRPF, redacción de la Ley 28/2022): 50.000 € por trabajador y año. La semana es el año
+#: fiscal: en Y$, los de una semana con la vara del IRPF, por cada exit.
+OPTIONS_EXEMPT = round(weekly_yd(50_000))
 
 
 def aval_active(contract: Contract, now: float) -> bool:
@@ -190,6 +202,38 @@ def aval_active(contract: Contract, now: float) -> bool:
 
 class WorkError(Exception):
     """Algo que impide la acción; el mensaje es para el usuario."""
+
+
+def branch_quality(contract: Contract) -> float:
+    """Calidad de lo cotizado en la rama en curso (`work.contribution_quality`).
+
+    Sin días apuntados (una rama empezada antes de la 8.0.0 y sin fichar desde), entera.
+    """
+    if not contract.branch_days:
+        return 1.0
+    return contribution_quality(contract.branch_gross / contract.branch_days)
+
+
+def _legacy_floor(records: Collection[RetiredBranch]) -> int:
+    """Lo que cobraba antes de la 8.0.0 por las ramas de entonces (el suelo de su pensión)."""
+    floor = 0
+    for record in records:
+        job = JOB_BY_KEY.get(record.job)
+        branch = job.branch(record.branch) if job is not None else None
+        if branch is not None and record.legacy:
+            floor += branch.pension
+    return floor
+
+
+def _completed(records: Collection[RetiredBranch]) -> list[tuple[str, float]]:
+    """`(clase, calidad)` de las ramas jubiladas que siguen en el catálogo."""
+    out = []
+    for record in records:
+        job = JOB_BY_KEY.get(record.job)
+        branch = job.branch(record.branch) if job is not None else None
+        if branch is not None:
+            out.append((branch.kind, record.quality))
+    return out
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,6 +252,9 @@ class Status:
         retired: Ramas de este oficio de las que ya se jubiló.
         wish: El deseo del día (`None` si ya lo cumplió hoy).
         family: Familia ahora mismo (con lo que se ha recuperado sola).
+        veteran: Ramas completadas en otros oficios (experiencia y veteranía).
+        pension_after: Si puede jubilarse, la pensión entera que tendría al hacerlo (0 si no;
+            nunca menos que el suelo de sus jubilaciones de antes de la 8.0.0).
     """
 
     contract: Contract
@@ -226,6 +273,13 @@ class Status:
     retired: frozenset[str] = frozenset()
     wish: Wish | None = None
     family: float = 100.0
+    veteran: int = 0
+    pension_after: int = 0
+
+    @property
+    def veteran_bonus(self) -> float:
+        """Lo que sube el sueldo del turno por la veteranía (0–0,5)."""
+        return veteran_bonus(self.veteran)
 
     @property
     def fork(self) -> tuple[Branch, ...]:
@@ -468,14 +522,21 @@ class Pension:
     """La pensión de un miembro.
 
     Attributes:
-        branches: `(oficio, rama)` de las que se jubiló y siguen en el catálogo.
-        amount: Bruto diario: la suma de las pensiones de esas ramas.
+        branches: `(oficio, rama)` de las que se jubiló y siguen en el catálogo, por
+            orden de jubilación.
+        amount: Bruto diario que cobra hoy.
         due: Si hoy aún no la ha cobrado (y hay algo que cobrar).
+        full: La pensión entera (`work.pension_amount`), la que cobra sin trabajar.
+        share: La parte que cobra (jubilación activa; 1 si no trabaja).
+        floor: Lo que cobraba antes de la 8.0.0 por las ramas de entonces (nunca menos).
     """
 
     branches: tuple[tuple[Job, Branch], ...]
     amount: int
     due: bool
+    full: int = 0
+    share: float = 1.0
+    floor: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -489,6 +550,7 @@ class Retirement:
         following: La rama en la que sigue, desde su primer puesto (`None` si ya
             se jubiló de todas y se queda donde está).
         status: El contrato después.
+        quality: Calidad de lo cotizado en la rama (`work.contribution_quality`).
     """
 
     job: Job
@@ -496,6 +558,7 @@ class Retirement:
     title: str
     following: Branch | None
     status: Status
+    quality: float = 1.0
 
 
 class WorkService:
@@ -576,11 +639,14 @@ class WorkService:
             guild_id, user_id, contract.job, contract.level, contract.position_since
         )
         trainings = await self.repository.trainings(guild_id, user_id)
-        retired = frozenset(
-            branch
-            for retired_job, branch in await self.repository.retirements(guild_id, user_id)
-            if retired_job == job.key
-        )
+        records = await self.repository.retired_branches(guild_id, user_id)
+        retired = frozenset(r.branch for r in records if r.job == job.key)
+        veteran = len(records) - len(retired)
+        branch = job.branch(contract.branch)
+        pension_after = 0
+        if branch is not None and contract.level >= job.top and branch.key not in retired:
+            completed = [*_completed(records), (branch.kind, branch_quality(contract))]
+            pension_after = max(pension_amount(completed), _legacy_floor(records))
         today = local_day(now).isoformat()
         blockers = promotion_blockers(
             contract,
@@ -589,6 +655,7 @@ class WorkService:
             trainings=trainings,
             today=today,
             retired=retired,
+            completed_elsewhere=veteran,
         )
         wish = None if contract.wish_day == today else wish_for(user_id, today, job, contract.level)
         earns = job.earns_triennia(contract.level, contract.branch)
@@ -609,7 +676,30 @@ class WorkService:
             retired=retired,
             wish=wish,
             family=family_now(contract, now),
+            veteran=veteran,
+            pension_after=pension_after,
         )
+
+    async def switch_outlook(
+        self, guild_id: int, user_id: int, status: Status
+    ) -> dict[str, tuple[int, float] | None]:
+        """Lo que costaría empezar cada oficio que no ha probado frente al puesto de ahora.
+
+        `{oficio: (días de fichar cobrando menos, lo que sube lo más alto frente a lo de
+        ahora)}` con la veteranía y la experiencia que tendría allí (`work.catch_up`);
+        `None` si ni arriba cobraría lo de ahora. Los oficios ya empezados no salen: se
+        vuelve al puesto en el que se dejaron.
+        """
+        retired = await self.repository.retirements(guild_id, user_id)
+        history = await self.repository.history(guild_id, user_id)
+        now_pay = round(status.position.base_pay * (1 + status.veteran_bonus))
+        outlook = {}
+        for job in JOB_BY_KEY.values():
+            if job.key == status.job.key or job.key in history:
+                continue
+            elsewhere = sum(1 for retired_job, _branch in retired if retired_job != job.key)
+            outlook[job.key] = catch_up(job, now_pay, elsewhere)
+        return outlook
 
     async def history(self, guild_id: int, user_id: int) -> dict[str, Career]:
         """`{oficio: Career(puesto en el que se quedó, puesto máximo, rama)}`."""
@@ -903,9 +993,12 @@ class WorkService:
             contract.guards_week = 0
 
         # Batería, familia, jornada y racha.
+        in_branch = contract.level > job.trunk_top
         if contract.shift_day != today.isoformat():
             contract.streak_days += 1
             contract.shift_day = today.isoformat()
+            if in_branch:
+                contract.branch_days += 1
         cost = shift_cost(kind, remote=shift.remote, calima=shift.weather == "calima")
         contract.battery = battery_before - cost * (1 - shift.perks.battery)
         family_parts = family_breakdown(
@@ -929,6 +1022,11 @@ class WorkService:
         # Dinero del turno.
         tenured = job.tenured(contract.level, contract.branch)
         gross = shift_pay(position.base_pay, score, kind, tenured=tenured)
+        elsewhere = sum(
+            1 for j, _b in await self.repository.retirements(guild_id, user_id) if j != job.key
+        )
+        if elsewhere:
+            gross = round(gross * (1 + veteran_bonus(elsewhere)))
         if abroad:
             gross = round(gross * ABROAD_PAY)
         if job.rates(contract.branch):
@@ -970,6 +1068,8 @@ class WorkService:
                 foreign = slip
             else:
                 payslip = slip
+            if in_branch:
+                contract.branch_gross += cash
 
         # Stock options: exit o quiebra (las que ya tienes siguen vivas en cualquier puesto).
         if contract.options:
@@ -977,7 +1077,7 @@ class WorkService:
                 low, high = EXIT_MULTIPLIER
                 exit_payout = round(contract.options * self.rng.uniform(low, high))
                 contract.options = 0
-                balance = await self._cash_options(guild_id, user_id, exit_payout)
+                balance = await self._cash_options(guild_id, user_id, exit_payout, contract, week)
             elif roll(self.rng, BANKRUPT_CHANCE):
                 bankrupt = True
                 contract.options = 0
@@ -1235,22 +1335,29 @@ class WorkService:
             family_parts=family_parts,
         )
 
-    async def _cash_options(self, guild_id: int, user_id: int, payout: int) -> int:
+    async def _cash_options(
+        self, guild_id: int, user_id: int, payout: int, contract: Contract, week: str
+    ) -> int:
         """Cobra un exit: exento hasta `OPTIONS_EXEMPT` y el resto como nómina.
 
         Tratamiento fiscal: rendimiento del trabajo en especie, con la exención
         de la Ley 28/2022 para las acciones de empresas emergentes entregadas a
-        sus empleados (50.000 € al año). La parte exenta va por `grant`; el
-        resto, por `pay_salary` (IRPF y cotización, como cualquier retribución
-        en especie).
+        sus empleados (50.000 € al año: aquí, por semana, y la lleva el contrato en
+        `options_exempt`). La parte exenta va por `grant`; el resto, por `pay_salary`
+        (IRPF y cotización, como cualquier retribución en especie).
 
         Returns:
             El saldo final.
         """
-        exempt = min(payout, OPTIONS_EXEMPT)
-        balance = await self.economy.grant(
-            guild_id, user_id, amount=exempt, reason="pala:opciones_exentas"
-        )
+        if contract.options_week != week:
+            contract.options_week, contract.options_exempt = week, 0
+        exempt = min(payout, max(0, OPTIONS_EXEMPT - contract.options_exempt))
+        contract.options_exempt += exempt
+        balance = await self.economy.balance(guild_id, user_id)
+        if exempt:
+            balance = await self.economy.grant(
+                guild_id, user_id, amount=exempt, reason="pala:opciones_exentas"
+            )
         if payout > exempt:
             balance = (
                 await self.economy.pay_salary(
@@ -1278,9 +1385,9 @@ class WorkService:
     async def move_abroad(self, guild_id: int, user_id: int) -> Status:
         """Se va a trabajar a Hong Kong: billete, jet lag y adiós al IMV.
 
-        Tratamiento fiscal del billete: una compra con IGIC general
-        (simplificación: en la realidad la parte del vuelo fuera de Canarias no
-        lo pagaría).
+        Tratamiento fiscal del billete: una compra exenta de IGIC (el transporte aéreo
+        internacional lo está, art. 12.13 de la Ley 20/1991). Todo va a la caja de la
+        tienda; al Estado, nada.
 
         Raises:
             WorkError: Si su puesto no puede, ya está fuera o no le llega.
@@ -1331,20 +1438,17 @@ class WorkService:
             return await self._status(guild_id, user_id, contract), beckham, days
 
     async def _fly(self, guild_id: int, user_id: int, concept: str) -> None:
-        tax = igic(FLIGHT_PRICE, IGIC_GENERAL_RATE)
         try:
             await self.economy.purchase(
                 guild_id,
                 user_id,
                 base=FLIGHT_PRICE,
-                tax=tax,
+                tax=0,
                 concept=concept,
                 reserve=lambda _connection: None,
             )
         except InsufficientFundsError as error:
-            raise WorkError(
-                f"No te llega para el billete: {FLIGHT_PRICE + tax} Y$ con IGIC."
-            ) from error
+            raise WorkError(f"No te llega para el billete: {FLIGHT_PRICE} Y$.") from error
 
     # -- Eventos ------------------------------------------------------------------------
 
@@ -1424,6 +1528,7 @@ class WorkService:
                 contract.performance = PERFORMANCE_START
                 contract.progress = {}
                 contract.position_since = now
+                contract.legacy_days = False
                 settle_branch(contract, job)
                 result.demoted = True
             if event is not RESIGN_EVENT:
@@ -1476,6 +1581,8 @@ class WorkService:
             assert branch is not None
             contract = status.contract
             title = status.position.title
+            quality = branch_quality(contract)
+            contract.branch_gross = contract.branch_days = 0
             remaining = open_branches(job, status.retired | {branch.key})
             following = remaining[0] if remaining else None
             if following is not None:
@@ -1485,27 +1592,46 @@ class WorkService:
                 contract.warned = False
                 contract.progress = {}
                 contract.position_since = status.now
+                contract.legacy_days = False
                 contract.declined_day = ""
             try:
-                await self.repository.retire(guild_id, user_id, branch.key, contract, status.now)
+                await self.repository.retire(
+                    guild_id, user_id, branch.key, contract, status.now, quality
+                )
             except ValueError as error:
                 raise WorkError(str(error)) from error
             after = await self._status(guild_id, user_id, contract)
-            return Retirement(job, branch, title, following, after)
+            return Retirement(job, branch, title, following, after, quality)
 
     async def pension(self, guild_id: int, user_id: int) -> Pension:
-        """La pensión de un miembro (con o sin contrato)."""
-        retired = await self.repository.retirements(guild_id, user_id)
-        branches = []
-        for job_key, branch_key in sorted(retired):
-            job = JOB_BY_KEY.get(job_key)
-            branch = job.branch(branch_key) if job is not None else None
+        """La pensión de un miembro (con o sin contrato).
+
+        Una sola pensión por todas las ramas (`work.pension_amount`). Mientras trabaja
+        (ha fichado en los últimos `LEAVE_AFTER_DAYS` días) cobra la parte de la jubilación activa,
+        que sube cada semana desde la primera jubilación (`work.active_share`). Quien se
+        jubiló antes de la 8.0.0 cobra al menos la suma de las pensiones de entonces.
+        """
+        now = self._clock()
+        records = await self.repository.retired_branches(guild_id, user_id)
+        branches: list[tuple[Job, Branch]] = []
+        for record in records:
+            job = JOB_BY_KEY.get(record.job)
+            branch = job.branch(record.branch) if job is not None else None
             if job is not None and branch is not None:
                 branches.append((job, branch))
-        amount = sum(branch.pension for _job, branch in branches)
-        today = local_day(self._clock()).isoformat()
+        floor = _legacy_floor(records)
+        full = pension_amount(_completed(records))
+        share = 1.0
+        # Trabaja quien ha fichado en los últimos días, tenga contrato o no: dimitir justo
+        # antes de cobrar no da la pensión entera.
+        last = await self.repository.last_shift_at(guild_id, user_id) if records else None
+        if last is not None and now - last < LEAVE_AFTER_DAYS * 86_400:
+            first = min(record.retired_at for record in records)
+            share = active_share(int(max(0.0, now - first) // (7 * 86_400)))
+        amount = max(floor, round(full * share))
+        today = local_day(now).isoformat()
         claimed = await self.repository.pension_day(guild_id, user_id)
-        return Pension(tuple(branches), amount, amount > 0 and claimed != today)
+        return Pension(tuple(branches), amount, amount > 0 and claimed != today, full, share, floor)
 
     async def claim_pension(self, guild_id: int, user_id: int) -> tuple[Payslip, int]:
         """Cobra la pensión del día.

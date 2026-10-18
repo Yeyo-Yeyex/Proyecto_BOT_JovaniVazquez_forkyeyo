@@ -86,6 +86,9 @@ def test_lo_boricua_solo_queda_en_el_contenido() -> None:
 
 def test_la_vigilancia_de_lo_boricua_salta_con_un_texto_nuevo(tmp_path) -> None:  # noqa: ANN001
     (tmp_path / "cogs").mkdir()
-    (tmp_path / "cogs" / "nuevo.py").write_text('LINES = ("¡Wepa! Ganas.", "La banca gana.")\n')
-    (tmp_path / "cogs" / "beernight.py").write_text('X = "Quien diga «wepa»."\n')
+    # En UTF-8 a la fuerza: en Windows `write_text` escribe en cp1252 y el script lee UTF-8.
+    (tmp_path / "cogs" / "nuevo.py").write_text(
+        'LINES = ("¡Wepa! Ganas.", "La banca gana.")\n', encoding="utf-8"
+    )
+    (tmp_path / "cogs" / "beernight.py").write_text('X = "Quien diga «wepa»."\n', encoding="utf-8")
     assert af.boricua_texts(tmp_path) == ["cogs/nuevo: ¡Wepa! Ganas."]

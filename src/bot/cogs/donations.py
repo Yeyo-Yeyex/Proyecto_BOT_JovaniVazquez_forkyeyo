@@ -3,9 +3,10 @@
 - `donar` sin argumentos enseña las cuatro ONGs, lo que dicen que hacen, lo
   que hacen de verdad y cuánto llevan recaudado en el servidor.
 - `donar <ong> <cantidad>` dona. El dinero va a la cuenta de la ONG y no
-  vuelve. A cambio desgrava: la deducción (art. 19.1 de la Ley 49/2002) sale
-  a devolver en la renta del lunes, siempre que esa semana se haya pagado
-  IRPF. Reglas en `bot.services.donations` y `bot.services.taxes`.
+  vuelve. A cambio desgrava: la deducción (art. 19.1 de la Ley 49/2002) rebaja
+  la cuota de la declaración del lunes (sube lo que sale a devolver o baja lo que
+  sale a pagar), hasta la cuota de esa semana. Reglas en `bot.services.donations`
+  y `bot.services.taxes`.
 
 El resultado es público, para presumir de generosidad. Donar gasta dinero, así
 que en `/donar` lleva el aviso de la Renta y la mascota habla del donativo

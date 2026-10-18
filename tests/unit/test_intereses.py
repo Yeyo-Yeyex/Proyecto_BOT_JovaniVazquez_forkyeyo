@@ -18,6 +18,7 @@ from bot.repositories.economy import (
     InterestNotice,
     LedgerEntry,
 )
+from bot.services.achievements import BY_ID
 from bot.services.donations import BY_KEY
 from bot.services.economy import (
     INTEREST_CATCH_UP_DAYS,
@@ -44,7 +45,7 @@ from bot.services.interest import (
     withholding,
 )
 from bot.services.levels import TIMEZONE
-from bot.services.taxes import savings_marginal_rate, savings_tax
+from bot.services.taxes import savings_marginal_rate, savings_tax, weekly_yd
 
 GUILD = 1
 SAVER = 20
@@ -188,16 +189,19 @@ def test_las_rachas_de_no_hacer_nada_solo_siguen_si_se_cobra() -> None:
 
 
 def test_la_semana_se_liquida_con_la_escala_del_ahorro() -> None:
+    # Con la vara del IRPF, el máximo de intereses de una semana se queda en el 19 %.
     week_max = INTEREST_DAILY_MAX * 7
-    # 3.500 Y$ a la semana son 18.200 € al año: 6.000 al 19 % y el resto al 21 %.
-    assert savings_tax(week_max) == round((6_000 * 0.19 + 12_200 * 0.21) / 52 * 10)
-    assert savings_marginal_rate(week_max) == 0.21
-    assert savings_marginal_rate(700) == 0.19
-    withheld = withholding(INTEREST_DAILY_MAX) * 7
-    settlement = savings_settlement(SAVER, week_max, withheld, balance=100_000)
-    assert settlement.charged == savings_tax(week_max) - withheld > 0
+    assert savings_marginal_rate(week_max) == 0.19
+    assert savings_tax(week_max) == withholding(INTEREST_DAILY_MAX) * 7
+    # Una semana de 7.000 € al año pasa al tramo del 21 %: 6.000 al 19 % y 1.000 al 21 %.
+    big = round(weekly_yd(7_000))
+    assert savings_marginal_rate(big) == 0.21
+    assert savings_tax(big) == round(big * (6_000 * 0.19 + 1_000 * 0.21) / 7_000)
+    withheld = round(big * 0.19)
+    settlement = savings_settlement(SAVER, big, withheld, balance=100_000)
+    assert settlement.charged == savings_tax(big) - withheld > 0
     # Nunca más de lo que hay en el monedero, y nunca a devolver.
-    assert savings_settlement(SAVER, week_max, withheld, balance=10).charged == 10
+    assert savings_settlement(SAVER, big, withheld, balance=10).charged == 10
     assert savings_settlement(SAVER, 700, 999, balance=100).charged == 0
 
 
@@ -309,13 +313,14 @@ async def test_el_lunes_se_liquida_la_semana_y_sanxe_cobra_la_diferencia(tmp_pat
     [settlement] = run.settlements
     week_gross = INTEREST_DAILY_MAX * 7
     assert settlement.gross == week_gross
-    assert settlement.rate == 0.21
+    # El máximo de una semana se queda en el 19 %: la retención ya era la cuota.
+    assert settlement.rate == 0.19
     assert settlement.charged == savings_tax(week_gross) - withholding(INTEREST_DAILY_MAX) * 7
     assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) == state_before + sunday_tax + settlement.charged
     assert ledger_sum(tmp_path, SAVER) == await service.balance(GUILD, SAVER)
     assert (await service.pay_interest(GUILD)).savings is None
     last = await service.last_savings(GUILD, SAVER)
-    assert last is not None and last[4] == 21 and last[5] == settlement.charged
+    assert last is not None and last[4] == 19 and last[5] == settlement.charged
 
 
 async def test_el_aviso_sale_una_vez(tmp_path: Path) -> None:
@@ -390,10 +395,20 @@ def test_los_logros_del_dia_salen_de_lo_que_ha_pasado() -> None:
 
 
 def test_la_liquidacion_apunta_el_tramo_y_lo_cobrado() -> None:
-    settlement = savings_settlement(SAVER, INTEREST_DAILY_MAX * 7, 665, balance=10**6)
+    big = round(weekly_yd(7_000))
+    settlement = savings_settlement(SAVER, big, round(big * 0.19), balance=10**6)
     stats = savings_stats(settlement)
-    assert stats.peak == {"savings_rate_max": 21}
+    assert stats.peak == {"savings_rate_max": 21, "savings_week_max": big}
     assert stats.add == {"interest_tax": settlement.charged}
+
+
+def test_una_semana_a_tope_sigue_en_el_19_y_tiene_logro() -> None:
+    week = 7 * INTEREST_DAILY_MAX
+    settlement = savings_settlement(SAVER, week, 7 * withholding(INTEREST_DAILY_MAX), 10**6)
+    stats = savings_stats(settlement)
+    assert stats.peak == {"savings_rate_max": 19, "savings_week_max": week}
+    assert stats.add == {}  # lo retenido cada día ya es la cuota entera
+    assert BY_ID["savings_bracket"].conditions == (("savings_week_max", week),)
 
 
 def test_el_aviso_dice_ayer_o_mientras_no_mirabas() -> None:
@@ -403,7 +418,7 @@ def test_el_aviso_dice_ayer_o_mientras_no_mirabas() -> None:
     [fuera] = notice_lines(InterestNotice(9, 900, 171, "2026-09-07"), today)
     assert "Mientras no mirabas" in fuera and "9 días" in fuera
     [liquidacion] = notice_lines(InterestNotice(savings=(("2026-09-07", 41, 21),)), today)
-    assert "tramo del 21 %" in liquidacion
+    assert "41" in liquidacion and "redondeo" in liquidacion
     assert notice_lines(InterestNotice(), today) == []
     assert tiers_label().startswith("2,5 % hasta 4.000")
 

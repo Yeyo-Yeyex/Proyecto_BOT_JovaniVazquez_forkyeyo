@@ -196,10 +196,14 @@ async def test_las_cuotas_se_cobran_y_sin_pagar_doce_llega_la_ejecucion(tmp_path
     # Se queda sin un duro: las cuotas siguientes no se pagan.
     balance = await economy.balance(GUILD, ANA)
     await economy.repository.apply(GUILD, ANA, [LedgerEntry(-balance, "prueba")])
-    for d in range(3, 17):
+    # A las 12 cuotas sin pagar sale a subasta judicial; sin pujas, el banco se lo queda al 70 %.
+    closed = []
+    for d in range(3, 18):
         clock.to(d)
         await service.close_days(GUILD)
+        closed += (await service.close_auctions(GUILD)).results
 
+    assert [r.bank for r in closed] == [True]
     market = await service.market(GUILD)
     assert market.mortgages_of(ANA) == []
     assert BAJO.key not in market.holdings
@@ -209,7 +213,7 @@ async def test_las_cuotas_se_cobran_y_sin_pagar_doce_llega_la_ejecucion(tmp_path
     # La deuda con el banco se cobra de lo que vaya entrando.
     debt = market.bank_debts[ANA]
     await give(economy, ANA, debt + 1_000)
-    clock.to(17)
+    clock.to(18)
     await service.close_days(GUILD)
     assert (await service.market(GUILD)).bank_debts.get(ANA, 0) == 0
 
@@ -281,16 +285,31 @@ async def test_la_vpo_se_sortea_se_compra_con_aval_y_se_devuelve_al_estado(tmp_p
     deal, balance = await service.vpo_buy(GUILD, ANA, unit)
 
     price = VPO_BY_KEY[unit].price
-    assert deal.loan == price and balance == STARTING_BALANCE + 50_000 - deal.notary
-    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) - state == price
+    notary_igic = round(deal.notary * rules.SERVICES_IGIC)
+    assert deal.loan == price
+    assert balance == STARTING_BALANCE + 50_000 - deal.notary - notary_igic
+    assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) - state == price + notary_igic
     market = await service.market(GUILD)
     assert market.vpo_of(ANA) == unit and market.homes[ANA] == (HOME_VPO, unit)
     assert market.mortgages_of(ANA)[0].aval == "ico"
     with pytest.raises(HousingError):
         await service.vpo_signup(GUILD, ANA)  # ya tiene casa
+    # La cuota de la hipoteca de la VPO cuenta para la deducción por vivienda habitual.
+    await give(economy, ANA, 100_000)
+    clock.to(14)
+    await service.close_days(GUILD)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        (home_paid,) = connection.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM economy_irpf_extras "
+            "WHERE user_id = ? AND kind = 'vivienda'",
+            (ANA,),
+        ).fetchone()
+    assert home_paid == deal.payment
+    (mortgage,) = (await service.market(GUILD)).mortgages_of(ANA)
+    assert mortgage.owed < deal.loan  # ya ha pagado una cuota
 
     back, balance = await service.vpo_return(GUILD, ANA)
-    assert back.payoff == deal.loan
+    assert back.payoff == mortgage.owed
     market = await service.market(GUILD)
     assert market.vpo_of(ANA) is None and ANA not in market.homes
     assert ledger_sum(tmp_path, ANA) == balance
@@ -334,7 +353,9 @@ async def test_vivir_en_tu_piso_no_lo_alquila_y_paga_sus_recibos(tmp_path: Path)
     balance = await economy.balance(GUILD, ANA)
     clock.to(15)
     await service.close_days(GUILD)
-    assert await economy.balance(GUILD, ANA) == balance - rules.monthly_costs(BAJO).total
+    costs = rules.monthly_costs(BAJO)
+    ips = round(costs.insurance * rules.IPS_RATE)  # el seguro del hogar lleva el de primas
+    assert await economy.balance(GUILD, ANA) == balance - costs.total - ips
     with sqlite3.connect(tmp_path / "bot.db") as connection:
         connection.row_factory = sqlite3.Row
         assert assets_in(connection, GUILD).get(ANA, 0) == 0  # exenta hasta 3 millones
@@ -370,6 +391,14 @@ async def test_un_miembro_de_alquiler_paga_al_casero_y_cobra_el_bono(tmp_path: P
     assert await economy.balance(GUILD, STATE_ACCOUNT_ID) < state + 1  # pagó el bono
     for member in (ANA, BEA, STATE_ACCOUNT_ID):
         assert ledger_sum(tmp_path, member) == await economy.balance(GUILD, member)
+    # Lo que paga el inquilino queda para su deducción canaria (art. 15 del DL 1/2009).
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        (paid,) = connection.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM economy_irpf_extras "
+            "WHERE user_id = ? AND kind = 'alquiler'",
+            (BEA,),
+        ).fetchone()
+    assert paid == lease.rent
 
 
 async def test_sin_dinero_el_miembro_deja_de_pagar_y_sin_partida_no_hay_bono(
@@ -532,10 +561,11 @@ async def test_ejecutar_una_hipoteca_avalada_lo_paga_la_familia(tmp_path: Path) 
     balance = await economy.balance(GUILD, ANA)
     await economy.repository.apply(GUILD, ANA, [LedgerEntry(-balance, "prueba")])
     executed = []
-    for d in range(2, 17):
+    for d in range(2, 18):
         clock.to(d)
         for run in await service.close_days(GUILD):
             executed += run.aval_executions
+        executed += (await service.close_auctions(GUILD)).aval_executions
     assert executed == [ANA]
 
 
@@ -571,6 +601,7 @@ async def test_la_licencia_vacacional_es_una_por_barrio_y_su_tasa_va_al_estado(
     with pytest.raises(HousingError, match="licencia"):
         await service.set_level(GUILD, ANA, BAJO.key, "vacacional")
     state = ledger_sum(tmp_path, STATE_ACCOUNT_ID)
+    service.rng = random.Random(1)  # su primer random() es 0,13: la comunidad dice que sí
     fee, _balance = await service.buy_license(GUILD, ANA, BAJO.key)
     assert ledger_sum(tmp_path, STATE_ACCOUNT_ID) - state == fee == rules.LICENSE_FEE
     await service.set_level(GUILD, ANA, BAJO.key, "vacacional")

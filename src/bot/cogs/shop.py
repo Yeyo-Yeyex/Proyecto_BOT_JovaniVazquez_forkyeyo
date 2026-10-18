@@ -91,6 +91,7 @@ from bot.services.economy import (
     InsufficientFundsError,
     format_amount,
 )
+from bot.services.housing_furniture import FURNITURE_KEYS
 from bot.services.levels import TIMEZONE, calculate_level_progress
 from bot.services.lootboxes import (
     BOX_BY_KEY,
@@ -131,6 +132,7 @@ from bot.services.shop_catalog import (
     HOUSE_AISLE,
     RETIRED_ITEMS,
     REVISED_PRICES,
+    REVISED_TAXES,
     TITLE_KEYS,
     CatalogEntry,
     aisle_of,
@@ -405,7 +407,7 @@ def ticket_preview(price: Quote) -> str:
         lines.append(row(f"Rebaja -{price.discount_pct} %", f"-{money(price.discount)}"))
     lines += [
         row("Base imponible", money(price.base)),
-        row(f"IGIC {rate_label(price.rate.rate)}", money(price.tax)),
+        row(f"{price.rate.tax} {rate_label(price.rate.rate)}", money(price.tax)),
         "─" * width,
         row("TOTAL", f"{money(price.total)} Y$"),
     ]
@@ -420,7 +422,7 @@ def igic_line(price: Quote) -> str:
             f"({price.rate.law})."
         )
     return (
-        f"-# 🐶 {TAX_COLLECTOR} se lleva {format_amount(price.tax)} de IGIC "
+        f"-# 🐶 {TAX_COLLECTOR} se lleva {format_amount(price.tax)} de {price.rate.tax} "
         f"({price.rate.label.lower()}, {rate_label(price.rate.rate)}, {price.rate.law})."
     )
 
@@ -1663,7 +1665,12 @@ class Tienda(commands.Cog):
         if guild_id in self._stocked or not self.catalog:
             return 0
         added = await self.repository.stock_catalog(
-            guild_id, self.catalog, self.clock(), revised=REVISED_PRICES, retired=RETIRED_ITEMS
+            guild_id,
+            self.catalog,
+            self.clock(),
+            revised=REVISED_PRICES,
+            retired=RETIRED_ITEMS,
+            retaxed=REVISED_TAXES,
         )
         self._stocked.add(guild_id)
         if added:
@@ -1679,6 +1686,7 @@ class Tienda(commands.Cog):
             restock=True,
             revised=REVISED_PRICES,
             retired=RETIRED_ITEMS,
+            retaxed=REVISED_TAXES,
         )
         self._stocked.add(guild_id)
         return added
@@ -2102,7 +2110,8 @@ class Tienda(commands.Cog):
 
         Premios: coleccionables visibles, sin uso y de existencias ilimitadas,
         para no gastar unidades numeradas de nadie. Los títulos no tocan: se
-        lucen porque se han pagado.
+        lucen porque se han pagado. Los muebles del vacacional tampoco: suben la renta
+        de los pisos, y eso no se regala.
         """
         candidates = [
             item
@@ -2114,6 +2123,7 @@ class Tienda(commands.Cog):
             and not is_title(item.catalog_key)
             and not is_skin(item.catalog_key)
             and not is_piece(item.catalog_key)
+            and item.catalog_key not in FURNITURE_KEYS
         ]
         if not candidates:
             return None

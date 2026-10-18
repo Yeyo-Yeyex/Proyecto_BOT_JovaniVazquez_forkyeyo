@@ -1246,6 +1246,147 @@ async def press_pisos_license(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def pisos_owned(client: BotClient, key: str) -> None:
+    from bot.repositories.economy import LedgerEntry
+
+    await client.economy.repository.apply(GUILD_ID, OWNER_ID, [LedgerEntry(10_000_000, "test")])
+    await client.get_cog("Pisos").service.buy(GUILD_ID, OWNER_ID, key, 100)
+
+
+async def press_pisos_pick(client: BotClient, owner: MagicMock) -> Click:
+    await pisos_owned(client, "taco_bajo")
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen = "taco_bajo", "gestion"
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._toggle_pick(interaction)
+
+    return click
+
+
+async def press_pisos_insurance(client: BotClient, owner: MagicMock) -> Click:
+    await pisos_owned(client, "taco_bajo")
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen, panel.confirm = "taco_bajo", "gestion", "seguro"
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._toggle_insurance(interaction)
+
+    return click
+
+
+async def press_pisos_evict(client: BotClient, owner: MagicMock) -> Click:
+    await pisos_owned(client, "taco_bajo")
+    with sqlite3.connect(client.database_path) as connection:
+        connection.execute(
+            "UPDATE housing_leases SET status = 'impago', tenant = 'rider', rent = 3000, unpaid = 3"
+        )
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen = "taco_bajo", "ficha"
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._evict(interaction)
+
+    return click
+
+
+async def press_pisos_bid(client: BotClient, owner: MagicMock) -> Click:
+    from bot.repositories.economy import LedgerEntry
+
+    await client.economy.repository.apply(GUILD_ID, OWNER_ID, [LedgerEntry(10_000_000, "test")])
+    cog = client.get_cog("Pisos")
+    seller = OWNER_ID + 1
+    await client.economy.repository.apply(GUILD_ID, seller, [LedgerEntry(10_000_000, "test")])
+    await cog.service.buy(GUILD_ID, seller, "taco_bajo", 100)
+    auction = await cog.service.create_auction(GUILD_ID, seller, "taco_bajo", 100, 10_000)
+    panel = pisos_panel(client, owner)
+    panel.screen = "subastas"
+
+    async def click(interaction: MagicMock) -> None:
+        await panel.place_bid(interaction, auction.id, 20_000)
+
+    return click
+
+
+async def press_pisos_reform(client: BotClient, owner: MagicMock) -> Click:
+    await pisos_owned(client, "taco_bajo")
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen, panel.confirm = "taco_bajo", "reformas", "reforma:pintura"
+
+    async def click(interaction: MagicMock) -> None:
+        interaction.data = {"custom_id": "pisos:reforma:pintura:si"}
+        await panel._reform(interaction)
+
+    return click
+
+
+async def press_pisos_decide(client: BotClient, owner: MagicMock) -> Click:
+    await pisos_owned(client, "taco_bajo")
+    with sqlite3.connect(client.database_path) as connection:
+        connection.execute(
+            "INSERT INTO housing_decisions (guild_id, listing, event, cost, day, until) "
+            "VALUES (?, 'taco_bajo', 'averia', 3000, '2026-10-14', '2099-01-01')",
+            (GUILD_ID,),
+        )
+        (decision,) = connection.execute("SELECT id FROM housing_decisions").fetchone()
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen = "taco_bajo", "imprevistos"
+
+    async def click(interaction: MagicMock) -> None:
+        interaction.data = {"custom_id": f"pisos:decidir:{decision}:tecnico"}
+        await panel._decide(interaction)
+
+    return click
+
+
+async def pisos_shared(client: BotClient) -> None:
+    """`taco_bajo` a medias entre el dueño del panel (60) y otro miembro (40): hay junta."""
+    from bot.repositories.economy import LedgerEntry
+
+    cog = client.get_cog("Pisos")
+    for member, shares in ((OWNER_ID, 60), (OWNER_ID + 1, 40)):
+        await client.economy.repository.apply(GUILD_ID, member, [LedgerEntry(10_000_000, "t")])
+        await cog.service.buy(GUILD_ID, member, "taco_bajo", shares)
+
+
+async def press_pisos_vote(client: BotClient, owner: MagicMock) -> Click:
+    await pisos_shared(client)
+    vote = await client.get_cog("Pisos").service.propose(
+        GUILD_ID, OWNER_ID + 1, "taco_bajo", "renta", "mercado"
+    )
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen = "taco_bajo", "junta"
+
+    async def click(interaction: MagicMock) -> None:
+        interaction.data = {"custom_id": f"pisos:junta:si:{vote.id}"}
+        await panel._vote(interaction)
+
+    return click
+
+
+async def press_pisos_propose(client: BotClient, owner: MagicMock) -> Click:
+    await pisos_shared(client)
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen = "taco_bajo", "junta"
+
+    async def click(interaction: MagicMock) -> None:
+        interaction.data = {"values": ["seguro:1"]}
+        await panel._propose(interaction)
+
+    return click
+
+
+async def press_pisos_divide(client: BotClient, owner: MagicMock) -> Click:
+    await pisos_shared(client)
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen, panel.confirm = "taco_bajo", "junta", "division"
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._divide(interaction)
+
+    return click
+
+
 async def granate_in_backpack(client: BotClient) -> None:
     tienda = client.get_cog("Tienda")
     await tienda.stock_up(GUILD_ID)
@@ -1353,6 +1494,24 @@ async def press_renta(client: BotClient, owner: MagicMock) -> Click:
 
     async def click(interaction: MagicMock) -> None:
         await client.get_cog("Renta").present(interaction)
+
+    return click
+
+
+async def press_renta_open(client: BotClient, owner: MagicMock) -> Click:
+    # Una declaración cerrada y sin abrir: `renta` la enseña en un sobre.
+    with client.economy.repository._transaction() as connection:  # noqa: SLF001
+        connection.execute(
+            "INSERT INTO economy_irpf_returns (guild_id, user_id, week_start, base, quota, "
+            "deductions, withheld, result, created_at) VALUES (?, ?, '2026-10-05', 0, 0, 0, 0, "
+            "0, 0)",
+            (GUILD_ID, OWNER_ID),
+        )
+    view = await client.get_cog("Renta")._view(owner.guild, owner)  # noqa: SLF001
+    (button,) = [c for c in view.children if getattr(c, "custom_id", "") == "renta:abrir"]
+
+    async def click(interaction: MagicMock) -> None:
+        await button.callback(interaction)
 
     return click
 
@@ -1568,6 +1727,15 @@ CASES: dict[str, Press] = {
     "pisos: caja con hipoteca": press_pisos_mortgage,
     "pisos: apuntarse a la VPO": press_pisos_vpo_signup,
     "pisos: pedir la licencia": press_pisos_license,
+    "pisos: elegir yo al inquilino": press_pisos_pick,
+    "pisos: contratar el seguro": press_pisos_insurance,
+    "pisos: desahuciar con abogado": press_pisos_evict,
+    "pisos: pujar en una subasta": press_pisos_bid,
+    "pisos: empezar una reforma": press_pisos_reform,
+    "pisos: decidir un imprevisto": press_pisos_decide,
+    "pisos: votar en la junta": press_pisos_vote,
+    "pisos: proponer a la junta": press_pisos_propose,
+    "pisos: pedir la acción de división": press_pisos_divide,
     "tienda: lucir un título": press_wear_title,
     "tienda: abrir una caja": press_open_lootbox,
     "tienda: elegir skin": press_choose_skin,
@@ -1581,6 +1749,7 @@ CASES: dict[str, Press] = {
     "admin: apuntar nota": press_admin_note,
     "perfil: abrir la mochila": press_perfil_backpack,
     "renta: presentar": press_renta,
+    "renta: abrir el sobre": press_renta_open,
     "lista: tachar": press_todo,
     "lista: pasar página": press_todo_page,
     "lista: elegir prioridad": press_todo_priority,

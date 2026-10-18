@@ -38,6 +38,7 @@ from bot.services.achievements import (
     with_derived,
 )
 from bot.services.economy import STARTING_BALANCE, EconomyService
+from bot.services.housing_furniture import FURNITURE, FURNITURE_KEYS
 from bot.services.levels import TIMEZONE
 from bot.services.lootboxes import (
     BOX_BY_KEY,
@@ -70,6 +71,7 @@ from bot.services.shop_catalog import (
     RETIRED_AISLES,
     RETIRED_ITEMS,
     REVISED_PRICES,
+    REVISED_TAXES,
     Aisle,
     aisle_of,
     use_of,
@@ -162,7 +164,7 @@ def test_ficha_de_alta_de_cada_pasillo(aisle: Aisle) -> None:
     # «Hacer algo» es usarse desde la mochila o tener efecto con solo tenerlo (las
     # herramientas de `pala`, los prismáticos y la libreta de la porra), o darse
     # desde `pala` (los regalos para la familia).
-    passive = TOOL_KEYS | set(GIFT_BY_KEY) | {BINOCULARS_KEY, NOTEBOOK_KEY}
+    passive = TOOL_KEYS | set(GIFT_BY_KEY) | {BINOCULARS_KEY, NOTEBOOK_KEY} | FURNITURE_KEYS
     assert any(e.use or e.key in passive for e in on_sale), f"{aisle.key}: nada hace nada"
 
 
@@ -334,6 +336,7 @@ def test_caja_botin_pierde_dinero_pero_no_es_una_estafa_total() -> None:
         and not e.title
         and not e.key.startswith("skin_")
         and not is_piece(e.key)
+        and e.key not in FURNITURE_KEYS
     ]
     expected = mystery_expected(prizes)
     assert 0.5 * box.price < expected < box.price
@@ -448,6 +451,33 @@ async def test_un_precio_revisado_llega_a_los_servidores_que_ya_tenian_el_articu
     assert revised.description == entry.description
     (kept,) = await shop.items(2)
     assert (kept.price, kept.min_level, kept.stock) == (1_234, 0, None)
+
+
+async def test_un_impuesto_revisado_llega_a_los_servidores_que_ya_tenian_el_articulo(
+    tmp_path: Path,
+) -> None:
+    _economy, shop = await make_stores(tmp_path, Clock())
+    entry = CATALOG_BY_KEY["seguro_rc"]
+    assert entry.igic == "primas" and REVISED_TAXES[entry.key] == "cero"
+    old = replace(entry, igic=REVISED_TAXES[entry.key], description="Exento de IGIC.")
+    await shop.stock_catalog(GUILD, [old], NOW)
+    await shop.stock_catalog(2, [old], NOW)
+    # En el servidor 2 un administrador le puso otro tipo a mano: se respeta.
+    (custom,) = await shop.items(2)
+    await shop.update_item(2, custom.id, igic="general")
+
+    for guild in (GUILD, 2):
+        assert await shop.stock_catalog(guild, [entry], NOW, retaxed=REVISED_TAXES) == 0
+    (retaxed,) = await shop.items(GUILD)
+    assert (retaxed.igic_key, retaxed.description) == ("primas", entry.description)
+    assert retaxed.igic_rate.tax == "IPS"
+    (kept,) = await shop.items(2)
+    assert kept.igic_key == "general"
+
+
+def test_los_impuestos_revisados_son_de_articulos_de_serie_que_han_cambiado() -> None:
+    for key, old in REVISED_TAXES.items():
+        assert CATALOG_BY_KEY[key].igic != old and old in IGIC_BY_KEY
 
 
 def test_los_precios_revisados_son_de_articulos_de_serie_que_han_cambiado() -> None:
@@ -1196,3 +1226,13 @@ def test_los_logros_de_cajas_se_consiguen_con_lo_que_suma_el_cog() -> None:
     assert {"box_open_1", "box_first_carton", "box_got_common"} <= unlocked
     free = set(newly_unlocked(lootbox_free_stats(1).add, []))
     assert "box_free_1" in free
+
+
+def test_los_muebles_del_vacacional_son_los_articulos_de_su_pasillo() -> None:
+    """Como las herramientas de `pala`: la misma clave, emoji y nombre en la tienda."""
+    aisle = {e.key: e for e in CATALOG if e.aisle == "vacacional"}
+    assert set(aisle) == FURNITURE_KEYS
+    for item in FURNITURE:
+        assert aisle[item.key].emoji == item.emoji
+        assert aisle[item.key].name == item.name
+        assert aisle[item.key].per_user == 1

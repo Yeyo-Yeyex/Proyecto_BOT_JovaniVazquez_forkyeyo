@@ -136,23 +136,29 @@ python -m bot
   patrimonial, art. 33.1 LIRPF), aunque solo muerde a quien ya pasa del mínimo.
   El 7 de octubre, aniversario del servidor, el bot lo anuncia y el XP va
   doble todo el día.
-- **IRPF y Hacienda:** los premios por subir de nivel y la ganancia neta
-  diaria del casino tributan; el IMV está exento, como el real (art. 7.y
-  LIRPF). En el casino, las pérdidas del día compensan las ganancias del
-  mismo día: si pierdes después de ganar, Hacienda te devuelve lo retenido
-  de más.
-- **Campaña de la Renta:** cada lunes se cierra la semana anterior y las
-  pérdidas de unos días compensan las ganancias de otros. Lo retenido de más
-  sale a devolver, y se cobra presentando la declaración: con `renta` o con
-  el aviso (solo lo ves tú) que sale la primera vez que juegas en la semana.
-  Al presentar, el bot lo anuncia en el canal. Se guardan sin caducidad las 2
-  últimas semanas pendientes; si se acumula otra, la más antigua se pierde.
-  El bot crea un evento de Discord por campaña (necesita **Gestionar
-  eventos**). La retención
-  proyecta la renta anual con todo lo cobrado en los últimos 7 días
-  (nóminas, premios y casino juntos, la misma semana que la Renta) y le aplica
-  la escala estatal y la de Canarias con sus mínimos personales, a 10 Y$
-  por euro (detalle y fuentes en `src/bot/services/taxes.py`). Cada cobro
+- **IRPF y Hacienda:** los premios, las nóminas, los alquileres y la
+  ganancia neta diaria del casino tributan; el IMV está exento, como el real
+  (art. 7.y LIRPF). Toda la renta va con una sola vara, 250 Y$ por euro: la
+  semana es el año fiscal (la base de la semana × 52 / 250 da los euros del
+  año) y se aplican la escala estatal y la canaria (Ley 9/2025). Cada cobro
+  retiene con el mayor entre el tipo de la semana anterior y el de esta
+  (arts. 82 a 87 RIRPF), así que el tipo no baja a mitad de semana. En el
+  casino se retiene un 19 % fijo de lo ganado en el día si pasa de unos 1.442
+  Y$ (los 300 € del art. 75.3.f RIRPF; si no, nada): si pierdes después
+  de ganar, Hacienda te devuelve parte en la misma jugada.
+- **Campaña de la Renta:** cada lunes se cierra la declaración de toda la
+  renta de la semana anterior: trabajo, pisos (inmueble a inmueble), juego
+  (los días con pérdidas compensan a los que ganan), premios y autónomos,
+  con las deducciones de donativos, las canarias de vivienda y alquiler y la
+  de Hong Kong. Si sale a pagar, se cobra sola (lo que no llegue queda como
+  deuda con Hacienda); si sale a devolver, primero compensa deudas y el resto
+  se presenta con el botón de `renta` o con el aviso (solo lo ves tú) que
+  sale la primera vez que juegas en la semana, durante 4 semanas (los «4
+  años» de la ley). `renta` enseña un sobre cerrado con «📑 Abrir»: dentro,
+  las cuentas en pocas líneas y «🔍 Ver el detalle» con los artículos. Al
+  presentar, el bot lo anuncia en el canal. El bot crea un evento de Discord
+  por campaña (necesita **Gestionar eventos**). Detalle y fuentes en
+  `src/bot/services/taxes.py`. Cada cobro
   muestra una línea pequeña con lo que se lleva Perro Sanxe. Todo lo
   retenido entra en la cuenta del Estado (`user_id = 0` en
   `economy_wallets`), y `hacienda` muestra a cualquiera su saldo, lo
@@ -162,10 +168,10 @@ python -m bot
 - **Impuesto sobre el Patrimonio:** cada lunes se cobra lo que pase de
   7.000.000 Y$ (los 700.000 € reales a 10 Y$ por euro) entre efectivo, pisos y
   objetos de la tienda, con los tipos reales (0,2 % a 3,5 %, art. 30 de la Ley
-  19/1991) y el límite conjunto con el IRPF de la semana (art. 31: nunca más del
-  60 % de la renta, pagando al menos la mitad). Quien pasa de 37.000.000 Y$ declara
-  además las Grandes Fortunas, que en Canarias salen a cero. `saldo` avisa de lo
-  que te tocaría y el bot anuncia quién ha pagado. La primera semana tras
+  19/1991) y el límite conjunto con el IRPF de la semana (art. 31: los dos
+  juntos no pasan del 60 % de la base, pagando al menos el 20 % de la cuota).
+  Quien pasa de 37.000.000 Y$ declara además las Grandes Fortunas, que en
+  Canarias salen a cero. `saldo` avisa de lo que te tocaría y el bot anuncia quién ha pagado. La primera semana tras
   desplegarlo no cobra.
 - **Pisos (`pisos`):** un panel que es solo imágenes con el mercado inmobiliario
   de 20 barrios de Gran Canaria y Tenerife, cada uno con su carácter (180
@@ -184,7 +190,8 @@ python -m bot
   medio del día anterior, por tramos: 2,5 % hasta 4.000 Y$, 1,25 % hasta 20.000
   y 0,4 % hasta 70.000 (500 Y$ brutos al día como mucho). Cobran también los
   que no hacen nada. Retención del 19 % en cada pago (art. 101.4 LIRPF) y, cada
-  lunes, liquidación con la escala del ahorro (arts. 66.1 y 76 LIRPF). El aviso
+  lunes, liquidación con la escala del ahorro (arts. 66.1 y 76 LIRPF), que
+  con el tope diario siempre se queda en el 19 % y sale a cero. El aviso
   llega una vez, en la siguiente acción con dinero; `saldo` enseña lo de ayer y
   lo que va saliendo hoy.
 - **IGIC:** el impuesto al consumo es el canario, no el IVA. Lo pagan las
@@ -345,8 +352,12 @@ python -m bot
   madre, que te cubra el saliente, la excusa para librarte de un marrón, un
   Bizum de mamá que se devuelve con la mitad de cada turno o que tus padres te
   avalen la hipoteca o el alquiler de `pisos`.
-  Las nóminas van a 100 Y$ por euro (un turno del puesto más bajo, unos 1.700 Y$,
-  cunde como un IMV a racha máxima; ver `docs/economia-trabajo.md`).
+  Un turno del puesto más bajo, unos 1.700 Y$, cunde algo más que un IMV a
+  racha máxima. Cada oficio fija sus tres primeros sueldos y el resto sale de
+  una curva común: cada puesto de rama cobra un 24 % más que el anterior en la
+  rama segura y un 34 % en la arriesgada, y pide de 13 a 21 días fichando
+  (análisis de los sueldos en `docs/economia-trabajo.md`; simulador en
+  `docs/economia_sim.py`).
   El IMV se reduce 1 Y$ por cada 20 Y$ netos de nómina que pasen de 11.506 a la semana
   (incentivo al empleo del RD 789/2022), pero nunca baja del 20 %. Eventos con
   dos opciones (sobres, enchufes, la UCO, la comunión del sobrino). En
@@ -373,8 +384,12 @@ python -m bot
   energéticas, veladas de boxeo, cripto y un partido). **Carrera larga**, como en los Sims: al
   acabar el tronco se elige rama; cada puesto da una ventaja 🏅 para siempre
   (más tiempo, un fallo gratis, menos cansancio…); en lo más alto de una rama
-  te puedes **jubilar** y seguir por la otra, con una **pensión** diaria que se
-  cobra con un botón (IRPF sin cotizar, art. 17.2.a LIRPF); y cada día hay un
+  te puedes **jubilar** y seguir por la otra, con una sola **pensión** diaria
+  que crece con cada rama completada en cualquier oficio, hasta la base máxima
+  de cotización, y se cobra con un botón (IRPF sin cotizar, art. 17.2.a LIRPF;
+  mientras sigues trabajando, solo una parte las primeras semanas: jubilación
+  activa, art. 214 TRLGSS). Cada rama completada en otro oficio da un 10 % más
+  de sueldo (hasta un 50 %) y menos días y tareas para ascender; y cada día hay un
   🌠 **deseo del día** (sacar un 90, fichar de madrugada…) que paga ×1,25 y
   sube la barra, con racha. Los ascensos de las ramas, las jubilaciones, los
   exits y los vídeos virales se anuncian en el canal. Un administrador limita
@@ -399,8 +414,9 @@ python -m bot
   quieres: cada uno paga el ITP de lo que recibe y la plusvalía de lo que da.
 - **Donativos** (`donar`): cuatro ONGs de broma que hacen lo contrario de lo
   que dicen. Donar es gastar (el dinero se queda en la ONG), pero desgrava en
-  la renta del lunes: 80 % de los primeros 2.500 Y$ y 40 % del resto, hasta el
-  10 % de lo que ganes esa semana y sin pasar del IRPF pagado.
+  la renta del lunes: 80 % de los primeros 250 € al año (unos 1.202 Y$ a la
+  semana) y 40 % del resto, hasta el 10 % de tu base de esa semana. Rebaja lo
+  que sale a pagar o sube lo que sale a devolver.
 - **Ruleta americana** (0 y 00, la casa gana el 5,26 %): `ruleta` abre una
   mesa con botones que solo puede usar quien la abre. Cada clic en una
   apuesta cobra, gira (GIF de ~4 s) y paga. En cada tirada caen de 1 a 5

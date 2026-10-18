@@ -5,8 +5,8 @@ contrario, o se gastan lo donado en conseguir más dinero. Donar es un gasto
 de verdad (el dinero se queda en la cuenta de la ONG, no vuelve a nadie), pero
 desgrava: el art. 19.1 de la Ley 49/2002 permite deducir de la cuota del IRPF
 el 80 % de los primeros 250 € y el 40 % del resto. La regla está en
-`bot.services.taxes.donation_deduction` y la devolución llega con la renta del
-lunes. Es el truco de siempre: donar para pagar menos a Perro Sanxe.
+`bot.services.taxes.donation_deduction` y se aplica en la declaración del lunes.
+Es el truco de siempre: donar para pagar menos a Perro Sanxe.
 
 Tratamiento fiscal del donativo: no paga IGIC (no hay contraprestación, art. 4
 de la Ley 20/1991) ni Donaciones (quien recibe es una entidad, y el ISD solo

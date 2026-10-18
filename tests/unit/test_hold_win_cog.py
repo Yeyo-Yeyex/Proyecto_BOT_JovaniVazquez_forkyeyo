@@ -62,6 +62,7 @@ from bot.services.hold_win import (
     evaluate_base,
 )
 from bot.services.hold_win_render import Media
+from bot.services.taxes import gambling_day_tax
 
 GUILD_ID = 1
 OWNER_ID = 10
@@ -310,7 +311,7 @@ async def test_tirar_cobra_gira_y_paga_la_recogida(
     await view._spin(interaction)
 
     balance = await cog.economy.balance(GUILD_ID, OWNER_ID)
-    assert balance == STARTING_BALANCE - 100 + 250
+    assert balance == STARTING_BALANCE - 100 + 250 - gambling_day_tax(250 - 100)
     assert ledger_sum(tmp_path, OWNER_ID) == balance
     interaction.response.defer.assert_awaited_once()
     first, final = interaction.edit_original_response.await_args_list
@@ -616,7 +617,9 @@ async def test_la_proxima_tirada_se_sortea_y_se_pinta_antes_del_clic(
     await view._painting
 
     # Se juega la tirada sorteada y su GIF no se vuelve a pintar.
-    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE - 100 + 250
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == (
+        STARTING_BALANCE - 100 + 250 - gambling_day_tax(250 - 100)
+    )
     first = interaction.edit_original_response.await_args_list[0]
     assert first.kwargs["attachments"][0].fp.read() == b"GIF"
     assert not [c for c in renderer_calls(cog, "base", count) if c["spin"] is COLLECT]
@@ -673,7 +676,9 @@ async def test_cambiar_la_apuesta_o_el_turbo_vuelve_a_planear(
     await view._painting
 
     # Tirar a 50 en turbo usa lo pintado.
-    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE - 50 + 125
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == (
+        STARTING_BALANCE - 50 + 125 - gambling_day_tax(125 - 50)
+    )
     assert not [c for c in renderer_calls(cog, "base", count) if c["spin"] is COLLECT]
 
 
@@ -974,7 +979,9 @@ async def test_sin_pintar_por_adelantado_no_se_sortea_nada_de_mas(
     await view._spin(make_interaction())
 
     # Se sortea al jugar, no antes: la primera de las dos de guion es la que sale.
-    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE - 100 + 250
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == (
+        STARTING_BALANCE - 100 + 250 - gambling_day_tax(250 - 100)
+    )
     assert view._painting is None and view._auto_next is None
 
 

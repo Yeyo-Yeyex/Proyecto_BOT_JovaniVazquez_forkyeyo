@@ -16,16 +16,32 @@ Tablas del mercado (en el mismo archivo SQLite que el resto del bot):
   para el panel y los logros. Se guardan los últimos `NEWS_DAYS` días.
 - `housing_income`: lo que cobró y pagó cada miembro cada día por cada inmueble,
   para el resumen del panel y lo que mira el banco. Se guardan `NEWS_DAYS` días.
+- `housing_candidates`: los candidatos que esperan en un piso cuyo dueño elige al
+  inquilino (`housing.PICK_SELF`), con el día hasta el que esperan.
+- `housing_barrio_news`: la noticia de barrio de cada semana (`housing.monday_news`).
+- `housing_rent_bonus`: los inmuebles por los que cada miembro ya se aplicó la deducción
+  canaria por alquilar una vivienda vacía (una vez por inmueble, cinco como mucho).
+- `housing_reforms`: las reformas de cada inmueble del servidor (en obras o terminadas). Se
+  quedan con el inmueble aunque cambie de dueño o vuelva al mercado (`Market.listing` lo
+  devuelve mejorado).
+- `housing_decisions`: los imprevistos que espera decidir el dueño (averías, humedades,
+  cerraduras y el vecino) y lo que eligió; si no elige en dos días, los arregla la gestora.
+- `housing_reviews`: las últimas reseñas de cada vivienda vacacional (`REVIEW_WINDOW`); la
+  media va en `housing_leases.rating`. Se borran si el inmueble vuelve al mercado.
 
 Hipotecas, banco, Euríbor, VPO, vivienda habitual, ofertas del fondo buitre y SOCIMI
-están en `bot.repositories.housing_finance`, con funciones que corren dentro de las
-mismas transacciones.
+están en `bot.repositories.housing_finance`, la junta de copropietarios (votaciones,
+administradores y fondo de reserva) en `bot.repositories.housing_junta`, y las subastas y sus
+pujas en `bot.repositories.housing_trade`, con funciones que corren dentro de las mismas
+transacciones. Lo adjudicado en una subasta judicial queda bloqueado para venderlo al
+mercado (`housing_holdings.locked_until`).
 
 El dinero no se toca aquí. Lo que mueve dinero (`buy`, `sell`, `close_day`,
 `amortize`, `vpo_buy`, `vpo_return`, `buy_license`, `found_socimi`,
-`rent_to_member`, que cobra la fianza) devuelve una función que corre dentro de la
-transacción de `EconomyRepository.housing`. Lo que no mueve dinero (la renta que se
-pide, desahucios, apuntarse al sorteo, vivir en un piso) va en su propia transacción.
+`rent_to_member`, que cobra la fianza, y `evict`, que paga el abogado) devuelve una
+función que corre dentro de la transacción de `EconomyRepository.housing`. Lo que no
+mueve dinero (la renta que se pide, quién elige al inquilino, el seguro, firmar con un
+candidato, apuntarse al sorteo, vivir en un piso) va en su propia transacción.
 
 La fianza de un miembro de alquiler se devuelve sola la noche después de que se vaya,
 por el camino que sea (se muda, lo desahucian, venden el piso, lo ejecutan): el cierre
@@ -40,7 +56,7 @@ from __future__ import annotations
 import asyncio
 import random
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 from functools import partial
@@ -48,8 +64,11 @@ from pathlib import Path
 from typing import TypeVar
 
 from bot.repositories import housing_finance as finance
+from bot.repositories import housing_junta as junta
+from bot.repositories import housing_trade as trade
 from bot.repositories import sqlite
 from bot.repositories.economy import (
+    HOUSING_AUCTION_ACCOUNT_ID,
     HOUSING_DEPOSIT_ACCOUNT_ID,
     STATE_ACCOUNT_ID,
     HousingDebit,
@@ -60,19 +79,35 @@ from bot.repositories.economy import (
     LedgerEntry,
 )
 from bot.repositories.housing_finance import Mortgage, Promotion, VpoOwner
+from bot.repositories.housing_junta import Vote
+from bot.repositories.housing_trade import Auction
 from bot.services import housing as rules
 from bot.services.economy import format_amount
 from bot.services.housing_catalog import (
+    BARRIO_BY_KEY,
+    BARRIO_NEWS_BY_KEY,
     BARRIOS,
     DEFAULT_RENT_LEVEL,
     LISTING_BY_KEY,
+    REFORM_BY_KEY,
     RENT_LEVELS,
+    REVIEW_LINES,
     VPO_BY_KEY,
     VPO_UNITS,
+    BarrioNews,
     Listing,
     listings_of,
 )
+from bot.services.housing_furniture import furniture_stars, nomad_boost
 from bot.services.levels import local_day
+from bot.services.taxes import (
+    INCOME_BUSINESS,
+    INCOME_PRIZE,
+    INSURANCE_DEDUCTION_RENT_MAX,
+    VACANT_RENTAL_DEDUCTION_MAX,
+    igic,
+    vacant_rental_deduction,
+)
 
 T = TypeVar("T")
 
@@ -106,6 +141,8 @@ class Holding:
         paid: Lo que pagó por ellas, sin impuestos ni gastos.
         cost: Lo que le costaron, con ITP y notaría.
         since: Cuándo compró la primera (epoch).
+        locked_until: Hasta qué día no se pueden vender al mercado (lo adjudicado en una
+            subasta judicial, `housing.AUCTION_LOCK_DAYS`); `None` si se pueden.
     """
 
     listing: str
@@ -114,6 +151,7 @@ class Holding:
     paid: int
     cost: int
     since: float
+    locked_until: date | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,6 +193,16 @@ class Market:
         offers: `{(inmueble, miembro): (precio, último día)}` del fondo buitre.
         socimi: Quién tiene SOCIMI.
         promotions: La obra nueva del servidor (fase 5), por clave.
+        candidates: Candidatos que esperan en cada inmueble, `(inquilino, hasta)`.
+        barrio_news: `{barrio: (noticia, desde, hasta)}` de las noticias de barrio.
+        bonuses: Inmuebles por los que cada miembro ya se aplicó la deducción del art. 16.
+        auctions: Las subastas abiertas.
+        reforms: `{inmueble: {reforma: (coste, día que acaba, terminada, rehabilitación)}}`.
+        decisions: Imprevistos que esperan decisión, por inmueble.
+        reviews: Las últimas reseñas de cada vacacional, de la más nueva a la más vieja.
+        votes: Las votaciones abiertas de las juntas.
+        admins: Quién administra cada inmueble por acuerdo de su junta.
+        reserves: El fondo de reserva de cada inmueble que tiene algo.
     """
 
     indexes: dict[str, float] = field(default_factory=dict)
@@ -170,22 +218,80 @@ class Market:
     offers: dict[tuple[str, int], tuple[int, date]] = field(default_factory=dict)
     socimi: frozenset[int] = frozenset()
     promotions: dict[str, Promotion] = field(default_factory=dict)
+    candidates: dict[str, tuple[tuple[str, date], ...]] = field(default_factory=dict)
+    barrio_news: dict[str, tuple[str, date, date]] = field(default_factory=dict)
+    bonuses: dict[int, frozenset[str]] = field(default_factory=dict)
+    auctions: tuple[Auction, ...] = ()
+    reforms: dict[str, dict[str, tuple[int, date, bool, bool]]] = field(default_factory=dict)
+    decisions: dict[str, tuple[Decision, ...]] = field(default_factory=dict)
+    reviews: dict[str, tuple[Review, ...]] = field(default_factory=dict)
+    votes: tuple[Vote, ...] = ()
+    admins: dict[str, int] = field(default_factory=dict)
+    reserves: dict[str, int] = field(default_factory=dict)
+
+    def manager(self, key: str) -> int | None:
+        """Quién decide en un inmueble: a quien eligió la junta o la mayoría (art. 398 CC).
+
+        Lo que eligió la junta vale mientras esa persona siga siendo dueña y haya junta (dos
+        dueños o más); si no, decide quien tiene más de la mitad, o nadie.
+        """
+        holders = self.shares_of(key)
+        admin = self.admins.get(key)
+        if admin is not None and admin in holders and len(holders) > 1:
+            return admin
+        return rules.manager(holders)
+
+    def votes_of(self, key: str) -> tuple[Vote, ...]:
+        """Las votaciones abiertas de la junta de un inmueble."""
+        return tuple(v for v in self.votes if v.listing == key)
+
+    def division_of(self, key: str) -> Auction | None:
+        """La subasta de la acción de división de un inmueble, si hay una abierta."""
+        return next((a for a in self.auctions if a.listing == key and a.division), None)
+
+    def auction_of(self, key: str, seller: int) -> Auction | None:
+        """La subasta abierta de las participaciones de alguien en un inmueble, si hay."""
+        return next((a for a in self.auctions if a.listing == key and a.seller == seller), None)
+
+    def news_of(self, barrio: str, day: date) -> BarrioNews | None:
+        """La noticia en marcha de un barrio ese día, si hay."""
+        item = self.barrio_news.get(barrio)
+        if item is None or not item[1] <= day <= item[2]:
+            return None
+        return BARRIO_NEWS_BY_KEY.get(item[0])
+
+    def candidates_of(self, key: str, day: date) -> tuple[str, ...]:
+        """Los candidatos que siguen esperando en un inmueble (vacío y con dueño que elige)."""
+        lease = self.leases.get(key)
+        if lease is None or lease.status != rules.VACANT or lease.pick != rules.PICK_SELF:
+            return ()
+        return tuple(t for t, until in self.candidates.get(key, ()) if until >= day)
 
     def listing(self, key: str) -> Listing | None:
-        """El inmueble de una clave: del catálogo de siempre o de la obra nueva del servidor."""
+        """El inmueble de una clave (del catálogo o de la obra nueva), con sus reformas."""
         listing = LISTING_BY_KEY.get(key)
         if listing is None and (promotion := self.promotions.get(key)) is not None:
-            return promotion.listing
-        return listing
+            listing = promotion.listing
+        if listing is None or key not in self.reforms:
+            return listing
+        return self._improved(listing)
+
+    def _improved(self, listing: Listing) -> Listing:
+        done = [
+            (REFORM_BY_KEY[r], cost, until, rehab)
+            for r, (cost, until, finished, rehab) in self.reforms.get(listing.key, {}).items()
+            if finished and r in REFORM_BY_KEY
+        ]
+        return rules.improved(listing, done) if done else listing
 
     def keys(self) -> list[str]:
         """Las claves de todos los inmuebles del servidor: el catálogo y luego la obra nueva."""
         return [*LISTING_BY_KEY, *self.promotions]
 
     def listings_of(self, barrio: str) -> tuple[Listing, ...]:
-        """Los inmuebles de un barrio: los nueve del catálogo y su obra nueva, si la tiene."""
+        """Los inmuebles de un barrio: los nueve del catálogo y su obra nueva, con reformas."""
         extra = tuple(p.listing for p in self.promotions.values() if p.listing.barrio == barrio)
-        return (*listings_of(barrio), *extra)
+        return tuple(self._improved(item) for item in (*listings_of(barrio), *extra))
 
     def index(self, barrio: str) -> float:
         """Índice de un barrio (1 si nunca se ha movido)."""
@@ -263,6 +369,63 @@ class Market:
         """El tipo de un inmueble del servidor (vacío si la clave ya no existe)."""
         listing = self.listing(key)
         return listing.kind if listing is not None else ""
+
+
+@dataclass(frozen=True, slots=True)
+class Review:
+    """La reseña de una estancia vacacional.
+
+    Attributes:
+        day: Cuándo se fue el huésped.
+        guest: Quién era (clave del catálogo de inquilinos).
+        stars: De 1 a 5.
+        line: Su frase (`housing_catalog.REVIEW_LINES[stars][line]`).
+    """
+
+    day: date
+    guest: str
+    stars: int
+    line: int
+
+
+@dataclass(frozen=True, slots=True)
+class Decision:
+    """Un imprevisto que espera decisión del dueño (`housing.DECISIONS`).
+
+    Attributes:
+        id: Su número.
+        listing: El inmueble.
+        event: `averia`, `humedades`, `cerradura` o `vecino`.
+        cost: Lo que costaría arreglarlo bien (sin IGIC).
+        day: Cuándo pasó.
+        until: Último día para decidir; después lo arregla la gestora.
+        choice: Lo que eligió el dueño (`Choice.key`), si eligió.
+    """
+
+    id: int
+    listing: str
+    event: str
+    cost: int
+    day: date
+    until: date
+    choice: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ReformDone:
+    """Una reforma pagada.
+
+    Attributes:
+        listing: El inmueble.
+        reform: La clave de la reforma.
+        quote: Las cuentas (`housing.reform_quote`).
+        until: Último día de obras.
+    """
+
+    listing: str
+    reform: str
+    quote: rules.ReformQuote
+    until: date
 
 
 @dataclass(frozen=True, slots=True)
@@ -359,6 +522,121 @@ class TenantDeal:
 
 
 @dataclass(frozen=True, slots=True)
+class MemberSale:
+    """Una venta de participaciones a otro miembro.
+
+    Attributes:
+        listing: El inmueble.
+        quote: Las cuentas (`housing.member_sale_quote`).
+        seller: Quien vende.
+        buyer: Quien compra.
+        loan: Lo que prestó el banco al comprador (0 al contado).
+        payment: La cuota de esa hipoteca.
+        rate: Su tipo fijo.
+        aval: Si el banco solo la dio con el aval de los padres del comprador.
+        payoff: Lo que se fue de lo cobrado a cancelar la hipoteca del vendedor.
+        moved_in: Si el comprador era el miembro de alquiler y ahora vive en lo suyo.
+    """
+
+    listing: str
+    quote: rules.MemberSaleQuote
+    seller: int
+    buyer: int
+    loan: int = 0
+    payment: int = 0
+    rate: float = 0.0
+    aval: bool = False
+    payoff: int = 0
+    moved_in: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class Bid:
+    """Una puja hecha.
+
+    Attributes:
+        auction: La subasta, ya con la puja.
+        escrow: Lo que ha dejado en el depósito (la puja, el ITP y la notaría).
+        outbid: A quién ha superado (se le ha devuelto lo suyo), si a alguien.
+        extended: Si la subasta se ha alargado por pujar en la última hora.
+    """
+
+    auction: Auction
+    escrow: int
+    outbid: int | None = None
+    extended: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class AuctionResult:
+    """Cómo ha acabado una subasta.
+
+    Attributes:
+        auction: La subasta.
+        winner: Quién se la lleva (`None` si nadie).
+        price: Por cuánto.
+        bank: Si se la ha quedado el banco al 70 % (una judicial sin puja que valga).
+        cancelled: Si se ha anulado (el ejecutado pagó toda la deuda, o ya no existe).
+    """
+
+    auction: Auction
+    winner: int | None = None
+    price: int = 0
+    bank: bool = False
+    cancelled: bool = False
+
+
+@dataclass(slots=True)
+class AuctionRun:
+    """Las subastas cerradas en una pasada (se rellena mientras se cierran).
+
+    Tiene los mismos campos que usa una ejecución hipotecaria en `DayRun` (`executions`,
+    `aval_executions`, `news`), porque una judicial sin pujas acaba en una.
+    """
+
+    results: list[AuctionResult] = field(default_factory=list)
+    executions: list[tuple[int, str]] = field(default_factory=list)
+    aval_executions: list[int] = field(default_factory=list)
+    news: list[News] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class Eviction:
+    """Un desahucio pedido.
+
+    Attributes:
+        lease: El contrato, ya con la fecha del juicio.
+        fee: Abogado y procurador (sin IGIC); 0 si los paga el seguro de impago.
+        fee_igic: El IGIC de esos servicios.
+        insured: Si los ha pagado el seguro de impago.
+        squatters: Si es contra okupas.
+    """
+
+    lease: rules.Lease
+    fee: int = 0
+    fee_igic: int = 0
+    insured: bool = False
+    squatters: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class Signing:
+    """Un contrato firmado con un candidato elegido por el dueño.
+
+    Attributes:
+        lease: El contrato.
+        tenant: El inquilino.
+        risk: Su riesgo de impago (`bajo`, `medio` o `alto`).
+        first: Si es el primer contrato del inmueble.
+    """
+
+    lease: rules.Lease
+    tenant: str
+    risk: str
+    first: bool
+
+
+@dataclass(frozen=True, slots=True)
 class MemberDay:
     """Lo que un miembro cobró y pagó un día por todos sus inmuebles (antes del IRPF)."""
 
@@ -388,6 +666,18 @@ class DayRun:
         promotions: `(promotor, inmueble)` de la obra nueva que ha salido hoy (los lunes).
         euribor: `(el de antes, el nuevo)` si hoy ha sido lunes y se ha movido el
             Euríbor (aunque se quede igual), para el anuncio del BCE.
+        barrio_news: `(barrio, noticia)` de las noticias de barrio que salen hoy (lunes).
+        candidates: `(inmueble, inquilino)` de cada candidato que llega hoy.
+        insurer: Lo que el seguro de impago ha pagado hoy a cada dueño.
+        bonus: Lo que deduce cada dueño hoy por alquilar una vivienda vacía (art. 16).
+        young: Inmuebles que firman hoy con la reducción del 70 % (inquilino joven).
+        auctions: `(ejecutado, inmueble, subasta)` de las subastas judiciales que se abren hoy.
+        resolved: `(dueños, imprevisto, forma)` de los imprevistos resueltos hoy.
+        works: `(dueños, inmueble)` de las obras que acaban hoy.
+        moods: Humor de los inquilinos de cada dueño al cerrar el día.
+        reviews: `(dueños, inmueble, estrellas)` de cada reseña de hoy.
+        superhosts: `(dueños, inmueble)` de los vacacionales que hoy llegan a Superanfitrión.
+        cleanings: `(dueños, inmueble)` de cada limpieza de hoy (un huésped que se va).
     """
 
     day: date
@@ -405,6 +695,18 @@ class DayRun:
     aval_executions: list[int] = field(default_factory=list)
     promotions: list[tuple[int, str]] = field(default_factory=list)
     euribor: tuple[float, float] | None = None
+    barrio_news: list[tuple[str, str]] = field(default_factory=list)
+    candidates: list[tuple[str, str]] = field(default_factory=list)
+    insurer: dict[int, int] = field(default_factory=dict)
+    bonus: dict[int, int] = field(default_factory=dict)
+    young: list[str] = field(default_factory=list)
+    auctions: list[tuple[int, str, int]] = field(default_factory=list)
+    resolved: list[tuple[tuple[int, ...], str, str]] = field(default_factory=list)
+    works: list[tuple[tuple[int, ...], str]] = field(default_factory=list)
+    moods: dict[int, list[int]] = field(default_factory=dict)
+    reviews: list[tuple[tuple[int, ...], str, int]] = field(default_factory=list)
+    superhosts: list[tuple[tuple[int, ...], str]] = field(default_factory=list)
+    cleanings: list[tuple[tuple[int, ...], str]] = field(default_factory=list)
 
 
 def _date(text: str | None) -> date | None:
@@ -437,6 +739,20 @@ def _lease_from(row: sqlite3.Row) -> rules.Lease:
         member=row["member"],
         bono=bool(row["bono"]),
         license=bool(row["license"]),
+        last_rent=int(row["last_rent"]),
+        reduction=None if row["reduction"] is None else float(row["reduction"]),
+        pick=str(row["pick"]),
+        insured=bool(row["insured"]),
+        claims=int(row["claims"]),
+        solvent=bool(row["solvent"]),
+        bonus=bool(row["bonus"]),
+        works_until=_date(row["works_until"]),
+        mood=int(row["mood"]),
+        home_claim_until=_date(row["home_claim_until"]),
+        rating=float(row["rating"]),
+        reviews=int(row["reviews"]),
+        license_until=_date(row["license_until"]),
+        license_denied_until=_date(row["license_denied_until"]),
     )
 
 
@@ -447,19 +763,33 @@ def _save_lease_in(
         """
         INSERT INTO housing_leases
             (guild_id, listing, status, level, tenant, rent, until, since, unpaid,
-             eviction_at, arrears, arrears_ibi, member, bono, license)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             eviction_at, arrears, arrears_ibi, member, bono, license, last_rent, reduction,
+             pick, insured, claims, solvent, bonus, works_until, mood, home_claim_until,
+             rating, reviews, license_until, license_denied_until)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?)
         ON CONFLICT (guild_id, listing) DO UPDATE SET
             status = excluded.status, level = excluded.level, tenant = excluded.tenant,
             rent = excluded.rent, until = excluded.until, since = excluded.since,
             unpaid = excluded.unpaid, eviction_at = excluded.eviction_at,
             arrears = excluded.arrears, arrears_ibi = excluded.arrears_ibi,
-            member = excluded.member, bono = excluded.bono, license = excluded.license
+            member = excluded.member, bono = excluded.bono, license = excluded.license,
+            last_rent = excluded.last_rent, reduction = excluded.reduction,
+            pick = excluded.pick, insured = excluded.insured, claims = excluded.claims,
+            solvent = excluded.solvent, bonus = excluded.bonus,
+            works_until = excluded.works_until, mood = excluded.mood,
+            home_claim_until = excluded.home_claim_until, rating = excluded.rating,
+            reviews = excluded.reviews, license_until = excluded.license_until,
+            license_denied_until = excluded.license_denied_until
         """,
         (
             guild_id, listing, lease.status, lease.level, lease.tenant, lease.rent,
             _iso(lease.until), _iso(lease.since), lease.unpaid, _iso(lease.eviction_at),
             lease.arrears, lease.arrears_ibi, lease.member, int(lease.bono), int(lease.license),
+            lease.last_rent, lease.reduction, lease.pick, int(lease.insured), lease.claims,
+            int(lease.solvent), int(lease.bonus), _iso(lease.works_until), lease.mood,
+            _iso(lease.home_claim_until), lease.rating, lease.reviews, _iso(lease.license_until),
+            _iso(lease.license_denied_until),
         ),
     )  # fmt: skip
 
@@ -473,19 +803,69 @@ def _market_in(connection: sqlite3.Connection, guild_id: int) -> Market:
     }
     holdings: dict[str, dict[int, Holding]] = {}
     for r in connection.execute(
-        "SELECT listing, user_id, shares, paid, cost, since FROM housing_holdings "
+        "SELECT listing, user_id, shares, paid, cost, since, locked_until FROM housing_holdings "
         "WHERE guild_id = ?",
         (guild_id,),
     ):
         holding = Holding(
             str(r["listing"]), int(r["user_id"]), int(r["shares"]), int(r["paid"]),
-            int(r["cost"]), float(r["since"]),
+            int(r["cost"]), float(r["since"]), _date(r["locked_until"]),
         )  # fmt: skip
         holdings.setdefault(holding.listing, {})[holding.user_id] = holding
     leases = {
         str(r["listing"]): _lease_from(r)
         for r in connection.execute("SELECT * FROM housing_leases WHERE guild_id = ?", (guild_id,))
     }
+    candidates: dict[str, list[tuple[str, date]]] = {}
+    for r in connection.execute(
+        "SELECT listing, tenant, until FROM housing_candidates WHERE guild_id = ? ORDER BY id",
+        (guild_id,),
+    ):
+        candidates.setdefault(str(r["listing"]), []).append(
+            (str(r["tenant"]), date.fromisoformat(r["until"]))
+        )
+    barrio_news = {
+        str(r["barrio"]): (str(r["news"]), date.fromisoformat(r["start"]),
+                           date.fromisoformat(r["until"]))
+        for r in connection.execute(
+            "SELECT barrio, news, start, until FROM housing_barrio_news WHERE guild_id = ?",
+            (guild_id,),
+        )
+    }  # fmt: skip
+    bonuses: dict[int, set[str]] = {}
+    for r in connection.execute(
+        "SELECT user_id, listing FROM housing_rent_bonus WHERE guild_id = ?", (guild_id,)
+    ):
+        bonuses.setdefault(int(r["user_id"]), set()).add(str(r["listing"]))
+    reforms: dict[str, dict[str, tuple[int, date, bool, bool]]] = {}
+    for r in connection.execute(
+        "SELECT listing, reform, cost, until, finished, rehab FROM housing_reforms "
+        "WHERE guild_id = ?",
+        (guild_id,),
+    ):
+        reforms.setdefault(str(r["listing"]), {})[str(r["reform"])] = (
+            int(r["cost"]),
+            date.fromisoformat(r["until"]),
+            bool(r["finished"]),
+            bool(r["rehab"]),
+        )
+    reviews: dict[str, list[Review]] = {}
+    for r in connection.execute(
+        "SELECT * FROM housing_reviews WHERE guild_id = ? ORDER BY id DESC", (guild_id,)
+    ):
+        reviews.setdefault(str(r["listing"]), []).append(
+            Review(date.fromisoformat(r["day"]), str(r["guest"]), int(r["stars"]), int(r["line"]))
+        )
+    decisions: dict[str, list[Decision]] = {}
+    for r in connection.execute(
+        "SELECT * FROM housing_decisions WHERE guild_id = ? ORDER BY id", (guild_id,)
+    ):
+        decisions.setdefault(str(r["listing"]), []).append(
+            Decision(
+                int(r["id"]), str(r["listing"]), str(r["event"]), int(r["cost"]),
+                date.fromisoformat(r["day"]), date.fromisoformat(r["until"]), r["choice"],
+            )
+        )  # fmt: skip
     return Market(
         indexes=indexes,
         holdings=holdings,
@@ -500,7 +880,47 @@ def _market_in(connection: sqlite3.Connection, guild_id: int) -> Market:
         offers=finance.offers_in(connection, guild_id),
         socimi=frozenset(finance.socimi_in(connection, guild_id)),
         promotions=finance.promotions_in(connection, guild_id),
+        candidates={k: tuple(v) for k, v in candidates.items()},
+        barrio_news=barrio_news,
+        bonuses={k: frozenset(v) for k, v in bonuses.items()},
+        auctions=trade.auctions_in(connection, guild_id),
+        reforms=reforms,
+        decisions={k: tuple(v) for k, v in decisions.items()},
+        reviews={k: tuple(v) for k, v in reviews.items()},
+        votes=junta.votes_in(connection, guild_id),
+        admins=junta.admins_in(connection, guild_id),
+        reserves=junta.reserves_in(connection, guild_id),
     )
+
+
+def _clear_reviews_in(connection: sqlite3.Connection, guild_id: int, key: str) -> None:
+    connection.execute(
+        "DELETE FROM housing_reviews WHERE guild_id = ? AND listing = ?", (guild_id, key)
+    )
+
+
+def _review_in(
+    connection: sqlite3.Connection, guild_id: int, key: str, day: date, guest: str, stars: int,
+    line: int,
+) -> tuple[float, int]:  # fmt: skip
+    """Guarda una reseña, deja las últimas `REVIEW_WINDOW` y devuelve `(media, cuántas)`."""
+    connection.execute(
+        "INSERT INTO housing_reviews (guild_id, listing, day, guest, stars, line) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (guild_id, key, day.isoformat(), guest, stars, line),
+    )
+    connection.execute(
+        "DELETE FROM housing_reviews WHERE guild_id = ? AND listing = ? AND id NOT IN "
+        "(SELECT id FROM housing_reviews WHERE guild_id = ? AND listing = ? "
+        "ORDER BY id DESC LIMIT ?)",
+        (guild_id, key, guild_id, key, rules.REVIEW_WINDOW),
+    )
+    count, total = connection.execute(
+        "SELECT COUNT(*), COALESCE(SUM(stars), 0) FROM housing_reviews "
+        "WHERE guild_id = ? AND listing = ?",
+        (guild_id, key),
+    ).fetchone()
+    return (round(total / count, 2) if count else 0.0), int(count)
 
 
 def _set_index_in(connection: sqlite3.Connection, guild_id: int, barrio: str, value: float) -> None:
@@ -511,6 +931,29 @@ def _set_index_in(connection: sqlite3.Connection, guild_id: int, barrio: str, va
         """,
         (guild_id, barrio, value),
     )
+
+
+def _index_in(connection: sqlite3.Connection, guild_id: int, barrio: str) -> float:
+    row = connection.execute(
+        "SELECT value FROM housing_index WHERE guild_id = ? AND barrio = ?", (guild_id, barrio)
+    ).fetchone()
+    return float(row["value"]) if row else 1.0
+
+
+def _bonus_ready(market: Market, key: str, listing: Listing, lease: rules.Lease, day: date) -> bool:
+    """Si un contrato que se firma hoy da la deducción del art. 16 (alquilar una vivienda vacía).
+
+    El art. 16 del Decreto Legislativo 1/2009 pide que la vivienda imputara renta en el
+    periodo anterior (aquí: una semana vacía, que es un año del IRPF) o que se alquile en
+    los seis meses siguientes a comprarla sin inquilino (seis días). Garajes y trasteros
+    no son vivienda.
+    """
+    if lease.status != rules.VACANT or listing.kind not in rules.HOME_KINDS:
+        return False
+    empty = (day - lease.since).days if lease.since is not None else 0
+    bought = [local_day(h.since) for h in market.holdings.get(key, {}).values()]
+    fresh = bool(bought) and (day - max(bought)).days <= rules.VACANT_BONUS_BOUGHT_DAYS
+    return empty >= rules.VACANT_BONUS_EMPTY_DAYS or fresh
 
 
 def _news_in(connection: sqlite3.Connection, guild_id: int, news: News, now: float) -> None:
@@ -560,6 +1003,312 @@ def assets_in(connection: sqlite3.Connection, guild_id: int) -> dict[int, int]:
     for member, debt in finance.bank_debts_in(connection, guild_id).items():
         out[member] = out.get(member, 0) - debt
     return out
+
+
+def _refund(auction: Auction) -> list[tuple[int, LedgerEntry]]:
+    """Lo que se devuelve a la mejor puja de una subasta que no se la lleva."""
+    if auction.best_bidder is None or auction.escrow <= 0:
+        return []
+    return [
+        (HOUSING_AUCTION_ACCOUNT_ID, LedgerEntry(-auction.escrow, "pisos:subasta_deposito")),
+        (auction.best_bidder, LedgerEntry(auction.escrow, "pisos:subasta_deposito")),
+    ]
+
+
+def _won(auction: Auction, quote: rules.MemberSaleQuote) -> list[tuple[int, LedgerEntry]]:
+    """El depósito de quien gana vuelve a su monedero y de ahí paga la puja y la notaría.
+
+    El ITP y el IGIC de la notaría los paga después como impuestos (`_won_taxes`): así salen
+    a su nombre en `hacienda`. Lo que dejó (`escrow`) es justo lo que paga en total.
+    """
+    assert auction.best_bidder is not None
+    return [
+        (HOUSING_AUCTION_ACCOUNT_ID, LedgerEntry(-auction.escrow, "pisos:subasta_deposito")),
+        (auction.best_bidder, LedgerEntry(auction.escrow, "pisos:subasta_deposito")),
+        (auction.best_bidder, LedgerEntry(-auction.best_bid, "pisos:subasta_compra")),
+        (auction.best_bidder, LedgerEntry(-quote.notary, "pisos:notaria")),
+    ]
+
+
+def _won_taxes(
+    winner: int, quote: rules.MemberSaleQuote, escrow: int, price: int
+) -> list[HousingTax]:
+    """El ITP y el IGIC de la notaría de quien gana: lo que dejó menos la puja y la notaría.
+
+    El ITP se fijó al pujar (el valor de referencia de ese momento), para que lo que dejó en
+    el depósito sea justo lo que paga aunque el barrio se haya movido.
+    """
+    itp = max(0, escrow - price - quote.notary - quote.notary_igic)
+    return [
+        HousingTax(winner, "itp", max(price, quote.reference), itp),
+        HousingTax(winner, "igic_gastos", quote.notary, quote.notary_igic),
+    ]
+
+
+def _shrink_mortgages_in(
+    connection: sqlite3.Connection, market: Market, user_id: int, key: str, shares: int,
+    held: int,
+) -> int:  # fmt: skip
+    """Cancela la parte de las hipotecas de alguien que corresponde a lo que vende.
+
+    Returns:
+        Lo que hay que pagar al banco de lo cobrado (cancelación registral).
+    """
+    mortgages = market.mortgages_of(user_id, key)
+    payoff = sum(m.owed for m in mortgages) * shares // held
+    left = held - shares
+    for mortgage in mortgages:
+        if not left:
+            finance.close_mortgage_in(connection, mortgage.id, "cancelada")
+            continue
+        finance.save_mortgage_in(
+            connection, mortgage,
+            balance=mortgage.balance - mortgage.balance * shares // held,
+            payment=mortgage.payment - mortgage.payment * shares // held,
+            months_left=mortgage.months_left,
+            unpaid_count=mortgage.unpaid_count,
+            unpaid_amount=mortgage.unpaid_amount - mortgage.unpaid_amount * shares // held,
+        )  # fmt: skip
+    return payoff
+
+
+def _move_shares_in(
+    connection: sqlite3.Connection,
+    guild_id: int,
+    market: Market,
+    key: str,
+    seller: int,
+    buyer: int,
+    shares: int,
+    *,
+    paid: int,
+    cost: int,
+    day: date,
+    now: float,
+    lease: rules.Lease,
+    lock: date | None = None,
+) -> bool:
+    """Pasa participaciones de un miembro a otro (venta, subasta o adjudicación judicial).
+
+    No mueve el índice: no entra ni sale nada del mercado. El contrato del inquilino sigue
+    (art. 14 LAU) y las deudas del piso también (art. 9.1.e LPH). Si el que vende vivía allí,
+    se muda; si el que compra era el miembro de alquiler y ahora lo tiene entero, deja de
+    pagarse la renta a sí mismo y pasa a ser su vivienda habitual.
+
+    Args:
+        paid: Lo que paga el comprador (para su Patrimonio).
+        cost: Lo que le cuesta, con ITP y notaría (para su ganancia al vender).
+        lease: El contrato de partida (ya con lo que haya cambiado antes en la transacción).
+        lock: Hasta qué día no puede venderlas al mercado (subasta judicial).
+
+    Returns:
+        Si el comprador se ha mudado a lo suyo.
+    """
+    held = market.holdings[key][seller]
+    left = held.shares - shares
+    if left:
+        connection.execute(
+            """
+            UPDATE housing_holdings SET shares = ?, paid = ?, cost = ?
+            WHERE guild_id = ? AND listing = ? AND user_id = ?
+            """,
+            (left, held.paid - held.paid * shares // held.shares,
+             held.cost - held.cost * shares // held.shares, guild_id, key, seller),
+        )  # fmt: skip
+    else:
+        connection.execute(
+            "DELETE FROM housing_holdings WHERE guild_id = ? AND listing = ? AND user_id = ?",
+            (guild_id, key, seller),
+        )
+    connection.execute(
+        """
+        INSERT INTO housing_holdings
+            (guild_id, listing, user_id, shares, paid, cost, since, locked_until)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (guild_id, listing, user_id) DO UPDATE SET
+            shares = shares + excluded.shares, paid = paid + excluded.paid,
+            cost = cost + excluded.cost,
+            locked_until = CASE
+                WHEN excluded.locked_until IS NULL THEN locked_until
+                WHEN locked_until IS NULL OR excluded.locked_until > locked_until
+                    THEN excluded.locked_until
+                ELSE locked_until END
+        """,
+        (guild_id, key, buyer, shares, paid, cost, now, _iso(lock)),
+    )
+    if market.homes.get(seller) == (finance.HOME_OWN, key):
+        finance.clear_home_in(connection, guild_id, user_id=seller)
+        lease = replace(lease, status=rules.VACANT, since=day)
+    owned = market.shares_of(key).get(buyer, 0) + shares
+    moved_in = lease.member == buyer and owned == rules.SHARES
+    if moved_in:
+        finance.clear_home_in(connection, guild_id, user_id=buyer)
+        lease = replace(
+            lease, status=rules.HABITUAL, member=None, bono=False, rent=0, until=None,
+            since=day, unpaid=0, eviction_at=None, claims=0, last_rent=lease.rent,
+            solvent=False, bonus=False,
+        )  # fmt: skip
+        finance.set_home_in(connection, guild_id, buyer, finance.HOME_OWN, key, now)
+    _save_lease_in(connection, guild_id, key, lease)
+    connection.execute(
+        "DELETE FROM housing_offers WHERE guild_id = ? AND listing = ? AND user_id = ?",
+        (guild_id, key, seller),
+    )
+    return moved_in
+
+
+def _check_free(
+    market: Market, key: str, user_id: int, day: date, *, market_sale: bool = False
+) -> None:
+    """Comprueba que alguien puede vender sus participaciones de un inmueble.
+
+    Raises:
+        HousingError: Si están en una subasta abierta o, para venderlas al mercado (también
+            al fondo buitre), si se las adjudicaron en una subasta judicial hace menos de
+            `housing.AUCTION_LOCK_DAYS` días.
+    """
+    if market.auction_of(key, user_id) is not None:
+        raise HousingError("Están en subasta: espera a que acabe.")
+    if market.division_of(key) is not None:
+        raise HousingError(
+            "Hay una acción de división en marcha: el inmueble entero está en subasta."
+        )
+    held = market.holdings.get(key, {}).get(user_id)
+    if market_sale and held is not None and held.locked_until and held.locked_until > day:
+        raise HousingError(
+            "Te lo adjudicaron en una subasta judicial: hasta el "
+            f"{held.locked_until:%d/%m} no se puede vender al mercado (a otro miembro, sí)."
+        )
+
+
+def _division_parts(holders: dict[int, int], buyer: int, amount: int, total: int) -> dict[int, int]:
+    """Lo que cobra cada dueño (menos quien compra) de una puja por el inmueble entero."""
+    return {m: amount * s // total for m, s in holders.items() if m != buyer}
+
+
+def _division_quote(
+    market: Market, listing: Listing, auction: Auction, buyer: int, amount: int
+) -> rules.MemberSaleQuote:
+    """La cuenta de quien puja en una acción de división: paga solo la parte de los demás.
+
+    Raises:
+        HousingError: Si ya es todo suyo.
+    """
+    holders = market.shares_of(auction.listing)
+    buying = sum(s for m, s in holders.items() if m != buyer)
+    if buying <= 0:
+        raise HousingError("Ya es todo tuyo.")
+    price = sum(_division_parts(holders, buyer, amount, auction.shares).values())
+    return rules.member_sale_quote(
+        listing, buying, buying, 0, max(1, price), index=market.index(listing.barrio),
+        market_value_gain=False,
+    )  # fmt: skip
+
+
+def _check_motion(
+    market: Market, listing: Listing, key: str, kind: str, value: str, amount: int
+) -> None:
+    """Comprueba que una propuesta de la junta tiene sentido (al proponerla y al aplicarla).
+
+    Raises:
+        HousingError: Si no lo tiene.
+    """
+    lease = market.leases.get(key, rules.Lease())
+    holders = market.shares_of(key)
+    if kind == "renta" and value not in RENT_LEVELS:
+        raise HousingError("Esa renta no existe.")
+    if kind == "renta" and value == rules.VACATION_LEVEL and not lease.license:
+        raise HousingError(
+            "Sin licencia vacacional no se alquila a turistas: votad antes la licencia."
+        )
+    if kind in ("seguro", "licencia") and listing.kind not in rules.HOME_KINDS:
+        raise HousingError("Eso es solo para viviendas.")
+    if kind == "seguro" and value not in ("0", "1"):
+        raise HousingError("El seguro se contrata o se quita.")
+    if kind == "eleccion" and value not in (rules.PICK_AGENCY, rules.PICK_SELF):
+        raise HousingError("Ese modo no existe.")
+    if kind == "administra" and (not value.isdigit() or int(value) not in holders):
+        raise HousingError("Solo puede administrar uno de los dueños.")
+    if kind == "derrama" and not rules.LEVY_MIN <= amount <= rules.LEVY_MAX:
+        raise HousingError(
+            f"La derrama va de {format_amount(rules.LEVY_MIN)} a {format_amount(rules.LEVY_MAX)}."
+        )
+    if kind == "reforma":
+        spec = REFORM_BY_KEY.get(value)
+        if spec is None or listing.kind not in spec.kinds:
+            raise HousingError("Esa reforma no se le puede hacer a este inmueble.")
+        if value in market.reforms.get(key, {}):
+            raise HousingError("Esa reforma ya está hecha (o en obras).")
+    if kind == "licencia" and lease.license:
+        raise HousingError("Ya tiene licencia.")
+
+
+def _check_wallets_in(connection: sqlite3.Connection, guild_id: int, move: HousingMove) -> None:
+    """Comprueba que a cada dueño le llega para su parte de lo que paga la junta.
+
+    Raises:
+        HousingError: Si a alguno no le llega (la propuesta se queda sin hacer).
+    """
+    due: dict[int, int] = {}
+    for member, entry in move.entries:
+        due[member] = due.get(member, 0) - entry.delta
+    for tax in move.taxes:
+        due[tax.user_id] = due.get(tax.user_id, 0) + tax.tax
+    for member, amount in due.items():
+        row = connection.execute(
+            "SELECT balance FROM economy_wallets WHERE guild_id = ? AND user_id = ?",
+            (guild_id, member),
+        ).fetchone()
+        if amount > 0 and (row is None or int(row[0]) < amount):
+            raise HousingError("A uno de los dueños no le llega para su parte.")
+
+
+@dataclass
+class _Parts:
+    """Lo que mueven varias operaciones de la junta en una misma transacción."""
+
+    entries: list[tuple[int, LedgerEntry]] = field(default_factory=list)
+    taxes: list[HousingTax] = field(default_factory=list)
+    debits: list[HousingDebit] = field(default_factory=list)
+
+    def add(self, move: HousingMove) -> None:
+        self.entries.extend(move.entries)
+        self.taxes.extend(move.taxes)
+        self.debits.extend(move.debits)
+
+    def extend(self, other: _Parts) -> None:
+        self.entries.extend(other.entries)
+        self.taxes.extend(other.taxes)
+        self.debits.extend(other.debits)
+
+    def move(self, guild_id: int) -> HousingMove:
+        def settle(conn: sqlite3.Connection, unpaid: dict[str, tuple[int, int]]) -> None:
+            # Lo que no llegó de una derrama se debe a la comunidad: deuda del piso.
+            for tag, (_ibi, other) in unpaid.items():
+                if other:
+                    conn.execute(
+                        "UPDATE housing_leases SET arrears = arrears + ? "
+                        "WHERE guild_id = ? AND listing = ?",
+                        (other, guild_id, tag),
+                    )
+
+        return HousingMove(
+            entries=tuple(self.entries), taxes=tuple(self.taxes), debits=tuple(self.debits),
+            settle=settle if self.debits else None,
+        )  # fmt: skip
+
+
+@dataclass(frozen=True, slots=True)
+class VoteResult:
+    """Cómo queda una votación de la junta tras un voto o al cerrarse.
+
+    Attributes:
+        vote: La votación, con su estado (`abierta` si sigue).
+        owners: Los dueños del inmueble (para avisarles y los logros).
+    """
+
+    vote: Vote
+    owners: tuple[int, ...] = ()
 
 
 def _vpo_eligible(market: Market, user_id: int) -> bool:
@@ -677,19 +1426,117 @@ class HousingRepository:
                     costs INTEGER NOT NULL,
                     PRIMARY KEY (guild_id, user_id, listing, day)
                 );
+
+                CREATE TABLE IF NOT EXISTS housing_candidates (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    listing TEXT NOT NULL,
+                    tenant TEXT NOT NULL,
+                    until TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS housing_candidates_listing
+                    ON housing_candidates (guild_id, listing);
+
+                CREATE TABLE IF NOT EXISTS housing_barrio_news (
+                    guild_id INTEGER NOT NULL,
+                    barrio TEXT NOT NULL,
+                    news TEXT NOT NULL,
+                    start TEXT NOT NULL,
+                    until TEXT NOT NULL,
+                    PRIMARY KEY (guild_id, barrio)
+                );
+
+                CREATE TABLE IF NOT EXISTS housing_reforms (
+                    guild_id INTEGER NOT NULL,
+                    listing TEXT NOT NULL,
+                    reform TEXT NOT NULL,
+                    cost INTEGER NOT NULL,
+                    until TEXT NOT NULL,
+                    finished INTEGER NOT NULL DEFAULT 0,
+                    rehab INTEGER NOT NULL DEFAULT 0,
+                    user_id INTEGER NOT NULL,
+                    created_at REAL NOT NULL,
+                    PRIMARY KEY (guild_id, listing, reform)
+                );
+
+                CREATE TABLE IF NOT EXISTS housing_decisions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    listing TEXT NOT NULL,
+                    event TEXT NOT NULL,
+                    cost INTEGER NOT NULL,
+                    day TEXT NOT NULL,
+                    until TEXT NOT NULL,
+                    choice TEXT,
+                    chooser INTEGER
+                );
+
+                CREATE INDEX IF NOT EXISTS housing_decisions_listing
+                    ON housing_decisions (guild_id, listing);
+
+                CREATE TABLE IF NOT EXISTS housing_reviews (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    listing TEXT NOT NULL,
+                    day TEXT NOT NULL,
+                    guest TEXT NOT NULL,
+                    stars INTEGER NOT NULL CHECK (stars BETWEEN 1 AND 5),
+                    line INTEGER NOT NULL DEFAULT 0
+                );
+
+                CREATE INDEX IF NOT EXISTS housing_reviews_listing
+                    ON housing_reviews (guild_id, listing, id);
+
+                CREATE TABLE IF NOT EXISTS housing_rent_bonus (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    listing TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    PRIMARY KEY (guild_id, user_id, listing)
+                );
                 """
                 + finance.SCHEMA
+                + trade.SCHEMA
+                + junta.SCHEMA
             )
             # Bases de datos de la primera versión de `pisos`: sin miembros de alquiler,
-            # bono ni licencias.
+            # bono ni licencias; de antes de la 8.0.0, sin la renta del contrato anterior
+            # ni la reducción del art. 23.2 de cada contrato (NULL: la general); y de antes
+            # de la 8.1.0, sin elegir inquilino, seguro de impago ni deducción del art. 16.
             columns = {row[1] for row in connection.execute("PRAGMA table_info(housing_leases)")}
             for name, ddl in (
                 ("member", "member INTEGER"),
                 ("bono", "bono INTEGER NOT NULL DEFAULT 0"),
                 ("license", "license INTEGER NOT NULL DEFAULT 0"),
+                ("last_rent", "last_rent INTEGER NOT NULL DEFAULT 0"),
+                ("reduction", "reduction REAL"),
+                ("pick", f"pick TEXT NOT NULL DEFAULT '{rules.PICK_AGENCY}'"),
+                ("insured", "insured INTEGER NOT NULL DEFAULT 0"),
+                ("claims", "claims INTEGER NOT NULL DEFAULT 0"),
+                ("solvent", "solvent INTEGER NOT NULL DEFAULT 0"),
+                ("bonus", "bonus INTEGER NOT NULL DEFAULT 0"),
+                ("works_until", "works_until TEXT"),
+                ("mood", f"mood INTEGER NOT NULL DEFAULT {rules.MOOD_BASE}"),
+                ("home_claim_until", "home_claim_until TEXT"),
+                # 8.4.0: la nota del vacacional y la licencia que caduca (Ley 6/2025).
+                ("rating", "rating REAL NOT NULL DEFAULT 0"),
+                ("reviews", "reviews INTEGER NOT NULL DEFAULT 0"),
+                ("license_until", "license_until TEXT"),
+                ("license_denied_until", "license_denied_until TEXT"),
             ):
                 if name not in columns:
                     connection.execute(f"ALTER TABLE housing_leases ADD COLUMN {ddl}")
+            # 8.2.0: lo adjudicado en una subasta judicial no se vende al mercado en 30 días.
+            held = {row[1] for row in connection.execute("PRAGMA table_info(housing_holdings)")}
+            if "locked_until" not in held:
+                connection.execute("ALTER TABLE housing_holdings ADD COLUMN locked_until TEXT")
+            # 8.5.0: la subasta de la acción de división.
+            sold = {row[1] for row in connection.execute("PRAGMA table_info(housing_auctions)")}
+            if "division" not in sold:
+                connection.execute(
+                    "ALTER TABLE housing_auctions ADD COLUMN division INTEGER NOT NULL DEFAULT 0"
+                )
         finally:
             connection.close()
 
@@ -917,7 +1764,7 @@ class HousingRepository:
             # La comisión del promotor sale del precio, que si no desaparecería: no crea
             # dinero. Rendimiento de su actividad (art. 27 LIRPF), con retención a cuenta.
             fees = (
-                (HousingRent(promoter, fee, fee, fee, concept=PROMOTER_CONCEPT),)
+                (HousingRent(promoter, fee, kind=INCOME_BUSINESS, concept=PROMOTER_CONCEPT),)
                 if promoter is not None and fee
                 else ()
             )
@@ -927,7 +1774,10 @@ class HousingRepository:
                     (user_id, LedgerEntry(-(quote.price - loan), "pisos:compra")),
                     (user_id, LedgerEntry(-quote.notary, "pisos:notaria")),
                 ),
-                taxes=(HousingTax(user_id, "itp", quote.price, quote.itp),),
+                taxes=(
+                    HousingTax(user_id, "itp", quote.price, quote.itp),
+                    HousingTax(user_id, "igic_gastos", quote.notary, quote.notary_igic),
+                ),
             )
             return purchase, move
 
@@ -968,6 +1818,7 @@ class HousingRepository:
                 raise HousingError("No tienes nada en este inmueble.")
             if not 1 <= shares <= held.shares:
                 raise HousingError(f"Tienes {held.shares} participaciones: no puedes vender más.")
+            _check_free(market, key, user_id, day, market_sale=True)
             lease = market.leases.get(key, rules.Lease())
             index = market.index(listing.barrio)
             agreed = None
@@ -988,19 +1839,7 @@ class HousingRepository:
             if expected is not None and quote.received - payoff < expected:
                 raise PriceChanged(quote.received - payoff)
             left = held.shares - shares
-            for mortgage in mortgages:
-                if not left:
-                    finance.close_mortgage_in(connection, mortgage.id, "cancelada")
-                    continue
-                finance.save_mortgage_in(
-                    connection, mortgage,
-                    balance=mortgage.balance - mortgage.balance * shares // held.shares,
-                    payment=mortgage.payment - mortgage.payment * shares // held.shares,
-                    months_left=mortgage.months_left,
-                    unpaid_count=mortgage.unpaid_count,
-                    unpaid_amount=mortgage.unpaid_amount
-                    - mortgage.unpaid_amount * shares // held.shares,
-                )  # fmt: skip
+            _shrink_mortgages_in(connection, market, user_id, key, shares, held.shares)
             if left:
                 connection.execute(
                     """
@@ -1036,6 +1875,11 @@ class HousingRepository:
                 connection.execute(
                     "DELETE FROM housing_leases WHERE guild_id = ? AND listing = ?", (guild_id, key)
                 )
+                _clear_reviews_in(connection, guild_id, key)
+                connection.execute(
+                    "DELETE FROM housing_candidates WHERE guild_id = ? AND listing = ?",
+                    (guild_id, key),
+                )
             connection.execute(
                 "DELETE FROM housing_offers WHERE guild_id = ? AND listing = ? AND user_id = ?",
                 (guild_id, key, user_id),
@@ -1057,6 +1901,7 @@ class HousingRepository:
             ]
             taxes = (
                 HousingTax(user_id, "ibi", quote.arrears_ibi, quote.arrears_ibi),
+                HousingTax(user_id, "igic_gastos", quote.fee, quote.fee_igic),
                 HousingTax(user_id, "plusvalia", max(0, quote.gain), quote.gain_tax),
             )
             sale = Sale(key, quote, left, held_days, payoff=payoff, vulture=vulture)
@@ -1088,8 +1933,15 @@ class HousingRepository:
                 connection, guild_id,
                 News(mortgage.listing, day, "amortiza", mortgage.owed, user_id, None), now,
             )  # fmt: skip
-            entry = LedgerEntry(-mortgage.owed, "pisos:amortizacion")
-            return mortgage.owed, HousingMove(entries=((user_id, entry),))
+            entries: list[tuple[int, LedgerEntry]] = [
+                (user_id, LedgerEntry(-mortgage.owed, "pisos:amortizacion"))
+            ]
+            # Pagarlo todo antes del remate libera el inmueble de la subasta (art. 670.7 LEC).
+            for auction in trade.auctions_in(connection, guild_id):
+                if auction.mortgage_id == mortgage.id:
+                    trade.close_auction_in(connection, auction.id, trade.CANCELLED)
+                    entries.extend(_refund(auction))
+            return mortgage.owed, HousingMove(entries=tuple(entries))
 
         return run
 
@@ -1102,6 +1954,7 @@ class HousingRepository:
         now: float,
         rng: random.Random,
         builders: tuple[int, ...] = (),
+        furniture: Mapping[int, frozenset[str]] | None = None,
     ) -> Callable[[sqlite3.Connection], tuple[DayRun, HousingMove]]:
         """Cierra un día (un mes del juego) entero.
 
@@ -1115,7 +1968,10 @@ class HousingRepository:
             builders: Quienes han fichado esta semana en la rama Ladrillo de `pala`, del
                 puesto más alto al más bajo: el lunes, uno de ellos (por turnos) levanta
                 una promoción.
+            furniture: Los muebles del vacacional (claves de la tienda) de cada miembro que
+                decide un vacacional o un piso de nómadas.
         """
+        owned = furniture or {}
 
         def run(connection: sqlite3.Connection) -> tuple[DayRun, HousingMove]:
             done = connection.execute(
@@ -1129,6 +1985,10 @@ class HousingRepository:
                 (guild_id, day.isoformat(), now),
             )
             result = DayRun(day)
+            connection.execute(
+                "DELETE FROM housing_candidates WHERE guild_id = ? AND until < ?",
+                (guild_id, day.isoformat()),
+            )
             market = _market_in(connection, guild_id)
             for barrio in (b.key for b in BARRIOS):
                 value, level = market.index(barrio), market.index_level(barrio)
@@ -1141,7 +2001,7 @@ class HousingRepository:
                     self._promotion_in(connection, guild_id, day, now, rng, market, builder,
                                        result)  # fmt: skip
             pulls = tuple(
-                HousingPull(lease.member, lease.rent, key, "pisos:alquiler")
+                HousingPull(lease.member, lease.rent, key, "pisos:alquiler", home=True)
                 for key, lease in market.leases.items()
                 if lease.member is not None
                 and lease.status in (rules.RENTED, rules.DEFAULTING)
@@ -1149,7 +2009,7 @@ class HousingRepository:
             )
 
             def then(conn: sqlite3.Connection, paid: frozenset[str]) -> HousingMove:
-                return self._close_rest_in(conn, guild_id, day, now, rng, paid, result)
+                return self._close_rest_in(conn, guild_id, day, now, rng, paid, result, owned)
 
             return result, HousingMove(pulls=pulls, then=then)
 
@@ -1236,6 +2096,30 @@ class HousingRepository:
             item = News(target.listing, day, "oferta_fondo", price, member, None)
             result.news.append(item)
             _news_in(connection, guild_id, item, now)
+        # Noticias de barrio: caducan las viejas y salen las de esta semana.
+        connection.execute(
+            "DELETE FROM housing_barrio_news WHERE guild_id = ? AND until < ?",
+            (guild_id, day.isoformat()),
+        )
+        busy = {b for b, (_k, _start, until) in market.barrio_news.items() if until >= day}
+        for barrio, key in rules.monday_news(day, busy, rng):
+            until = day + timedelta(days=rules.NEWS_DAYS - 1)
+            connection.execute(
+                """
+                INSERT INTO housing_barrio_news (guild_id, barrio, news, start, until)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT (guild_id, barrio) DO UPDATE SET
+                    news = excluded.news, start = excluded.start, until = excluded.until
+                """,
+                (guild_id, barrio, key, day.isoformat(), until.isoformat()),
+            )
+            factor = BARRIO_NEWS_BY_KEY[key].index
+            if factor != 1.0:
+                value = _index_in(connection, guild_id, barrio) * factor
+                _set_index_in(
+                    connection, guild_id, barrio, min(rules.INDEX_MAX, max(rules.INDEX_MIN, value))
+                )
+            result.barrio_news.append((barrio, key))
 
     @staticmethod
     def _promotion_in(
@@ -1274,13 +2158,23 @@ class HousingRepository:
         mortgage: Mortgage,
         entries: list[tuple[int, LedgerEntry]],
         taxes: list[HousingTax],
-        result: DayRun,
+        result: DayRun | AuctionRun,
+        *,
+        winner: int | None = None,
+        price: int = 0,
+        winner_cost: int = 0,
     ) -> None:
-        """Ejecución hipotecaria: subasta al 70 %, el banco cobra y lo que falte se sigue debiendo.
+        """Ejecución hipotecaria: el banco cobra de la subasta y lo que falte se sigue debiendo.
 
-        Lo que da la subasta paga primero las deudas del piso (el IBI, al Estado) y
-        luego al banco; si sobra, para el dueño. No hay dación en pago: lo que no cubre
-        la subasta queda como deuda con el banco y se cobra de lo que vaya entrando.
+        Si alguien ha ganado la subasta judicial (`winner`), sus participaciones pasan a él
+        por lo que pujó (`price`) y quedan bloqueadas para venderlas al mercado. Si no, el
+        banco se las queda al 70 % y vuelven al mercado. Lo que da la subasta paga primero
+        las deudas del piso (el IBI, al Estado) y luego al banco; si sobra, para el dueño. No
+        hay dación en pago: lo que no cubre queda como deuda con el banco y se cobra de lo
+        que vaya entrando.
+
+        Args:
+            winner_cost: Lo que le cuesta al ganador, con ITP y notaría (lo paga él aparte).
         """
         member = mortgage.user_id
         if mortgage.listing.startswith("vpo:"):
@@ -1303,10 +2197,20 @@ class HousingRepository:
                 lease = market.leases.get(mortgage.listing, rules.Lease())
                 pool = sum(market.shares_of(mortgage.listing).values())
                 index = market.index(listing.barrio)
-                proceeds = round(market.value(held) * rules.AUCTION_SHARE)
+                proceeds = price if winner else round(market.value(held) * rules.AUCTION_SHARE)
                 debt = lease.arrears * held.shares // pool
                 debt_ibi = min(debt, lease.arrears_ibi * held.shares // pool)
                 debt_other = debt - debt_ibi
+            if held is not None and listing is not None and winner is not None:
+                lease = replace(
+                    lease, arrears=lease.arrears - debt, arrears_ibi=lease.arrears_ibi - debt_ibi
+                )
+                _move_shares_in(
+                    connection, guild_id, market, mortgage.listing, member, winner, held.shares,
+                    paid=price, cost=winner_cost, day=day, now=now, lease=lease,
+                    lock=day + timedelta(days=rules.AUCTION_LOCK_DAYS),
+                )  # fmt: skip
+            elif held is not None and listing is not None:
                 connection.execute(
                     "DELETE FROM housing_holdings "
                     "WHERE guild_id = ? AND listing = ? AND user_id = ?",
@@ -1327,6 +2231,7 @@ class HousingRepository:
                         "DELETE FROM housing_leases WHERE guild_id = ? AND listing = ?",
                         (guild_id, mortgage.listing),
                     )
+                    _clear_reviews_in(connection, guild_id, mortgage.listing)
                 _set_index_in(
                     connection, guild_id, listing.barrio,
                     rules.index_after(index, listing, held.shares, bought=False),
@@ -1346,7 +2251,8 @@ class HousingRepository:
         result.executions.append((member, mortgage.listing))
         if mortgage.aval == rules.PARENTS_AVAL:
             result.aval_executions.append(member)
-        item = News(mortgage.listing, day, "ejecucion", proceeds, member, None)
+        kind = "ejecucion_subasta" if winner is not None else "ejecucion"
+        item = News(mortgage.listing, day, kind, proceeds, member, None)
         result.news.append(item)
         _news_in(connection, guild_id, item, now)
 
@@ -1359,6 +2265,7 @@ class HousingRepository:
         rng: random.Random,
         paid: frozenset[str],
         result: DayRun,
+        furniture: Mapping[int, frozenset[str]],
     ) -> HousingMove:
         """El cierre del día una vez se sabe qué miembros de alquiler pagaron."""
         rents: list[HousingRent] = []
@@ -1366,17 +2273,37 @@ class HousingRepository:
         entries: list[tuple[int, LedgerEntry]] = []
         taxes: list[HousingTax] = []
         debits: list[HousingDebit] = []
+        imputations: list[tuple[int, str, int]] = []
         market = _market_in(connection, guild_id)
         # Ejecuciones hipotecarias: con lo que se debía al empezar el día.
         executed = set()
+        judicial = {a.mortgage_id for a in market.auctions if a.judicial}
         for mortgage in market.mortgages:
-            if rules.must_execute(
+            if not rules.must_execute(
                 mortgage.unpaid_count, mortgage.unpaid_amount, mortgage.principal
             ):
-                self._execute_in(
-                    connection, guild_id, day, now, market, mortgage, entries, taxes, result
-                )
-                executed.add(mortgage.id)
+                continue
+            if mortgage.id in judicial:
+                continue  # ya está en subasta: la cierra `close_auctions`
+            held = market.holdings.get(mortgage.listing, {}).get(mortgage.user_id)
+            if held is not None and market.listing(mortgage.listing) is not None:
+                # Sale a subasta judicial (art. 655 y ss. LEC): puja quien quiera durante un día.
+                value = market.value(held)
+                number = trade.add_auction_in(
+                    connection, guild_id, listing=mortgage.listing, seller=mortgage.user_id,
+                    shares=held.shares, min_bid=max(1, round(value * rules.JUDICIAL_MIN_SHARE)),
+                    ends_at=now + rules.AUCTION_SECONDS, now=now, mortgage_id=mortgage.id,
+                )  # fmt: skip
+                result.auctions.append((mortgage.user_id, mortgage.listing, number))
+                item = News(mortgage.listing, day, "subasta_judicial", value, mortgage.user_id,
+                            None)  # fmt: skip
+                result.news.append(item)
+                _news_in(connection, guild_id, item, now)
+                continue
+            self._execute_in(
+                connection, guild_id, day, now, market, mortgage, entries, taxes, result
+            )
+            executed.add(mortgage.id)
         if executed:
             market = _market_in(connection, guild_id)
         # Intereses de hoy de cada hipoteca: lo que se deduce de la renta (art. 23.1.a LIRPF).
@@ -1390,8 +2317,17 @@ class HousingRepository:
             interest[key] = interest.get(key, 0) + owed_interest
             due = pay + mortgage.unpaid_amount
             if due:
+                # La cuota de la hipoteca de la vivienda habitual cuenta para la deducción
+                # canaria por inversión en vivienda habitual (art. 14 del DL 1/2009).
+                # También la de una VPO (`vpo:<unidad>`), que es vivienda habitual a la fuerza.
+                place = market.homes.get(mortgage.user_id)
+                home = place == (finance.HOME_OWN, mortgage.listing) or (
+                    place is not None
+                    and place[0] == finance.HOME_VPO
+                    and finance.vpo_ref(place[1]) == mortgage.listing
+                )
                 debits.append(HousingDebit(mortgage.user_id, f"hipoteca:{mortgage.id}", 0, due,
-                                           "pisos:hipoteca"))  # fmt: skip
+                                           "pisos:hipoteca", home=home))  # fmt: skip
         for member, amount in market.bank_debts.items():
             debits.append(HousingDebit(member, f"banco:{member}", 0, amount, "pisos:deuda_banco"))
         for unit, owner in market.vpo.items():
@@ -1410,7 +2346,7 @@ class HousingRepository:
                 continue
             self._close_listing_in(
                 connection, guild_id, day, now, rng, market, key, lease, paid, interest,
-                rents, grants, taxes, entries, debits, result,
+                rents, grants, taxes, entries, debits, imputations, result, furniture,
             )  # fmt: skip
         horizon = (day - timedelta(days=NEWS_DAYS)).isoformat()
         connection.execute(
@@ -1481,6 +2417,7 @@ class HousingRepository:
             taxes=tuple(taxes),
             debits=tuple(debits),
             settle=settle,
+            imputations=tuple(imputations),
         )
 
     def _close_listing_in(
@@ -1500,30 +2437,48 @@ class HousingRepository:
         taxes: list[HousingTax],
         entries: list[tuple[int, LedgerEntry]],
         debits: list[HousingDebit],
+        imputations: list[tuple[int, str, int]],
         result: DayRun,
+        furniture: Mapping[int, frozenset[str]],
     ) -> None:
         """Un mes de un inmueble con dueño: estado, renta, impuestos y recibos."""
         listing = _listing(market, key)
         index = market.index(listing.barrio)
         news: list[News] = []
         all_holders = market.shares_of(key)
-        boss = rules.manager(all_holders)
+        boss = market.manager(key)
+        mine = furniture.get(boss, frozenset()) if boss is not None else frozenset()
+        # La licencia vacacional dura 5 años (60 días) y se renueva si el barrio no está
+        # tensionado (Ley 6/2025 de Canarias). Las de antes de la 8.4.0 empiezan a contar hoy.
+        if lease.license and lease.license_until is None:
+            lease = replace(lease, license_until=day + timedelta(days=rules.LICENSE_DAYS))
+        elif lease.license and lease.license_until is not None and day >= lease.license_until:
+            if rules.tense(index):
+                lease = replace(lease, license=False, license_until=None)
+                news.append(News(key, day, "licencia_caduca", 0, boss, None))
+            else:
+                lease = replace(
+                    lease, license_until=lease.license_until + timedelta(days=rules.LICENSE_DAYS)
+                )
+                news.append(News(key, day, "licencia_renovada", 0, boss, None))
         # La renta que se pide tiene que estar permitida: la vacacional pide licencia y
         # el gran tenedor tiene tope en zona tensionada (Ley 12/2023).
         if not rules.level_allowed(
             lease.level, index=index, whole_homes=market.whole_homes(boss) if boss else 0,
             license=lease.license,
         ):  # fmt: skip
+            if lease.license or lease.level != rules.VACATION_LEVEL:
+                news.append(News(key, day, "tope_ley", 0, boss, None))
             lease = replace(lease, level="referencia")
-            news.append(News(key, day, "tope_ley", 0, boss, None))
         # Solo cobra y paga ese mes quien ya era dueño ese día.
         holders = {
             member: holding.shares
             for member, holding in market.holdings[key].items()
             if local_day(holding.since) <= day
         }
+        barrio_news = market.news_of(listing.barrio, day)
         if lease.member is not None:
-            outcome = self._member_month(listing, lease, key, day, rng, paid, news)
+            outcome = self._member_month(listing, lease, key, day, rng, paid, news, barrio_news)
             if outcome.lease.member is None:
                 # Desahuciado: deja de vivir aquí y el casero se queda de la fianza lo que
                 # debía (art. 36 LAU); el resto se le devuelve mañana.
@@ -1532,8 +2487,100 @@ class HousingRepository:
                     connection, guild_id, key, lease.member, lease.unpaid * lease.rent
                 )
         else:
-            outcome = rules.advance_day(listing, lease, day, index, rng)
+            # La nota de las reseñas mueve la ocupación del vacacional; la fibra atrae nómadas.
+            boost = 1.0
+            if lease.level == rules.VACATION_LEVEL:
+                boost = rules.rating_factor(lease.rating, lease.reviews)
+            elif lease.level == rules.NOMAD_LEVEL:
+                boost = nomad_boost(mine)
+            outcome = rules.advance_day(listing, lease, day, index, rng, barrio_news, boost)
+        # Los imprevistos que se deciden no se pagan hoy: esperan al dueño (o a la gestora).
+        deferred = [e for e in outcome.events if e.key in rules.DECISIONS]
+        for event in deferred:
+            connection.execute(
+                "INSERT INTO housing_decisions (guild_id, listing, event, cost, day, until) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (guild_id, key, event.key, event.cost, day.isoformat(),
+                 (day + timedelta(days=rules.DECISION_DAYS)).isoformat()),
+            )  # fmt: skip
+        paid_now, mood, relapses, claim = self._decide_in(connection, guild_id, day, rng, market,
+                                                          key, result)  # fmt: skip
         lease_after = outcome.lease
+        if mood and lease_after.status in (rules.RENTED, rules.DEFAULTING):
+            lease_after = replace(lease_after, mood=max(0, min(100, lease_after.mood + mood)))
+        if claim:
+            lease_after = replace(
+                lease_after, home_claim_until=day + timedelta(days=rules.HOME_CLAIM_DAYS)
+            )
+        for event_key, cost in relapses:
+            connection.execute(
+                "INSERT INTO housing_decisions (guild_id, listing, event, cost, day, until) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (guild_id, key, event_key, cost, day.isoformat(),
+                 (day + timedelta(days=rules.DECISION_DAYS)).isoformat()),
+            )  # fmt: skip
+        if any(e.key == "obra_terminada" for e in outcome.events):
+            connection.execute(
+                "UPDATE housing_reforms SET finished = 1 WHERE guild_id = ? AND listing = ?",
+                (guild_id, key),
+            )
+            result.works.append((tuple(market.shares_of(key)), key))
+        # Cada día de estancia vacacional paga la comisión de la plataforma y, si el huésped
+        # se va, la limpieza; al irse, deja reseña (7 de cada 10).
+        stay = 0
+        if lease.level == rules.VACATION_LEVEL and outcome.rent > 0:
+            out = any(e.key == "se_va" for e in outcome.events)
+            stay = rules.stay_costs(outcome.rent, out=out)
+            if out:
+                result.cleanings.append((tuple(all_holders), key))
+            if out and lease.tenant is not None and rng.random() < rules.REVIEW_CHANCE:
+                guest = lease.tenant
+                stars = rules.review_stars(
+                    listing, guest,
+                    furniture=furniture_stars(mine, BARRIO_BY_KEY[listing.barrio].theme, guest),
+                    pending=len(market.decisions.get(key, ())) + len(deferred),
+                    noisy=any(e.key == "vecino" for e in outcome.events)
+                    or (barrio_news is not None and barrio_news.neighbour > 1),
+                    rng=rng,
+                )  # fmt: skip
+                line = rng.randrange(len(REVIEW_LINES[stars]))
+                rating, count = _review_in(connection, guild_id, key, day, guest, stars, line)
+                result.reviews.append((tuple(all_holders), key, stars))
+                if not rules.superhost(lease.rating, lease.reviews) and rules.superhost(
+                    rating, count
+                ):
+                    result.superhosts.append((tuple(all_holders), key))
+                    news.append(News(key, day, "superanfitrion", 0, None, None))
+                lease_after = replace(lease_after, rating=rating, reviews=count)
+        extra_today = outcome.extra - sum(e.cost for e in deferred) + paid_now + stay
+        # Fondo de reserva (art. 9.1.f LPH): guarda el 10 % de la comunidad de cada mes (que se
+        # paga igual) y paga las derramas y la ITE hasta donde llegue.
+        if holders:
+            covered = min(
+                market.reserves.get(key, 0),
+                sum(e.cost for e in outcome.events if e.key in rules.RESERVE_EVENTS),
+            )
+            saved = 0
+            if listing.kind in rules.BLOCK_KINDS:
+                owned_share = sum(holders.values()) / rules.SHARES
+                saved = round(outcome.costs.community * owned_share * rules.RESERVE_SHARE)
+            if covered:
+                extra_today -= covered
+                news.append(News(key, day, "fondo_reserva", covered, None, None))
+            if covered or saved:
+                junta.add_reserve_in(connection, guild_id, key, saved - covered)
+        if lease_after.tenant is not None and lease_after.status in (
+            rules.RENTED,
+            rules.DEFAULTING,
+        ):
+            for member in market.shares_of(key):
+                result.moods.setdefault(member, []).append(lease_after.mood)
+        if any(e.key == "firma" for e in outcome.events):
+            if _bonus_ready(market, key, listing, lease, day):
+                lease_after = replace(lease_after, bonus=True)
+            if lease_after.reduction == rules.YOUNG_RENT_REDUCTION:
+                result.young.append(key)
+        self._candidates_in(connection, guild_id, day, market, key, outcome, lease_after, result)
         owned = sum(holders.values())
         if not owned:
             _save_lease_in(connection, guild_id, key, lease_after)
@@ -1552,22 +2599,55 @@ class HousingRepository:
             ibi_month = round(ibi_month * rules.EMPTY_IBI_FACTOR)
             if day.weekday() == 0:
                 news.append(News(key, day, "recargo_ibi", ibi_month, boss, None))
+        # Seguros: el del hogar siempre y el de impago si está contratado y cubre a este
+        # inquilino, los dos con el impuesto de primas. Las reparaciones llevan IGIC.
+        cover = rules.premium(listing, lease_after)
+        home = outcome.costs.insurance
+        if lease_after.home_claim_until is not None and lease_after.home_claim_until >= day:
+            home = round(home * rules.HOME_CLAIM_SURCHARGE)  # el parte recarga la prima
+        insurance = home + cover
+        ips = round(home * rules.IPS_RATE) + round(cover * rules.IPS_RATE)
+        stay_igic = igic(stay, rules.SERVICES_IGIC)
+        repair_igic = igic(paid_now, rules.SERVICES_IGIC) + stay_igic
         costs_owned = rules.MonthlyCosts(
-            part(outcome.costs.community), part(outcome.costs.insurance), part(ibi_month)
+            part(outcome.costs.community), part(insurance), part(ibi_month)
         )
-        rent_owned = part(outcome.rent)
-        igic = rules.vacation_igic(rent_owned) if lease_after.level == rules.VACATION_LEVEL else 0
+        rent_owned = part(outcome.rent + outcome.insurer)
+        vacation = (
+            rules.vacation_igic(part(outcome.rent))
+            if lease_after.level == rules.VACATION_LEVEL else 0
+        )  # fmt: skip
         payout = rules.settle_day(
-            rent_owned - igic, costs_owned, part(outcome.extra), lease.arrears, lease.arrears_ibi
-        )
-        _save_lease_in(connection, guild_id, key, replace(lease_after, arrears=0, arrears_ibi=0))
-        owe_ibi = rules.split(payout.arrears_ibi, holders)
+            rent_owned - vacation, costs_owned, part(extra_today), lease.arrears,
+            lease.arrears_ibi, taxes=part(ips) + part(repair_igic),
+        )  # fmt: skip
+        # La deducción del art. 16 se aplica con la primera renta del contrato.
+        apply_bonus = lease_after.bonus and rent_owned > 0
+        _save_lease_in(
+            connection, guild_id, key,
+            replace(
+                lease_after, arrears=0, arrears_ibi=0, bonus=lease_after.bonus and not apply_bonus
+            ),
+        )  # fmt: skip
+        owe_ibi = rules.split(payout.arrears_ibi - payout.taxes_left, holders)
         owe_other = rules.split(payout.arrears - payout.arrears_ibi, holders)
-        debits.extend(
-            HousingDebit(member, key, owe_ibi[member], owe_other[member])
-            for member in holders
-            if owe_ibi[member] or owe_other[member]
-        )
+        owe_taxes = rules.split(payout.taxes_left, holders)
+        due_ips = part(ips)
+        due_state = due_ips + part(repair_igic)
+        for member in holders:
+            ips_owed = round(owe_taxes[member] * due_ips / due_state) if due_state else 0
+            owed = tuple(
+                (kind, amount)
+                for kind, amount in (
+                    ("ips", ips_owed),
+                    ("igic_gastos", owe_taxes[member] - ips_owed),
+                )
+                if amount > 0
+            )
+            if owe_ibi[member] or owe_other[member] or owed:
+                debits.append(
+                    HousingDebit(member, key, owe_ibi[member], owe_other[member], taxes=owed)
+                )
         events = self._event_news(key, day, outcome)
         if events:
             result.owners[key] = tuple(holders)
@@ -1575,38 +2655,96 @@ class HousingRepository:
         if lease_after.member is not None and lease_after.bono and key in paid:
             amount = rules.bono_amount(lease_after.rent)
             grants.append(
-                HousingRent(lease_after.member, amount, amount, rules.rent_to_fiscal(amount),
-                            concept="pisos:bono", tag=f"bono:{key}")
+                HousingRent(lease_after.member, amount, kind=INCOME_PRIZE, concept="pisos:bono",
+                            tag=f"bono:{key}")
             )  # fmt: skip
             result.bono[lease_after.member] = amount
         nets = rules.split(payout.net, holders)
         ibis = rules.split(payout.ibi, holders)
         costs = rules.split(payout.costs, holders)
-        igics = rules.split(igic, holders)
+        igics = rules.split(vacation, holders)
+        paid_taxes = rules.split(payout.taxes, holders)
+        insured = rules.split(part(outcome.insurer), holders)
+        # Para el IRPF, los gastos del mes que toca a cada uno, se paguen hoy o no (se
+        # imputan al periodo en que se devengan, art. 14 LIRPF). Seguros y reparaciones,
+        # con su impuesto: para quien no puede deducir el IGIC ni el de primas es un gasto.
+        month_ibi = rules.split(costs_owned.ibi, holders)
+        community = rules.split(costs_owned.community, holders)
+        insurances = rules.split(costs_owned.insurance + part(ips), holders)
+        # La limpieza y la plataforma son servicios de terceros (art. 13.d del Reglamento del
+        # IRPF): gasto sin el tope de intereses y reparaciones.
+        repairs = rules.split(part(extra_today - stay) + part(repair_igic - stay_igic), holders)
+        services = rules.split(part(stay) + part(stay_igic), holders)
+        premiums = rules.split(part(cover) + part(round(cover * rules.IPS_RATE)), holders)
+        cheap = lease_after.rent <= INSURANCE_DEDUCTION_RENT_MAX
+        reduction = rules.lease_reduction(listing, lease_after)
+        dwelling = reduction > 0
         cadastral = rules.cadastral_value(listing)
+        state_due = part(ips) + part(repair_igic)
+        ips_share = part(ips) / state_due if state_due else 0.0
         for member, shares in holders.items():
-            gross = nets[member] + ibis[member] + costs[member] + igics[member]
+            gross = nets[member] + ibis[member] + costs[member] + igics[member] + paid_taxes[member]
+            if insured[member]:
+                result.insurer[member] = result.insurer.get(member, 0) + insured[member]
             if gross <= 0:
+                # Un piso vacío que no es la casa de nadie imputa renta (art. 85 LIRPF).
+                if lease_after.status == rules.VACANT:
+                    imputations.append((member, key, rules.imputed_rent(listing, shares)))
                 continue
             held = market.holdings[key][member]
-            deductible = (
-                ibis[member] + costs[member] + igics[member] + rules.amortization(held.paid)
-                + interest.get((member, key), 0)
-            )  # fmt: skip
+            bonus = 0
+            if apply_bonus and dwelling and member not in market.socimi:
+                used = market.bonuses.get(member, frozenset())
+                if key not in used and len(used) < VACANT_RENTAL_DEDUCTION_MAX:
+                    bonus = vacant_rental_deduction(shares, rules.SHARES)
+                    connection.execute(
+                        "INSERT OR IGNORE INTO housing_rent_bonus "
+                        "(guild_id, user_id, listing, created_at) VALUES (?, ?, ?, ?)",
+                        (guild_id, member, key, now),
+                    )
+                    result.bonus[member] = result.bonus.get(member, 0) + bonus
             if member in market.socimi:
                 # La SOCIMI tributa al 0 % y el dueño paga el 19 % del dividendo.
-                rents.append(HousingRent(member, gross, 0, 0))
+                deductible = (
+                    ibis[member] + costs[member] + igics[member] + paid_taxes[member]
+                    + rules.amortization(held.paid) + interest.get((member, key), 0)
+                )  # fmt: skip
+                rents.append(HousingRent(member, gross, kind=None))
                 profit = max(0, gross - deductible)
                 taxes.append(HousingTax(member, "socimi", profit, rules.socimi_tax(profit)))
             else:
-                taxable = rules.taxable_rent(gross, deductible)
-                rents.append(HousingRent(member, gross, taxable, rules.rent_to_fiscal(taxable)))
+                rents.append(
+                    HousingRent(
+                        member,
+                        gross,
+                        ref=key,
+                        income=gross - igics[member],
+                        finance=interest.get((member, key), 0) + repairs[member],
+                        costs=(
+                            month_ibi[member] + community[member] + insurances[member]
+                            + services[member] + rules.amortization(held.paid)
+                        ),
+                        upkeep=repairs[member] + insurances[member] if dwelling else 0,
+                        premium=premiums[member] if dwelling and cheap else 0,
+                        bonus=bonus,
+                        reduction=reduction,
+                    )
+                )  # fmt: skip
             entries.append((member, LedgerEntry(-costs[member], "pisos:comunidad")))
             taxes.append(
                 HousingTax(member, "ibi", cadastral * shares // rules.SHARES, ibis[member])
             )
             if igics[member]:
                 taxes.append(HousingTax(member, "igic", gross - igics[member], igics[member]))
+            if paid_taxes[member]:
+                # Lo pagado hoy al Estado, repartido entre el impuesto de primas y el IGIC
+                # de las reparaciones según lo que tocaba de cada uno.
+                ips_paid = round(paid_taxes[member] * ips_share)
+                if ips_paid:
+                    taxes.append(HousingTax(member, "ips", insurances[member], ips_paid))
+                if paid_taxes[member] - ips_paid:
+                    taxes.append(HousingTax(member, "igic_gastos", repairs[member],
+                                            paid_taxes[member] - ips_paid))  # fmt: skip
             before = result.members.get(member, MemberDay())
             result.members[member] = MemberDay(
                 before.rent + gross, before.ibi + ibis[member], before.costs + costs[member]
@@ -1629,21 +2767,30 @@ class HousingRepository:
         rng: random.Random,
         paid: frozenset[str],
         news: list[News],
+        barrio_news: BarrioNews | None = None,
     ) -> rules.DayOutcome:
-        """Un mes con un miembro de alquiler: paga si le llega; si no, impago."""
-        extra, events = rules.roll_events(listing, rng)
+        """Un mes con un miembro de alquiler: paga si le llega; si no, impago.
+
+        Si deja de pagar y el seguro de impago le cubre, el seguro paga desde el segundo mes
+        (`housing.insure_month`).
+        """
+        extra, events = rules.roll_events(
+            listing, rng, repairs=barrio_news.repairs if barrio_news else 1.0,
+            neighbour=barrio_news.neighbour if barrio_news else 1.0,
+        )  # fmt: skip
         member = lease.member
         rent = 0
         if lease.status == rules.EVICTING:
             if lease.eviction_at is not None and day >= lease.eviction_at:
                 news.append(News(key, day, "desahucio", 0, member, None))
                 lease = replace(lease, status=rules.VACANT, member=None, bono=False, rent=0,
+                                last_rent=lease.rent,
                                 until=None, since=day, unpaid=0, eviction_at=None)  # fmt: skip
         elif key in paid:
             rent = lease.rent
             if lease.status == rules.DEFAULTING:
                 news.append(News(key, day, "paga", rent, member, None))
-            lease = replace(lease, status=rules.RENTED, unpaid=0)
+            lease = replace(lease, status=rules.RENTED, unpaid=0, claims=0)
             if lease.until is not None and day >= lease.until:
                 lease = replace(lease, until=day + timedelta(days=60))
                 news.append(News(key, day, "renueva", 0, member, None))
@@ -1651,15 +2798,86 @@ class HousingRepository:
             if lease.status == rules.RENTED:
                 news.append(News(key, day, "impago", lease.rent, member, None))
             lease = replace(lease, status=rules.DEFAULTING, unpaid=lease.unpaid + 1)
-        outcome = rules.DayOutcome(
-            lease=lease, rent=rent, costs=rules.monthly_costs(listing), extra=extra, events=events
-        )
-        return outcome
+        insurer, lease = rules.insure_month(listing, lease)
+        if insurer:
+            events = (*events, rules.Event("seguro", insurer))
+        return rules.DayOutcome(
+            lease=lease, rent=rent, costs=rules.monthly_costs(listing), extra=extra,
+            events=events, insurer=insurer,
+        )  # fmt: skip
+
+    @staticmethod
+    def _decide_in(
+        connection: sqlite3.Connection,
+        guild_id: int,
+        day: date,
+        rng: random.Random,
+        market: Market,
+        key: str,
+        result: DayRun,
+    ) -> tuple[int, int, list[tuple[str, int]], bool]:
+        """Resuelve los imprevistos de un inmueble que ya se decidieron o caducaron.
+
+        Returns:
+            `(lo que se paga hoy, cambio del humor, imprevistos que vuelven, parte al seguro)`.
+        """
+        pay = mood = 0
+        relapses: list[tuple[str, int]] = []
+        claim = False
+        owners = tuple(market.shares_of(key))
+        for decision in market.decisions.get(key, ()):
+            if decision.choice is None and decision.until >= day:
+                continue
+            done = rules.resolve(decision.event, decision.choice, decision.cost, rng)
+            pay += done.pay
+            mood += done.mood
+            claim = claim or done.claim
+            if done.relapse:
+                relapses.append((decision.event, decision.cost))
+            connection.execute("DELETE FROM housing_decisions WHERE id = ?", (decision.id,))
+            choice = decision.choice or rules.DECISIONS[decision.event][0].key
+            result.resolved.append((owners, decision.event, choice))
+            if done.relapse:
+                result.resolved.append((owners, decision.event, "vuelve"))
+        return pay, mood, relapses, claim
+
+    @staticmethod
+    def _candidates_in(
+        connection: sqlite3.Connection,
+        guild_id: int,
+        day: date,
+        market: Market,
+        key: str,
+        outcome: rules.DayOutcome,
+        lease: rules.Lease,
+        result: DayRun,
+    ) -> None:
+        """Guarda los candidatos que llegan hoy y quita los de un piso que ya no los espera."""
+        if lease.status != rules.VACANT or lease.pick != rules.PICK_SELF:
+            connection.execute(
+                "DELETE FROM housing_candidates WHERE guild_id = ? AND listing = ?",
+                (guild_id, key),
+            )
+            return
+        waiting = list(market.candidates_of(key, day))
+        for event in outcome.events:
+            if event.key != "candidato" or not event.tenant:
+                continue
+            if len(waiting) >= rules.MAX_CANDIDATES or event.tenant in waiting:
+                continue
+            until = day + timedelta(days=rules.CANDIDATE_DAYS)
+            connection.execute(
+                "INSERT INTO housing_candidates (guild_id, listing, tenant, until) "
+                "VALUES (?, ?, ?, ?)",
+                (guild_id, key, event.tenant, until.isoformat()),
+            )
+            waiting.append(event.tenant)
+            result.candidates.append((key, event.tenant))
 
     @staticmethod
     def _event_news(key: str, day: date, outcome: rules.DayOutcome) -> list[News]:
         tenant = outcome.lease.tenant
-        return [News(key, day, e.key, e.cost, None, tenant) for e in outcome.events]
+        return [News(key, day, e.key, e.cost, None, e.tenant or tenant) for e in outcome.events]
 
     @staticmethod
     def _log_news(
@@ -1732,6 +2950,7 @@ class HousingRepository:
                     _save_lease_in(
                         connection, guild_id, home[1],
                         replace(lease, status=rules.VACANT, member=None, bono=False, rent=0,
+                                last_rent=lease.rent,
                                 until=None, since=day, unpaid=0, eviction_at=None),
                     )  # fmt: skip
                     _news_in(connection, guild_id, News(home[1], day, "se_va", 0, user_id, None),
@@ -1765,11 +2984,13 @@ class HousingRepository:
                 News(finance.vpo_ref(unit), day, "compra_vpo", spec.price, user_id, None), now,
             )  # fmt: skip
             deal = VpoDeal(unit, spec.price, notary=notary, loan=loan, payment=payment)
+            notary_igic = igic(notary, rules.SERVICES_IGIC)
             return deal, HousingMove(
                 entries=(
                     (user_id, LedgerEntry(-notary, "pisos:notaria")),
                     (STATE_ACCOUNT_ID, LedgerEntry(spec.price, "vpo:venta")),
-                )
+                ),
+                taxes=(HousingTax(user_id, "igic_gastos", notary, notary_igic),),
             )
 
         return run
@@ -1878,6 +3099,7 @@ class HousingRepository:
             _save_lease_in(
                 connection, guild_id, ref,
                 replace(lease, status=rules.VACANT, member=None, bono=False, rent=0,
+                                last_rent=lease.rent,
                         until=None, since=day, unpaid=0, eviction_at=None),
             )  # fmt: skip
         finance.clear_home_in(connection, guild_id, user_id=user_id)
@@ -1917,7 +3139,7 @@ class HousingRepository:
             market = _market_in(connection, guild_id)
             listing = _listing(market, key)
             holders = market.shares_of(key)
-            if rules.manager(holders) != owner_id:
+            if market.manager(key) != owner_id:
                 raise HousingError("Lo alquila quien tiene más de la mitad del inmueble.")
             if listing.kind not in rules.HOME_KINDS:
                 raise HousingError("Eso no es una vivienda.")
@@ -1935,9 +3157,22 @@ class HousingRepository:
             short = rules.needs_guarantee(rent, income, aval=False)
             guarantee = short and not aval
             deposit = rules.deposit_for(rent, guarantee=guarantee)
+            # Un miembro vive en él: es alquiler de vivienda aunque el dueño pidiera otra renta.
+            reduction = rules.contract_reduction(
+                listing, "referencia", index=market.index(listing.barrio), rent=rent,
+                last_rent=lease.last_rent, day=day,
+            )  # fmt: skip
+            # Pasa el estudio de solvencia de la aseguradora si su nómina llega a tres veces
+            # la renta (sin aval: la aseguradora mira lo que gana él).
+            bonus = _bonus_ready(market, key, listing, lease, day)
             lease = replace(lease, status=rules.RENTED, tenant=None, member=member_id,
                             bono=bono, rent=rent, until=day + timedelta(days=60), since=day,
-                            unpaid=0)  # fmt: skip
+                            unpaid=0, reduction=reduction, claims=0, solvent=not short,
+                            bonus=bonus)  # fmt: skip
+            connection.execute(
+                "DELETE FROM housing_candidates WHERE guild_id = ? AND listing = ?",
+                (guild_id, key),
+            )
             _save_lease_in(connection, guild_id, key, lease)
             finance.set_home_in(connection, guild_id, member_id, finance.HOME_RENTED, key, now)
             finance.add_deposit_in(connection, guild_id, key, member_id, deposit, now)
@@ -1976,10 +3211,14 @@ class HousingRepository:
                 continue
             holders = market.shares_of(deposit.listing)
             kept = deposit.forfeit if holders else 0
+            # La renta que debía un miembro: vivienda, con la reducción general.
             for member, part in rules.split(kept, holders).items():
                 if part > 0:
-                    taxable = rules.taxable_rent(part, 0)
-                    rents.append(HousingRent(member, part, taxable, rules.rent_to_fiscal(taxable)))
+                    rents.append(
+                        HousingRent(
+                            member, part, ref=deposit.listing, reduction=rules.RENT_REDUCTION
+                        )
+                    )
             refund = deposit.amount - kept
             entries.append(
                 (HOUSING_DEPOSIT_ACCOUNT_ID, LedgerEntry(-deposit.amount, "pisos:fianza"))
@@ -2000,39 +3239,102 @@ class HousingRepository:
     # -- Fase 4: licencias, SOCIMI ------------------------------------------------------
 
     def buy_license(
-        self, guild_id: int, user_id: int, key: str, day: date, now: float
+        self,
+        guild_id: int,
+        user_id: int,
+        key: str,
+        day: date,
+        now: float,
+        rng: random.Random | None = None,
     ) -> Callable[[sqlite3.Connection], tuple[int, HousingMove]]:
         """Pide la licencia de vivienda vacacional (una por barrio); la tasa va al Estado.
 
+        Ley 6/2025 de Canarias: no hay licencias nuevas en zona tensionada ni en obra nueva, y
+        un piso en un bloque necesita que lo apruebe la comunidad (3/5, art. 17.12 LPH). Los
+        vecinos votan al pedirla: si dicen que no, no se paga la tasa y no se puede volver a
+        pedir en una semana. Devuelve la tasa pagada (0 si la comunidad dijo que no).
+
         Raises (dentro de la transacción):
-            HousingError: Si no lo decide él, no es vivienda, vive alguien o el barrio ya
-                no tiene plazas.
+            HousingError: Si no lo decide él, no es vivienda, vive alguien, la ley no deja o
+                el barrio ya no tiene plazas.
         """
+        dice = rng or random.Random()
 
         def run(connection: sqlite3.Connection) -> tuple[int, HousingMove]:
             market = _market_in(connection, guild_id)
-            listing = _listing(market, key)
-            if rules.manager(market.shares_of(key)) != user_id:
-                raise HousingError("La licencia la pide quien tiene más de la mitad del inmueble.")
-            if listing.kind not in rules.HOME_KINDS:
-                raise HousingError("Un garaje vacacional no lo aprueba ni el Cabildo.")
-            lease = market.leases[key]
-            if lease.license:
-                raise HousingError("Ya tiene licencia.")
-            if lease.status == rules.HABITUAL or lease.member is not None:
-                raise HousingError("Vive alguien: no se puede convertir en vacacional.")
-            if market.licensed_in(listing.barrio) >= rules.LICENSE_PER_BARRIO:
+            _listing(market, key)
+            if market.manager(key) != user_id:
                 raise HousingError(
-                    "El barrio ya no tiene plazas vacacionales: está saturado. Canarias tiene "
-                    "un límite (y este barrio, también)."
+                    "La licencia la pide quien administra el inmueble (en uno con varios "
+                    "dueños, también la puede votar la junta)."
                 )
-            _save_lease_in(connection, guild_id, key, replace(lease, license=True))
-            _news_in(connection, guild_id, News(key, day, "licencia", rules.LICENSE_FEE,
-                                                user_id, None), now)  # fmt: skip
-            fee = rules.LICENSE_FEE
-            return fee, HousingMove(taxes=(HousingTax(user_id, "licencia", fee, fee),))
+            return self._license_in(
+                connection, guild_id, market, key, {user_id: 1}, user_id, day, now, dice
+            )
 
         return run
+
+    @staticmethod
+    def _license_in(
+        connection: sqlite3.Connection,
+        guild_id: int,
+        market: Market,
+        key: str,
+        payers: dict[int, int],
+        user_id: int,
+        day: date,
+        now: float,
+        dice: random.Random,
+    ) -> tuple[int, HousingMove]:
+        """La licencia vacacional, con la tasa repartida entre `payers` por participaciones.
+
+        Devuelve la tasa (0 si los vecinos votan que no). Ver `buy_license`.
+        """
+        listing = _listing(market, key)
+        if listing.kind not in rules.HOME_KINDS:
+            raise HousingError("Un garaje vacacional no lo aprueba ni el Cabildo.")
+        lease = market.leases[key]
+        if lease.license:
+            raise HousingError("Ya tiene licencia.")
+        if lease.status == rules.HABITUAL or lease.member is not None:
+            raise HousingError("Vive alguien: no se puede convertir en vacacional.")
+        if market.licensed_in(listing.barrio) >= rules.LICENSE_PER_BARRIO:
+            raise HousingError(
+                "El barrio ya no tiene plazas vacacionales: está saturado. Canarias tiene "
+                "un límite (y este barrio, también)."
+            )
+        problem = rules.license_problem(
+            listing, index=market.index(listing.barrio), promotion=rules.is_promotion(key)
+        )
+        if problem is not None:
+            raise HousingError(problem)
+        if lease.license_denied_until is not None and day < lease.license_denied_until:
+            raise HousingError(
+                "La comunidad ya votó que no. Hasta el "
+                f"{lease.license_denied_until.strftime('%d/%m')} no se vuelve a votar."
+            )
+        if rules.needs_neighbours(listing) and dice.random() >= rules.NEIGHBOURS_APPROVE:
+            until = day + timedelta(days=rules.LICENSE_RETRY_DAYS)
+            denied = replace(lease, license_denied_until=until)
+            _save_lease_in(connection, guild_id, key, denied)
+            _news_in(connection, guild_id, News(key, day, "licencia_denegada", 0, user_id,
+                                                None), now)  # fmt: skip
+            return 0, HousingMove()
+        _save_lease_in(
+            connection, guild_id, key,
+            replace(lease, license=True, license_until=day + timedelta(days=rules.LICENSE_DAYS),
+                    license_denied_until=None),
+        )  # fmt: skip
+        _news_in(connection, guild_id, News(key, day, "licencia", rules.LICENSE_FEE,
+                                            user_id, None), now)  # fmt: skip
+        fee = rules.LICENSE_FEE
+        return fee, HousingMove(
+            taxes=tuple(
+                HousingTax(member, "licencia", part, part)
+                for member, part in rules.split(fee, payers).items()
+                if part
+            )
+        )
 
     def found_socimi(
         self, guild_id: int, user_id: int, day: date, now: float
@@ -2078,13 +3380,14 @@ class HousingRepository:
 
     @staticmethod
     def _set_level_in(
-        connection: sqlite3.Connection, guild_id: int, user_id: int, key: str, level: str
-    ) -> rules.Lease:
+        connection: sqlite3.Connection, guild_id: int, user_id: int, key: str, level: str,
+        *, junta: bool = False,
+    ) -> rules.Lease:  # fmt: skip
         if level not in RENT_LEVELS:
             raise HousingError("Esa renta no existe.")
         market = _market_in(connection, guild_id)
         listing = _listing(market, key)
-        if rules.manager(market.shares_of(key)) != user_id:
+        if not junta and market.manager(key) != user_id:
             raise HousingError(
                 "La renta la decide quien tiene más de la mitad del inmueble "
                 "(art. 398 del Código Civil)."
@@ -2104,39 +3407,945 @@ class HousingRepository:
         _save_lease_in(connection, guild_id, key, lease)
         return lease
 
-    async def evict(
-        self, guild_id: int, user_id: int, key: str, day: date, now: float, rng: random.Random
-    ) -> rules.Lease:
-        """Pide el desahucio de quien no paga (también de un miembro) o de los okupas.
+    # -- Ampliación, fase 4: reformas e imprevistos ----------------------------------
 
-        Lo pide quien tiene la mayoría; si nadie la tiene, cualquier copropietario
-        (art. 394 del Código Civil: cada uno puede defender la cosa común).
+    def start_reform(
+        self, guild_id: int, user_id: int, key: str, reform: str, day: date, now: float
+    ) -> Callable[[sqlite3.Connection], tuple[ReformDone, HousingMove]]:
+        """Empieza una reforma: paga la obra con su IGIC, el ICIO y la licencia, y entra en obras.
 
-        Raises:
-            HousingError: Si no le toca o no hay a quién desahuciar.
+        Solo la hace quien tiene el inmueble entero (en un inmueble con varios dueños, lo vota
+        la junta), con él vacío. Para el IRPF es una mejora, no un gasto: suma a lo que costó
+        el inmueble (art. 35.1.b LIRPF) y a lo pagado (Patrimonio y amortización).
+
+        Raises (dentro de la transacción):
+            HousingError: Si no se puede.
+            InsufficientFundsError: Si no le llega.
         """
-        return await self._run(self._write, self._evict_in, guild_id, user_id, key, day, now, rng)
+
+        def run(connection: sqlite3.Connection) -> tuple[ReformDone, HousingMove]:
+            market = _market_in(connection, guild_id)
+            if market.shares_of(key).get(user_id, 0) != rules.SHARES:
+                raise HousingError(
+                    "Solo reforma quien tiene el inmueble entero (con varios dueños, la vota "
+                    "la junta)."
+                )
+            return self._reform_in(
+                connection, guild_id, market, key, reform, {user_id: rules.SHARES}, user_id,
+                day, now,
+            )  # fmt: skip
+
+        return run
 
     @staticmethod
-    def _evict_in(
-        connection: sqlite3.Connection, guild_id: int, user_id: int, key: str, day: date,
-        now: float, rng: random.Random,
-    ) -> rules.Lease:  # fmt: skip
+    def _reform_in(
+        connection: sqlite3.Connection,
+        guild_id: int,
+        market: Market,
+        key: str,
+        reform: str,
+        payers: dict[int, int],
+        user_id: int,
+        day: date,
+        now: float,
+    ) -> tuple[ReformDone, HousingMove]:
+        """Una reforma pagada por `payers` según sus participaciones (ver `start_reform`)."""
+        listing = _listing(market, key)
+        spec = REFORM_BY_KEY.get(reform)
+        if spec is None or listing.kind not in spec.kinds:
+            raise HousingError("Esa reforma no se le puede hacer a este inmueble.")
+        if sum(payers.values()) != rules.SHARES:
+            raise HousingError(
+                "Hay participaciones sin dueño: la reforma la tiene que pagar el inmueble entero."
+            )
+        if reform in market.reforms.get(key, {}):
+            raise HousingError("Esa reforma ya está hecha (o en obras).")
+        lease = market.leases.get(key, rules.Lease())
+        if lease.status != rules.VACANT:
+            raise HousingError("Para reformar tiene que estar vacío.")
+        for payer in payers:
+            _check_free(market, key, payer, day)
+        quote = rules.reform_quote(listing, spec, market.index(listing.barrio))
+        until = day + timedelta(days=spec.days)
+        connection.execute(
+            """
+            INSERT INTO housing_reforms
+                (guild_id, listing, reform, cost, until, finished, rehab, user_id, created_at)
+            VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
+            """,
+            (guild_id, key, reform, quote.cost, until.isoformat(), int(quote.rehab),
+             user_id, now),
+        )  # fmt: skip
+        costs = rules.split(quote.cost, payers)
+        igics = rules.split(quote.igic, payers)
+        icios = rules.split(quote.icio, payers)
+        licenses = rules.split(quote.license, payers)
+        for payer in payers:
+            connection.execute(
+                "UPDATE housing_holdings SET paid = paid + ?, cost = cost + ? "
+                "WHERE guild_id = ? AND listing = ? AND user_id = ?",
+                (costs[payer], costs[payer] + igics[payer] + icios[payer] + licenses[payer],
+                 guild_id, key, payer),
+            )  # fmt: skip
+        _save_lease_in(
+            connection, guild_id, key,
+            replace(lease, status=rules.OBRAS, since=day, works_until=until),
+        )  # fmt: skip
+        connection.execute(
+            "DELETE FROM housing_candidates WHERE guild_id = ? AND listing = ?",
+            (guild_id, key),
+        )
+        _news_in(connection, guild_id, News(key, day, "obras", quote.cost, user_id, None), now)
+        move = HousingMove(
+            entries=tuple((payer, LedgerEntry(-costs[payer], "pisos:reforma")) for payer in payers),
+            taxes=tuple(
+                tax
+                for payer in payers
+                for tax in (
+                    HousingTax(payer, "igic_gastos", costs[payer], igics[payer]),
+                    HousingTax(payer, "icio", costs[payer], icios[payer]),
+                    HousingTax(payer, "licencia_obra", licenses[payer], licenses[payer]),
+                )
+                if tax.tax
+            ),
+        )
+        return ReformDone(key, reform, quote, until), move
+
+    async def choose(self, guild_id: int, user_id: int, decision_id: int, choice: str) -> Decision:
+        """Elige cómo resolver un imprevisto (se paga con el cierre de la noche).
+
+        Raises:
+            HousingError: Si no le toca decidir o la forma no existe.
+        """
+        return await self._run(self._write, self._choose_in, guild_id, user_id, decision_id, choice)
+
+    @staticmethod
+    def _choose_in(
+        connection: sqlite3.Connection, guild_id: int, user_id: int, decision_id: int, choice: str
+    ) -> Decision:
+        market = _market_in(connection, guild_id)
+        decision = next(
+            (d for items in market.decisions.values() for d in items if d.id == decision_id), None
+        )
+        if decision is None:
+            raise HousingError("Ese imprevisto ya está resuelto.")
+        holders = market.shares_of(decision.listing)
+        boss = market.manager(decision.listing)
+        if user_id not in holders or (boss is not None and boss != user_id):
+            raise HousingError("Lo decide quien tiene más de la mitad del inmueble.")
+        if choice not in {c.key for c in rules.DECISIONS[decision.event]}:
+            raise HousingError("Esa forma de arreglarlo no existe.")
+        connection.execute(
+            "UPDATE housing_decisions SET choice = ?, chooser = ? WHERE id = ?",
+            (choice, user_id, decision_id),
+        )
+        return replace(decision, choice=choice)
+
+    # -- Ampliación, fase 3: vender a un miembro y subastas -------------------------
+
+    def member_sale(
+        self,
+        guild_id: int,
+        seller: int,
+        buyer: int,
+        key: str,
+        shares: int,
+        price: int,
+        day: date,
+        now: float,
+        *,
+        expected: int | None = None,
+        financed: bool = False,
+        income: int = 0,
+        aval_income: int = 0,
+    ) -> Callable[[sqlite3.Connection], tuple[MemberSale, HousingMove]]:
+        """Vende participaciones a otro miembro al precio pactado.
+
+        Impuestos (`housing.member_sale_quote`): el comprador paga el ITP sobre el mayor entre
+        el precio y el valor de referencia y la notaría con su IGIC; el vendedor, el 19 % de
+        la ganancia calculada con el mayor entre el precio y el valor de mercado (art. 35.2
+        LIRPF). La parte regalada no paga Donaciones (decisión del proyecto, como el Rastro).
+        Lo cobrado cancela la parte de la hipoteca del vendedor. El comprador puede pagar con
+        hipoteca (el 80 % del menor entre el precio y el valor). No mueve el índice.
+
+        Args:
+            expected: Lo que la oferta dijo que pagaría el comprador de su bolsillo; si ha
+                subido (el valor de referencia sube con el barrio), no se vende.
+
+        Raises (dentro de la transacción):
+            HousingError: Si no tiene tantas, están en subasta, el banco no presta o el
+                comprador es el vendedor.
+            PriceChanged: Si al comprador le costaría más que lo que decía la oferta.
+            InsufficientFundsError: Si al comprador no le llega.
+        """
+
+        def run(connection: sqlite3.Connection) -> tuple[MemberSale, HousingMove]:
+            market = _market_in(connection, guild_id)
+            listing = _listing(market, key)
+            if buyer == seller:
+                raise HousingError("No te puedes vender a ti mismo.")
+            held = market.holdings.get(key, {}).get(seller)
+            if held is None or not 1 <= shares <= held.shares:
+                raise HousingError("El vendedor ya no tiene esas participaciones.")
+            _check_free(market, key, seller, day)
+            index = market.index(listing.barrio)
+            try:
+                quote = rules.member_sale_quote(
+                    listing, shares, held.shares, held.cost, price, index=index
+                )
+            except ValueError as error:
+                raise HousingError(str(error)) from error
+            loan = payment = 0
+            rate = 0.0
+            aval = False
+            if financed:
+                loan = round(min(price, quote.value) * rules.MORTGAGE_LTV)
+                rate = market.euribor + rules.MORTGAGE_SPREAD
+                payment = rules.installment(loan, rate)
+                current = sum(m.payment for m in market.mortgages_of(buyer))
+                if not rules.affordable(income, current + payment):
+                    aval = aval_income > 0 and rules.affordable(
+                        income + aval_income, current + payment
+                    )
+                    if not aval:
+                        raise HousingError(
+                            f"El banco no presta: la cuota ({format_amount(payment)} al mes) más "
+                            f"las que ya pagas pasa del 35 % de lo que ingresas "
+                            f"({format_amount(income)} al día)."
+                        )
+            pocket = quote.buyer_total - loan
+            if expected is not None and pocket > expected:
+                raise PriceChanged(pocket)
+            if loan:
+                finance.add_mortgage_in(
+                    connection, guild_id, buyer, key, loan, rate, payment, now,
+                    aval=rules.PARENTS_AVAL if aval else None,
+                )  # fmt: skip
+            payoff = _shrink_mortgages_in(connection, market, seller, key, shares, held.shares)
+            lease = market.leases.get(key, rules.Lease(level=DEFAULT_RENT_LEVEL, since=day))
+            moved_in = _move_shares_in(
+                connection, guild_id, market, key, seller, buyer, shares, paid=price,
+                cost=quote.buyer_total, day=day, now=now, lease=lease,
+            )  # fmt: skip
+            _news_in(
+                connection, guild_id, News(key, day, "venta_miembro", price, seller, None), now
+            )
+            _news_in(
+                connection, guild_id, News(key, day, "compra_miembro", price, buyer, None), now
+            )
+            sale = MemberSale(
+                key, quote, seller, buyer, loan=loan, payment=payment, rate=rate, aval=aval,
+                payoff=payoff, moved_in=moved_in,
+            )  # fmt: skip
+            move = HousingMove(
+                entries=(
+                    (buyer, LedgerEntry(-(price - loan), "pisos:compra_miembro")),
+                    (seller, LedgerEntry(price, "pisos:venta_miembro")),
+                    (seller, LedgerEntry(-payoff, "pisos:hipoteca_cancelada")),
+                    (buyer, LedgerEntry(-quote.notary, "pisos:notaria")),
+                ),
+                taxes=(
+                    HousingTax(buyer, "itp", max(price, quote.reference), quote.itp),
+                    HousingTax(buyer, "igic_gastos", quote.notary, quote.notary_igic),
+                    HousingTax(seller, "plusvalia", max(0, quote.gain), quote.gain_tax),
+                ),
+            )
+            return sale, move
+
+        return run
+
+    async def create_auction(
+        self, guild_id: int, seller: int, key: str, shares: int, min_bid: int, now: float
+    ) -> Auction:
+        """Saca a subasta unas participaciones durante un día (`housing.AUCTION_SECONDS`).
+
+        Raises:
+            HousingError: Si no las tiene, ya están en subasta o la puja mínima no vale.
+        """
+        return await self._run(
+            self._write, self._create_auction_in, guild_id, seller, key, shares, min_bid, now
+        )
+
+    @staticmethod
+    def _create_auction_in(
+        connection: sqlite3.Connection, guild_id: int, seller: int, key: str, shares: int,
+        min_bid: int, now: float,
+    ) -> Auction:  # fmt: skip
+        market = _market_in(connection, guild_id)
+        _listing(market, key)
+        held = market.holdings.get(key, {}).get(seller)
+        if held is None or not 1 <= shares <= held.shares:
+            raise HousingError(
+                f"Tienes {held.shares if held else 0} participaciones: no puedes subastar más."
+            )
+        _check_free(market, key, seller, local_day(now))
+        if min_bid < 1:
+            raise HousingError("La puja mínima tiene que ser de 1 Y$ o más.")
+        number = trade.add_auction_in(
+            connection, guild_id, listing=key, seller=seller, shares=shares, min_bid=min_bid,
+            ends_at=now + rules.AUCTION_SECONDS, now=now,
+        )  # fmt: skip
+        _news_in(
+            connection, guild_id, News(key, local_day(now), "subasta", min_bid, seller, None), now
+        )
+        return next(a for a in trade.auctions_in(connection, guild_id) if a.id == number)
+
+    def bid(
+        self, guild_id: int, user_id: int, auction_id: int, amount: int, now: float
+    ) -> Callable[[sqlite3.Connection], tuple[Bid, HousingMove]]:
+        """Puja en una subasta: deja en el depósito la puja con su ITP y su notaría.
+
+        A quien supera se le devuelve todo lo suyo en la misma transacción. Si queda menos
+        de una hora, la subasta se alarga una hora (`housing.auction_end`).
+
+        Raises (dentro de la transacción):
+            HousingError: Si la subasta ya no está abierta, la puja no llega o puja el dueño.
+            InsufficientFundsError: Si no le llega para el depósito.
+        """
+
+        def run(connection: sqlite3.Connection) -> tuple[Bid, HousingMove]:
+            market = _market_in(connection, guild_id)
+            auction = next((a for a in market.auctions if a.id == auction_id), None)
+            if auction is None or now >= auction.ends_at:
+                raise HousingError("Esa subasta ya ha terminado.")
+            if user_id == auction.seller and not auction.division:
+                raise HousingError("No puedes pujar en tu propia subasta.")
+            least = rules.next_bid(auction.best_bid, auction.min_bid)
+            if amount < least:
+                raise HousingError(f"La puja tiene que ser de {format_amount(least)} o más.")
+            listing = _listing(market, auction.listing)
+            held = market.holdings.get(auction.listing, {}).get(auction.seller)
+            if held is None:
+                raise HousingError("Esas participaciones ya no están en subasta.")
+            if auction.division:
+                quote = _division_quote(market, listing, auction, user_id, amount)
+            else:
+                quote = rules.member_sale_quote(
+                    listing, auction.shares, held.shares, held.cost, amount,
+                    index=market.index(listing.barrio),
+                    itp_rate=rules.AUCTION_ITP_RATE if auction.judicial else rules.ITP_RATE,
+                    market_value_gain=False,
+                )  # fmt: skip
+            escrow = quote.buyer_total
+            ends_at = rules.auction_end(auction.ends_at, now)
+            trade.save_bid_in(connection, guild_id, auction, user_id, amount, escrow, ends_at, now)
+            entries = [
+                *_refund(auction),
+                (user_id, LedgerEntry(-escrow, "pisos:subasta_deposito")),
+                (HOUSING_AUCTION_ACCOUNT_ID, LedgerEntry(escrow, "pisos:subasta_deposito")),
+            ]
+            updated = replace(
+                auction, best_bid=amount, best_bidder=user_id, escrow=escrow,
+                bids=auction.bids + 1, ends_at=ends_at,
+            )  # fmt: skip
+            outbid = auction.best_bidder if auction.best_bidder != user_id else None
+            result = Bid(updated, escrow, outbid=outbid, extended=ends_at > auction.ends_at)
+            return result, HousingMove(entries=tuple(entries))
+
+        return run
+
+    def close_auctions(
+        self, guild_id: int, now: float
+    ) -> Callable[[sqlite3.Connection], tuple[AuctionRun, HousingMove]]:
+        """Cierra las subastas que han terminado.
+
+        - Voluntaria con puja: las participaciones pasan a quien pujó más, que paga su ITP y
+          su notaría (lo que dejó en el depósito); el vendedor cobra la puja menos el 19 % de
+          lo que gane y la parte de su hipoteca. Sin pujas, no se vende nada.
+        - Judicial: si la mejor puja vale (`housing.judicial_ok`), el inmueble es para quien
+          pujó, con el ITP de las subastas (7 %), y queda bloqueado 30 días para venderlo al
+          mercado; lo que paga cubre las deudas del piso y al banco. Si no, el banco se lo
+          queda al 70 %, como siempre.
+        """
+
+        def run(connection: sqlite3.Connection) -> tuple[AuctionRun, HousingMove]:
+            market = _market_in(connection, guild_id)
+            day = local_day(now)
+            result = AuctionRun()
+            entries: list[tuple[int, LedgerEntry]] = []
+            taxes: list[HousingTax] = []
+            for auction in market.auctions:
+                if auction.ends_at > now:
+                    continue
+                self._close_auction_in(
+                    connection, guild_id, day, now, market, auction, entries, taxes, result
+                )
+                market = _market_in(connection, guild_id)
+            return result, HousingMove(entries=tuple(entries), taxes=tuple(taxes))
+
+        return run
+
+    def _close_auction_in(
+        self,
+        connection: sqlite3.Connection,
+        guild_id: int,
+        day: date,
+        now: float,
+        market: Market,
+        auction: Auction,
+        entries: list[tuple[int, LedgerEntry]],
+        taxes: list[HousingTax],
+        result: AuctionRun,
+    ) -> None:
+        """Cierra una subasta (ver `close_auctions`)."""
+        if auction.division:
+            self._close_division_in(
+                connection, guild_id, day, now, market, auction, entries, taxes, result
+            )
+            return
+        listing = market.listing(auction.listing)
+        held = market.holdings.get(auction.listing, {}).get(auction.seller)
+        mortgage = next((m for m in market.mortgages if m.id == auction.mortgage_id), None)
+        gone = listing is None or held is None or held.shares < auction.shares
+        if gone or (auction.judicial and mortgage is None):
+            trade.close_auction_in(connection, auction.id, trade.CANCELLED)
+            entries.extend(_refund(auction))
+            result.results.append(AuctionResult(auction, cancelled=True))
+            return
+        assert listing is not None and held is not None
+        index = market.index(listing.barrio)
+        winner = auction.best_bidder
+        price = auction.best_bid
+        quote = rules.member_sale_quote(
+            listing, auction.shares, held.shares, held.cost, max(1, price), index=index,
+            itp_rate=rules.AUCTION_ITP_RATE if auction.judicial else rules.ITP_RATE,
+            market_value_gain=False,
+        )  # fmt: skip
+        if auction.judicial and mortgage is not None:
+            lease = market.leases.get(auction.listing, rules.Lease())
+            pool = sum(market.shares_of(auction.listing).values())
+            owed = mortgage.owed + lease.arrears * held.shares // max(1, pool)
+            habitual = market.homes.get(auction.seller) == (finance.HOME_OWN, auction.listing)
+            valid = winner is not None and rules.judicial_ok(
+                price, market.value(held), owed, habitual=habitual
+            )
+            if valid and winner is not None:
+                entries.extend(_won(auction, quote))
+                taxes.extend(_won_taxes(winner, quote, auction.escrow, price))
+                self._execute_in(
+                    connection, guild_id, day, now, market, mortgage, entries, taxes, result,
+                    winner=winner, price=price, winner_cost=auction.escrow,
+                )  # fmt: skip
+                trade.close_auction_in(connection, auction.id, trade.SOLD)
+                result.results.append(AuctionResult(auction, winner=winner, price=price))
+                return
+            entries.extend(_refund(auction))
+            self._execute_in(
+                connection, guild_id, day, now, market, mortgage, entries, taxes, result
+            )
+            trade.close_auction_in(connection, auction.id, trade.DESERTED)
+            result.results.append(AuctionResult(auction, bank=True))
+            return
+        if winner is None:
+            trade.close_auction_in(connection, auction.id, trade.DESERTED)
+            item = News(auction.listing, day, "subasta_desierta", auction.min_bid, auction.seller,
+                        None)  # fmt: skip
+            result.news.append(item)
+            _news_in(connection, guild_id, item, now)
+            result.results.append(AuctionResult(auction))
+            return
+        payoff = _shrink_mortgages_in(
+            connection, market, auction.seller, auction.listing, auction.shares, held.shares
+        )
+        _move_shares_in(
+            connection, guild_id, market, auction.listing, auction.seller, winner, auction.shares,
+            paid=price, cost=auction.escrow, day=day, now=now,
+            lease=market.leases.get(auction.listing, rules.Lease()),
+        )  # fmt: skip
+        entries.extend(_won(auction, quote))
+        entries.append((auction.seller, LedgerEntry(price, "pisos:subasta")))
+        entries.append((auction.seller, LedgerEntry(-payoff, "pisos:hipoteca_cancelada")))
+        taxes.extend(_won_taxes(winner, quote, auction.escrow, price))
+        taxes.append(HousingTax(auction.seller, "plusvalia", max(0, quote.gain), quote.gain_tax))
+        trade.close_auction_in(connection, auction.id, trade.SOLD)
+        item = News(auction.listing, day, "subasta_adjudicada", price, winner, None)
+        result.news.append(item)
+        _news_in(connection, guild_id, item, now)
+        result.results.append(AuctionResult(auction, winner=winner, price=price))
+
+    # -- Ampliación, fase 6: junta de copropietarios y acción de división ------------
+
+    async def propose(
+        self, guild_id: int, user_id: int, key: str, kind: str, value: str, amount: int,
+        now: float,
+    ) -> Vote:  # fmt: skip
+        """Propone algo a la junta de un inmueble con varios dueños (vota sí al proponerlo).
+
+        Raises:
+            HousingError: Si no es dueño, no hay junta, ya se vota eso o la propuesta no vale.
+        """
+        return await self._run(
+            self._write, self._propose_in, guild_id, user_id, key, kind, value, amount, now
+        )
+
+    @staticmethod
+    def _propose_in(
+        connection: sqlite3.Connection, guild_id: int, user_id: int, key: str, kind: str,
+        value: str, amount: int, now: float,
+    ) -> Vote:  # fmt: skip
+        market = _market_in(connection, guild_id)
+        listing = _listing(market, key)
+        holders = market.shares_of(key)
+        if user_id not in holders:
+            raise HousingError("Solo proponen los dueños.")
+        if len(holders) < 2:
+            raise HousingError(
+                "La junta es para los inmuebles con varios dueños: esto lo decides tú."
+            )
+        if kind not in rules.MOTION_BY_KEY:
+            raise HousingError("Eso no se vota en la junta.")
+        if any(v.kind == kind for v in market.votes_of(key)):
+            raise HousingError("Ya hay una votación de eso abierta: vota en ella.")
+        if market.division_of(key) is not None:
+            raise HousingError("Hay una acción de división en marcha: se vende entero.")
+        _check_motion(market, listing, key, kind, value, amount)
+        number = junta.add_vote_in(
+            connection, guild_id, listing=key, proposer=user_id, kind=kind, value=value,
+            amount=amount, ends_at=now + rules.VOTE_SECONDS, now=now,
+        )  # fmt: skip
+        _news_in(connection, guild_id, News(key, local_day(now), "junta", amount, user_id, None),
+                 now)  # fmt: skip
+        return next(v for v in junta.votes_in(connection, guild_id) if v.id == number)
+
+    def vote(
+        self, guild_id: int, user_id: int, vote_id: int, yes: bool, now: float,
+        rng: random.Random | None = None,
+    ) -> Callable[[sqlite3.Connection], tuple[VoteResult, HousingMove]]:  # fmt: skip
+        """Vota en la junta. Si ya han votado todos los dueños, se cierra en el momento.
+
+        Raises (dentro de la transacción):
+            HousingError: Si la votación ya se cerró o no es dueño.
+        """
+        dice = rng or random.Random()
+
+        def run(connection: sqlite3.Connection) -> tuple[VoteResult, HousingMove]:
+            market = _market_in(connection, guild_id)
+            vote = next((v for v in market.votes if v.id == vote_id), None)
+            if vote is None or vote.ends_at <= now:
+                raise HousingError("Esa votación ya se ha cerrado.")
+            holders = market.shares_of(vote.listing)
+            if user_id not in holders:
+                raise HousingError("Solo votan los dueños.")
+            junta.ballot_in(connection, guild_id, vote_id, user_id, yes, now)
+            vote = replace(vote, ballots={**vote.ballots, user_id: yes})
+            if not set(holders) <= set(vote.ballots):
+                return VoteResult(vote, owners=tuple(holders)), HousingMove()
+            parts = _Parts()
+            result = self._resolve_in(connection, guild_id, market, vote, now, dice, parts)
+            return result, parts.move(guild_id)
+
+        return run
+
+    def close_votes(
+        self, guild_id: int, now: float, rng: random.Random | None = None
+    ) -> Callable[[sqlite3.Connection], tuple[list[VoteResult], HousingMove]]:
+        """Cierra las votaciones de la junta que han llegado a su hora."""
+        dice = rng or random.Random()
+
+        def run(connection: sqlite3.Connection) -> tuple[list[VoteResult], HousingMove]:
+            parts = _Parts()
+            results = []
+            for vote in _market_in(connection, guild_id).votes:
+                if vote.ends_at > now:
+                    continue
+                market = _market_in(connection, guild_id)
+                results.append(
+                    self._resolve_in(connection, guild_id, market, vote, now, dice, parts)
+                )
+            return results, parts.move(guild_id)
+
+        return run
+
+    def _resolve_in(
+        self,
+        connection: sqlite3.Connection,
+        guild_id: int,
+        market: Market,
+        vote: Vote,
+        now: float,
+        dice: random.Random,
+        parts: _Parts,
+    ) -> VoteResult:
+        """Cuenta los votos y, si sale que sí, lo hace (quien no vota cuenta a favor)."""
+        holders = market.shares_of(vote.listing)
+        motion = rules.MOTION_BY_KEY[vote.kind]
+        day = local_day(now)
+        against = sum(s for m, s in holders.items() if vote.ballots.get(m) is False)
+        owners = tuple(holders)
+        if not holders or not rules.passes(motion.threshold, sum(holders.values()), against):
+            junta.close_vote_in(connection, vote.id, junta.REJECTED)
+            _news_in(connection, guild_id, News(vote.listing, day, "junta_rechaza", 0,
+                                                vote.proposer, None), now)  # fmt: skip
+            return VoteResult(replace(vote, status=junta.REJECTED), owners=owners)
+        mine = _Parts()
+        connection.execute("SAVEPOINT junta")
+        try:
+            note = self._apply_in(connection, guild_id, market, vote, holders, day, now, dice,
+                                  mine)  # fmt: skip
+        except HousingError as error:
+            connection.execute("ROLLBACK TO junta")
+            mine = _Parts()
+            note = str(error)
+        connection.execute("RELEASE junta")
+        parts.extend(mine)
+        status = junta.FAILED if note else junta.APPROVED
+        junta.close_vote_in(connection, vote.id, status, note)
+        kind = "junta_falla" if note else "junta_aprueba"
+        _news_in(connection, guild_id, News(vote.listing, day, kind, vote.amount, vote.proposer,
+                                            None), now)  # fmt: skip
+        return VoteResult(replace(vote, status=status, note=note), owners=owners)
+
+    def _apply_in(
+        self,
+        connection: sqlite3.Connection,
+        guild_id: int,
+        market: Market,
+        vote: Vote,
+        holders: dict[int, int],
+        day: date,
+        now: float,
+        dice: random.Random,
+        parts: _Parts,
+    ) -> str:
+        """Lo que hace una propuesta aprobada. Devuelve por qué no se pudo ("" si se pudo).
+
+        Raises:
+            HousingError: Si no se puede (se deshace todo lo de esta propuesta).
+        """
+        key = vote.listing
+        listing = _listing(market, key)
+        lease = market.leases.get(key, rules.Lease())
+        _check_motion(market, listing, key, vote.kind, vote.value, vote.amount)
+        if vote.kind == "renta":
+            self._set_level_in(connection, guild_id, vote.proposer, key, vote.value, junta=True)
+        elif vote.kind == "seguro":
+            _save_lease_in(connection, guild_id, key, replace(lease, insured=vote.value == "1"))
+        elif vote.kind == "eleccion":
+            _save_lease_in(connection, guild_id, key, replace(lease, pick=vote.value))
+            if vote.value == rules.PICK_AGENCY:
+                connection.execute(
+                    "DELETE FROM housing_candidates WHERE guild_id = ? AND listing = ?",
+                    (guild_id, key),
+                )
+        elif vote.kind == "administra":
+            junta.set_admin_in(connection, guild_id, key, int(vote.value))
+        elif vote.kind == "derrama":
+            # Cada dueño paga su parte; lo que no tenga queda como deuda del piso con la
+            # comunidad (art. 9.1.e LPH). El fondo la apunta entera.
+            for member, part in rules.split(vote.amount, holders).items():
+                if part:
+                    parts.debits.append(HousingDebit(member, key, 0, part, "pisos:derrama_fondo"))
+            junta.add_reserve_in(connection, guild_id, key, vote.amount)
+        elif vote.kind == "reforma":
+            _done, move = self._reform_in(
+                connection, guild_id, market, key, vote.value, holders, vote.proposer, day, now
+            )
+            _check_wallets_in(connection, guild_id, move)
+            parts.add(move)
+        elif vote.kind == "licencia":
+            fee, move = self._license_in(
+                connection, guild_id, market, key, holders, vote.proposer, day, now, dice
+            )
+            if not fee:
+                return "La comunidad de vecinos ha votado que no a la vivienda vacacional."
+            _check_wallets_in(connection, guild_id, move)
+            parts.add(move)
+        elif vote.kind == "venta":
+            for member in holders:
+                _check_free(market, key, member, day, market_sale=True)
+            for move in self._sell_all_in(connection, guild_id, key, day, now):
+                parts.add(move)
+        return ""
+
+    def _sell_all_in(
+        self, connection: sqlite3.Connection, guild_id: int, key: str, day: date, now: float
+    ) -> list[HousingMove]:
+        """Cada dueño vende lo suyo al mercado (quien no puede venderlo aún, se lo queda)."""
+        market = _market_in(connection, guild_id)
+        moves = []
+        for member, shares in sorted(market.shares_of(key).items()):
+            held = market.holdings[key][member]
+            if held.locked_until and held.locked_until > day:
+                continue  # adjudicado en una subasta judicial: aún no puede venderlo
+            _sale, move = self.sell(guild_id, member, key, shares, day, now)(connection)
+            moves.append(move)
+        return moves
+
+    async def divide(self, guild_id: int, user_id: int, key: str, now: float) -> Auction:
+        """Acción de división (arts. 400 y 404 CC): saca el inmueble entero a subasta un día.
+
+        La puja mínima es el valor de mercado de todo. Pueden pujar todos, también los dueños
+        (pagan solo la parte de los demás). Si nadie puja, cada dueño vende lo suyo al mercado.
+
+        Raises:
+            HousingError: Si no es dueño, no hay varios dueños o ya hay una subasta.
+        """
+        return await self._run(self._write, self._divide_in, guild_id, user_id, key, now)
+
+    @staticmethod
+    def _divide_in(
+        connection: sqlite3.Connection, guild_id: int, user_id: int, key: str, now: float
+    ) -> Auction:
         market = _market_in(connection, guild_id)
         _listing(market, key)
         holders = market.shares_of(key)
-        boss = rules.manager(holders)
-        if user_id not in holders or (boss is not None and boss != user_id):
-            raise HousingError("El desahucio lo pide quien tiene la mayoría del inmueble.")
-        lease = market.leases[key]
-        try:
-            lease = rules.start_eviction(lease, day, rng)
-        except ValueError as error:
-            raise HousingError(str(error)) from error
+        if user_id not in holders:
+            raise HousingError("La acción de división la pide un dueño.")
+        if len(holders) < 2:
+            raise HousingError("Para dividir hacen falta varios dueños: ya es todo tuyo.")
+        day = local_day(now)
+        for member in holders:
+            _check_free(market, key, member, day)
+        minimum = rules.division_minimum([market.value(h) for h in market.holdings[key].values()])
+        number = trade.add_auction_in(
+            connection, guild_id, listing=key, seller=user_id, shares=sum(holders.values()),
+            min_bid=minimum, ends_at=now + rules.AUCTION_SECONDS, now=now, division=True,
+        )  # fmt: skip
+        for vote in market.votes_of(key):
+            junta.close_vote_in(connection, vote.id, junta.FAILED, "Acción de división.")
+        _news_in(connection, guild_id, News(key, day, "division", minimum, user_id, None), now)
+        return next(a for a in trade.auctions_in(connection, guild_id) if a.id == number)
+
+    def _close_division_in(
+        self,
+        connection: sqlite3.Connection,
+        guild_id: int,
+        day: date,
+        now: float,
+        market: Market,
+        auction: Auction,
+        entries: list[tuple[int, LedgerEntry]],
+        taxes: list[HousingTax],
+        result: AuctionRun,
+    ) -> None:
+        """Cierra la subasta de una acción de división (arts. 400 y 404 CC).
+
+        Con puja, quien gana se queda con lo de los demás dueños y paga a cada uno su parte
+        de la puja (con su ITP y su notaría; cada vendedor, el 19 % de lo que gane). Sin
+        pujas, cada dueño vende lo suyo al mercado.
+        """
+        key = auction.listing
+        listing = market.listing(key)
+        holders = market.shares_of(key)
+        if listing is None or sum(holders.values()) != auction.shares:
+            trade.close_auction_in(connection, auction.id, trade.CANCELLED)
+            entries.extend(_refund(auction))
+            result.results.append(AuctionResult(auction, cancelled=True))
+            return
+        winner = auction.best_bidder
+        trade.close_auction_in(connection, auction.id, trade.SOLD if winner else trade.DESERTED)
+        if winner is None:
+            for move in self._sell_all_in(connection, guild_id, key, day, now):
+                entries.extend(move.entries)
+                taxes.extend(move.taxes)
+            item = News(key, day, "division_mercado", auction.min_bid, auction.seller, None)
+            result.news.append(item)
+            _news_in(connection, guild_id, item, now)
+            result.results.append(AuctionResult(auction))
+            return
+        quote = _division_quote(market, listing, auction, winner, auction.best_bid)
+        parts = _division_parts(holders, winner, auction.best_bid, auction.shares)
+        paid = sum(parts.values())
+        entries.extend(
+            [
+                (
+                    HOUSING_AUCTION_ACCOUNT_ID,
+                    LedgerEntry(-auction.escrow, "pisos:subasta_deposito"),
+                ),
+                (winner, LedgerEntry(auction.escrow, "pisos:subasta_deposito")),
+                (winner, LedgerEntry(-paid, "pisos:subasta_compra")),
+                (winner, LedgerEntry(-quote.notary, "pisos:notaria")),
+            ]
+        )
+        taxes.extend(_won_taxes(winner, quote, auction.escrow, paid))
+        index = market.index(listing.barrio)
+        for member, part in sorted(parts.items()):
+            market = _market_in(connection, guild_id)
+            held = market.holdings[key][member]
+            sold = rules.member_sale_quote(
+                listing, held.shares, held.shares, held.cost, max(1, part), index=index,
+                market_value_gain=False,
+            )  # fmt: skip
+            payoff = _shrink_mortgages_in(connection, market, member, key, held.shares, held.shares)
+            _move_shares_in(
+                connection, guild_id, market, key, member, winner, held.shares, paid=part,
+                cost=auction.escrow * part // max(1, paid), day=day, now=now,
+                lease=market.leases.get(key, rules.Lease()),
+            )  # fmt: skip
+            entries.append((member, LedgerEntry(part, "pisos:subasta")))
+            entries.append((member, LedgerEntry(-payoff, "pisos:hipoteca_cancelada")))
+            taxes.append(HousingTax(member, "plusvalia", max(0, sold.gain), sold.gain_tax))
+        item = News(key, day, "division_adjudicada", auction.best_bid, winner, None)
+        result.news.append(item)
+        _news_in(connection, guild_id, item, now)
+        result.results.append(AuctionResult(auction, winner=winner, price=auction.best_bid))
+
+    def evict(
+        self, guild_id: int, user_id: int, key: str, day: date, now: float, rng: random.Random
+    ) -> Callable[[sqlite3.Connection], tuple[Eviction, HousingMove]]:
+        """Pide el desahucio de quien no paga (también de un miembro) o de los okupas.
+
+        Lo pide quien tiene la mayoría; si nadie la tiene, cualquier copropietario
+        (art. 394 del Código Civil: cada uno puede defender la cosa común). Abogado y
+        procurador son obligatorios (art. 23 LEC): los paga quien lo pide, con su IGIC, salvo
+        que el seguro de impago cubra a ese inquilino (contra okupas no cubre). Es un gasto
+        del inmueble deducible en el IRPF (art. 13.c del Reglamento).
+
+        Raises (dentro de la transacción):
+            HousingError: Si no le toca o no hay a quién desahuciar.
+            InsufficientFundsError: Si no le llega para el abogado. No se pide nada.
+        """
+
+        def run(connection: sqlite3.Connection) -> tuple[Eviction, HousingMove]:
+            market = _market_in(connection, guild_id)
+            listing = _listing(market, key)
+            holders = market.shares_of(key)
+            boss = market.manager(key)
+            if user_id not in holders or (boss is not None and boss != user_id):
+                raise HousingError("El desahucio lo pide quien tiene la mayoría del inmueble.")
+            lease = market.leases[key]
+            squatters = lease.status == rules.SQUATTED
+            insured = not squatters and rules.covered(listing, lease)
+            rent = lease.rent or rules.reference_rent(listing, market.index(listing.barrio))
+            try:
+                lease = rules.start_eviction(lease, day, rng)
+            except ValueError as error:
+                raise HousingError(str(error)) from error
+            fee = 0 if insured else rules.eviction_fee(rent)
+            fee_igic = igic(fee, rules.SERVICES_IGIC)
+            _save_lease_in(connection, guild_id, key, lease)
+            _news_in(connection, guild_id, News(key, day, "juicio", fee, lease.member or user_id,
+                                                lease.tenant), now)  # fmt: skip
+            eviction = Eviction(lease, fee, fee_igic, insured=insured, squatters=squatters)
+            if not fee:
+                return eviction, HousingMove()
+            move = HousingMove(
+                entries=((user_id, LedgerEntry(-fee, "pisos:abogado")),),
+                taxes=(HousingTax(user_id, "igic_gastos", fee, fee_igic),),
+                expenses=((user_id, key, fee + fee_igic),),
+            )
+            return eviction, move
+
+        return run
+
+    # -- Elegir inquilino y seguro de impago (no mueven dinero) ----------------------
+
+    async def set_pick(self, guild_id: int, user_id: int, key: str, pick: str) -> rules.Lease:
+        """Cambia quién elige al próximo inquilino: la gestora o el dueño.
+
+        Raises:
+            HousingError: Si no tiene la mayoría o el modo no existe.
+        """
+        return await self._run(self._write, self._set_pick_in, guild_id, user_id, key, pick)
+
+    @staticmethod
+    def _set_pick_in(
+        connection: sqlite3.Connection, guild_id: int, user_id: int, key: str, pick: str
+    ) -> rules.Lease:
+        if pick not in (rules.PICK_AGENCY, rules.PICK_SELF):
+            raise HousingError("Ese modo no existe.")
+        market = _market_in(connection, guild_id)
+        _listing(market, key)
+        if market.manager(key) != user_id:
+            raise HousingError("Al inquilino lo elige quien tiene más de la mitad del inmueble.")
+        lease = replace(market.leases[key], pick=pick)
         _save_lease_in(connection, guild_id, key, lease)
-        _news_in(connection, guild_id, News(key, day, "juicio", 0, lease.member or user_id,
-                                            lease.tenant), now)  # fmt: skip
+        if pick == rules.PICK_AGENCY:
+            connection.execute(
+                "DELETE FROM housing_candidates WHERE guild_id = ? AND listing = ?",
+                (guild_id, key),
+            )
         return lease
+
+    async def set_insurance(self, guild_id: int, user_id: int, key: str, on: bool) -> rules.Lease:
+        """Contrata o da de baja el seguro de impago de un inmueble.
+
+        La prima se paga cada noche con los recibos, mientras haya un contrato que cubra.
+
+        Raises:
+            HousingError: Si no tiene la mayoría o no es una vivienda.
+        """
+        return await self._run(self._write, self._set_insurance_in, guild_id, user_id, key, on)
+
+    @staticmethod
+    def _set_insurance_in(
+        connection: sqlite3.Connection, guild_id: int, user_id: int, key: str, on: bool
+    ) -> rules.Lease:
+        market = _market_in(connection, guild_id)
+        listing = _listing(market, key)
+        if market.manager(key) != user_id:
+            raise HousingError("El seguro lo contrata quien tiene más de la mitad del inmueble.")
+        if listing.kind not in rules.HOME_KINDS:
+            raise HousingError("El seguro de impago es para viviendas, no para negocios.")
+        lease = replace(market.leases[key], insured=on)
+        _save_lease_in(connection, guild_id, key, lease)
+        return lease
+
+    async def sign_candidate(
+        self, guild_id: int, user_id: int, key: str, tenant: str, day: date, now: float
+    ) -> Signing:
+        """Firma con uno de los candidatos que esperan.
+
+        Raises:
+            HousingError: Si no tiene la mayoría, el piso no está vacío o el candidato ya
+                se ha ido.
+        """
+        return await self._run(
+            self._write, self._sign_candidate_in, guild_id, user_id, key, tenant, day, now
+        )
+
+    @staticmethod
+    def _sign_candidate_in(
+        connection: sqlite3.Connection, guild_id: int, user_id: int, key: str, tenant: str,
+        day: date, now: float,
+    ) -> Signing:  # fmt: skip
+        market = _market_in(connection, guild_id)
+        listing = _listing(market, key)
+        boss = market.manager(key)
+        if boss != user_id:
+            raise HousingError("Al inquilino lo elige quien tiene más de la mitad del inmueble.")
+        lease = market.leases[key]
+        if lease.status != rules.VACANT:
+            raise HousingError("El piso ya no está vacío.")
+        if tenant not in market.candidates_of(key, day):
+            raise HousingError("Ese candidato ya no espera: ha encontrado otro piso.")
+        index = market.index(listing.barrio)
+        if not rules.level_allowed(
+            lease.level, index=index, whole_homes=market.whole_homes(boss), license=lease.license
+        ):
+            lease = replace(lease, level="referencia")
+        first = lease.last_rent == 0
+        signed = rules.sign(listing, lease, tenant, day, index)
+        if _bonus_ready(market, key, listing, lease, day):
+            signed = replace(signed, bonus=True)
+        _save_lease_in(connection, guild_id, key, signed)
+        connection.execute(
+            "DELETE FROM housing_candidates WHERE guild_id = ? AND listing = ?", (guild_id, key)
+        )
+        _news_in(connection, guild_id, News(key, day, "firma", signed.rent, None, tenant), now)
+        risk = rules.risk_tier(rules.tenant_factors(tenant, signed.level, listing.kind))
+        return Signing(signed, tenant, risk, first)
+
+    async def discard_candidate(self, guild_id: int, user_id: int, key: str, tenant: str) -> None:
+        """Descarta a un candidato (se va a buscar otro piso).
+
+        Raises:
+            HousingError: Si no tiene la mayoría.
+        """
+        await self._run(self._write, self._discard_in, guild_id, user_id, key, tenant)
+
+    @staticmethod
+    def _discard_in(
+        connection: sqlite3.Connection, guild_id: int, user_id: int, key: str, tenant: str
+    ) -> None:
+        market = _market_in(connection, guild_id)
+        _listing(market, key)
+        if market.manager(key) != user_id:
+            raise HousingError("Al inquilino lo elige quien tiene más de la mitad del inmueble.")
+        connection.execute(
+            "DELETE FROM housing_candidates WHERE guild_id = ? AND listing = ? AND tenant = ?",
+            (guild_id, key, tenant),
+        )
 
     async def delete_guild_data(self, guild_id: int) -> None:
         """Borra todo lo de un servidor (al salir el bot)."""
@@ -2152,7 +4361,15 @@ class HousingRepository:
                 "housing_days",
                 "housing_news",
                 "housing_income",
+                "housing_candidates",
+                "housing_barrio_news",
+                "housing_rent_bonus",
+                "housing_reforms",
+                "housing_decisions",
+                "housing_reviews",
                 *finance.TABLES,
+                *trade.TABLES,
+                *junta.TABLES,
             ):
                 # `table` sale de una tupla fija, nunca de entrada del usuario.
                 connection.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))
@@ -2171,6 +4388,7 @@ __all__ = [
     "PriceChanged",
     "Purchase",
     "Sale",
+    "VoteResult",
     "VpoDeal",
     "assets_in",
 ]

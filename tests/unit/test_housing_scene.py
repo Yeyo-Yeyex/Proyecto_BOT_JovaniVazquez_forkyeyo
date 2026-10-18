@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import dataclasses
 import io
 import itertools
 import json
@@ -21,20 +22,26 @@ import pytest_asyncio
 from PIL import Image, ImageChops, ImageStat
 from test_node_scene import LOCAL_CHROMIUM, needs_node, node_ready, own_node
 
-from bot.repositories.housing import Holding, Market, MemberDay, News
+from bot.repositories.housing import Decision, Holding, Market, MemberDay, News, Review
 from bot.repositories.housing_finance import Mortgage, Promotion, VpoOwner
+from bot.repositories.housing_junta import Vote
+from bot.repositories.housing_trade import Auction
 from bot.services import browser_scene, node_scene
 from bot.services import housing as rules
 from bot.services import housing_view as view
 from bot.services.browser_scene import BrowserScene
 from bot.services.housing_catalog import (
     BARRIO_BY_KEY,
+    BARRIO_NEWS,
     BARRIOS,
     KINDS,
     LISTING_BY_KEY,
     LISTINGS,
+    REVIEW_LINES,
+    TENANTS,
     THEMES,
 )
+from bot.services.housing_furniture import FURNITURE
 from bot.services.housing_scene import SCENE, SCREEN_H, H, HousingScene, W
 
 module_loop = pytest.mark.asyncio(loop_scope="module")
@@ -269,12 +276,403 @@ def facade_samples() -> dict[str, dict[str, Any]]:
     }
 
 
+#: Hoy, para los candidatos y las noticias de barrio de las muestras de la fase 2.
+TODAY = date(2026, 10, 15)
+PISO, LOCAL = BY_KIND["piso2"], BY_KIND["local"]
+LONGEST_NEWS = max(BARRIO_NEWS, key=lambda n: len(n.title) + len(n.blurb))
+LONGEST_LINE = max(TENANTS, key=lambda t: len(t.line))
+BUSINESSES = [t.key for t in TENANTS if "local" in t.kinds][:3]
+
+
+def waiting(*tenants: str) -> tuple[tuple[str, date], ...]:
+    """Candidatos que esperan: el primero hasta mañana, los demás unos días más."""
+    return tuple((t, date(2026, 10, 16 + 3 * n)) for n, t in enumerate(tenants))
+
+
+def phase2_market(
+    leases: dict[str, rules.Lease],
+    candidates: dict[str, tuple[tuple[str, date], ...]] | None = None,
+    *,
+    news: bool = True,
+) -> Market:
+    """Pisos de `user 10` con los contratos dados, candidatos y noticias de barrio (o sin ellas)."""
+    holdings = {key: {10: Holding(key, 10, 100, 1, 1, 0)} for key in leases}
+    if LONGEST.key in holdings:  # el que decide es otro, con un nombre larguísimo
+        holdings[LONGEST.key] = {
+            10: Holding(LONGEST.key, 10, 30, 1, 1, 0),
+            40: Holding(LONGEST.key, 40, 70, 1, 1, 0),
+        }
+    span = (date(2026, 10, 12), date(2026, 10, 20))
+    barrio_news = (
+        {
+            "isleta": (LONGEST_NEWS.key, *span),
+            "schamann": (LONGEST_NEWS.key, *span),
+            "telde": (BARRIO_NEWS[0].key, *span),
+            "vegueta": (BARRIO_NEWS[1].key, *span),
+            LONGEST.barrio: (LONGEST_NEWS.key, *span),
+        }
+        if news
+        else {}
+    )
+    return Market(
+        indexes={"isleta": 1.2, "schamann": 1.15, LONGEST.barrio: 1.2},
+        holdings=holdings,
+        leases=leases,
+        candidates=candidates or {},
+        barrio_news=barrio_news,
+        socimi=frozenset({10}),
+    )
+
+
+def phase2_samples() -> dict[str, dict[str, Any]]:
+    """Las pantallas nuevas (gestión y candidatos) y las claves nuevas de las de siempre."""
+    vacio_yo = rules.Lease(status="vacio", pick="yo", level="mercado", insured=True)
+    m = phase2_market(
+        {
+            PISO: vacio_yo,
+            LOCAL: rules.Lease(status="vacio"),
+            LONGEST.key: rules.Lease(status="vacio", pick="yo", insured=True, last_rent=5000),
+            "schamann_bajo": rules.Lease(
+                status="alquilado",
+                tenant="abuela",
+                rent=4300,
+                until=date(2026, 12, 14),
+                insured=True,
+            ),
+            "schamann_piso2": rules.Lease(
+                status="impago",
+                tenant="cripto",
+                rent=5200,
+                until=date(2026, 12, 14),
+                insured=True,
+                arrears=2000,
+            ),
+            "vegueta_edificio": rules.Lease(
+                status="alquilado", tenant="policia", rent=90000, until=date(2026, 12, 14)
+            ),
+        },
+        {
+            PISO: waiting("enfermeros", "estudiantes", "abuela"),
+            LONGEST.key: waiting(LONGEST_LINE.key, "policia", "britanicos"),
+        },
+    )
+    bare = phase2_market({PISO: rules.Lease(status="vacio")}, news=False)
+    empty = phase2_market({PISO: rules.Lease(status="vacio", pick="yo")}, news=False)
+    one = phase2_market(
+        {PISO: rules.Lease(status="vacio", pick="yo")}, {PISO: waiting(LONGEST_LINE.key)}
+    )
+    shop = phase2_market(
+        {LOCAL: rules.Lease(status="vacio", pick="yo")}, {LOCAL: waiting(*BUSINESSES)}
+    )
+
+    def lineup(*tenants: str) -> Market:
+        lease = rules.Lease(status="vacio", pick="yo")
+        return phase2_market({PISO: lease}, {PISO: waiting(*tenants)}, news=False)
+
+    week = MemberDay(30000, 1200, 4000)
+    gestion = {
+        "gestion_seguro_candidatos": view.gestion_state(m, PISO, 10, NAMES, TODAY),
+        "gestion_sin_seguro": view.gestion_state(bare, PISO, 10, NAMES, TODAY),
+        "gestion_cubierto": view.gestion_state(m, "schamann_bajo", 10, NAMES, TODAY),
+        "gestion_no_cubre": view.gestion_state(m, "schamann_piso2", 10, NAMES, TODAY),
+        "gestion_negocio": view.gestion_state(shop, LOCAL, 10, NAMES, TODAY),
+        "gestion_larga": view.gestion_state(m, LONGEST.key, 10, NAMES, TODAY),
+    }
+    candidatos = {
+        "candidatos_tres": view.candidates_state(m, PISO, TODAY),
+        "candidatos_uno": view.candidates_state(one, PISO, TODAY),
+        "candidatos_vacia": view.candidates_state(empty, PISO, TODAY),
+        "candidatos_frase_larga": view.candidates_state(m, LONGEST.key, TODAY),
+        "candidatos_negocios": view.candidates_state(shop, LOCAL, TODAY),
+        "candidatos_uniformes": view.candidates_state(
+            lineup("policia", "bombera", "piloto"), PISO, TODAY
+        ),
+        "candidatos_oficios": view.candidates_state(
+            lineup("cajera", "guagua", "directivo"), PISO, TODAY
+        ),
+        "candidatos_gente": view.candidates_state(
+            lineup("abuela", "estudiantes", "britanicos"), PISO, TODAY
+        ),
+    }
+    cartera = view.portfolio_state(m, 10, "Ana", 120000, week, NEWS, NAMES, today=TODAY)
+    others = {
+        "ficha_candidatos_noticia": view.listing_state(m, PISO, 10, NAMES, [], TODAY),
+        "ficha_inquilino_cubierto": view.listing_state(m, "schamann_bajo", 10, NAMES, NEWS, TODAY),
+        "ficha_inquilino_no_cubre": view.listing_state(m, "schamann_piso2", 10, NAMES, [], TODAY),
+        "ficha_inquilino_sin_seguro": view.listing_state(
+            m, "vegueta_edificio", 10, NAMES, [], TODAY
+        ),
+        "ficha_candidatos_peor": view.listing_state(m, LONGEST.key, 10, NAMES, NEWS, TODAY),
+        "barrio_noticia": view.barrio_state(m, "isleta", 10, NAMES, TODAY),
+        "barrio_noticia_corta": view.barrio_state(m, "vegueta", 10, NAMES, TODAY),
+        "mapa_noticias": view.map_state(m, 10, "Ana", 120000, TODAY),
+        "cartera_seguro_candidatos": cartera,
+        "cartera_tres_pastillas": cartera | {"bank_debt": "25.000 Y$"},
+    }
+    return {**gestion, **candidatos, **others}
+
+
+NOW = 1_760_000_000.0
+LONGEST_COMPLAINT = max(TENANTS, key=lambda t: len(t.complaint))
+
+
+def auction(number: int, key: str, **kwargs: Any) -> Auction:
+    """Una subasta de muestra: del vendedor 20, sin pujas y con tres horas por delante."""
+    fields: dict[str, Any] = {
+        "id": number, "listing": key, "seller": 20, "shares": 25, "min_bid": 40000,
+        "ends_at": NOW + 3 * 3600 + 300, "judicial": False, "mortgage_id": None,
+        "best_bid": 0, "best_bidder": None, "escrow": 0, "bids": 0, "created_at": NOW - 3600,
+    }  # fmt: skip
+    return Auction(**{**fields, **kwargs})
+
+
+def phase34_market(
+    leases: dict[str, rules.Lease],
+    *,
+    reforms: dict[str, dict[str, tuple[int, date, bool, bool]]] | None = None,
+    decisions: dict[str, tuple[Decision, ...]] | None = None,
+    candidates: dict[str, tuple[tuple[str, date], ...]] | None = None,
+) -> Market:
+    """Pisos del usuario 10 (enteros) con sus reformas e imprevistos."""
+    market = phase2_market(leases, candidates)
+    return dataclasses.replace(market, reforms=reforms or {}, decisions=decisions or {})
+
+
+def problem(number: int, key: str, event: str, cost: int, choice: str | None = None) -> Decision:
+    return Decision(number, key, event, cost, date(2026, 10, 14), date(2026, 10, 17), choice)
+
+
+def phase34_samples() -> dict[str, dict[str, Any]]:
+    """Subastas, reformas, imprevistos y lo nuevo de la ficha (humor, obras, reformado)."""
+    keys = [item.key for item in LISTINGS]
+    many = Market(
+        auctions=(
+            auction(1, keys[0], best_bid=41000, best_bidder=30, bids=3, seller=10),
+            auction(2, LONGEST.key, judicial=True, seller=40, shares=100, min_bid=900000,
+                    best_bid=1_234_000, best_bidder=40, bids=11, ends_at=NOW + 1500),
+            auction(3, keys[3], best_bid=52000, best_bidder=10, bids=2, shares=40),
+            auction(4, LOCAL, min_bid=15000, ends_at=NOW + 20 * 3600),
+            auction(5, keys[5], judicial=True, seller=30, shares=60, best_bid=70000,
+                    best_bidder=20, bids=1),
+            auction(6, BY_KIND["chalet"], best_bid=99000, best_bidder=60, bids=7, seller=50),
+            auction(7, keys[8]),
+            auction(8, keys[9]),
+        ),
+    )  # fmt: skip
+    pair = dataclasses.replace(many, auctions=many.auctions[1:3])
+    one = dataclasses.replace(many, auctions=many.auctions[2:3])
+    subastas = {
+        "subastas_seis_y_mas": view.auctions_state(many, 10, NAMES, NOW, 2),
+        "subastas_judicial_elegida": view.auctions_state(pair, 10, NAMES, NOW, 2),
+        "subastas_voy_ganando": view.auctions_state(one, 10, NAMES, NOW, None),
+        "subastas_vacia": view.auctions_state(Market(), 10, NAMES, NOW),
+    }
+    day = date(2026, 10, 10)
+    done = {
+        PISO: {
+            "pintura": (7000, day, True, False),
+            "cocina": (9000, day, True, False),
+            "bano": (6000, date(2026, 10, 25), False, False),
+        }
+    }
+    reformada = {PISO: {"integral": (80000, day, True, True), "energia": (40000, day, True, False)}}
+    tenant = rules.Lease(status="alquilado", tenant="enfermeros", rent=4300, mood=85)
+    obras = rules.Lease(status="obras", works_until=date(2026, 10, 25))
+    vacio = rules.Lease(status="vacio")
+    clean = phase34_market({PISO: vacio, LOCAL: vacio})
+    reformas = {
+        "reformas_nada": view.reforms_state(clean, PISO, 10),
+        "reformas_en_obras": view.reforms_state(
+            phase34_market({PISO: obras}, reforms=done), PISO, 10
+        ),
+        "reformas_rehabilitado": view.reforms_state(
+            phase34_market({PISO: vacio}, reforms=reformada), PISO, 10
+        ),
+        "reformas_local": view.reforms_state(clean, LOCAL, 10),
+        "reformas_no_entero": view.reforms_state(
+            phase34_market({LONGEST.key: vacio}), LONGEST.key, 10
+        ),
+        "reformas_no_vacio": view.reforms_state(phase34_market({PISO: tenant}), PISO, 10),
+    }
+    problems = {
+        PISO: (
+            problem(1, PISO, "averia", 320_000),
+            problem(2, PISO, "humedades", 80_000),
+            problem(3, PISO, "vecino", 0),
+        ),
+        LONGEST.key: (problem(4, LONGEST.key, "cerradura", 45_000),),
+        LOCAL: (problem(5, LOCAL, "averia", 15_000, "cunado"),),
+    }
+    angry = rules.Lease(status="alquilado", tenant=LONGEST_COMPLAINT.key, rent=5000, mood=12)
+    pending = phase34_market({PISO: tenant, LONGEST.key: angry, LOCAL: vacio}, decisions=problems)
+    imprevistos = {
+        "imprevistos_tres": view.decisions_state(pending, PISO, 10),
+        "imprevistos_una_elegida": view.decisions_state(pending, LOCAL, 10),
+        "imprevistos_larga_ajeno": view.decisions_state(pending, LONGEST.key, 10),
+        "imprevistos_vacia": view.decisions_state(clean, PISO, 10),
+    }
+    full = phase34_market(
+        {PISO: tenant},
+        reforms=reformada,
+        decisions={PISO: problems[PISO][:2]},
+        candidates={PISO: waiting("estudiantes", "abuela")},
+    )
+    upset = phase34_market({LONGEST.key: angry}, decisions={LONGEST.key: problems[LONGEST.key]})
+    fresh = phase34_market(
+        {PISO: rules.Lease(status="vacio", pick="yo")},
+        reforms=reformada,
+        candidates={PISO: waiting("policia", "britanicos", "abuela")},
+    )
+    working = phase34_market({PISO: obras}, reforms=done)
+    fichas = {
+        "ficha_humor_imprevistos": view.listing_state(full, PISO, 10, NAMES, NEWS, TODAY),
+        "ficha_harto_un_imprevisto": view.listing_state(upset, LONGEST.key, 10, NAMES, NEWS, TODAY),
+        "ficha_en_obras": view.listing_state(working, PISO, 10, NAMES, [], TODAY),
+        "ficha_reformada": view.listing_state(fresh, PISO, 10, NAMES, NEWS, TODAY),
+    }
+    return {**subastas, **reformas, **imprevistos, **fichas}
+
+
+ALL_FURNITURE = frozenset(f.key for f in FURNITURE)
+TOURISTS = [t.key for t in TENANTS if "vacacional" in t.levels]
+LONGEST_GUEST = max(TOURISTS, key=lambda k: len(next(t.name for t in TENANTS if t.key == k)))
+
+
+def longest_line(stars: int) -> int:
+    lines = REVIEW_LINES[stars]
+    return max(range(len(lines)), key=lambda i: len(lines[i]))
+
+
+def stay(day: int, guest: str, stars: int, line: int | None = None) -> Review:
+    """Una reseña de octubre de 2026 (`line` por defecto, la más larga de esas estrellas)."""
+    return Review(date(2026, 10, day), guest, stars, longest_line(stars) if line is None else line)
+
+
+def phase5_market(
+    leases: dict[str, rules.Lease], reviews: dict[str, tuple[Review, ...]] | None = None
+) -> Market:
+    """Inmuebles del usuario 10 (enteros) con sus contratos vacacionales y reseñas."""
+    return dataclasses.replace(phase34_market(leases), reviews=reviews or {})
+
+
+def phase5_samples() -> dict[str, dict[str, Any]]:
+    """Reseñas del vacacional y lo nuevo de la ficha (nota, Superanfitrión y licencia)."""
+    chalet = BY_KIND["chalet"]
+    until = date(2031, 3, 2)
+
+    def holiday(rating: float, count: int, **kwargs: Any) -> rules.Lease:
+        fields: dict[str, Any] = {
+            "status": "alquilado", "tenant": TOURISTS[0], "rent": 9000, "level": "vacacional",
+            "license": True, "license_until": until, "rating": rating, "reviews": count,
+        }  # fmt: skip
+        return rules.Lease(**{**fields, **kwargs})
+
+    stars = (5, 5, 4, 5, 5)
+    top = tuple(stay(14 - i, TOURISTS[i % len(TOURISTS)], n, i % 5) for i, n in enumerate(stars))
+    low = tuple(stay(14 - i, LONGEST_GUEST, n) for i, n in enumerate((1, 2, 1, 3, 2)))
+    market = phase5_market(
+        {
+            PISO: holiday(4.8, 12),
+            LONGEST.key: holiday(2.1, 6),
+            chalet: holiday(0.0, 0, status="vacio", tenant=None),
+            LOCAL: rules.Lease(status="vacio"),
+        },
+        {PISO: top, LONGEST.key: low},
+    )
+    some = ALL_FURNITURE - {"mueble_aire", "mueble_playa", "mueble_juegos"}
+    one = Market(
+        reviews={PISO: top[:1]},
+        leases={PISO: holiday(4.0, 1)},
+        holdings=market.holdings,
+        indexes=market.indexes,
+    )
+    resenas = {
+        "resenas_superanfitrion": view.reviews_state(market, PISO, ALL_FURNITURE),
+        "resenas_nota_baja_larga": view.reviews_state(market, LONGEST.key, frozenset()),
+        "resenas_algunos_muebles": view.reviews_state(market, PISO, some),
+        "resenas_una": view.reviews_state(one, PISO, frozenset({"mueble_cuna"})),
+        "resenas_licencia_sin_resenas": view.reviews_state(market, chalet, some),
+        "resenas_sin_licencia": view.reviews_state(market, LOCAL, frozenset()),
+    }
+    fichas = {
+        "ficha_nota_superanfitrion": view.listing_state(market, PISO, 10, NAMES, NEWS, TODAY),
+        "ficha_nota_baja_larga": view.listing_state(market, LONGEST.key, 10, NAMES, NEWS, TODAY),
+        "ficha_vacacional_sin_resenas": view.listing_state(market, chalet, 10, NAMES, [], TODAY),
+    }
+    return {**resenas, **fichas}
+
+
+def phase6_samples() -> dict[str, dict[str, Any]]:
+    """La junta de copropietarios, la acción de división y su subasta."""
+    keys = [item.key for item in LISTINGS]
+    (a, b, c, d, e) = (keys[0], BY_KIND["chalet"], LONGEST.key, PISO, keys[4])
+
+    def holds(key: str, shares: dict[int, int]) -> dict[int, Holding]:
+        return {m: Holding(key, m, s, 1, 1, 0) for m, s in shares.items()}
+
+    def vote(
+        number: int, key: str, kind: str, value: str, ballots: dict[int, bool], **kw: Any
+    ) -> Vote:
+        fields: dict[str, Any] = {
+            "id": number, "listing": key, "proposer": 20, "kind": kind, "value": value,
+            "amount": 0, "ends_at": NOW + 3 * 3600 + 300, "ballots": ballots,
+        }  # fmt: skip
+        return Vote(**{**fields, **kw})
+
+    holdings = {
+        a: holds(a, {10: 40, 20: 35, 30: 25}),
+        b: holds(b, {10: 50, 20: 50}),
+        c: holds(c, {40: 30, 10: 28, 50: 22, 60: 20}),
+        d: holds(d, {10: 55, 20: 45}),
+        e: holds(e, {10: 60, 20: 40}),
+    }
+    votes = (
+        vote(1, a, "renta", "mercado", {20: True, 10: True}),
+        vote(2, a, "reforma", "integral", {20: True, 30: False}, proposer=30),
+        vote(3, a, "venta", "", {20: True, 10: True, 30: False}, ends_at=NOW + 25 * 60),
+        vote(4, a, "derrama", "", {20: True}, amount=45000),
+        vote(5, b, "seguro", "1", {}, proposer=10),
+        vote(6, c, "administra", "40", {40: True, 10: False, 50: True}, proposer=40),
+        vote(7, e, "licencia", "", {20: True, 10: False}),
+    )
+    market = Market(
+        holdings=holdings,
+        votes=votes,
+        admins={c: 40, a: 20},
+        reserves={a: 1_240_000, c: 987_654_321},
+    )
+    division = auction(1, e, seller=20, shares=100, min_bid=2_400_000, ends_at=NOW + 70 * 3600)
+    division = dataclasses.replace(division, division=True)
+    split = dataclasses.replace(
+        market,
+        auctions=(dataclasses.replace(division, best_bid=2_700_000, best_bidder=30, bids=2),),
+    )
+    mixed = dataclasses.replace(
+        market,
+        auctions=(
+            division,
+            auction(2, LONGEST.key, judicial=True, seller=40, shares=100, best_bid=1_234_000,
+                    best_bidder=40, bids=11),
+            auction(3, keys[3], best_bid=52000, best_bidder=10, shares=40),
+        ),
+    )  # fmt: skip
+    return {
+        "junta_cuatro_votaciones": view.junta_state(market, a, 10, NAMES, NOW),
+        "junta_vacia": view.junta_state(market, d, 10, NAMES, NOW),
+        "junta_duenos_largos": view.junta_state(market, c, 10, NAMES, NOW),
+        "junta_division": view.junta_state(split, e, 10, NAMES, NOW),
+        "junta_division_sin_pujas": view.junta_state(mixed, e, 20, NAMES, NOW),
+        "junta_sin_mayoria": view.junta_state(market, b, 30, NAMES, NOW),
+        "subastas_division": view.auctions_state(mixed, 10, NAMES, NOW, 1),
+    }
+
+
 def checkout(key: str, **kwargs: Any) -> dict[str, Any]:
     return view.checkout_state(LISTING_BY_KEY[key], **kwargs)
 
 
 def samples() -> dict[str, dict[str, Any]]:
-    """Las pantallas de muestra: las seis, con casos largos, vacíos y de todos los tipos."""
+    """Las pantallas de muestra: las once, con casos largos, vacíos y de todos los tipos."""
     m = market()
     week = MemberDay(30000, 1200, 4000)
     out: dict[str, dict[str, Any]] = {
@@ -357,6 +755,10 @@ def samples() -> dict[str, dict[str, Any]]:
     out.update(money_samples())
     out.update(mood_samples())
     out.update(facade_samples())
+    out.update(phase2_samples())
+    out.update(phase34_samples())
+    out.update(phase5_samples())
+    out.update(phase6_samples())
     return out
 
 
@@ -378,6 +780,31 @@ CORE = [
         "cartera_finanzas",
         "vpo_apuntada",
         "vpo_no",
+        "gestion_seguro_candidatos",
+        "gestion_negocio",
+        "candidatos_tres",
+        "candidatos_vacia",
+        "ficha_candidatos_noticia",
+        "ficha_inquilino_cubierto",
+        "barrio_noticia",
+        "mapa_noticias",
+        "cartera_tres_pastillas",
+        "subastas_seis_y_mas",
+        "subastas_vacia",
+        "reformas_en_obras",
+        "reformas_local",
+        "imprevistos_tres",
+        "imprevistos_vacia",
+        "ficha_humor_imprevistos",
+        "resenas_superanfitrion",
+        "resenas_nota_baja_larga",
+        "resenas_sin_licencia",
+        "ficha_nota_superanfitrion",
+        "junta_cuatro_votaciones",
+        "junta_vacia",
+        "junta_duenos_largos",
+        "junta_division",
+        "subastas_division",
     }
 ]
 
@@ -453,6 +880,77 @@ def test_solo_el_barrio_mide_mas_que_el_resto() -> None:
     assert (W, H) == (1000, 640) and SCREEN_H == {"barrio": 760}
     assert size_of({"screen": "barrio"}) == (1000, 760)
     assert {size_of(s) for s in samples().values() if s["screen"] != "barrio"} == {(1000, 640)}
+
+
+def test_las_muestras_cubren_las_trece_pantallas_y_las_claves_de_las_fases_2_a_6() -> None:
+    states = samples()
+    assert {s["screen"] for s in states.values()} == {
+        "mapa", "barrio", "ficha", "cartera", "caja", "vpo", "gestion", "candidatos",
+        "subastas", "reformas", "imprevistos", "resenas", "junta",
+    }  # fmt: skip
+    assert [len(states[k]["cards"]) for k in ("candidatos_tres", "candidatos_uno")] == [3, 1]
+    assert states["candidatos_vacia"]["empty"] and not states["candidatos_vacia"]["cards"]
+    assert states["gestion_negocio"]["dwelling"] is False and states["gestion_sin_seguro"]["tips"]
+    assert (
+        states["ficha_inquilino_no_cubre"]["insured"]
+        and not states["ficha_inquilino_no_cubre"]["covered"]
+    )
+    assert states["ficha_candidatos_noticia"]["waiting"] == 3
+    assert states["ficha_candidatos_noticia"]["barrio_news"]
+    assert states["barrio_noticia"]["news"] and states["cartera_seguro_candidatos"]["waiting"] == 2
+    assert any(p["news"] for i in states["mapa_noticias"]["islands"] for p in i["barrios"])
+    longest = states["candidatos_frase_larga"]["cards"][0]
+    assert longest["line"] == LONGEST_LINE.line
+    seis = states["subastas_seis_y_mas"]
+    assert (len(seis["items"]), seis["more"]) == (6, 2) and states["subastas_vacia"]["empty"]
+    assert any(i["judicial"] and i["selected"] for i in seis["items"])
+    assert states["subastas_voy_ganando"]["items"][0]["leading"]
+    nada, obras = states["reformas_nada"], states["reformas_en_obras"]
+    assert nada["whole"] and nada["vacant"]
+    assert {i["status"] for i in nada["items"]} == {"available"}
+    made = sorted(i["status"] for i in obras["items"] if i["status"] != "available")
+    assert made == ["done", "done", "works"] and obras["works"]
+    assert [i["key"] for i in states["reformas_local"]["items"]] == ["negocio"]
+    assert not states["reformas_no_entero"]["whole"] and not states["reformas_no_vacio"]["vacant"]
+    assert states["reformas_rehabilitado"]["rehab_until"]
+    tres = states["imprevistos_tres"]
+    assert [i["slot"] for i in tres["items"]] == [1, 2, 3] and tres["decides"] and tres["mood"]
+    elegida = states["imprevistos_una_elegida"]["items"]
+    assert any(o["chosen"] for i in elegida for o in i["options"])
+    assert states["imprevistos_vacia"]["empty"] and not states["imprevistos_larga_ajeno"]["decides"]
+    humor = states["ficha_humor_imprevistos"]
+    assert humor["mood"] and humor["decisions"] == 2 and humor["reformed"]
+    assert states["ficha_reformada"]["waiting"] == 3
+    assert states["ficha_en_obras"]["works_until"] == "25/10"
+    top = states["resenas_superanfitrion"]
+    assert top["superhost"] and top["license_until"] == "02/03/2031" and top["occupancy"]
+    assert len(top["reviews"]) == 5 and all(f["owned"] for f in top["furniture"])
+    assert len(top["furniture"]) == 10 and top["furniture_stars"].endswith("★")
+    low = states["resenas_nota_baja_larga"]
+    assert not low["superhost"] and {r["stars"] for r in low["reviews"]} >= {1, 2}
+    assert not any(f["owned"] for f in low["furniture"])
+    assert states["resenas_licencia_sin_resenas"]["license"]
+    assert not states["resenas_licencia_sin_resenas"]["reviews"]
+    nada = states["resenas_sin_licencia"]
+    assert not nada["license"] and not nada["reviews"] and nada["rating"] == ""
+    fichas = ("ficha_nota_superanfitrion", "ficha_nota_baja_larga", "ficha_vacacional_sin_resenas")
+    assert [states[k]["rating"] != "" for k in fichas] == [True, True, False]
+    assert states[fichas[0]]["superhost"] and not states[fichas[1]]["superhost"]
+    assert states[fichas[2]]["license_until"] == "02/03/2031"
+    four = states["junta_cuatro_votaciones"]
+    assert [v["slot"] for v in four["votes"]] == [1, 2, 3, 4] and four["more"] == 0
+    assert {v["passing"] for v in four["votes"]} == {True, False} and not four["division"]
+    assert [o["name"] for o in four["owners"]] == ["Ana", "Bea", "Perro Sanxe"]
+    assert four["elected"] and four["admin"] == "Bea" and four["reserve"]
+    assert {v["mine"] for v in four["votes"]} >= {True, None}
+    assert states["junta_vacia"]["empty"] and not states["junta_vacia"]["votes"]
+    long = states["junta_duenos_largos"]
+    assert len(long["owners"]) == 4 and long["elected"] and any(o["admin"] for o in long["owners"])
+    assert states["junta_sin_mayoria"]["admin"].startswith("Nadie")
+    assert states["junta_division"]["division"]["best_bid"]
+    assert not states["junta_division_sin_pujas"]["division"]["best_bid"]
+    items = states["subastas_division"]["items"]
+    assert [i["division"] for i in items] == [True, False, False] and items[1]["judicial"]
 
 
 # -- Reserva con Pillow ------------------------------------------------------------------

@@ -34,11 +34,14 @@ from bot.repositories.economy import (
     DailyClaim,
     DonationReceipt,
     EconomyRepository,
+    FiscalWeek,
     HousingMove,
+    HousingRent,
     InsufficientFundsError,
     InterestNotice,
     InterestRun,
-    IrpfRecord,
+    IrpfReturn,
+    IrpfRun,
     JackpotRecord,
     LedgerEntry,
     LotteryPayout,
@@ -73,30 +76,43 @@ from bot.services.interest import (
 )
 from bot.services.levels import TIMEZONE, local_day
 from bot.services.taxes import (
-    BECKHAM_RATE,
+    CLAIM_WEEKS,
+    GAMBLING_EXEMPT,
     IGIC_GENERAL_RATE,
+    INCOME_BECKHAM,
+    INCOME_BUSINESS,
+    INCOME_PENSION,
+    INCOME_PRIZE,
+    INCOME_PROPERTY,
+    INCOME_WORK,
     LOTTERY_EXEMPT,
-    MAX_PENDING_DECLARATIONS,
     PROJECTION_WINDOW_SECONDS,
     TAX_COLLECTOR,
     WAGE_YAPDOLLARS_PER_EURO,
     WEALTH_MINIMUM,
+    YAPDOLLARS_PER_EURO,
     ForeignPayslip,
+    Pace,
     Payslip,
+    WeekIncome,
+    WeekReturn,
     compute_beckham_payslip,
     compute_hk_payslip,
     compute_payslip,
     compute_pension_payslip,
     compute_self_employed_payslip,
     compute_withholding,
-    donation_deduction,
-    fiscal_to_wage,
     format_rate,
     gambling_day_tax,
     image_rights_withholding,
-    wage_to_fiscal,
+    legacy_donation_deduction,
+    legacy_weekly_refund,
+    property_withholding,
+    savings_tax,
+    stable_rate,
     wealth_quote,
-    weekly_refund,
+    week_return,
+    week_tax,
 )
 
 __all__ = [
@@ -123,6 +139,9 @@ __all__ = [
     "InterestPayment",
     "InterestPreview",
     "InterestRun",
+    "IrpfReturn",
+    "IrpfRun",
+    "IrpfStatement",
     "SavingsRun",
     "JackpotRecord",
     "LotteryPayout",
@@ -140,6 +159,7 @@ __all__ = [
     "SHOP_ACCOUNT_ID",
     "STATE_ACCOUNT_ID",
     "Treasury",
+    "fiscal_week",
     "format_amount",
     "week_label",
     "week_start",
@@ -172,19 +192,26 @@ DAILY_MAX_BONUS = 1_000
 #: empleo de los arts. 3 y 4 del RD 789/2022 (redacción del RD 240/2026): no
 #: cuenta el 100 % del aumento de ingresos del trabajo hasta 6.000 € al año y
 #: sí la mitad de lo que pase. En el juego se mira el neto de las nóminas de
-#: los últimos 7 días: los primeros `IMV_WORK_EXEMPT` (6.000 € al año, en Y$ de
-#: nómina y pasados a una semana) no cuentan, y de lo que pase se quita del IMV
-#: la mitad de su valor en euros, repartida entre los 7 días. Nómina e IMV van
-#: en escalas distintas (100 y 10 Y$ por euro, ver
-#: `taxes.WAGE_YAPDOLLARS_PER_EURO`), así que cada Y$ de nómina de más quita
-#: 0,05 Y$ de IMV. Simplificación: la ley compara con el año anterior y aquí se
-#: compara con la última semana.
+#: los últimos 7 días (pensiones incluidas: el IMV real mira todos los ingresos): los
+#: primeros `IMV_WORK_EXEMPT` (6.000 € al año, a la escala de juego de las nóminas y
+#: pasados a una semana) no cuentan, y de lo que pase se quita del IMV la mitad de su
+#: valor en euros, repartida entre los 7 días. El IMV va a la escala de los precios (10
+#: Y$ por euro), así que cada Y$ de nómina de más quita 0,05 Y$ de IMV
+#: (`IMV_WAGE_RATIO`). Son cifras de juego: la vara del IRPF no las toca.
+#: Simplificación: la ley compara con el año anterior y aquí con la última semana.
 IMV_WORK_WINDOW_SECONDS = 7 * 86_400
 IMV_WORK_EXEMPT = 6_000 * WAGE_YAPDOLLARS_PER_EURO * 7 // 365
 IMV_WORK_TAPER = 0.5
+#: Y$ de nómina por cada Y$ del IMV (100 frente a 10 Y$ por euro).
+IMV_WAGE_RATIO = WAGE_YAPDOLLARS_PER_EURO // YAPDOLLARS_PER_EURO
 #: El IMV nunca baja de esta parte de lo que tocaría por la racha (decisión del
 #: proyecto: trabajar mucho lo reduce, pero no lo quita).
 IMV_FLOOR_SHARE = 0.20
+
+#: Primera semana (lunes) de la Renta de la 8.0.0 en producción: aunque el bot nuevo se
+#: despliegue antes (el NAS se actualiza cada día a las 5:00), la semana que ya se ha
+#: vivido con las reglas de antes se liquida con ellas. Lo pasa `bot.app` al repositorio.
+IRPF_START = date(2026, 10, 19)
 
 
 def format_amount(amount: int) -> str:
@@ -198,8 +225,11 @@ def tax_line(gross: int, tax: int, rate: float) -> str:
     La usan los premios por nivel y cualquier otro cobro con retención.
     """
     if tax <= 0:
-        return "-# 🐶 Sin retención: con tu renta de los últimos 7 días no llegas al mínimo."
-    return f"-# 🐶 IRPF: −{format_amount(tax)} ({format_rate(rate)} de {format_amount(gross)})."
+        return "-# 🐶 Sin retención: con tu renta de la semana no llegas al mínimo."
+    return (
+        f"-# 🐶 IRPF: −{format_amount(tax)} ({format_rate(rate)}, tu tipo esta semana, "
+        f"de {format_amount(gross)})."
+    )
 
 
 def tax_tag(tax: int, rate: float) -> str:
@@ -216,8 +246,8 @@ def gambling_tax_line(settlement: BetSettlement) -> str | None:
     """Subtexto con lo que retiene o devuelve Hacienda en una jugada, si algo cambia."""
     if settlement.tax_delta > 0:
         return (
-            f"-# 🐶 IRPF: −{format_amount(settlement.tax_delta)}. "
-            f"Hoy vas {format_amount(settlement.day_net)} arriba y llevas "
+            f"-# 🐶 IRPF: −{format_amount(settlement.tax_delta)} (el 19 %; el lunes, a tu "
+            f"tipo). Hoy vas {format_amount(settlement.day_net)} arriba y llevas "
             f"{format_amount(settlement.day_withheld)} retenidos."
         )
     if settlement.tax_delta < 0:
@@ -259,8 +289,11 @@ def treasury_embed(treasury: Treasury, *, year: int, names: dict[int, str]) -> d
     embed.add_field(
         name="Qué se cobra",
         value=(
-            "IRPF con retención en premios, niveles, cumpleaños y saludos · IRPF del "
-            "casino por días, con renta semanal · Patrimonio cada lunes por lo que pase "
+            "IRPF con una sola vara para toda la renta: retención con tu tipo de la semana "
+            "en nóminas, premios y alquileres, el 19 % de lo ganado cada día en el casino "
+            f"(si pasa de {format_amount(GAMBLING_EXEMPT)}) y "
+            "declaración cada lunes (a pagar se cobra sola; a devolver, con la Renta) · "
+            "Patrimonio cada lunes por lo que pase "
             f"de {format_amount(WEALTH_MINIMUM)} entre efectivo y pisos · ITP (6,5%), IBI e "
             "IRPF de los alquileres en `pisos` · IGIC en las compras de la `tienda` "
             f"(general del {IGIC_GENERAL_RATE:.0%}) · Los donativos a ONGs desgravan en la renta"
@@ -269,9 +302,9 @@ def treasury_embed(treasury: Treasury, *, year: int, names: dict[int, str]) -> d
             f"{format_amount(LOTTERY_EXEMPT)}"
             " · Nóminas de la `pala`: IRPF y Seguridad Social del trabajador y de la empresa"
             " (se apunta a quien cobra) · Multas de la Inspección"
-            " · Intereses diarios del monedero: retención del 19% en cada pago y cada lunes"
-            f" la escala del ahorro (19% a 30%); hasta {format_amount(INTEREST_DAILY_MAX)}"
-            " brutos al día"
+            " · Intereses diarios del monedero: retención del 19% en cada pago (con el tope"
+            f" de {format_amount(INTEREST_DAILY_MAX)} brutos al día, nunca se sale de ese"
+            " tramo del ahorro)"
         ).replace("%", " %"),
         inline=False,
     )
@@ -377,6 +410,28 @@ class RentaClaim:
     balance: int
 
 
+@dataclass(frozen=True, slots=True)
+class IrpfStatement:
+    """Una declaración cerrada con lo necesario para explicarla (`renta`).
+
+    Attributes:
+        week: Lunes de la semana declarada.
+        filed: Lo que salió y lo que se hizo (cobrado, deuda, a devolver…).
+        detail: La declaración rehecha con sus entradas, paso a paso (`None` si no se
+            guardaron).
+        income: La renta de la semana por clases.
+        withheld_by: Lo retenido por fuente (`taxes.INCOME_*`, `juego` o `antes`).
+        opened: Si su dueño ya la ha abierto.
+    """
+
+    week: date
+    filed: IrpfReturn
+    detail: WeekReturn | None
+    income: WeekIncome
+    withheld_by: dict[str, int]
+    opened: bool
+
+
 def week_start(day: date) -> date:
     """Lunes de la semana de `day`."""
     return day - timedelta(days=day.weekday())
@@ -461,52 +516,45 @@ def monday_epoch(day: date) -> float:
     return datetime.combine(week_start(day), datetime.min.time(), TIMEZONE).timestamp()
 
 
-def _monday_of(day_iso: str) -> tuple[str, float]:
-    monday = week_start(date.fromisoformat(day_iso))
-    return monday.isoformat(), monday_epoch(monday)
+def fiscal_week(day: date) -> FiscalWeek:
+    """La semana fiscal de `day`: de lunes a lunes, a las 00:00 en hora canaria.
 
-
-def rewithhold(record: IrpfRecord, recent: int, recent_foreign: int) -> int:
-    """Retención de un ingreso ya cobrado, con la renta de su semana (`recent`).
-
-    Usa la misma regla con la que se cobró, deducida de la fila:
-
-    - Sin nómina: `compute_withholding`, salvo los derechos de imagen de las
-      porras (`*:imagen`), que retienen un tipo fijo y no cambian.
-    - Nómina de fuera: `compute_hk_payslip`, con la exención que se aplicó
-      (bruto menos lo sujeto) y lo cobrado fuera en su propia ventana.
-    - Nómina sin cotización: autónomo (`compute_self_employed_payslip`).
-    - Nómina al tipo de la Ley Beckham: fijo, no cambia.
-    - El resto: `compute_payslip`.
+    En el bot el año fiscal es la semana: la renta se reinicia cada lunes, el día de la
+    declaración. Cada medianoche se construye por separado, así que una semana con
+    cambio de hora dura lo que dura de verdad.
     """
-    if record.wage_gross is None:
-        if record.concept.endswith(":imagen"):
-            return record.withheld
-        return compute_withholding(record.gross, recent).tax
-    wage, recent_wage = record.wage_gross, fiscal_to_wage(recent)
-    if record.country != "es":
-        return compute_hk_payslip(
-            wage,
-            recent_hk=recent_foreign,
-            resident=True,
-            exempt_left=wage - fiscal_to_wage(record.gross),
-            recent_es=recent_wage,
-        ).irpf
-    if record.ss_worker == 0:
-        return compute_self_employed_payslip(wage, recent_wage).irpf
-    if record.withheld == min(round(wage * BECKHAM_RATE), wage - record.ss_worker):
-        return record.withheld
-    return compute_payslip(wage, recent_wage).irpf
+    monday = week_start(day)
+    return FiscalWeek(
+        monday=monday.isoformat(),
+        start=monday_epoch(monday),
+        end=monday_epoch(monday + timedelta(days=7)),
+        previous_start=monday_epoch(monday - timedelta(days=7)),
+    )
 
 
-def fiscal_window(now: float) -> float:
-    """Segundos desde el lunes a las 00:00 (hora canaria) hasta `now`.
+def irpf_totals(income: WeekIncome, savings: int) -> tuple[int, int]:
+    """`(suma de bases, suma de cuotas)` del IRPF de una semana, general y del ahorro.
 
-    En el bot el año fiscal es la semana: la renta con la que se proyecta cada
-    retención se reinicia cada lunes, el día de la declaración, en vez de
-    arrastrar los últimos 7 días (decisión del proyecto).
+    Es lo que mira el límite conjunto del Patrimonio (art. 31 de la Ley 19/1991).
     """
-    return now - monday_epoch(local_day(now))
+    tax = week_tax(income)
+    return tax.base + max(0, savings), tax.quota + savings_tax(savings)
+
+
+def withhold_rent(rent: HousingRent, pace: Pace) -> int:
+    """Retención de un cobro de `pisos`, según su clase de renta.
+
+    La renta de un alquiler retiene sobre su rendimiento neto reducido; el Bono
+    Alquiler Joven, como un premio; la comisión del promotor, como su actividad. Todo
+    con el tipo estable de la semana (`taxes.stable_rate`).
+    """
+    if rent.kind == INCOME_PROPERTY:
+        return property_withholding(rent.property_week, pace).tax
+    if rent.kind == INCOME_BUSINESS:
+        return round(rent.gross * stable_rate(pace, pace.current.plus(business=rent.gross)))
+    if rent.kind == INCOME_PRIZE:
+        return compute_withholding(rent.gross, pace).tax
+    return 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -561,7 +609,7 @@ def imv_after_work(amount: int, weekly_net: int) -> int:
         weekly_net: Neto de las nóminas de los últimos 7 días (Y$ de nómina).
     """
     excess = max(0, weekly_net - IMV_WORK_EXEMPT)
-    reduction = -(-wage_to_fiscal(round(excess * IMV_WORK_TAPER)) // 7)  # hacia arriba
+    reduction = -(-round(round(excess * IMV_WORK_TAPER) / IMV_WAGE_RATIO) // 7)  # hacia arriba
     floor = round(amount * IMV_FLOOR_SHARE)
     return max(floor, amount - reduction)
 
@@ -601,7 +649,6 @@ class EconomyService:
             now=now,
             adjust_tax=adjust_tax,
             day_tax=gambling_day_tax,
-            window_seconds=fiscal_window(now),
         )
 
     async def settle_bet(
@@ -727,7 +774,6 @@ class EconomyService:
             day=local_day(now).isoformat(),
             now=now,
             day_tax=gambling_day_tax,
-            window_seconds=fiscal_window(now),
             cap=cap,
             draw_hit=draw_hit or random.SystemRandom().randint,
         )
@@ -766,7 +812,6 @@ class EconomyService:
             day=local_day(now).isoformat(),
             now=now,
             day_tax=gambling_day_tax,
-            window_seconds=fiscal_window(now),
         )
 
     async def porra_bets(self, guild_id: int, porra_id: int) -> list[tuple[int, int, int]]:
@@ -825,8 +870,8 @@ class EconomyService:
             day=local_day(now).isoformat(),
             now=now,
             day_tax=gambling_day_tax,
-            window_seconds=fiscal_window(now),
-            image_withhold=lambda gross, _recent: image_rights_withholding(gross),
+            week=fiscal_week(local_day(now)),
+            image_withhold=lambda gross, _pace: image_rights_withholding(gross),
         )
 
     async def slots_pot(self, guild_id: int, *, seed: int) -> int:
@@ -883,7 +928,6 @@ class EconomyService:
             day=local_day(now).isoformat(),
             now=now,
             day_tax=gambling_day_tax,
-            window_seconds=fiscal_window(now),
         )
 
     async def settle_timba(
@@ -923,7 +967,6 @@ class EconomyService:
             day=local_day(now).isoformat(),
             now=now,
             day_tax=gambling_day_tax,
-            window_seconds=fiscal_window(now),
         )
 
     async def last_jackpot(self, guild_id: int) -> JackpotRecord | None:
@@ -948,14 +991,18 @@ class EconomyService:
             raise ValueError("La cantidad debe ser positiva.")
         return await self.repository.apply(guild_id, user_id, [LedgerEntry(amount, reason)])
 
-    @staticmethod
-    def _withhold(gross: int, recent_income: int) -> int:
-        return compute_withholding(gross, recent_income).tax
+    def _week(self, now: float | None = None) -> FiscalWeek:
+        """La semana fiscal en curso (o la de `now`)."""
+        return fiscal_week(local_day(self._clock() if now is None else now))
 
     async def pay_income(
         self, guild_id: int, user_id: int, *, gross: int, concept: str
     ) -> IncomeResult:
         """Paga un ingreso sujeto a IRPF (p. ej. el premio por subir de nivel).
+
+        Tratamiento fiscal: ganancia patrimonial no derivada de una transmisión (art.
+        33.1 LIRPF), de la base general. Retiene con el tipo estable de la semana
+        (`taxes.compute_withholding`) y la declaración del lunes ajusta el resto.
 
         Args:
             gross: Cantidad bruta; debe ser positiva.
@@ -970,43 +1017,20 @@ class EconomyService:
             gross=gross,
             concept=concept,
             now=now,
-            withhold=self._withhold,
-            window_seconds=fiscal_window(now),
+            withhold=lambda amount, pace: compute_withholding(amount, pace).tax,
+            week=self._week(now),
+            kind=INCOME_PRIZE,
         )
         return IncomeResult(gross=gross, tax=tax, rate=tax / gross, balance=balance)
-
-    async def regularize_irpf(self, guild_id: int) -> list[tuple[int, int]] | None:
-        """Devuelve el IRPF cobrado de más antes de que la renta se reiniciara cada lunes.
-
-        Tratamiento fiscal: devolución de retenciones ingresadas de más (art. 103
-        LIRPF, devolución derivada de la normativa del tributo). Sale de la cuenta
-        del Estado. Se hace una sola vez por servidor; el cálculo está en
-        `EconomyRepository.regularize_irpf` y la regla de cada ingreso en
-        `rewithhold`.
-
-        Returns:
-            `(miembro, devuelto)` de más a menos, o `None` si ya estaba hecho.
-        """
-        return await self.repository.regularize_irpf(
-            guild_id,
-            now=self._clock(),
-            day_of=lambda at: local_day(at).isoformat(),
-            monday_of=_monday_of,
-            week_end=_week_end,
-            rewithhold=rewithhold,
-            day_tax=gambling_day_tax,
-            foreign_window_seconds=PROJECTION_WINDOW_SECONDS,
-            declaration_window_seconds=PROJECTION_WINDOW_SECONDS,
-        )
 
     def _renta_rules(self) -> dict[str, object]:
         return {
             "current_week": week_start(local_day(self._clock())).isoformat(),
             "week_end": _week_end,
-            "refund_for": weekly_refund,
+            "refund_for": legacy_weekly_refund,
             "window_seconds": PROJECTION_WINDOW_SECONDS,
-            "keep": MAX_PENDING_DECLARATIONS,
-            "deduction_for": donation_deduction,
+            "claim_weeks": CLAIM_WEEKS,
+            "deduction_for": legacy_donation_deduction,
         }
 
     async def pending_declarations(self, guild_id: int, user_id: int) -> list[Declaration]:
@@ -1025,6 +1049,91 @@ class EconomyService:
             balance=balance,
         )
 
+    async def close_irpf_weeks(self, guild_id: int) -> list[tuple[date, IrpfRun]]:
+        """Cierra el IRPF de las semanas acabadas que falten: la declaración de los lunes.
+
+        Tratamiento fiscal: autoliquidación del IRPF (arts. 96 y 97 LIRPF) de cada
+        semana, que es el año fiscal del bot. La cuota sale de `taxes.week_return` con
+        toda la renta de la semana; si sale a pagar se cobra del monedero en el acto (al
+        Estado) y lo que no llegue queda como deuda con Hacienda; si sale a devolver,
+        primero paga deudas (compensación, art. 73 de la Ley 58/2003) y el resto se
+        presenta con la Renta (`claim_declarations`, desde la cuenta del Estado). Detalle
+        en `EconomyRepository.close_irpf_week`.
+
+        Es idempotente: una semana ya cerrada no se toca. Si el bot ha estado caído,
+        cierra todas las que falten desde la primera de la 8.0.0 del servidor, en orden
+        (los arrastres de una pasan a la siguiente).
+
+        Returns:
+            `(lunes, resultado)` de cada semana cerrada ahora, de la más vieja a la última.
+        """
+        now = self._clock()
+        current = self._week(now)
+        since, last = await self.repository.irpf_weeks_closed(guild_id)
+        if since is None:
+            since = await self.repository.irpf_regime(guild_id, current.monday)
+        first = date.fromisoformat(since)
+        if last is not None:
+            first = max(first, date.fromisoformat(last) + timedelta(days=7))
+        closed: list[tuple[date, IrpfRun]] = []
+        monday = first
+        while monday.isoformat() < current.monday:
+            run = await self.repository.close_irpf_week(
+                guild_id,
+                week=fiscal_week(monday),
+                current_week=current.monday,
+                now=now,
+                returns=week_return,
+                savings_tax=savings_tax,
+            )
+            if not (run.done_before or run.legacy):
+                closed.append((monday, run))
+            monday += timedelta(days=7)
+        return closed
+
+    async def take_irpf_notices(self, guild_id: int, user_id: int) -> list[date]:
+        """Semanas con declaración cerrada de las que aún no se avisó; quedan avisadas."""
+        weeks = await self.repository.take_irpf_notices(guild_id, user_id)
+        return [date.fromisoformat(week) for week in weeks]
+
+    async def irpf_statement(
+        self, guild_id: int, user_id: int, week: date | None = None
+    ) -> IrpfStatement | None:
+        """Una declaración cerrada con todo para explicarla (la última, sin `week`).
+
+        Se rehace con las mismas entradas con las que se cerró (`taxes.week_return` es
+        determinista), así el detalle cuadra al Y$ con lo que se cobró o se devolvió.
+        """
+        found = await self.repository.irpf_statement(
+            guild_id, user_id, week.isoformat() if week else None
+        )
+        if found is None:
+            return None
+        monday, filed, inputs, opened = found
+        income = WeekIncome.from_dict(inputs.get("income", {}))  # type: ignore[arg-type]
+        arguments = dict(inputs.get("arguments", {}))  # type: ignore[call-overload]
+        withheld_by = {
+            str(k): int(v)
+            for k, v in dict(inputs.get("withheld_by", {})).items()  # type: ignore[call-overload]
+        }
+        return IrpfStatement(
+            week=date.fromisoformat(monday),
+            filed=filed,
+            detail=week_return(income, **arguments) if inputs else None,
+            income=income,
+            withheld_by=withheld_by,
+            opened=opened,
+        )
+
+    async def open_irpf_return(self, guild_id: int, user_id: int, week: date) -> None:
+        """Marca como abierta una declaración: su dueño ya ha visto el resultado."""
+        await self.repository.open_irpf_return(guild_id, user_id, week.isoformat())
+
+    async def irpf_rate(self, guild_id: int, user_id: int) -> float:
+        """El tipo con el que retiene ahora mismo un cobro (el estable de la semana)."""
+        income, pace = await self.repository.week_income(guild_id, user_id, self._week())
+        return stable_rate(pace, income)
+
     async def charge_wealth_tax(
         self,
         guild_id: int,
@@ -1038,11 +1147,11 @@ class EconomyService:
         y mínimo en `bot.services.taxes.wealth_tax`, sobre el efectivo, los
         inmuebles a su valor fiscal (`assets`, art. 10 de la Ley 19/1991) y los
         objetos de la tienda (`goods`, arts. 18 y 19), con el límite conjunto con
-        el IRPF de la semana (art. 31, `taxes.wealth_quote`). Quien pasa de
-        37.000.000 Y$ declara además el Impuesto de Solidaridad de las Grandes
-        Fortunas (art. 3 de la Ley 38/2022), que descuenta el Patrimonio pagado y
-        en Canarias sale a cero. Lo recaudado va al Estado. Es idempotente: si la
-        semana ya se cobró, no hace nada.
+        el IRPF de esa misma semana: sus bases y sus cuotas, general y del ahorro
+        (art. 31, `taxes.wealth_quote`). Quien pasa de 37.000.000 Y$ declara además el
+        Impuesto de Solidaridad de las Grandes Fortunas (art. 3 de la Ley 38/2022), que
+        descuenta el Patrimonio pagado y en Canarias sale a cero. Lo recaudado va al
+        Estado. Es idempotente: si la semana ya se cobró, no hace nada.
 
         Args:
             assets: Valor fiscal de lo que tiene cada miembro además del efectivo,
@@ -1055,24 +1164,26 @@ class EconomyService:
         """
         now = self._clock()
         week = week_start(local_day(now)) - timedelta(days=7)
-        start = monday_epoch(week)
         run = await self.repository.charge_wealth_tax(
             guild_id,
             week=week.isoformat(),
             now=now,
-            tax_for=lambda worth, unproductive, income: wealth_quote(
-                worth, unproductive=unproductive, weekly_income=income
+            tax_for=lambda worth, unproductive, base, quota: wealth_quote(
+                worth, unproductive=unproductive, irpf_base=base, irpf_quota=quota
             ),
             assets=assets,
             goods=goods,
-            income_window=(start, monday_epoch(week + timedelta(days=7))),
+            fiscal=fiscal_week(week),
+            irpf_of=irpf_totals,
         )
         return week, run
 
-    async def weekly_taxable(self, guild_id: int, user_id: int) -> int:
-        """Renta sujeta a IRPF de un miembro desde el lunes (lo que mira el límite conjunto)."""
-        now = self._clock()
-        return await self.repository.recent_taxable(guild_id, user_id, now - fiscal_window(now))
+    async def week_irpf(self, guild_id: int, user_id: int) -> tuple[int, int]:
+        """`(bases, cuotas)` del IRPF de esta semana hasta ahora, para el límite conjunto."""
+        week = self._week()
+        income, _pace = await self.repository.week_income(guild_id, user_id, week)
+        savings = await self.repository.week_savings(guild_id, user_id, week)
+        return irpf_totals(income, savings)
 
     async def solidarity_summary(self, guild_id: int) -> tuple[int, int, int]:
         """Grandes Fortunas del servidor: `(declaraciones, contribuyentes, lo pagado)`."""
@@ -1239,7 +1350,8 @@ class EconomyService:
           Donaciones por decisión del proyecto, como el Bizum.
         - **Quien vende** tributa por la ganancia patrimonial (art. 33.1 LIRPF)
           en la base del ahorro, al 19 % y en el momento (`taxes.capital_gain_tax`;
-          el bot no tiene declaración anual). Se le descuenta de lo que cobra.
+          la declaración de los lunes es de la base general). Se le descuenta de lo
+          que cobra.
 
         Lo pujado espera en el depósito del Rastro (`MARKET_ACCOUNT_ID`) y los
         dos impuestos van al Estado en la misma transacción. Ver
@@ -1266,13 +1378,22 @@ class EconomyService:
           particular (art. 4 de la Ley 20/1991). Notaría, registro y gestoría no
           son impuestos: desaparecen.
         - **La renta** es rendimiento del capital inmobiliario (art. 22 LIRPF) de
-          la base general: ingresos menos gastos deducibles y amortización, con la
-          reducción del 50 % del art. 23.2. Entre particulares no hay retención
-          (art. 101.8 LIRPF solo obliga a las empresas que alquilan), pero el bot
-          no tiene declaración anual: se retiene a cuenta con la proyección de
-          toda la renta de la semana, como cualquier otra renta general (Biblia,
-          «Una sola renta y una sola semana»). La renta se pasa a esa escala con
-          `housing.rent_to_fiscal`.
+          la base general, inmueble por inmueble: ingresos menos gastos (IBI,
+          comunidad, seguro, amortización) y menos intereses y reparaciones, estos
+          con tope en lo que renta el inmueble y lo que sobra pasa a las cuatro
+          semanas siguientes (art. 23.1.a). Sobre el neto positivo de una vivienda,
+          la reducción del art. 23.2 (Ley 12/2023: 50 %, o 90 % en zona tensionada si
+          el contrato nuevo baja la renta más de un 5 %); un neto negativo rebaja el
+          resto de la base (art. 48): eso es desgravar la hipoteca. Entre particulares
+          no hay retención (art. 101.8 LIRPF solo obliga a las empresas que
+          alquilan), pero el bot retiene a cuenta con el tipo estable de la semana,
+          como cualquier otra renta general, y la declaración del lunes ajusta.
+        - **Los pisos vacíos** que no son la vivienda habitual imputan el 1,1 % de su
+          valor catastral al año (art. 85 LIRPF): no se cobra nada, suma a la base.
+        - **Deducciones canarias** (Decreto Legislativo 1/2009): lo pagado por la
+          hipoteca de la vivienda habitual (art. 14), por el alquiler de la vivienda
+          habitual (art. 15) y por las reparaciones y el seguro de una vivienda
+          alquilada (art. 15 ter) se apunta para la declaración del lunes.
         - **El IBI** (art. 60 del RDL 2/2004) va al Estado: en el juego no hay
           ayuntamientos. Comunidad y seguro desaparecen.
         - **Vender** paga la comisión de la agencia (desaparece) y, si se gana, el
@@ -1290,8 +1411,8 @@ class EconomyService:
           paga notaría; el precio va a la cuenta del Estado, que la recompra al
           mismo precio si se devuelve (sin ganancia, no hay IRPF).
         - **El alquiler entre miembros**: lo que paga el inquilino es la renta del
-          casero, con el mismo IRPF de arriba; pagarla no desgrava (el inquilino
-          no tiene deducción estatal por alquiler desde 2015).
+          casero, con el mismo IRPF de arriba. El inquilino no tiene deducción
+          estatal desde 2015, pero sí la canaria del art. 15.
         - **El Bono Alquiler Joven** (RD 42/2022) lo paga la cuenta del Estado y es
           una subvención: ganancia patrimonial de la base general (art. 33.1 LIRPF),
           con la misma retención a cuenta. Si el Estado no llega, no se paga.
@@ -1313,11 +1434,7 @@ class EconomyService:
         """
         now = self._clock()
         return await self.repository.housing(
-            guild_id,
-            now=now,
-            window_seconds=fiscal_window(now),
-            rate_for=lambda fiscal, recent: compute_withholding(fiscal, recent).rate,
-            prepare=prepare,
+            guild_id, now=now, week=self._week(now), withhold=withhold_rent, prepare=prepare
         )
 
     async def mom_bizum(self, guild_id: int, user_id: int, *, amount: int) -> int:
@@ -1495,7 +1612,10 @@ class EconomyService:
         return await self.repository.tax_breakdown(guild_id, since=since)
 
     async def tax_debt(self, guild_id: int, user_id: int) -> int:
-        """Patrimonio que un miembro aún debe y se le embargará de lo que cobre por sus pisos."""
+        """Lo que un miembro aún debe a Hacienda (Patrimonio o la declaración del IRPF).
+
+        Se cobra del monedero el lunes y se embarga de lo que cobre por sus pisos.
+        """
         return await self.repository.tax_debt(guild_id, user_id)
 
     async def housing_rent_totals(self, guild_id: int) -> dict[int, int]:
@@ -1608,21 +1728,19 @@ class EconomyService:
 
         Un autónomo cobra rendimientos de actividades económicas (art. 27
         LIRPF): sin cotización por turno (paga la cuota con
-        `charge_self_employed_fee`) y con el IRPF por la escala, como un pago a
-        cuenta simplificado.
+        `charge_self_employed_fee`, que la declaración resta como gasto) y con el
+        mismo tipo estable que el resto de su renta.
 
         Quien vuelve de trabajar fuera puede tributar por la Ley Beckham
         (`beckham=True`, art. 93 LIRPF): IRPF al 24 % en vez de la escala.
 
-        La retención proyecta toda la renta sujeta del miembro desde el lunes
-        (nóminas, premios, casino en positivo), no solo las nóminas: es la
-        misma renta que ven los premios y el casino, pasada a la escala de
-        nóminas con `fiscal_to_wage`.
+        La retención usa el tipo estable de toda la renta del miembro (el de la
+        semana pasada o, si ya es mayor, el de esta: `taxes.stable_rate`), no solo
+        el de las nóminas, y la declaración del lunes ajusta el resto.
 
         La pensión de jubilación de `pala` (`pension=True`) también es
-        rendimiento del trabajo (art. 17.2.a.1ª LIRPF): retención por la escala
-        con la reducción del art. 20, pero sin cotizaciones
-        (`taxes.compute_pension_payslip`).
+        rendimiento del trabajo (art. 17.2.a.1ª LIRPF): con los gastos y la
+        reducción del trabajo, pero sin cotizaciones (`taxes.compute_pension_payslip`).
 
         Args:
             gross: Bruto del turno; positivo.
@@ -1633,19 +1751,15 @@ class EconomyService:
         """
         if gross <= 0:
             raise ValueError("El sueldo debe ser positivo.")
-        rule = (
-            compute_pension_payslip
-            if pension
-            else compute_self_employed_payslip
-            if self_employed
-            else compute_beckham_payslip
-            if beckham
-            else compute_payslip
-        )
-
-        def payslip_for(amount: int, recent: int) -> Payslip:
-            return rule(amount, fiscal_to_wage(recent))
-
+        rule: Callable[[int, Pace], Payslip]
+        if pension:
+            rule, kind = compute_pension_payslip, INCOME_PENSION
+        elif self_employed:
+            rule, kind = compute_self_employed_payslip, INCOME_BUSINESS
+        elif beckham:
+            rule, kind = compute_beckham_payslip, INCOME_BECKHAM
+        else:
+            rule, kind = compute_payslip, INCOME_WORK
         now = self._clock()
         slip, balance = await self.repository.credit_salary(
             guild_id,
@@ -1653,8 +1767,9 @@ class EconomyService:
             gross=gross,
             concept=concept,
             now=now,
-            payslip_for=payslip_for,
-            window_seconds=fiscal_window(now),
+            payslip_for=rule,
+            week=self._week(now),
+            kind=kind,
         )
         return SalaryResult(payslip=slip, balance=balance)
 
@@ -1685,13 +1800,13 @@ class EconomyService:
 
         now = self._clock()
 
-        def payslip_for(amount: int, recent_hk: int, recent: int) -> ForeignPayslip:
+        def payslip_for(amount: int, recent_hk: int, pace: Pace) -> ForeignPayslip:
             return compute_hk_payslip(
                 amount,
                 recent_hk=recent_hk,
                 resident=resident,
                 exempt_left=exempt_left,
-                recent_es=fiscal_to_wage(recent),
+                pace=pace,
             )
 
         slip, balance = await self.repository.credit_foreign_salary(
@@ -1703,7 +1818,7 @@ class EconomyService:
             account_id=HK_ACCOUNT_ID,
             now=now,
             payslip_for=payslip_for,
-            window_seconds=fiscal_window(now),
+            week=self._week(now),
             foreign_window_seconds=PROJECTION_WINDOW_SECONDS,
         )
         return ForeignSalaryResult(payslip=slip, balance=balance)

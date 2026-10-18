@@ -28,6 +28,7 @@ from bot.services.blackjack import Card
 from bot.services.economy import STARTING_BALANCE, EconomyService
 from bot.services.poker import BONUS_SHARE, BONUS_STAKE, CALL_FACTOR, MAX_SEATS, POT_SEED, TableDeal
 from bot.services.poker_render import Media
+from bot.services.taxes import gambling_day_tax
 
 GUILD_ID = 1
 CHANNEL_ID = 777
@@ -240,7 +241,8 @@ async def test_una_mano_a_dos_paga_a_quien_va_y_gana_y_cobra_el_ante_al_que_se_r
     await table.finish()
     assert cog.renderer.called == [[True, False]]  # type: ignore[attr-defined]
     # Trío contra la pareja de la banca: el ante y la de ir pagan 1 a 1.
-    assert await balance(cog) == STARTING_BALANCE + 100 + 100 * CALL_FACTOR
+    won = 100 + 100 * CALL_FACTOR
+    assert await balance(cog) == STARTING_BALANCE + won - gambling_day_tax(won)
     assert await balance(cog, LEO) == STARTING_BALANCE - 100
     text = table.open_embed().description or ""
     assert "✅ **Ana**" in text and "🏳️ **Leo**" in text and "bien retirado" in text
@@ -382,7 +384,8 @@ async def test_al_apagar_decidiendo_quien_no_decidio_se_retira_y_se_paga(tmp_pat
     await table.deal()
     await table.decide(make_interaction(ANA), True)
     await table.shutdown()
-    assert await balance(cog) == STARTING_BALANCE + 100 + 100 * CALL_FACTOR
+    won = 100 + 100 * CALL_FACTOR
+    assert await balance(cog) == STARTING_BALANCE + won - gambling_day_tax(won)
     assert await balance(cog, LEO) == STARTING_BALANCE - 100
     assert table.phase is Phase.CLOSED
 

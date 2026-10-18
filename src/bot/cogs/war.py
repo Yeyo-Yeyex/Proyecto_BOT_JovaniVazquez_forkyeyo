@@ -11,7 +11,7 @@ repartir.
 
 El dinero en juego se cobra al repartir (y al ir a la guerra) y el premio se paga
 al terminar la mano: `place_bet` + `pay_winnings`, así que tributa como juego
-(retención diaria del IRPF y declaración semanal del casino, igual que el
+(retención diaria del 19 % y declaración de la renta de los lunes, igual que el
 blackjack). Si la mesa caduca o el bot se apaga con un empate sin decidir, la mano
 se resuelve rindiéndose (es lo que menos pierde) para que nunca se quede dinero
 colgado. Si el proceso muere de golpe a mitad de un empate, lo apostado en esa

@@ -65,6 +65,8 @@ class Event(StrEnum):
     PROFILE = "profile"
     DONATE = "donate"
     LOOTBOX = "lootbox"
+    #: Algo de tus pisos que no es comprar ni vender: firmar con un inquilino, desahuciar.
+    HOME = "home"
 
 
 class Mood(StrEnum):
@@ -554,6 +556,16 @@ GENERIC_LINES: dict[Event, tuple[str, ...]] = {
         "{pet} pregunta si el ITP se puede pagar en chuches.",
         "{pet} mira el ticket: entre ITP y plusvalía, Hacienda ha hecho mejor negocio que tú.",
         "{pet} se sienta encima del trato como si fuera un notario. Firma con la pata.",
+    ),
+    Event.HOME: (
+        "{pet} olisquea al inquilino nuevo y le da el visto bueno.",
+        "{pet} se queda en la puerta mientras firmas, por si acaso.",
+        "{pet} se tumba en el felpudo del piso como si fuera suyo.",
+        "{pet} pregunta si el contrato admite mascotas. {sound}.",
+        "{pet} lee la letra pequeña del contrato con mucha atención. No entiende nada.",
+        "{pet} gruñe al edificio de enfrente: la competencia.",
+        "{pet} te recuerda que el IBI no se paga solo.",
+        "{pet} revisa los grifos del piso. Ninguno gotea, de momento.",
     ),
     Event.BIRTHDAY: (
         "{pet} te canta el cumpleaños a su manera: {sound}.",

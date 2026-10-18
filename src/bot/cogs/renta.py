@@ -1,32 +1,36 @@
-"""Campaña de la Renta: declaración semanal del IRPF del casino.
+"""Campaña de la Renta: la declaración del IRPF de cada semana.
 
-Durante la semana el casino retiene día a día. Al cerrarse la semana, las
-pérdidas de unos días compensan las ganancias de otros y lo retenido de
-más sale a devolver (ver `bot.services.taxes.weekly_refund`). Para cobrarlo
-hay que presentar la declaración:
+El año fiscal del bot es la semana. Durante la semana cada cobro retiene a cuenta
+(las nóminas, los premios y los alquileres con el tipo de cada uno; el casino, el 19
+% de lo ganado cada día). Cada lunes este cog cierra la semana anterior en cada
+servidor (`EconomyService.close_irpf_weeks`): sale la declaración de cada miembro con
+toda su renta, sus deducciones y lo retenido.
 
-- **Desde el casino:** la primera vez en la campaña que alguien juega con la
-  renta pendiente, le sale un mensaje que solo ve él con un botón
-  **Presentar**. En las jugadas siguientes solo queda una línea pequeña en
-  el resultado. Discord solo permite mensajes efímeros como respuesta a un
-  botón o a un comando slash, así que se enganchan a esas acciones.
-- **Con `renta`:** muestra el borrador y el mismo botón.
+- **Si sale a pagar**, se cobra sola del monedero en ese momento; lo que no llegue
+  queda como deuda con Hacienda y se cobra el lunes siguiente o de lo que rente en
+  `pisos`.
+- **Si sale a devolver**, primero paga lo que debiera y el resto hay que presentarlo,
+  desde el casino (la primera vez en la campaña que alguien juega con la renta
+  pendiente le sale un mensaje que solo ve él con el botón **Presentar**; luego solo
+  una línea pequeña) o con `renta`. Al presentar, el bot publica una línea en el canal
+  para que se compare. Hay `CLAIM_WEEKS` semanas para presentarla (los cuatro años de
+  la ley); después prescribe y el dinero se queda en el Estado.
 
-Al presentar, el bot publica una línea en el canal ("Diego presenta la
-renta: le salen 2.340 Y$ a devolver") para que se compare.
+**Expectativa.** Como en la vida real, quien no lleva la cuenta de todo lo que cobra no
+sabe hasta el lunes si le toca pagar o le devuelven: `renta` no adelanta el resultado
+de la semana en curso. El lunes el anuncio de `#chat-general` (o del canal del
+sistema) solo da los totales del servidor y a cada miembro le llega una vez, en su
+siguiente acción con dinero (`hint`), que ya tiene la declaración, sin la cifra. La
+abre en `renta`: un sobre con el botón **Abrir** y, al abrirlo, el **resumen** (las
+cuentas en cinco líneas) con un botón para ver el **detalle** (el porqué de cada cifra,
+con sus artículos) y otro para volver (`bot.services.renta_report`).
 
-Se guardan como máximo las 2 últimas semanas pendientes, sin fecha de
-caducidad; cuando sale a devolver una tercera, la más antigua se pierde.
+Cada semana el bot crea un evento de Discord ("📬 Campaña de la Renta") que dura hasta
+el domingo, para que se vea sin ocupar un canal. Necesita el permiso **Gestionar
+eventos**; sin él, todo lo demás funciona igual.
 
-Cada semana el bot crea un evento de Discord ("📬 Campaña de la Renta") que
-dura hasta el domingo, para que se vea sin ocupar un canal. Necesita el
-permiso **Gestionar eventos**; sin él, todo lo demás funciona igual.
-
-El año fiscal del bot es la semana: la renta con la que se calcula cada
-retención se reinicia el lunes. La primera vez que el cog arranca en un
-servidor devuelve lo retenido de más cuando la renta arrastraba los últimos 7
-días (`EconomyService.regularize_irpf`) y lo anuncia en `#chat-general` (o en
-el canal del sistema). Cuenta para los logros de la Renta (`renta_refunded`).
+Las semanas de antes de la 8.0.0 en un servidor se declaran con la regla vieja (solo
+el casino y los donativos, siempre a devolver), al vuelo.
 """
 
 from __future__ import annotations
@@ -47,13 +51,16 @@ from bot.services.achievements import StatDelta
 from bot.services.economy import (
     Declaration,
     EconomyService,
+    IrpfRun,
+    IrpfStatement,
     format_amount,
     week_label,
     week_start,
 )
 from bot.services.levels import TIMEZONE, local_day
 from bot.services.pets import Moment
-from bot.services.taxes import MAX_PENDING_DECLARATIONS, TAX_COLLECTOR
+from bot.services.renta_report import detail_text, envelope_text, summary_text
+from bot.services.taxes import CLAIM_WEEKS, TAX_COLLECTOR
 from bot.utils.cogs import find_cog
 from bot.utils.interactions import ack, edit
 
@@ -63,31 +70,44 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 EVENT_PREFIX = "📬 Campaña de la Renta"
-VIEW_TIMEOUT = 300
+VIEW_TIMEOUT = 600
 ANNOUNCE_CHANNEL_NAME = "chat-general"
-#: Miembros que se nombran en el anuncio de la regularización; el resto se cuenta.
-REGULARIZATION_SHOWN = 15
+COLOR = discord.Color.from_rgb(170, 21, 27)
+#: Límite del texto de un embed de Discord.
+EMBED_LIMIT = 4_096
 
+#: Modos de la vista de `renta`.
+SEALED = "sobre"
+SUMMARY = "resumen"
+DETAIL = "detalle"
 
-def regularization_text(paid: list[tuple[int, int]], names: dict[int, str]) -> str:
-    """Anuncio de la devolución del IRPF cobrado de más, de más a menos."""
-    total = sum(amount for _, amount in paid)
-    lines = [
-        f"🐶 **{TAX_COLLECTOR} devuelve {format_amount(total)} de IRPF cobrado de más.**",
-        "Desde ahora el año fiscal es la semana: la retención se calcula con lo "
-        "ganado desde el lunes y vuelve a empezar cada lunes.",
-    ]
-    lines += [
-        f"- {names.get(user_id, f'<@{user_id}>')}: +{format_amount(amount)}"
-        for user_id, amount in paid[:REGULARIZATION_SHOWN]
-    ]
-    if len(paid) > REGULARIZATION_SHOWN:
-        lines.append(f"-# Y {len(paid) - REGULARIZATION_SHOWN} más.")
-    return "\n".join(lines)
+#: Frases del anuncio del lunes, según cómo le haya ido a Hacienda.
+MONDAY_GOOD: tuple[str, ...] = (
+    "Esta semana se recauda más de lo que se devuelve.",
+    "Cuentas cerradas: el Estado sale ganando esta semana.",
+    "La recaudación sube otra vez: buena semana para el Estado.",
+    "Hacienda somos todos, pero esta semana unos más que otros.",
+    "La Agencia Tributaria agradece su colaboración y le recuerda que no tenía elección.",
+    "Bruselas aplaude el ajuste. El ajuste eras tú.",
+)
+MONDAY_REFUND: tuple[str, ...] = (
+    "Esta semana se devuelve más de lo que se cobra.",
+    "Semana de devoluciones: el Estado sale perdiendo.",
+    "Lo retenido de más vuelve a casa, si presentas la renta.",
+    "Esta semana el Estado sale perdiendo. Ya lo recuperará con el IBI.",
+    "Devoluciones a mansalva: alguien en Hacienda ha pulsado el botón equivocado.",
+)
+#: Frases del aviso de que ya está la declaración (sin decir qué sale).
+NOTICE_LINES: tuple[str, ...] = (
+    "Hacienda ya ha hecho tus cuentas de la semana {week}. ¿Pagas o te devuelven?",
+    "Ha llegado la carta de {collector} con tu renta de la semana {week}. Ábrela si te atreves.",
+    "Tu declaración de la semana {week} está lista. Respira hondo.",
+    "{collector} ha terminado de sumar tu semana {week}. Él ya sabe el resultado; tú todavía no.",
+)
 
 
 def draft_text(declarations: list[Declaration]) -> str:
-    """Borrador de la declaración para mostrar a su dueño."""
+    """Borrador de las declaraciones a devolver, para mostrar a su dueño."""
     total = sum(d.refund for d in declarations)
     lines = [
         f"📬 **Tienes la renta sin presentar: te salen {format_amount(total)} a devolver.**",
@@ -97,15 +117,75 @@ def draft_text(declarations: list[Declaration]) -> str:
             f"-# Semana {week_label(d.week_start)}: {format_amount(d.refund)}" for d in declarations
         ]
     lines.append(
-        f"-# Se guardan las {MAX_PENDING_DECLARATIONS} últimas semanas sin presentar; "
-        f"si se acumula otra, la más antigua se la queda {TAX_COLLECTOR}."
+        f"-# Hay {CLAIM_WEEKS} semanas para presentar cada una (los cuatro años de la ley); "
+        f"después prescribe y se la queda {TAX_COLLECTOR}."
     )
     return "\n".join(lines)
+
+
+def notice_text(week: date) -> str:
+    """Aviso de que ya está una declaración, sin decir qué sale (para `hint`)."""
+    phrase = NOTICE_LINES[week.toordinal() // 7 % len(NOTICE_LINES)]
+    text = phrase.format(week=week_label(week), collector=TAX_COLLECTOR)
+    return f"-# 📑 {text} Ábrela con `/renta`."
+
+
+def announcement_text(week: date, run: IrpfRun) -> str:
+    """Anuncio público del cierre de una semana: solo los totales, sin nombres.
+
+    Cada uno descubre lo suyo al abrir su declaración: nadie se entera antes por el canal.
+    """
+    pay = [r for r in run.returns if r.result > 0]
+    back = [r for r in run.returns if r.result < 0]
+    total_pay = sum(r.result for r in pay)
+    total_back = -sum(r.result for r in back)
+    pool = MONDAY_GOOD if total_pay >= total_back else MONDAY_REFUND
+    return "\n".join(
+        (
+            f"🧾 **{TAX_COLLECTOR} ha hecho las cuentas de la semana {week_label(week)}:** "
+            f"{len(run.returns)} declaraciones, {len(pay)} a pagar y {len(back)} a devolver.",
+            f"Entre todos: {format_amount(total_pay)} para el Estado y "
+            f"{format_amount(total_back)} de vuelta.",
+            f"-# {pool[week.toordinal() // 7 % len(pool)]} Cada uno abre la suya con `/renta`.",
+        )
+    )
 
 
 def pending_hint() -> str:
     """Línea pequeña para el resultado de una jugada si hay renta pendiente."""
     return "-# 📬 Tienes la renta sin presentar: `/renta`"
+
+
+def renta_embed(
+    mode: str,
+    statement: IrpfStatement | None,
+    pending: list[Declaration],
+    *,
+    rate: float | None = None,
+    extra: str = "",
+) -> discord.Embed:
+    """El embed de `renta` en un modo: el sobre, el resumen o el detalle."""
+    parts: list[str] = []
+    if statement is None:
+        parts.append(
+            f"📑 Aún no tienes ninguna declaración. El lunes {TAX_COLLECTOR} hará las cuentas "
+            "de esta semana: si te retuvo de menos te lo cobra, y si te retuvo de más te lo "
+            "devuelve si la presentas aquí."
+        )
+    elif mode == SEALED:
+        parts.append(envelope_text(statement))
+    elif mode == DETAIL:
+        parts.append(detail_text(statement, rate=rate))
+    else:
+        parts.append(summary_text(statement))
+    if pending and mode != SEALED:
+        parts.append(draft_text(pending))
+    if extra:
+        parts.append(extra)
+    text = "\n\n".join(parts)
+    if len(text) > EMBED_LIMIT:
+        text = text[: EMBED_LIMIT - 2] + "…"
+    return discord.Embed(title="🧾 Renta", description=text, color=COLOR)
 
 
 async def remind(bot: commands.Bot, interaction: discord.Interaction) -> None:
@@ -119,11 +199,12 @@ async def hint(
 ) -> str | None:
     """Líneas pequeñas para el resultado de cualquier acción con dinero, o `None`.
 
-    La de la renta pendiente; una sola vez, la de los intereses que el miembro
-    aún no ha visto (`bot.cogs.intereses`); la de las cajas gratis que ha ganado jugando
-    (`bot.cogs.shop.notice`); y lo que diga su mascota activa
-    (`bot.cogs.pets.cameo`). Así el cobro diario de la cuenta y las mascotas
-    llegan a todos los juegos sin tocarlos uno a uno.
+    Una sola vez, que ya tiene su declaración del lunes (sin decir qué sale); la de la
+    renta pendiente de presentar; una sola vez, la de los intereses que aún no ha visto
+    (`bot.cogs.intereses`); la de las cajas gratis que ha ganado jugando
+    (`bot.cogs.shop.notice`); y lo que diga su mascota activa (`bot.cogs.pets.cameo`).
+    Así la declaración, el cobro diario de la cuenta y las mascotas llegan a todos los
+    juegos sin tocarlos uno a uno.
 
     Args:
         moment: Lo que acaba de pasar (`bot.services.pets.bet_moment` en una
@@ -148,8 +229,110 @@ async def hint(
     return "\n".join(lines) if lines else None
 
 
+class RentaView(discord.ui.View):
+    """La declaración en `renta`: abrir el sobre, resumen o detalle, y presentar.
+
+    Pasar del resumen al detalle solo cambia lo que se enseña (la declaración ya está
+    cargada): contesta en el acto. Abrir el sobre y presentar tocan la base de datos.
+    """
+
+    def __init__(
+        self,
+        cog: Renta,
+        owner_id: int,
+        statement: IrpfStatement | None,
+        pending: list[Declaration],
+        *,
+        mode: str,
+        rate: float | None = None,
+        extra: str = "",
+    ) -> None:
+        super().__init__(timeout=VIEW_TIMEOUT)
+        self.cog = cog
+        self.owner_id = owner_id
+        self.statement = statement
+        self.pending = pending
+        self.mode = mode
+        self.rate = rate
+        self.extra = extra
+        self._rebuild()
+
+    def embed(self) -> discord.Embed:
+        """El embed del modo en que está."""
+        return renta_embed(
+            self.mode, self.statement, self.pending, rate=self.rate, extra=self.extra
+        )
+
+    def _rebuild(self) -> None:
+        self.clear_items()
+        if self.statement is not None:
+            if self.mode == SEALED:
+                self._button("Abrir", "📑", discord.ButtonStyle.primary, "renta:abrir", self._open)
+            elif self.mode == SUMMARY:
+                self._button(
+                    "Ver el detalle", "🔍", discord.ButtonStyle.secondary, "renta:detalle",
+                    self._detail,
+                )  # fmt: skip
+            else:
+                self._button(
+                    "Ver el resumen", "📄", discord.ButtonStyle.secondary, "renta:resumen",
+                    self._summary,
+                )  # fmt: skip
+        if self.pending and self.mode != SEALED:
+            self._button(
+                "Presentar", "📬", discord.ButtonStyle.success, "renta:presentar", self._present
+            )
+
+    def _button(
+        self, label: str, emoji: str, style: discord.ButtonStyle, custom_id: str, callback
+    ) -> None:  # type: ignore[no-untyped-def]  # noqa: E501
+        button = discord.ui.Button(label=label, emoji=emoji, style=style, custom_id=custom_id)
+        button.callback = callback  # type: ignore[method-assign]
+        self.add_item(button)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Esta declaración no es tuya.", ephemeral=True)
+            return False
+        return True
+
+    async def _open(self, interaction: discord.Interaction) -> None:
+        """Abre el sobre: marca la declaración como vista y enseña el resumen."""
+        await ack(interaction)
+        if self.statement is not None and interaction.guild is not None:
+            await self.cog.economy.open_irpf_return(
+                interaction.guild.id, self.owner_id, self.statement.week
+            )
+            self.cog.track_opened(interaction, self.statement)
+        self.mode = SUMMARY
+        self._rebuild()
+        await edit(interaction, embed=self.embed(), view=self)
+
+    async def _detail(self, interaction: discord.Interaction) -> None:
+        self.mode = DETAIL
+        self._rebuild()
+        await interaction.response.edit_message(embed=self.embed(), view=self)
+        if interaction.guild is not None:
+            logros.note(
+                self.cog.bot,
+                interaction.guild.id,
+                self.owner_id,
+                StatDelta(add={"renta_detail": 1}),
+                interaction.channel_id,
+            )
+
+    async def _summary(self, interaction: discord.Interaction) -> None:
+        self.mode = SUMMARY
+        self._rebuild()
+        await interaction.response.edit_message(embed=self.embed(), view=self)
+
+    async def _present(self, interaction: discord.Interaction) -> None:
+        await self.cog.present(interaction)
+        self.stop()
+
+
 class PresentView(discord.ui.View):
-    """Botón Presentar del borrador; solo lo puede pulsar su dueño."""
+    """Botón Presentar del aviso del casino; solo lo puede pulsar su dueño."""
 
     def __init__(self, cog: Renta, owner_id: int) -> None:
         super().__init__(timeout=VIEW_TIMEOUT)
@@ -169,7 +352,7 @@ class PresentView(discord.ui.View):
 
 
 class Renta(commands.Cog):
-    """Declaración semanal del casino, recordatorios y evento de campaña."""
+    """Declaración semanal del IRPF: cierre de los lunes, avisos y evento de campaña."""
 
     def __init__(self, bot: commands.Bot, economy: EconomyService) -> None:
         self.bot = bot
@@ -178,8 +361,6 @@ class Renta(commands.Cog):
         #: el efímero; en esta campaña solo verán la línea pequeña.
         self._reminded: set[tuple[int, int, date]] = set()
         self._events_forbidden: set[int] = set()
-        #: Servidores donde ya se ha pasado la regularización del IRPF.
-        self._regularized: set[int] = set()
 
     async def cog_load(self) -> None:
         self._campaign_events.start()
@@ -189,20 +370,30 @@ class Renta(commands.Cog):
 
     # -- Recordatorios desde el casino -----------------------------------------------
 
+    async def _sealed(self, guild_id: int, user_id: int) -> bool:
+        """Si su última declaración está sin abrir (entonces no se adelanta nada)."""
+        statement = await self.economy.irpf_statement(guild_id, user_id)
+        return statement is not None and not statement.opened
+
     async def hint_for(self, guild_id: int, user_id: int) -> str | None:
-        """Línea pequeña si el usuario tiene renta pendiente; `None` si no."""
+        """Líneas pequeñas de la renta: declaración nueva (sin cifra) y la que falta presentar."""
+        lines = []
         try:
-            pending = await self.economy.pending_declarations(guild_id, user_id)
+            for week in await self.economy.take_irpf_notices(guild_id, user_id):
+                lines.append(notice_text(week))
+            if not lines and not await self._sealed(guild_id, user_id):
+                if await self.economy.pending_declarations(guild_id, user_id):
+                    lines.append(pending_hint())
         except Exception:
-            logger.exception("No se pudo consultar la renta pendiente")
-            return None
-        return pending_hint() if pending else None
+            logger.exception("No se pudo consultar la renta")
+        return "\n".join(lines) if lines else None
 
     async def remind(self, interaction: discord.Interaction) -> None:
         """Tras una jugada con botón o slash: avisa en efímero, una vez por campaña.
 
         Debe llamarse cuando la interacción ya tiene respuesta: el aviso va
-        como mensaje de seguimiento que solo ve quien ha jugado.
+        como mensaje de seguimiento que solo ve quien ha jugado. Si la última
+        declaración está sin abrir, no avisa: el sobre se abre en `renta`.
         """
         guild = interaction.guild
         if guild is None or not interaction.response.is_done():
@@ -212,6 +403,8 @@ class Renta(commands.Cog):
         if key in self._reminded:
             return
         try:
+            if await self._sealed(guild.id, interaction.user.id):
+                return
             pending = await self.economy.pending_declarations(guild.id, interaction.user.id)
         except Exception:
             logger.exception("No se pudo consultar la renta pendiente")
@@ -227,6 +420,25 @@ class Renta(commands.Cog):
             )
         except discord.HTTPException:
             logger.warning("No se pudo enviar el aviso de renta", exc_info=True)
+
+    def track_opened(self, interaction: discord.Interaction, statement: IrpfStatement) -> None:
+        """Apunta a los logros que ha abierto una declaración (y qué le salió)."""
+        if interaction.guild is None:
+            return
+        result = statement.filed.result
+        logros.note(
+            self.bot,
+            interaction.guild.id,
+            interaction.user.id,
+            StatDelta(
+                add={
+                    "renta_opened": 1,
+                    "renta_opened_pay": int(result > 0),
+                    "renta_opened_refund": int(result < 0),
+                }
+            ),
+            interaction.channel_id,
+        )
 
     # -- Presentar ---------------------------------------------------------------------
 
@@ -247,6 +459,7 @@ class Renta(commands.Cog):
                 f"✅ Declaración presentada: +{format_amount(claim.refunded)}. "
                 f"Saldo: **{format_amount(claim.balance)}**."
             ),
+            embed=None,
             view=None,
         )
         weeks = len(claim.declarations)
@@ -275,55 +488,50 @@ class Renta(commands.Cog):
 
     # -- Comando -----------------------------------------------------------------------
 
-    async def _draft(
-        self, guild: discord.Guild | None, member: discord.abc.User | None
-    ) -> tuple[str, PresentView | None]:
-        """Texto del borrador y su botón (o `None` si no hay nada que presentar)."""
-        if guild is None or member is None:
-            return "La renta solo se presenta dentro de un servidor.", None
+    async def _view(self, guild: discord.Guild, member: discord.abc.User) -> RentaView:
+        """La vista de `renta` de un miembro: su última declaración y lo pendiente."""
+        statement = await self.economy.irpf_statement(guild.id, member.id)
         pending = await self.economy.pending_declarations(guild.id, member.id)
+        rate = await self.economy.irpf_rate(guild.id, member.id)
         # La base del ahorro (intereses) se liquida sola cada lunes; aquí solo se enseña.
-        savings = await intereses.savings_line(self.bot, guild.id, member.id)
-        extra = f"\n{savings}" if savings else ""
-        if not pending:
-            return (
-                "📬 No tienes nada que declarar. Las semanas en las que el casino te "
-                "retiene de más salen a devolver el lunes siguiente." + extra,
-                None,
-            )
-        return draft_text(pending) + extra, PresentView(self, member.id)
+        savings = await intereses.savings_line(self.bot, guild.id, member.id) or ""
+        mode = SEALED if statement is not None and not statement.opened else SUMMARY
+        return RentaView(self, member.id, statement, pending, mode=mode, rate=rate, extra=savings)
 
     @app_commands.command(name="renta", description="Mira y presenta tu declaración de la renta.")
     @app_commands.guild_only()
     async def renta(self, interaction: discord.Interaction) -> None:
-        """Borrador de la declaración semanal con el botón para presentarla."""
-        text, view = await self._draft(interaction.guild, interaction.user)
-        if view is None:
-            await interaction.response.send_message(text, ephemeral=True)
-        else:
-            await interaction.response.send_message(text, view=view, ephemeral=True)
+        """Tu declaración: el sobre (si está sin abrir), el resumen o el detalle."""
+        if interaction.guild is None:
+            await interaction.response.send_message(
+                "La renta solo se presenta dentro de un servidor.", ephemeral=True
+            )
+            return
+        # Leer la declaración va a la base de datos: se contesta antes.
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        view = await self._view(interaction.guild, interaction.user)
+        await interaction.followup.send(embed=view.embed(), view=view, ephemeral=True)
 
     @commands.command(name="renta")
     @commands.guild_only()
     async def renta_text(self, ctx: commands.Context) -> None:
         """Versión de texto (`.renta`); se ve en el canal porque no puede ser efímera."""
-        text, view = await self._draft(ctx.guild, ctx.author)
-        if view is None:
-            await ctx.send(text)
-        else:
-            await ctx.send(text, view=view)
+        if ctx.guild is None:
+            return
+        view = await self._view(ctx.guild, ctx.author)
+        await ctx.send(embed=view.embed(), view=view)
 
-    # -- Evento semanal ----------------------------------------------------------------
+    # -- Cierre del lunes y evento semanal ---------------------------------------------
 
     @tasks.loop(minutes=10)
     async def _campaign_events(self) -> None:
-        """Mantiene un evento de Discord por campaña: lo crea, lo abre y cierra el viejo."""
+        """Cierra las semanas que falten y mantiene un evento de Discord por campaña."""
         now = datetime.now(TIMEZONE)
         monday = week_start(now.date())
         name = f"{EVENT_PREFIX} · semana {week_label(monday - timedelta(days=7))}"
         end = datetime.combine(monday + timedelta(days=7), datetime.min.time(), TIMEZONE)
         for guild in self.bot.guilds:
-            await self._regularize(guild)
+            await self._close_weeks(guild)
             if guild.id in self._events_forbidden:
                 continue
             try:
@@ -338,43 +546,45 @@ class Renta(commands.Cog):
             except Exception:
                 logger.exception("Error con el evento de la renta en el servidor %s", guild.id)
 
-    async def _regularize(self, guild: discord.Guild) -> None:
-        """Devuelve una vez el IRPF retenido de más y lo anuncia. Nunca lanza."""
-        if guild.id in self._regularized:
-            return
+    async def _close_weeks(self, guild: discord.Guild) -> None:
+        """Cierra el IRPF de las semanas acabadas que falten y lo anuncia. Nunca lanza."""
         try:
-            paid = await self.economy.regularize_irpf(guild.id)
+            closed = await self.economy.close_irpf_weeks(guild.id)
         except Exception:
-            logger.exception("No se pudo regularizar el IRPF en el servidor %s", guild.id)
+            logger.exception("No se pudo cerrar el IRPF en el servidor %s", guild.id)
             return
-        self._regularized.add(guild.id)
-        if not paid:
+        if not closed:
             return
         channel = (
             discord.utils.get(guild.text_channels, name=ANNOUNCE_CHANNEL_NAME)
             or guild.system_channel
         )
-        names = {}
-        for user_id, _ in paid:
-            member = guild.get_member(user_id)
-            if member is not None:
-                names[user_id] = discord.utils.escape_markdown(member.display_name)
-        if channel is not None:
-            try:
-                await channel.send(
-                    regularization_text(paid, names),
-                    allowed_mentions=discord.AllowedMentions.none(),
+        for week, run in closed:
+            if not run.returns:
+                continue
+            if channel is not None:
+                try:
+                    await channel.send(
+                        announcement_text(week, run),
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+                except discord.HTTPException:
+                    logger.warning("No se pudo anunciar la renta del lunes", exc_info=True)
+            for filed in run.returns:
+                logros.note(
+                    self.bot,
+                    guild.id,
+                    filed.user_id,
+                    StatDelta(
+                        add={
+                            "renta_closed": 1,
+                            "renta_paid": filed.charged,
+                            "renta_debt": filed.debt,
+                        },
+                        peak={"renta_rate_max": round(filed.rate * 100)},
+                    ),
+                    channel.id if channel is not None else None,
                 )
-            except discord.HTTPException:
-                logger.warning("No se pudo anunciar la regularización", exc_info=True)
-        for user_id, amount in paid:
-            logros.note(
-                self.bot,
-                guild.id,
-                user_id,
-                StatDelta(add={"renta_refunded": amount}),
-                channel.id if channel is not None else None,
-            )
 
     @_campaign_events.before_loop
     async def _before_campaign_events(self) -> None:
@@ -402,10 +612,10 @@ class Renta(commands.Cog):
                 privacy_level=discord.PrivacyLevel.guild_only,
                 location="/renta o jugando en el casino",
                 description=(
-                    "Ya puedes presentar la declaración de la semana pasada. Lo que el "
-                    "casino te retuvo de más sale a devolver: preséntala con /renta o "
-                    "jugando en el casino. Las 2 últimas semanas sin presentar se "
-                    f"guardan; si se acumula otra, la más antigua se la queda {TAX_COLLECTOR}."
+                    "Ya ha salido la declaración de la semana pasada: ábrela con /renta. Si "
+                    f"era a pagar, {TAX_COLLECTOR} ya se la ha cobrado; si es a devolver, "
+                    f"preséntala allí. Hay {CLAIM_WEEKS} semanas para presentarla; después "
+                    "prescribe."
                 ),
             )
         elif current.status is discord.EventStatus.scheduled and current.start_time <= now:

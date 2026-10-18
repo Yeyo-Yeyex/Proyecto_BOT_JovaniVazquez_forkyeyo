@@ -334,7 +334,7 @@ class ItemEditor(ui.LayoutView):
             self.add_item(container)
             return
         details = [
-            f"IGIC: {item.igic_rate.label} ({rate_label(item.igic_rate.rate)}, "
+            f"{item.igic_rate.tax}: {item.igic_rate.label} ({rate_label(item.igic_rate.rate)}, "
             f"{item.igic_rate.law})",
             f"Vendidos: {item.sold}"
             + (f" de {item.stock}" if item.stock is not None else " (sin límite de existencias)"),
@@ -371,7 +371,7 @@ class ItemEditor(ui.LayoutView):
 
         options = [
             discord.SelectOption(
-                label=f"IGIC {rate.label} · {rate_label(rate.rate)}",
+                label=f"{rate.tax} {rate.label} · {rate_label(rate.rate)}",
                 value=rate.key,
                 description=f"{rate.example} ({rate.law})"[:100],
                 default=rate.key == item.igic_rate.key,

@@ -18,8 +18,10 @@ from bot.cogs.pisos import (
     BARRIO,
     CACHE_SIZE,
     CAJA,
+    CANDIDATOS,
     CARTERA,
     FICHA,
+    GESTION,
     MAPA,
     VPO,
     Painter,
@@ -29,6 +31,7 @@ from bot.cogs.pisos import (
     TenantOffer,
     ecb_embed,
     effort_text,
+    news_embed,
     promotion_embed,
     requirements_text,
 )
@@ -516,10 +519,41 @@ async def test_todas_las_pantallas_respetan_los_limites_de_discord(tmp_path: Pat
         await cog.service.buy(GUILD, ana.id, listing.key, 60)
     with sqlite3.connect(tmp_path / "bot.db") as connection:
         connection.execute("UPDATE housing_leases SET status = 'impago', tenant = 'familia'")
-    panel = await open_panel(cog, ana, guild_with(ana))
+        # Un piso vacío con tres candidatos: la pantalla con más botones de la fase 2.
+        connection.execute(
+            "UPDATE housing_leases SET status = 'vacio', tenant = NULL, pick = 'yo' "
+            "WHERE listing = 'vegueta_edificio'"
+        )
+        for tenant in ("medico", "abuela", "familia"):
+            connection.execute(
+                "INSERT INTO housing_candidates (guild_id, listing, tenant, until) "
+                "VALUES (?, 'vegueta_edificio', ?, '2026-12-31')",
+                (GUILD, tenant),
+            )
+    for listing in LISTINGS[:6]:
+        await cog.service.create_auction(GUILD, ana.id, listing.key, 10, 1_000)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        for event in ("averia", "humedades", "vecino"):
+            connection.execute(
+                "INSERT INTO housing_decisions (guild_id, listing, event, cost, day, until) "
+                "VALUES (?, 'vegueta_edificio', ?, 99999, '2026-10-14', '2026-10-16')",
+                (GUILD, event),
+            )
+    # Una junta con cuatro votaciones abiertas (la pantalla con más botones de la fase 6).
+    bea = member(20, "Bea")
+    await cog.economy.repository.apply(GUILD, bea.id, [LedgerEntry(10**9, "prueba")])
+    await cog.service.buy(GUILD, ana.id, "vegueta_edificio", 60)
+    await cog.service.buy(GUILD, bea.id, "vegueta_edificio", 40)
+    for kind, value in (("renta", "mercado"), ("seguro", "1"), ("eleccion", "gestora"),
+                        ("venta", "")):  # fmt: skip
+        await cog.service.propose(GUILD, ana.id, "vegueta_edificio", kind, value)
+    panel = await open_panel(cog, ana, guild_with(ana, bea))
     await panel.refresh()
     for screen, pending in ((MAPA, None), (BARRIO, None), (FICHA, None), (CARTERA, None),
-                            (CAJA, (False, 10)), (CAJA, (True, 10)), (VPO, None)):  # fmt: skip
+                            (CAJA, (False, 10)), (CAJA, (True, 10)), (VPO, None),
+                            (GESTION, None), (CANDIDATOS, None), ("subastas", None),
+                            ("reformas", None), ("imprevistos", None), ("resenas", None),
+                            ("junta", None)):  # fmt: skip
         panel.screen, panel.pending, panel.done = screen, pending, None
         panel.barrio, panel.listing = "vegueta", "vegueta_edificio"
         panel.rebuild()
@@ -817,3 +851,249 @@ async def test_la_obra_nueva_se_anuncia_y_apunta_el_logro_del_promotor(
     listing = (await cog.service.market(GUILD)).listing(run.promotions[0][1])
     assert listing is not None
     assert promotion_embed(listing, 1.0, "Ana").title.endswith(listing.title.split(": ")[1])
+
+
+# -- Fase 2 de la ampliación (8.1.0) ------------------------------------------------------
+
+
+async def test_gestionar_elige_inquilino_entre_candidatos_y_firma(tmp_path: Path) -> None:
+    cog, _scene, clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(5_000_000, "prueba")])
+    await cog.service.buy(GUILD, ana.id, "taco_bajo", rules.SHARES)
+    panel = await open_panel(cog, ana, guild_with(ana))
+    panel.barrio, panel.listing = "taco", "taco_bajo"
+    await panel._back_to_listing(clicked(ana, []))
+    assert "pisos:gestion" in ids(panel)
+    await panel._go_gestion(clicked(ana, []))
+    assert panel.screen == GESTION and "pisos:elegir" in ids(panel)
+    assert "pisos:seguro" in ids(panel)
+
+    events: list[str] = []
+    await panel._toggle_pick(clicked(ana, events))
+    assert events[0] == "response.defer"  # contesta antes de tocar la base de datos
+    market = await cog.service.market(GUILD)
+    assert market.leases["taco_bajo"].pick == rules.PICK_SELF
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute(
+            "INSERT INTO housing_candidates (guild_id, listing, tenant, until) "
+            "VALUES (?, 'taco_bajo', 'medico', '2026-10-17')",
+            (GUILD,),
+        )
+    await panel._go_candidates(clicked(ana, []))
+    assert panel.screen == CANDIDATOS
+    assert {"pisos:firmar:1", "pisos:descartar:1"} <= set(ids(panel))
+
+    sign = clicked(ana, [], custom_id="pisos:firmar:1")
+    await panel._sign(sign)
+    lease = (await cog.service.market(GUILD)).leases["taco_bajo"]
+    assert lease.status == rules.RENTED and lease.tenant == "medico"
+    assert panel.screen == FICHA
+
+
+async def test_el_seguro_se_contrata_con_dos_clics(tmp_path: Path) -> None:
+    cog, _scene, _clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(5_000_000, "prueba")])
+    await cog.service.buy(GUILD, ana.id, "taco_bajo", rules.SHARES)
+    panel = await open_panel(cog, ana, guild_with(ana))
+    panel.listing = "taco_bajo"
+    await panel._go_gestion(clicked(ana, []))
+    await panel._arm(clicked(ana, [], custom_id="pisos:seguro"))
+    assert "pisos:seguro:si" in ids(panel)
+    await panel._toggle_insurance(clicked(ana, []))
+    assert (await cog.service.market(GUILD)).leases["taco_bajo"].insured
+
+
+async def test_desahuciar_cobra_el_abogado_y_sin_dinero_avisa(tmp_path: Path) -> None:
+    cog, _scene, _clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(5_000_000, "prueba")])
+    await cog.service.buy(GUILD, ana.id, "taco_bajo", rules.SHARES)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute(
+            "UPDATE housing_leases SET status = 'impago', tenant = 'rider', rent = 3000, unpaid = 3"
+        )
+    panel = await open_panel(cog, ana, guild_with(ana))
+    panel.listing, panel.screen = "taco_bajo", FICHA
+    await panel.refresh()
+    balance = await cog.economy.balance(GUILD, ana.id)
+    press = clicked(ana, [])
+    await panel._evict(press)
+    fee = rules.eviction_fee(3_000)
+    assert await cog.economy.balance(GUILD, ana.id) == balance - fee - round(
+        fee * rules.SERVICES_IGIC
+    )
+    assert (await cog.service.market(GUILD)).leases["taco_bajo"].status == rules.EVICTING
+
+    # Otro piso, sin dinero para el abogado: avisa y no pide nada.
+    await cog.service.buy(GUILD, ana.id, "taco_trastero", rules.SHARES)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute(
+            "UPDATE housing_leases SET status = 'okupa' WHERE listing = 'taco_trastero'"
+        )
+    left = await cog.economy.balance(GUILD, ana.id)
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(-left, "prueba")])
+    panel.listing = "taco_trastero"
+    await panel.refresh()
+    broke = clicked(ana, [])
+    await panel._evict(broke)
+    text = " ".join(str(c) for c in broke.followup.send.await_args_list)
+    assert "abogado" in text
+    assert (await cog.service.market(GUILD)).leases["taco_trastero"].status == rules.SQUATTED
+
+
+def test_las_noticias_de_barrio_salen_en_un_mensaje() -> None:
+    embed = news_embed([("taco", "fabrica"), ("canteras", "bandera_azul")])
+    assert "Taco" in embed.description and "Las Canteras" in embed.description
+    assert "fábrica" in embed.description
+
+
+# -- Fase 3 de la ampliación (8.2.0) ------------------------------------------------------
+
+
+async def test_vender_a_un_miembro_respeta_el_derecho_preferente(tmp_path: Path) -> None:
+    from bot.cogs.pisos import PREFERENCE_SECONDS, MemberSaleOffer
+
+    cog, _scene, clock = await make(tmp_path)
+    ana, bea, carol = member(10, "Ana"), member(20, "Bea"), member(30, "Carol")
+    for user in (ana, bea, carol):
+        user.mention = f"<@{user.id}>"
+        await cog.economy.repository.apply(GUILD, user.id, [LedgerEntry(10_000_000, "prueba")])
+    await cog.service.buy(GUILD, ana.id, "taco_bajo", 60)
+    await cog.service.buy(GUILD, carol.id, "taco_bajo", 40)
+    guild = guild_with(ana, bea, carol)
+    panel = await open_panel(cog, ana, guild)
+    panel.listing = "taco_bajo"
+    await panel.choose_buyer(clicked(ana, []), 60, 300_000)
+    assert "pisos:comprador" in ids(panel)
+    pick = clicked(ana, [], values=[str(bea.id)])
+    await panel._pick_buyer(pick)
+    offer = pick.followup.send.await_args.kwargs["view"]
+    assert isinstance(offer, MemberSaleOffer)
+    assert [m.id for m in offer.preferred] == [carol.id]  # retracto de la copropietaria
+
+    early = clicked(bea, [])
+    await offer.cash.callback(early)  # type: ignore[attr-defined]
+    early.response.send_message.assert_awaited_once()  # Bea tiene que esperar
+    assert (await cog.service.market(GUILD)).shares_of("taco_bajo")[ana.id] == 60
+
+    clock.now += PREFERENCE_SECONDS + 1
+    buy = clicked(bea, [])
+    await offer.cash.callback(buy)  # type: ignore[attr-defined]
+    market = await cog.service.market(GUILD)
+    assert market.shares_of("taco_bajo") == {carol.id: 40, bea.id: 60}
+    assert offer.is_finished()
+
+
+async def test_subastar_pujar_y_cerrar_desde_el_panel(tmp_path: Path) -> None:
+    from bot.cogs.pisos import SUBASTAS
+
+    cog, _scene, clock = await make(tmp_path)
+    ana, bea = member(10, "Ana"), member(20, "Bea")
+    for user in (ana, bea):
+        await cog.economy.repository.apply(GUILD, user.id, [LedgerEntry(10_000_000, "prueba")])
+    await cog.service.buy(GUILD, ana.id, "taco_bajo", rules.SHARES)
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.name = "chat-general"
+    channel.send = AsyncMock()
+    guild = guild_with(ana, bea)
+    guild.text_channels = [channel]
+    cog.bot.get_guild = lambda _id: guild
+    panel = await open_panel(cog, ana, guild)
+    panel.listing = "taco_bajo"
+    await panel.refresh()
+    await panel.open_auction(clicked(ana, []), 100, 50_000)
+    assert "Subasta" in channel.send.await_args.kwargs["embed"].title
+    (auction,) = (await cog.service.market(GUILD)).auctions
+
+    other = await open_panel(cog, bea, guild)
+    await other._go_auctions(clicked(bea, []))
+    assert other.screen == SUBASTAS and "pisos:pujar" in ids(other)
+    events: list[str] = []
+    await other.place_bid(clicked(bea, events), auction.id, 60_000)
+    assert events[0] == "response.defer"
+    assert (await cog.service.market(GUILD)).auctions[0].best_bidder == bea.id
+
+    clock.now = auction.ends_at + 1
+    run = await cog.close_auctions(GUILD)
+    assert run is not None and run.results[0].winner == bea.id
+    assert "Fin de la subasta" in channel.send.await_args.kwargs["embed"].title
+    assert (await cog.service.market(GUILD)).shares_of("taco_bajo") == {bea.id: rules.SHARES}
+
+
+# -- Fase 4 de la ampliación (8.3.0) ------------------------------------------------------
+
+
+async def test_reformar_con_dos_clics_y_decidir_un_imprevisto(tmp_path: Path) -> None:
+    from bot.cogs.pisos import IMPREVISTOS, REFORMAS
+
+    cog, _scene, _clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(10_000_000, "prueba")])
+    await cog.service.buy(GUILD, ana.id, "taco_bajo", rules.SHARES)
+    panel = await open_panel(cog, ana, guild_with(ana))
+    panel.listing = "taco_bajo"
+    await panel._go_gestion(clicked(ana, []))
+    assert "pisos:reformas" in ids(panel)
+    await panel._go_reforms(clicked(ana, []))
+    assert panel.screen == REFORMAS and "pisos:reforma:pintura" in ids(panel)
+    await panel._arm(clicked(ana, [], custom_id="pisos:reforma:pintura"))
+    assert "pisos:reforma:pintura:si" in ids(panel)
+    await panel._reform(clicked(ana, [], custom_id="pisos:reforma:pintura:si"))
+    market = await cog.service.market(GUILD)
+    assert market.leases["taco_bajo"].status == rules.OBRAS
+    assert "pintura" in market.reforms["taco_bajo"]
+
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute(
+            "INSERT INTO housing_decisions (guild_id, listing, event, cost, day, until) "
+            "VALUES (?, 'taco_bajo', 'averia', 3000, '2026-10-14', '2026-10-16')",
+            (GUILD,),
+        )
+    await panel._back_to_listing(clicked(ana, []))
+    assert "pisos:imprevistos" in ids(panel)
+    await panel._go_decisions(clicked(ana, []))
+    assert panel.screen == IMPREVISTOS
+    (decision,) = (await cog.service.market(GUILD)).decisions["taco_bajo"]
+    await panel._decide(clicked(ana, [], custom_id=f"pisos:decidir:{decision.id}:cunado"))
+    (decision,) = (await cog.service.market(GUILD)).decisions["taco_bajo"]
+    assert decision.choice == "cunado"
+
+
+# -- Fase 6 de la ampliación (8.5.0) ------------------------------------------------------
+
+
+async def test_proponer_y_votar_en_la_junta_desde_el_panel(tmp_path: Path) -> None:
+    from bot.cogs.pisos import JUNTA
+
+    cog, _scene, _clock = await make(tmp_path)
+    ana, bea = member(10, "Ana"), member(20, "Bea")
+    for who in (ana, bea):
+        await cog.economy.repository.apply(GUILD, who.id, [LedgerEntry(10_000_000, "prueba")])
+    await cog.service.buy(GUILD, ana.id, "taco_bajo", 60)
+    await cog.service.buy(GUILD, bea.id, "taco_bajo", 40)
+    guild = guild_with(ana, bea)
+    panel = await open_panel(cog, ana, guild)
+    panel.listing = "taco_bajo"
+    await panel._go_gestion(clicked(ana, []))
+    assert "pisos:junta" in ids(panel)
+    await panel._go_junta(clicked(ana, []))
+    assert panel.screen == JUNTA and "pisos:proponer" in ids(panel)
+    await panel._propose(clicked(ana, [], values=["renta:mercado"]))
+    (vote,) = (await cog.service.market(GUILD)).votes
+    assert f"pisos:junta:si:{vote.id}" in ids(panel)
+    other = await open_panel(cog, bea, guild)
+    other.listing = "taco_bajo"
+    await other._go_junta(clicked(bea, []))
+    await other._vote(clicked(bea, [], custom_id=f"pisos:junta:no:{vote.id}"))
+    market = await cog.service.market(GUILD)
+    assert market.votes == () and market.leases["taco_bajo"].level == "mercado"
+    # La acción de división, con dos clics: el inmueble entero sale a subasta.
+    cog.announce_auction = AsyncMock()  # type: ignore[method-assign]
+    await panel._go_junta(clicked(ana, []))
+    await panel._arm(clicked(ana, [], custom_id="pisos:division"))
+    assert "pisos:division:si" in ids(panel)
+    await panel._divide(clicked(ana, [], custom_id="pisos:division:si"))
+    assert (await cog.service.market(GUILD)).division_of("taco_bajo") is not None
+    assert "pisos:proponer" not in ids(panel)

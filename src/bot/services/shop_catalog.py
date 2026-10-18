@@ -150,6 +150,12 @@ AISLES: tuple[Aisle, ...] = (
         "El trabajo: lo que te llevas a `pala` para currar mejor.",
     ),
     Aisle(
+        "vacacional",
+        "🛋️",
+        "Muebles del vacacional",
+        "Lo que pide un turista: amueblar la vivienda vacacional de `pisos`.",
+    ),
+    Aisle(
         "porra",
         "🎫",
         "Peña de la porra",
@@ -866,7 +872,8 @@ CATALOG: tuple[CatalogEntry, ...] = (
        "y el examen se aprueba solo."),
     _t("seguro_rc_perro", "animales", "📋", "Seguro de responsabilidad civil canino", 1_500,
        "Lo pide la Ley 7/2023 para los perros. Cubre mordiscos y destrozos. Los seguros "
-       "están exentos de IGIC (art. 10.1.16 de la Ley 20/1991).", igic="cero"),
+       "no llevan IGIC, sino el 8 % del Impuesto sobre las Primas de Seguros (art. 12 de "
+       "la Ley 13/1996).", igic="primas"),
     # 🎖️ Títulos (se lucen junto al nombre) y caprichos caros, por pasillo de tema --------
     _title("titulo_eso", "ventanilla", "🎓", "ESO aprobada", 2_000,
        "Con el sello del instituto y una mancha de Tipp-Ex. Es una tasa académica, no una "
@@ -955,9 +962,9 @@ CATALOG: tuple[CatalogEntry, ...] = (
        "Se te ve desde la caseta, así que el encargado te avisa antes de liarla. En "
        "`pala`, obra: un fallo gratis por turno.", per_user=1),
     _t("seguro_rc", "curro", "📄", "Seguro de responsabilidad civil", 8_000,
-       "Para cuando la pala encuentra la fibra de todo el barrio. Los seguros están "
-       "exentos de IGIC (art. 10.1.16 de la Ley 20/1991). En `pala`, cavar: romper "
-       "algo no resta.", igic="cero", per_user=1),
+       "Para cuando la pala encuentra la fibra de todo el barrio. Los seguros no llevan "
+       "IGIC, sino el 8 % de primas (art. 12 de la Ley 13/1996). En `pala`, cavar: romper "
+       "algo no resta.", igic="primas", per_user=1),
     _t("zuecos", "curro", "👞", "Zuecos antideslizantes", 4_000,
        "Suela de cocina profesional: el suelo puede estar como una pista de patinaje. "
        "En `pala`, hostelería: +15 % de tiempo.", per_user=1),
@@ -1030,6 +1037,37 @@ CATALOG: tuple[CatalogEntry, ...] = (
     _t("cana_tapa", "porra", "🍺", "Caña con tapa de ensaladilla", 250,
        "Lo que se pide mientras se espera la jugada de otro. La tapa se la puedes dar a "
        "tu mascota.", food=True),
+    # 🛋️ Muebles del vacacional (efectos en `bot.services.housing_furniture`) -----------
+    _t("mueble_smart_tv", "vacacional", "📺", "Smart TV", 45_000,
+       "Con todas las plataformas y la contraseña pegada con celo. En `pisos`: sube la nota de "
+       "las reseñas de tus viviendas vacacionales.", per_user=1),
+    _t("mueble_aire", "vacacional", "❄️", "Aire acondicionado", 60_000,
+       "Lo primero que preguntan en agosto. En `pisos`: sube bastante la nota de las reseñas "
+       "de tus vacacionales.", per_user=1),
+    _t("mueble_cafetera", "vacacional", "☕", "Cafetera de cápsulas", 9_000,
+       "Con una caja de cápsulas de bienvenida. En `pisos`: sube la nota de las reseñas de tus "
+       "vacacionales.", per_user=1),
+    _t("mueble_colchon", "vacacional", "🛏️", "Colchón viscoelástico", 50_000,
+       "Lo que más se nota en una reseña, aunque nadie lo diga. En `pisos`: sube bastante la "
+       "nota de las reseñas de tus vacacionales.", per_user=1),
+    _t("mueble_fibra", "vacacional", "📶", "Fibra de 1 Gb", 12_000,
+       "Router nuevo, contraseña sin faltas. En `pisos`: sube la nota de las reseñas y atrae "
+       "más nómadas digitales a tus pisos.", per_user=1),
+    _t("mueble_playa", "vacacional", "⛱️", "Kit de playa", 8_000,
+       "Sombrilla, nevera y dos sillas plegables. En `pisos`: sube la nota de tus "
+       "vacacionales, sobre todo en los barrios de playa.", per_user=1),
+    _t("mueble_cuna", "vacacional", "🍼", "Cuna y trona", 15_000,
+       "Para quien viaja con críos. En `pisos`: sube la nota de tus vacacionales, sobre todo "
+       "con las familias.", per_user=1),
+    _t("mueble_barbacoa", "vacacional", "🍖", "Barbacoa", 25_000,
+       "De carbón, con su saco. En `pisos`: sube la nota de tus vacacionales, sobre todo en "
+       "el campo y en los barrios de lujo.", per_user=1),
+    _t("mueble_cerradura", "vacacional", "🔐", "Cerradura inteligente", 20_000,
+       "Entran con un código y no hay que esperar con las llaves. En `pisos`: sube la nota de "
+       "las reseñas de tus vacacionales.", per_user=1),
+    _t("mueble_juegos", "vacacional", "🎲", "Juegos de mesa", 3_000,
+       "Para las tardes de calima. En `pisos`: sube un poco la nota de las reseñas de tus "
+       "vacacionales.", per_user=1),
     # 🏠 Detalles para la familia (efectos en `bot.services.work_catalog.GIFTS`) ---------
     _t("bombones_mama", "familia", "🍫", "Caja de bombones", 1_000,
        "Los de la caja con lazo, para quedar bien sin pensar mucho. En `pala`: +6 de "
@@ -1085,6 +1123,16 @@ REVISED_PRICES: dict[str, int] = {
     "skin_tapete_israel": 400_000,
     # Pasó a ser el tapete más caro del casino, con tres copias numeradas.
     "skin_tapete_epstein": 50_000,
+}
+
+#: Artículos de serie que han cambiado de tipo de impuesto cuando ya estaban en los
+#: servidores, con el tipo que tenían antes (`taxes.IGIC_RATES`). Como con los precios,
+#: `ShopRepository.stock_catalog` les pone el de `CATALOG` (y su descripción) si aún
+#: tienen el de antes: si un administrador lo cambió a mano, se respeta.
+REVISED_TAXES: dict[str, str] = {
+    # 8.0.0: los seguros pagan el Impuesto sobre las Primas de Seguros, no IGIC.
+    "seguro_rc_perro": "cero",
+    "seguro_rc": "cero",
 }
 
 

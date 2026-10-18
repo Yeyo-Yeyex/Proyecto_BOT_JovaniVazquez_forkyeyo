@@ -59,6 +59,8 @@ TAX_KINDS: tuple[TaxKind, ...] = (
             "art. 17 LIRPF"),
     TaxKind("irpf_otros", "🎁", "IRPF de premios y otros ingresos", "IRPF otros", Group.DIRECT,
             "art. 99 LIRPF"),
+    TaxKind("irpf_renta", "📑", "IRPF de la declaración del lunes", "IRPF renta",
+            Group.DIRECT, "arts. 96 y 97 LIRPF"),
     TaxKind("irpf_casino", "🎰", "IRPF del casino", "IRPF casino", Group.DIRECT,
             "art. 33.5.d LIRPF"),
     TaxKind("irpf_ahorro", "🏦", "IRPF del ahorro (intereses y plusvalías)", "IRPF ahorro",
@@ -70,11 +72,14 @@ TAX_KINDS: tuple[TaxKind, ...] = (
             Group.DIRECT, "LGSS"),
     TaxKind("patrimonio", "🏰", "Impuesto sobre el Patrimonio", "Patrim.", Group.DIRECT,
             "Ley 19/1991"),
+    TaxKind("deudas", "⚖️", "Deudas con Hacienda cobradas después", "Deudas", Group.DIRECT,
+            "art. 169 LGT"),
     TaxKind("grandes_fortunas", "💎", "Impuesto de Solidaridad de las Grandes Fortunas",
             "Grandes F.", Group.DIRECT, "art. 3 Ley 38/2022"),
     TaxKind("loteria", "🎟️", "Gravamen especial de loterías", "Lotería", Group.DIRECT,
             "DA 33ª LIRPF"),
-    TaxKind("igic", "🛒", "IGIC de las compras", "IGIC", Group.INDIRECT, "Ley 4/2012"),
+    TaxKind("igic", "🛒", "IGIC de las compras (y primas de seguros)", "IGIC", Group.INDIRECT,
+            "Ley 4/2012 y art. 12 Ley 13/1996"),
     TaxKind("ss_empresa", "🏢", "Seguridad Social que paga la empresa", "SS empresa",
             Group.INDIRECT, "LGSS"),
     TaxKind("itp", "🧺", "Transmisiones Patrimoniales (Rastro)", "ITP", Group.INDIRECT,
@@ -83,8 +88,10 @@ TAX_KINDS: tuple[TaxKind, ...] = (
             Group.INDIRECT, "art. 31 DLeg 1/2009 de Canarias"),
     TaxKind("iaj", "🎫", "Impuesto sobre Actividades de Juego (porras)", "IAJ",
             Group.INDIRECT, "art. 48 Ley 13/2011"),
-    TaxKind("tasas", "🏖️", "Tasas de licencias vacacionales", "Tasas", Group.OTHER,
-            "ley canaria de vivienda vacacional"),
+    TaxKind("icio", "🏗️", "ICIO de las obras de los pisos", "ICIO", Group.INDIRECT,
+            "art. 102 RDL 2/2004"),
+    TaxKind("tasas", "🏖️", "Tasas de licencias (vacacionales y de obra)", "Tasas", Group.OTHER,
+            "Ley 6/2025 de Canarias"),
     TaxKind("multas", "🚨", "Multas de la Inspección", "Multas", Group.OTHER, "LGT"),
     TaxKind("devuelto", "📬", "Devuelto en la renta", "Devuelto", Group.REFUND,
             "art. 103 LIRPF"),
@@ -212,8 +219,12 @@ def verdict(bill: TaxBill, share: float) -> str:
 # -- Embeds de `hacienda` ------------------------------------------------------------------
 
 COLOR = discord.Color.from_rgb(170, 21, 27)
-#: Miembros que salen con su desglose en la tarjeta pública.
+#: Miembros que salen con su desglose en la tarjeta pública (menos si no caben).
 TOP_BILLS = 10
+#: Límite de Discord para todo el texto de un embed.
+EMBED_TOTAL_LIMIT = 6_000
+#: Lo que se guarda para los nombres de los campos y el «y N más» de la lista.
+FIELD_NAMES_RESERVE = 160
 _MEDALS = ("🥇", "🥈", "🥉")
 
 
@@ -264,9 +275,14 @@ def add_bill_fields(
             f"{rank} {names.get(bill.user_id, f'<@{bill.user_id}>')} · "
             f"**{format_amount(bill.total)}**\n-# {compact_line(bill)}"
         )
-    if len(paying) > TOP_BILLS:
+    # El embed entero no puede pasar de 6.000 caracteres: si no caben todos, se quitan
+    # los últimos de la lista (los que menos pagan) y se dice cuántos faltan.
+    budget = EMBED_TOTAL_LIMIT - len(embed) - FIELD_NAMES_RESERVE
+    while len(lines) > 1 and len("\n".join(lines)) > budget:
+        lines.pop()
+    if len(paying) > len(lines):
         lines.append(
-            f"-# Y {len(paying) - TOP_BILLS} más. `hacienda @miembro` para ver a cualquiera."
+            f"-# Y {len(paying) - len(lines)} más. `hacienda @miembro` para ver a cualquiera."
         )
     for i, block in enumerate(_chunks(lines)):
         embed.add_field(
@@ -282,9 +298,14 @@ HOUSING_TAXES: tuple[tuple[str, str, str, str], ...] = (
     ("ibi", "🏘️", "IBI", "art. 60 RDL 2/2004"),
     ("alquiler", "🔑", "IRPF de las rentas", "arts. 22 y 23 LIRPF"),
     ("ganancia", "📈", "IRPF de lo ganado al vender y de la SOCIMI", "arts. 33 y 66 LIRPF"),
-    ("igic", "🏖️", "IGIC de las estancias vacacionales", "art. 51 Ley 4/2012"),
-    ("licencia", "📜", "Tasas de licencias vacacionales", "ley canaria de vivienda vacacional"),
-)
+    ("igic", "🏖️", "IGIC de las estancias vacacionales", "art. 32 DLeg 1/2025 de Canarias"),
+    ("igic_gastos", "🧾", "IGIC de notaría, agencia, reparaciones y abogados",
+     "art. 32 DLeg 1/2025 de Canarias"),
+    ("ips", "🛡️", "Impuesto sobre las primas de los seguros", "art. 12 Ley 13/1996"),
+    ("icio", "🏗️", "ICIO de las reformas", "art. 102 RDL 2/2004"),
+    ("licencia_obra", "📜", "Tasas de licencias de obra", "ordenanza fiscal (tasa)"),
+    ("licencia", "📜", "Tasas de licencias vacacionales", "Ley 6/2025 de Canarias"),
+)  # fmt: skip
 
 
 def solidarity_line(filed: int, people: int, paid: int) -> str:
@@ -341,6 +362,12 @@ def add_housing_fields(
             f"{rank} {names.get(user_id, f'<@{user_id}>')} · "
             f"**{format_amount(sum(amounts.values()))}**\n-# {parts}"
         )
+    # Como en la lista de facturas: si no cabe en el embed, fuera los que menos pagan.
+    budget = EMBED_TOTAL_LIMIT - len(embed) - FIELD_NAMES_RESERVE
+    while len(lines) > 1 and len("\n".join(lines)) > budget:
+        lines.pop()
+    if len(ranked) > len(lines) and len(lines) < TOP_BILLS:
+        lines.append(f"-# Y {len(ranked) - len(lines)} caseros más.")
     for i, block in enumerate(_chunks(lines)):
         embed.add_field(
             name="Los caseros que más pagan" if i == 0 else "​", value=block, inline=False

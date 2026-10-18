@@ -1,38 +1,25 @@
-"""El año fiscal es la semana: la renta de las retenciones se reinicia cada lunes.
+"""El año fiscal es la semana: de lunes a lunes y con el tipo estable.
 
-Y la regularización única que devuelve lo retenido de más cuando la renta
-arrastraba los últimos 7 días.
+La renta de la semana se reinicia cada lunes, pero el tipo con el que se retiene no
+empieza de cero: es el de la semana anterior (la empresa retiene con el sueldo previsto,
+arts. 82 a 87 RIRPF) y sube si esta semana se gana más deprisa.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
-from bot.cogs.renta import regularization_text
-from bot.repositories.economy import EconomyRepository, LedgerEntry
-from bot.services.economy import (
-    STARTING_BALANCE,
-    STATE_ACCOUNT_ID,
-    EconomyService,
-    fiscal_window,
-)
+from bot.repositories.economy import EconomyRepository
+from bot.services.economy import STARTING_BALANCE, EconomyService, fiscal_week
 from bot.services.levels import TIMEZONE
-from bot.services.taxes import (
-    PROJECTION_WINDOW_SECONDS,
-    compute_payslip,
-    compute_withholding,
-    fiscal_to_wage,
-    gambling_day_tax,
-)
 
 GUILD = 1
 ANA = 10
 BEA = 20
 DOMINGO = datetime(2026, 10, 4, 20, tzinfo=TIMEZONE).timestamp()
 LUNES = datetime(2026, 10, 5, 10, tzinfo=TIMEZONE).timestamp()
-PREMIO = 30_000
-OLD_WINDOW = PROJECTION_WINDOW_SECONDS
+PREMIO = 300_000
 
 
 class Clock:
@@ -43,134 +30,68 @@ class Clock:
         return self.now
 
 
-async def setup(tmp_path: Path) -> tuple[EconomyService, EconomyRepository, Clock]:
+async def setup(tmp_path: Path) -> tuple[EconomyService, Clock]:
     repo = EconomyRepository(tmp_path / "bot.db", starting_balance=STARTING_BALANCE)
     await repo.initialize()
     clock = Clock(DOMINGO)
-    return EconomyService(repo, clock=clock), repo, clock
+    return EconomyService(repo, clock=clock), clock
 
 
-async def old_income(repo: EconomyRepository, user: int, gross: int, now: float) -> int:
-    """Cobra un premio como antes: con la renta de los últimos 7 días."""
-    tax, _ = await repo.credit_income(
-        GUILD,
-        user,
-        gross=gross,
-        concept="logro",
-        now=now,
-        withhold=lambda g, r: compute_withholding(g, r).tax,
-        window_seconds=OLD_WINDOW,
-    )
-    return tax
+def test_la_semana_va_de_lunes_a_lunes_en_hora_canaria() -> None:
+    week = fiscal_week(date(2026, 10, 7))
+    assert week.monday == "2026-10-05"
+    assert week.start == datetime(2026, 10, 5, tzinfo=TIMEZONE).timestamp()
+    assert week.end == datetime(2026, 10, 12, tzinfo=TIMEZONE).timestamp()
+    assert week.next_monday == "2026-10-12" and week.previous_monday == "2026-09-28"
 
 
-def test_la_ventana_empieza_el_lunes_a_medianoche() -> None:
-    assert fiscal_window(LUNES) == 10 * 3600
-    assert fiscal_window(DOMINGO) == 6 * 86_400 + 20 * 3600
+def test_la_semana_del_cambio_de_hora_dura_una_hora_mas() -> None:
+    week = fiscal_week(date(2026, 10, 25))  # el domingo 25 se atrasa la hora
+    assert week.end - week.start == 7 * 86_400 + 3_600
 
 
-async def test_lo_del_domingo_no_cuenta_el_lunes(tmp_path: Path) -> None:
-    economy, _, clock = await setup(tmp_path)
+async def test_el_lunes_se_retiene_con_el_tipo_de_la_semana_pasada(tmp_path: Path) -> None:
+    economy, clock = await setup(tmp_path)
     await economy.pay_income(GUILD, ANA, gross=PREMIO, concept="logro")
     clock.now = LUNES
 
-    ana = await economy.pay_income(GUILD, ANA, gross=PREMIO, concept="logro")
-    bea = await economy.pay_income(GUILD, BEA, gross=PREMIO, concept="logro")
+    ana = await economy.pay_income(GUILD, ANA, gross=10_000, concept="logro")
+    bea = await economy.pay_income(GUILD, BEA, gross=10_000, concept="logro")
 
-    assert ana.tax == bea.tax
+    assert bea.tax == 0  # 10.000 Y$ sueltos no llegan al mínimo
+    assert ana.tax > 0  # pero Ana venía de una semana gorda
 
 
 async def test_dentro_de_la_semana_la_retencion_sube(tmp_path: Path) -> None:
-    economy, _, clock = await setup(tmp_path)
+    economy, clock = await setup(tmp_path)
     clock.now = LUNES
     first = await economy.pay_income(GUILD, ANA, gross=PREMIO, concept="logro")
     clock.now += 86_400
 
     second = await economy.pay_income(GUILD, ANA, gross=PREMIO, concept="logro")
 
-    assert second.tax > first.tax
+    assert second.rate > first.rate
 
 
-async def test_regulariza_los_premios_cobrados_de_mas(tmp_path: Path) -> None:
-    economy, repo, clock = await setup(tmp_path)
-    await old_income(repo, ANA, PREMIO, DOMINGO)
-    overcharged = await old_income(repo, ANA, PREMIO, LUNES)
-    clock.now = LUNES + 3600
-    fair = compute_withholding(PREMIO, 0).tax
-    balance = await economy.balance(GUILD, ANA)
-    state = await economy.balance(GUILD, STATE_ACCOUNT_ID)
+async def test_lo_de_hace_dos_semanas_ya_no_cuenta(tmp_path: Path) -> None:
+    economy, clock = await setup(tmp_path)
+    await economy.pay_income(GUILD, ANA, gross=PREMIO, concept="logro")
+    clock.now = LUNES + 7 * 86_400
 
-    paid = await economy.regularize_irpf(GUILD)
+    late = await economy.pay_income(GUILD, ANA, gross=10_000, concept="logro")
 
-    assert overcharged > fair
-    assert paid == [(ANA, overcharged - fair)]
-    assert await economy.balance(GUILD, ANA) == balance + overcharged - fair
-    assert await economy.balance(GUILD, STATE_ACCOUNT_ID) == state - (overcharged - fair)
-    # Una sola vez.
-    assert await economy.regularize_irpf(GUILD) is None
+    assert late.tax == 0
 
 
-async def test_regulariza_la_nomina(tmp_path: Path) -> None:
-    economy, repo, clock = await setup(tmp_path)
-    await old_income(repo, ANA, PREMIO, DOMINGO)
-
-    def payslip_for(amount: int, recent: int):
-        return compute_payslip(amount, fiscal_to_wage(recent))
-
-    slip, _ = await repo.credit_salary(
-        GUILD,
-        ANA,
-        gross=1_700,
-        concept="pala:obra",
-        now=LUNES,
-        payslip_for=payslip_for,
-        window_seconds=OLD_WINDOW,
-    )
-    clock.now = LUNES + 3600
-
-    paid = await economy.regularize_irpf(GUILD)
-
-    assert slip.irpf > 0
-    assert paid == [(ANA, slip.irpf - compute_payslip(1_700, 0).irpf)]
-
-
-async def test_regulariza_el_casino_de_la_semana_sin_declarar(tmp_path: Path) -> None:
-    economy, repo, clock = await setup(tmp_path)
-    await old_income(repo, ANA, PREMIO, DOMINGO)
-    await repo.apply(GUILD, ANA, [LedgerEntry(10_000, "prueba")])
-    settled = await repo.settle_gamble(
-        GUILD,
-        ANA,
-        [LedgerEntry(-1_000, "slots:apuesta"), LedgerEntry(1_000 + PREMIO, "slots:premio")],
-        day="2026-10-05",
-        now=LUNES,
-        adjust_tax=True,
-        day_tax=gambling_day_tax,
-        window_seconds=OLD_WINDOW,
-    )
-    clock.now = LUNES + 3600
-
-    paid = await economy.regularize_irpf(GUILD)
-
-    fair = gambling_day_tax(PREMIO, 0)
-    assert settled.day_withheld > fair
-    assert paid == [(ANA, settled.day_withheld - fair)]
-
-
-async def test_no_devuelve_nada_si_no_se_cobro_de_mas(tmp_path: Path) -> None:
-    economy, _, clock = await setup(tmp_path)
+async def test_cerrada_la_semana_el_suelo_es_el_tipo_de_su_declaracion(tmp_path: Path) -> None:
+    economy, clock = await setup(tmp_path)
     clock.now = LUNES
+    await economy.close_irpf_weeks(GUILD)  # el servidor entra en la 8.0.0 esta semana
     await economy.pay_income(GUILD, ANA, gross=PREMIO, concept="logro")
-    await economy.pay_income(GUILD, ANA, gross=PREMIO, concept="logro")
+    clock.now = LUNES + 7 * 86_400
+    ((_week, run),) = await economy.close_irpf_weeks(GUILD)
+    (filed,) = run.returns
 
-    assert await economy.regularize_irpf(GUILD) == []
+    after = await economy.pay_income(GUILD, ANA, gross=10_000, concept="logro")
 
-
-def test_el_anuncio_nombra_y_resume() -> None:
-    paid = [(i, 100) for i in range(20)]
-
-    text = regularization_text(paid, {0: "Ana"})
-
-    assert "2.000" in text
-    assert "Ana: +" in text
-    assert "Y 5 más." in text
+    assert after.rate == filed.rate > 0
