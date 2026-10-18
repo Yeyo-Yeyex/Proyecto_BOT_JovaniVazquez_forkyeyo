@@ -107,8 +107,6 @@ REACTION_MEMORY = 5_000
 LOSING_STREAK = 5
 #: Personas en un canal de voz para que quien lo abrió vacío cuente como anfitrión.
 VOICE_FULL_ROOM = 5
-#: Logros que se listan en un aviso; si se desbloquean más a la vez, se resumen.
-ANNOUNCE_LIMIT = 8
 #: Segundos que la vista de logros sigue respondiendo.
 VIEW_TIMEOUT = 300
 RANKING_SIZE = 10
@@ -154,12 +152,12 @@ def with_unlocked_count(stats: Mapping[str, int], unlocked: Mapping[str, float])
     return full
 
 
-def unlock_embed(
+def unlock_embeds(
     name: str,
     avatar_url: str | None,
     achievement_ids: Sequence[str],
     income: IncomeResult | None,
-) -> discord.Embed:
+) -> list[discord.Embed]:
     """Aviso público de logros recién desbloqueados, con el premio cobrado.
 
     Compacto para no llenar el chat: el trofeo va junto al nombre y el premio, con
@@ -169,10 +167,11 @@ def unlock_embed(
         Diego · 🏆 ¡Logro desbloqueado!
         ▫️ **Cinco veces** · Raro · 🪙 **+162 Y$** · 🐶 −38 Y$ (19,00 %)
         -# Cobra en ×5 o más.
+
+    Lista todos los logros; si no caben en un embed, siguen en los siguientes.
     """
     achievements = [BY_ID[i] for i in achievement_ids if i in BY_ID]
     best = max(achievements, key=lambda a: list(Rarity).index(a.rarity))
-    shown = achievements[:ANNOUNCE_LIMIT]
     headline = (
         "🏆 ¡Logro desbloqueado!"
         if len(achievements) == 1
@@ -190,18 +189,17 @@ def unlock_embed(
         ]
     else:
         lines = [
-            f"{a.rarity.emoji} **{a.name}** · {a.rarity.label}\n-# {a.description}" for a in shown
+            f"{a.rarity.emoji} **{a.name}** · {a.rarity.label}\n-# {a.description}"
+            for a in achievements
         ]
-        if len(achievements) > ANNOUNCE_LIMIT:
-            lines.append(f"-# …y {len(achievements) - ANNOUNCE_LIMIT} más. Míralos en `perfil`.")
         if money:
             lines.append(money)
-    lines += [f"\n{a.story}" for a in shown if a.story]
-    embed = discord.Embed(
-        description="\n".join(lines), color=discord.Color.from_rgb(*best.rarity.rgb)
-    )
-    embed.set_author(name=f"{name} · {headline}", icon_url=avatar_url)
-    return embed
+    lines += [f"\n{a.story}" for a in achievements if a.story]
+    color = discord.Color.from_rgb(*best.rarity.rgb)
+    # Páginas de 3.800 caracteres: el último embed deja sitio a las skins y la mascota.
+    embeds = [discord.Embed(description="\n".join(page), color=color) for page in paginate(lines)]
+    embeds[0].set_author(name=f"{name} · {headline}", icon_url=avatar_url)
+    return embeds
 
 
 def _achievement_line(
@@ -950,14 +948,17 @@ class Achievements(commands.Cog):
         member = guild.get_member(user_id) if guild is not None else None
         name = member.display_name if member is not None else f"Miembro {user_id}"
         avatar = member.display_avatar.url if member is not None else None
-        embed = unlock_embed(name, avatar, ids, income)
+        embeds = unlock_embeds(name, avatar, ids, income)
+        embed = embeds[-1]
         if skins:
             gifts = ", ".join(f"**{skin.label}**" for skin in skins)
             embed.description = f"{embed.description}\n🎨 De regalo, en la mochila: {gifts}."
         if pet := await mascotas.cameo(self.bot, guild_id, user_id, Moment(Event.ACHIEVEMENT)):
             embed.description = f"{embed.description}\n{pet}"
         try:
-            await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+            # Uno por mensaje: Discord no deja más de 6.000 caracteres entre todos sus embeds.
+            for embed in embeds:
+                await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
         except (discord.Forbidden, discord.HTTPException):
             logger.warning("No se pudo anunciar un logro en el servidor %s", guild_id)
 

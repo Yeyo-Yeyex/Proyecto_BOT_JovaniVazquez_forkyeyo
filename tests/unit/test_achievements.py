@@ -20,7 +20,7 @@ from bot.cogs.achievements import (
     format_value,
     group_embed,
     summary_embed,
-    unlock_embed,
+    unlock_embeds,
 )
 from bot.repositories.achievements import AchievementRepository, Profile
 from bot.repositories.economy import EconomyRepository
@@ -1417,17 +1417,28 @@ def test_formato_de_horas_y_dinero() -> None:
     assert format_value(1_234) == "1.234"
 
 
-def test_aviso_de_muchos_logros_se_resume() -> None:
+def test_aviso_de_muchos_logros_los_lista_todos() -> None:
     ids = [a.id for a in AVAILABLE[:12]]
-    embed = unlock_embed("Diego", None, ids, None)
+    [embed] = unlock_embeds("Diego", None, ids, None)
     assert "12 logros" in (embed.author.name or "")
-    assert "y 4 más" in (embed.description or "")
+    assert all(f"**{a.name}**" in (embed.description or "") for a in AVAILABLE[:12])
+
+
+def test_aviso_que_no_cabe_sigue_en_mas_embeds() -> None:
+    chosen = AVAILABLE[:200]
+    embeds = unlock_embeds("Diego", None, [a.id for a in chosen], None)
+    assert len(embeds) > 1
+    assert "200 logros" in (embeds[0].author.name or "")
+    assert all(e.author.name is None for e in embeds[1:])
+    assert all(len(e.description or "") <= 4_096 for e in embeds)
+    text = "\n".join(e.description or "" for e in embeds)
+    assert all(f"**{a.name}**" in text for a in chosen)
 
 
 def test_aviso_de_un_logro_cabe_en_tres_lineas() -> None:
     achievement = next(a for a in AVAILABLE if not a.story and a.rarity is Rarity.COMMON)
     income = IncomeResult(gross=50, tax=0, rate=0.0, balance=1_050)
-    embed = unlock_embed("Diego", None, [achievement.id], income)
+    [embed] = unlock_embeds("Diego", None, [achievement.id], income)
     assert embed.author.name == "Diego · 🏆 ¡Logro desbloqueado!"
     assert embed.title is None
     lines = (embed.description or "").splitlines()
@@ -1440,7 +1451,7 @@ def test_aviso_de_un_logro_cabe_en_tres_lineas() -> None:
 def test_aviso_con_retencion_dice_cuanto_se_lleva_hacienda() -> None:
     achievement = next(a for a in AVAILABLE if not a.story and a.rarity is Rarity.RARE)
     income = IncomeResult(gross=200, tax=38, rate=0.19, balance=5_162)
-    description = unlock_embed("Diego", None, [achievement.id], income).description or ""
+    description = unlock_embeds("Diego", None, [achievement.id], income)[0].description or ""
     assert "🪙 **+162 Y$** · 🐶 −38 Y$ (19,00 %)" in description.splitlines()[0]
     assert description.splitlines()[1] == f"-# {achievement.description}"
 
