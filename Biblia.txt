@@ -253,7 +253,9 @@ Criterios para dar una parte por buena:
 - Lo que informa (reglas, cifras, qué hacer) se entiende sin conocer ninguna referencia.
 - Ninguna broma sale repetida con otras palabras.
 
-Herramienta: `docs/auditoria_frases.py` cuenta coletillas, repeticiones y fuentes. Hoy sus `SOURCES` solo cuentan fuentes políticas, así que la primera tarea de la auditoría es añadir las demás familias de la lista de fuentes y una medida de qué parte de cada lista de frases no lleva ninguna referencia, para poder comparar antes y después.
+Herramienta: `docs/auditoria_frases.py` cuenta coletillas, repeticiones y fuentes, y con `--parte cogs/tower` saca la tabla de una parte: por lista, la parte de frases normales (la meta es la mitad), las comparaciones «como…», lo boricua que no es de Jovani y las familias de temas (`FAMILIES`). Se pasa antes y después de revisar cada parte.
+
+**El contenido se queda.** La auditoría cambia textos, nunca quita contenido: el tapete monoestrellado, el coquí, el caballo Wepa Boricua o el nivel del café de Puerto Rico siguen; solo cambian las frases y nombres que los rodean.
 
 ### Logros
 

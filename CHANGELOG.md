@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.14 · 2026-10-18
+
+- Interno: la auditoría de frases mide temas, frases normales y lo boricua por partes
+
 ### 7.25.13 · 2026-10-18
 
 - Logros: fuera el «¡Wepa!» y el «¡Ay, bendito!», y más frases de Jovani en los nombres

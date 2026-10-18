@@ -11,11 +11,16 @@ también las que van dentro de un diccionario. Para cada una mide:
   otro nombre de variable).
 - **Fuentes:** cuántas veces sale cada fuente de ironía de la Biblia en todo el
   bot, para ver cuáles se quedan cortas.
+- **Por partes** (`--parte`): por lista, qué parte de las frases parece normal (sin
+  tema, coletilla ni comparación; la Biblia pide la mitad), las comparaciones «como…»,
+  lo boricua que no es de Jovani y la familia de temas que más sale. Sirve para
+  comparar una parte antes y después de revisarla.
 
 Uso, desde la raíz del repositorio::
 
     PYTHONIOENCODING=utf-8 python docs/auditoria_frases.py          # informe
     PYTHONIOENCODING=utf-8 python docs/auditoria_frases.py --check  # sale con 1 si hay avisos
+    PYTHONIOENCODING=utf-8 python docs/auditoria_frases.py --parte cogs/tower  # tabla de una parte
 
 Solo lee el código; no cambia nada. El resultado comentado está en
 `docs/auditoria-frases.md`.
@@ -71,6 +76,44 @@ SOURCES: dict[str, str] = {
     "Epstein": r"epstein",
     "Charlie Kirk": r"kirk|prove me wrong",
 }
+#: Familias de temas de la Biblia («El campo de donde coger es amplio»), para ver el reparto
+#: de cada parte. La política junta todas las `SOURCES`. Las expresiones son pistas, no un
+#: detector perfecto: una broma sin palabra clave cuenta como frase normal.
+FAMILIES: dict[str, str] = {
+    "Política": "|".join(SOURCES.values())
+    + r"|congreso|senado|\bboe\b|\buco\b|\bcis\b|tezanos|moci[oó]n|esca[ñn]o|decreto|ministr"
+    r"|diputad|gobierno|elecci|presupuest|legislatura|oposici[oó]n|hacienda|irpf|rescate"
+    r"|bankia|indult|investidura|mayor[ií]a absoluta|next generation|fondos europeos",
+    "Cine y series": r"pel[ií]cula|\bcine\b|serie\b|netflix|hollywood|ocean'?s|rain man"
+    r"|rocky|titanic"
+    r"|star wars|jedi|matrix|terminator|james bond|\b007\b|casino royale|harry potter"
+    r"|juego de tronos|poniente|daenerys|smaug|señor de los anillos|hobbit|sauron|simpson"
+    r"|friends|breaking bad|casa de papel|aída|cuéntame|forrest gump|e\.t\.|regreso al futuro",
+    "Cultura popular": r"operaci[oó]n triunfo|gran hermano|pasapalabra|un, dos, tres|chiquito"
+    r"|mortadelo|eurovisi[oó]n|telecinco|la 1\b|telediario|jes[uú]s v[aá]zquez|ana rosa"
+    r"|ibai|tiktok|meme|influencer|bruja aver[ií]a|club de la comedia|ikea|mercadona",
+    "Cultura friki": r"anime|manga|dragon ball|9\.000|naruto|pok[eé]mon|one piece|marvel|\bdc\b"
+    r"|superh[eé]roe|dungeons|dragones y mazmorras|tolkien|pac-?man|tetris|street fighter"
+    r"|super mario|gta\b|halc[oó]n milenario|hal 9000|tamagotchi|highlander|doctor who",
+    "Deporte": r"f[uú]tbol|\bliga\b|\bvar\b|cl[aá]sico|real madrid|bar[cç]a|bernab[eé]u|champions"
+    r"|mundial|alonso|nadal|alcaraz|\bvuelta\b|tour\b|p[aá]del|gimnasio|lakers|jordan"
+    r"|tyson|bruce lee|leicester|poulidor|rugby|boxeo",
+    "Vida cotidiana": r"alquiler|casero|renfe|metro\b|cola\b|cuñad|abuela|suegra|vecino|whatsapp"
+    r"|lunes|jefe|oficina|siesta|rebajas|black friday|playa|benidorm|wifi|m[oó]vil|bar\b"
+    r"|ca[ñn]a\b|tabaco|psic[oó]log|ghosting|boda|navidad|nochevieja|reyes magos",
+    "Comida": r"tortilla|paella|churro|kebab|caf[eé]|barraquito|papas|mojo|gofio|jam[oó]n|pipas"
+    r"|huevo|pollo asado|cerveza|birra|vino\b|caldo",
+    "Canarias": r"canari|guagua|teide|calima|el pino|ños|chacho|tenerife|gran canaria|lanzarote"
+    r"|fuerteventura|el hierro|la palma|las palmas|teror|bandama",
+    "Historia y mitos": r"romano|c[eé]sar|vici|napole[oó]n|waterloo de|cid\b|pirata|zeus|olimpo"
+    r"|s[ií]sifo|[ií]caro|pandora|l[aá]zaro|david contra|goliat|vikingo|faraón|jeroglífico",
+}
+#: Lo típico de Puerto Rico que no es de Jovani y la Biblia quita (no son coletillas suyas).
+BORICUA = r"\bwepa|bendito|mi amor|\bpapi\b|\bacho\b"
+#: La muleta «X, como [referencia]» que la Biblia prohíbe en los nombres de logros.
+COMPARISON = r",\s*como\s+(el|la|los|las|un|una|en)\b|\bcomo\s+[A-ZÁÉÍÓÚ]"
+#: Por debajo de esto, una lista no cumple la mitad de frases normales (solo informa).
+MIN_PLAIN_SHARE = 0.5
 #: Una lista con más coletillas que esto se marca: la otra mitad, frases normales (la Biblia).
 MAX_CATCHPHRASE_SHARE = 0.5
 #: Listas más cortas no se miran: con dos frases, una coletilla ya es la mitad.
@@ -84,10 +127,60 @@ class PhraseList:
     where: str
     phrases: list[str] = field(default_factory=list)
 
+    def plain_share(self) -> float:
+        """Qué parte de sus frases parece normal: sin tema, coletilla ni comparación."""
+        return sum(1 for p in self.phrases if is_plain(p)) / len(self.phrases)
+
     def catchphrase_share(self) -> float:
         """Qué parte de sus frases lleva alguna coletilla."""
         hits = sum(1 for p in self.phrases if catchphrases_in(p))
         return hits / len(self.phrases)
+
+
+def families_in(text: str) -> list[str]:
+    """Las familias de temas que toca un texto."""
+    return [name for name, pattern in FAMILIES.items() if re.search(pattern, text, re.I)]
+
+
+def is_plain(text: str) -> bool:
+    """Si una frase parece normal: sin familia de tema, coletilla, comparación ni lo boricua."""
+    return not (
+        families_in(text)
+        or catchphrases_in(text)
+        or re.search(COMPARISON, text)
+        or re.search(BORICUA, text, re.I)
+    )
+
+
+def part_table(lists: list[PhraseList], prefixes: list[str]) -> list[str]:
+    """Tabla de una parte del bot (`cogs/slots`, `services/work_catalog`…) para comparar.
+
+    Por lista: frases, parte normal, coletillas, comparaciones, lo boricua y la familia
+    de temas que más sale. Al final, el total de la parte y el reparto por familias.
+    """
+    chosen = [pl for pl in lists if any(pl.where.startswith(p) for p in prefixes)]
+    rows = [
+        f"{'frases':>6} {'normal':>6} {'colet':>5} {'como':>4} {'bori':>4}"
+        "  lista · tema que más sale"
+    ]
+    families: Counter[str] = Counter()
+    for pl in chosen:
+        fams = Counter(f for p in pl.phrases for f in families_in(p))
+        families += fams
+        top = ", ".join(f"{f} {n}" for f, n in fams.most_common(2)) or "—"
+        comparisons = sum(1 for p in pl.phrases if re.search(COMPARISON, p))
+        boricua = sum(1 for p in pl.phrases if re.search(BORICUA, p, re.I))
+        flag = " ⚠" if pl.plain_share() < MIN_PLAIN_SHARE else ""
+        rows.append(
+            f"{len(pl.phrases):6d} {pl.plain_share():6.0%} {pl.catchphrase_share():5.0%}"
+            f" {comparisons:4d} {boricua:4d}  {pl.where} · {top}{flag}"
+        )
+    phrases = [p for pl in chosen for p in pl.phrases]
+    if phrases:
+        plain = sum(1 for p in phrases if is_plain(p)) / len(phrases)
+        rows.append(f"\nTotal: {len(chosen)} listas, {len(phrases)} frases, {plain:.0%} normales")
+        rows.append("Familias: " + ", ".join(f"{f} {n}" for f, n in families.most_common()))
+    return rows
 
 
 def catchphrases_in(text: str) -> list[str]:
@@ -197,7 +290,16 @@ def main() -> None:
     """Punto de entrada: `--check` sale con 1 si hay avisos."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--check", action="store_true", help="salir con 1 si hay avisos")
+    parser.add_argument(
+        "--parte",
+        nargs="+",
+        metavar="PREFIJO",
+        help="solo la tabla de esa parte (p. ej. cogs/slots cogs/blackjack), para comparar",
+    )
     args = parser.parse_args()
+    if args.parte:
+        print("\n".join(part_table(collect()[0], args.parte)))
+        return
     warnings = report(*collect())
     if args.check and warnings:
         sys.exit(1)

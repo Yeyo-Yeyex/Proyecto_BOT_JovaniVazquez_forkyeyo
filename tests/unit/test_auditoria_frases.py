@@ -46,3 +46,19 @@ def test_cuenta_las_coletillas_de_jovani() -> None:
     assert af.catchphrases_in("¿Qué? ¿Qué? ¡Toma mangó!") == ["Toma mangó"]
     assert af.catchphrases_in("Hazme café… ¡Quiero café!") == ["Quiero café"]
     assert af.catchphrases_in("La bola no quiso.") == []
+
+
+def test_reconoce_las_familias_de_temas_y_las_frases_normales() -> None:
+    assert af.families_in("La banca pide el rescate.") == ["Política"]
+    assert "Cine y series" in af.families_in("Te han hecho un Ocean's Eleven.")
+    assert af.is_plain("La banca gana.")
+    assert not af.is_plain("¿Con pulpa? ¡Sin pulpa!")
+    assert not af.is_plain("Te pasas como un arancel de Trump.")
+    assert not af.is_plain("¡Eso es, mi amor!")
+
+
+def test_la_tabla_por_partes_cuenta_solo_esa_parte() -> None:
+    lists, _ = af.collect()
+    rows = af.part_table(lists, ["cogs/slots"])
+    assert all("cogs/blackjack" not in row for row in rows)
+    assert any(row.startswith("\nTotal:") for row in rows)
