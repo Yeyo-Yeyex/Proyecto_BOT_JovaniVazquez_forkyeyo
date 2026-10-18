@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.29 · 2026-10-18
+
+- Logros: 51 nombres que repetían el chiste de otra categoría, cambiados, y las historias sin «mi amor»
+
 ### 7.25.28 · 2026-10-18
 
 - Interno: repaso de errores y avisos (casi todos ya iban en claro) y la auditoría deja de confundir «administrador» con «ministro»
