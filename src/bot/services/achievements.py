@@ -975,9 +975,11 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("chat", MESSAGES_TOTAL_STAT, [
         (1, "chat_1", "Rompiendo el hielo", "Escribe tu primer mensaje.", C),
         (100, "chat_100", "Ya no hay quien te calle", "Escribe 100 mensajes.", C),
+        (250, "messages_total_250", "Ya se te conoce la voz", "Escribe 250 mensajes.", C),
         (500, "chat_500", "Tertuliano", "Escribe 500 mensajes.", C),
         (1_000, "chat_1k", "Cotorra de tertulia de La Sexta", "Escribe 1.000 mensajes.", R),
         (1_337, "chat_1337", "H4x0r del chat", "Escribe 1.337 mensajes.", R, True),
+        (2_500, "messages_total_2500", "Pico de oro", "Escribe 2.500 mensajes.", R),
         (5_000, "chat_5k", "Lengua de trapo", "Escribe 5.000 mensajes.", R),
         (10_000, "chat_10k", "Yapper certificado", "Escribe 10.000 mensajes.", E),
         (25_000, "chat_25k", "Teclado en llamas", "Escribe 25.000 mensajes.", E),
@@ -989,49 +991,77 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("chat", "msg_replies", [
         (50, "reply_50", "Conversador de sobremesa", "Responde a 50 mensajes.", C),
+        (150, "msg_replies_150", "Contestador automático", "Responde a 150 mensajes.", C),
+        (250, "msg_replies_250", "Siempre tienes la última palabra", "Responde a 250 mensajes.", R),
         (500, "reply_500", "Hilo más largo que el de Ariadna",
          "Responde a 500 mensajes.", R),
+        (1_500, "msg_replies_1500", "Correspondencia de Estado", "Responde a 1.500 mensajes.", R),
+        (2_500, "msg_replies_2500", "Buzón de sugerencias con patas",
+         "Responde a 2.500 mensajes.", E),
         (5_000, "reply_5k", "Tertulia de bar", "Responde a 5.000 mensajes.", E),
     ])  # fmt: skip
     a += _tiers("chat", "msg_questions", [
         (42, "ask_42", "¿Cuál era la pregunta?", "Haz 42 preguntas.", C, True),
         (50, "ask_50", "La curiosidad mató al gato",
          "Haz 50 preguntas (mensajes que acaban en ?).", C),
+        (150, "msg_questions_150", "Preguntar es gratis", "Haz 150 preguntas.", C),
+        (250, "msg_questions_250", "Concurso de preguntas y respuestas", "Haz 250 preguntas.", R),
         (500, "ask_500", "Pregúntale a Google", "Haz 500 preguntas.", R),
     ])  # fmt: skip
     a += _tiers("chat", "msg_mentions", [
         (50, "ping_50", "Oye, tú, ¿por qué no te callas?",
          "Menciona a alguien en 50 mensajes.", C),
+        (150, "msg_mentions_150", "Pasando lista", "Menciona a alguien en 150 mensajes.", C),
+        (250, "msg_mentions_250", "Etiquetador compulsivo",
+         "Menciona a alguien en 250 mensajes.", R),
         (500, "ping_500", "Arroba y arroba y arroba",
          "Menciona a alguien en 500 mensajes.", R),
     ])  # fmt: skip
     a += _tiers("chat", "msg_attachments", [
         (10, "pic_10", "Paparazzi del ¡Hola!", "Sube 10 archivos o imágenes.", C),
+        (20, "msg_attachments_20", "Álbum de fotos del móvil", "Sube 20 archivos o imágenes.", C),
+        (50, "msg_attachments_50", "Carrete de vacaciones", "Sube 50 archivos o imágenes.", R),
         (100, "pic_100", "Galería de arte del Prado", "Sube 100 archivos o imágenes.", R),
+        (200, "msg_attachments_200", "Disco duro externo con patas",
+         "Sube 200 archivos o imágenes.", R),
+        (500, "msg_attachments_500", "Nube llena", "Sube 500 archivos o imágenes.", E),
         (1_000, "pic_1k", "Archivo nacional", "Sube 1.000 archivos o imágenes.", E),
     ])  # fmt: skip
     a += _tiers("chat", "msg_links", [
         (25, "link_25", "Cartero de Correos, que llega cuando quiere", "Comparte 25 enlaces.", C),
+        (50, "msg_links_50", "Recomendador de enlaces", "Comparte 50 enlaces.", C),
+        (150, "msg_links_150", "Lector de agregadores", "Comparte 150 enlaces.", R),
         (250, "link_250", "Agregador de noticias de Telegram", "Comparte 250 enlaces.", R),
     ])  # fmt: skip
     a += _tiers("chat", "msg_stickers", [
         (10, "sticker_10", "Pegatinero de cromos de la Liga", "Manda 10 stickers.", C),
+        (20, "msg_stickers_20", "Pegatina en la carpeta", "Manda 20 stickers.", C),
+        (50, "msg_stickers_50", "Cuaderno de pegatinas", "Manda 50 stickers.", R),
         (100, "sticker_100", "Álbum completo", "Manda 100 stickers.", R),
     ])  # fmt: skip
     a += _tiers("style", "msg_long", [
         (1, "long_1", "Biblia en verso",
          "Escribe un mensaje de 600 caracteres o más.", C),
         (25, "long_25", "Escribes biblias", "Escribe 25 mensajes de 600 caracteres o más.", R),
+        (50, "msg_long_50", "Novelista por entregas",
+         "Escribe 50 mensajes de 600 caracteres o más.", R),
         (100, "long_100", "Premio Planeta", "Escribe 100 mensajes de 600 caracteres o más.", E),
     ])  # fmt: skip
     a += _tiers("style", "msg_short", [
         (100, "short_100", "Ok. K. Vale.",
          "Manda 100 mensajes de 3 caracteres o menos.", C),
+        (200, "msg_short_200", "Monosílabo profesional",
+         "Manda 200 mensajes de 3 caracteres o menos.", C),
+        (500, "msg_short_500", "Mensaje telegráfico",
+         "Manda 500 mensajes de 3 caracteres o menos.", R),
         (1_000, "short_1k", "k.", "Manda 1.000 mensajes de 3 caracteres o menos.", R),
     ])  # fmt: skip
     a += _tiers("style", "msg_caps", [
         (10, "caps_10", "BLOQ MAYÚS ATASCADO",
          "Escribe 10 mensajes TODO EN MAYÚSCULAS.", C),
+        (20, "msg_caps_20", "MODO GRITO ACTIVADO", "Escribe 20 mensajes TODO EN MAYÚSCULAS.", C),
+        (50, "msg_caps_50", "HABLA MÁS ALTO, QUE NO TE OIGO",
+         "Escribe 50 mensajes TODO EN MAYÚSCULAS.", R),
         (100, "caps_100", "BLOQ MAYÚS ROTO", "Escribe 100 mensajes TODO EN MAYÚSCULAS.", R),
     ])  # fmt: skip
 
@@ -1039,25 +1069,42 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (500_000, "chat_500k", "Más páginas que el Quijote", "Escribe 500.000 mensajes.", M, True),
     ])  # fmt: skip
     a += _tiers("style", "msg_caps", [
+        (200, "msg_caps_200", "TELETIENDA A TODO VOLUMEN",
+         "Escribe 200 mensajes en mayúsculas.", R),
+        (500, "msg_caps_500", "ANUNCIO DE MEDIANOCHE", "Escribe 500 mensajes en mayúsculas.", E),
         (1_000, "caps_1k", "MEGÁFONO DE MANIFESTACIÓN", "Escribe 1.000 mensajes en mayúsculas.", E),
     ])  # fmt: skip
     a += _tiers("chat", "msg_questions", [
+        (1_500, "msg_questions_1500", "Más preguntas que un niño en el coche",
+         "Haz 1.500 preguntas.", R),
+        (2_500, "msg_questions_2500", "Entrevistador de Jordi Évole", "Haz 2.500 preguntas.", E),
         (5_000, "ask_5k", "¿Y tú qué opinas?", "Haz 5.000 preguntas.", E),
     ])  # fmt: skip
     a += _tiers("chat", "msg_links", [
+        (500, "msg_links_500", "Biblioteca de marcadores", "Comparte 500 enlaces.", R),
+        (1_500, "msg_links_1500", "Pestañas abiertas sin cerrar", "Comparte 1.500 enlaces.", E),
         (2_500, "link_2500", "Hemeroteca digital", "Comparte 2.500 enlaces.", E),
     ])  # fmt: skip
     a += _tiers("chat", "msg_stickers", [
+        (200, "msg_stickers_200", "Pegatinero de furgoneta", "Manda 200 stickers.", R),
+        (500, "msg_stickers_500", "Stickers hasta en la sopa", "Manda 500 stickers.", E),
         (1_000, "sticker_1k", "Coleccionista de cromos", "Manda 1.000 stickers.", E),
     ])  # fmt: skip
     a += _tiers("style", "msg_rae", [
         (10, "rae_10", "Abre interrogación",
          "Empieza 10 mensajes con ¿ o ¡.", C),
+        (20, "msg_rae_20", "Signos de apertura, por favor", "Empieza 20 mensajes con ¿ o ¡.", C),
+        (50, "msg_rae_50", "Ortografía de oposición", "Empieza 50 mensajes con ¿ o ¡.", R),
         (100, "rae_100", "Sillón de la RAE", "Empieza 100 mensajes con ¿ o ¡.", R),
+        (200, "msg_rae_200", "Corrector humano", "Empieza 200 mensajes con ¿ o ¡.", R),
+        (500, "msg_rae_500", "Defensor del signo de apertura",
+         "Empieza 500 mensajes con ¿ o ¡.", E),
         (1_000, "rae_1k", "Académico de número", "Empieza 1.000 mensajes con ¿ o ¡.", E),
     ])  # fmt: skip
     a += _tiers("style", "msg_exclaim", [
         (25, "exclaim_25", "¡¡¡Chacho, qué fuerte!!!", "Escribe «!!!» en 25 mensajes.", C),
+        (50, "msg_exclaim_50", "Exclamación con triple salto", "Escribe «!!!» en 50 mensajes.", C),
+        (150, "msg_exclaim_150", "¡¡Ojo al dato!!", "Escribe «!!!» en 150 mensajes.", R),
         (250, "exclaim_250", "Telepredicador", "Escribe «!!!» en 250 mensajes.", R),
     ])  # fmt: skip
     a += _tiers("chat", "msg_everyone", [
@@ -1074,25 +1121,36 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("style", "msg_spoiler", [
         (10, "spoiler_10", "Sin spoilers", "Esconde algo con ||spoiler|| en 10 mensajes.", C),
+        (20, "msg_spoiler_20", "Spoiler alert", "Usa ||spoiler|| en 20 mensajes.", C),
+        (50, "msg_spoiler_50", "Telón tapado", "Usa ||spoiler|| en 50 mensajes.", R),
         (100, "spoiler_100", "Secreto oficial", "Usa ||spoiler|| en 100 mensajes.", R),
     ])  # fmt: skip
     a += _tiers("style", "msg_code", [
         (10, "code_10", "Hackerman de Pegasus", "Escribe código (`así`) en 10 mensajes.", C),
+        (20, "msg_code_20", "Hola, mundo", "Escribe código en 20 mensajes.", C),
+        (50, "msg_code_50", "Programador de cafetera", "Escribe código en 50 mensajes.", R),
         (100, "code_100", "Copiado de Stack Overflow", "Escribe código en 100 mensajes.", R),
     ])  # fmt: skip
     a += _tiers("style", "msg_emoji_heavy", [
         (10, "emoji_heavy_10", "Jeroglífico de la Agencia Tributaria",
          "Mete 5 emojis o más en 10 mensajes.", C),
+        (20, "msg_emoji_heavy_20", "Mensaje decorado", "Mete 5 emojis o más en 20 mensajes.", C),
+        (50, "msg_emoji_heavy_50", "Cartel de feria en emojis",
+         "Mete 5 emojis o más en 50 mensajes.", R),
         (100, "emoji_heavy_100", "Piedra Rosetta", "Mete 5 emojis o más en 100 mensajes.", R),
     ])  # fmt: skip
     a += _tiers("style", "msg_only_emoji", [
         (50, "only_emoji_50", "Jeroglífico egipcio 2.0",
          "Manda 50 mensajes hechos solo de emojis.", C),
+        (150, "msg_only_emoji_150", "Hablo emoji fluido", "Manda 150 mensajes solo de emojis.", C),
+        (250, "msg_only_emoji_250", "Emojilingüe", "Manda 250 mensajes solo de emojis.", R),
         (500, "only_emoji_500", "Generación 🗿", "Manda 500 mensajes solo de emojis.", R),
     ])  # fmt: skip
     a += _tiers("style", "msg_stretch", [
         (10, "stretch_10", "Holaaaaaaa",
          "Repite una letra 6 veces seguidas en 10 mensajes.", C),
+        (20, "msg_stretch_20", "Siiiiii", "Estira letras en 20 mensajes.", C),
+        (50, "msg_stretch_50", "Nooooooooo", "Estira letras en 50 mensajes.", R),
         (100, "stretch_100", "Alargador de vocaleeeees", "Estira letras en 100 mensajes.", R),
     ])  # fmt: skip
     a += _tiers("style", "msg_long_word", [
@@ -1112,37 +1170,59 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "laugh_1", "Se te escapó una",
          "Ríete por escrito por primera vez.", C),
         (10, "laugh_10", "Risa floja", "Ríete en 10 mensajes.", C),
+        (20, "msg_laughs_20", "Risa que se pega",
+         "Ríete (jaja, jsjs, lol, 😂…) en 20 mensajes.", C),
+        (50, "msg_laughs_50", "Cosquillas en el chat",
+         "Ríete (jaja, jsjs, lol, 😂…) en 50 mensajes.", C),
         (100, "laugh_100", "Jajajaja", "Ríete (jaja, jsjs, lol, 😂…) en 100 mensajes.", C),
+        (200, "msg_laughs_200", "Me troncho", "Ríete en 200 mensajes.", C),
+        (500, "msg_laughs_500", "Risa de fondo", "Ríete en 500 mensajes.", E),
         (1_000, "laugh_1k", "Risa enlatada de sitcom", "Ríete en 1.000 mensajes.", E),
+        (2_500, "msg_laughs_2500", "Risa de laboratorio", "Ríete en 2.500 mensajes.", L),
         (5_000, "laugh_5k", "Joker de Gotham", "Ríete en 5.000 mensajes.", L),
         (10_000, "laugh_10k", "Hiena profesional", "Ríete en 10.000 mensajes.", M),
         (25_000, "laugh_25k", "Hiena alfa", "Ríete en 25.000 mensajes.", M),
     ])  # fmt: skip
     a += _tiers("laughs", "laugh_es", [
         (500, "laugh_es_500", "Jajajólogo", "Ríete a la española (jaja, jsjs, ajaj) 500 veces.", R),
+        (1_500, "laugh_es_1500", "Jajaja de campeonato", "Ríete a la española 1.500 veces.", R),
+        (2_500, "laugh_es_2500", "Risa de Ana Rosa de buena mañana",
+         "Ríete a la española 2.500 veces.", E),
         (5_000, "laugh_es_5k", "Catedrático del jajaja", "Ríete a la española 5.000 veces.", E),
     ])  # fmt: skip
     a += _tiers("laughs", "laugh_en", [
         (50, "laugh_en_50", "Anglicismo risueño de Ana Botella",
          "Ríete en inglés (haha, lol, lmao) 50 veces.", C),
+        (150, "laugh_en_150", "LOL de academia de inglés", "Ríete en inglés 150 veces.", C),
+        (250, "laugh_en_250", "Risa con acento de Liverpool", "Ríete en inglés 250 veces.", E),
         (500, "laugh_en_500", "LMAO certificado", "Ríete en inglés 500 veces.", E),
     ])  # fmt: skip
     a += _tiers("laughs", "msg_xd", [
         (100, "xd_100", "xd", "Escribe «xd» en 100 mensajes.", C),
+        (200, "msg_xd_200", "xdxdxd", "Escribe «xd» en 200 mensajes.", C),
+        (500, "msg_xd_500", "Xd de toda la vida", "Escribe «xd» en 500 mensajes.", R),
         (1_000, "xd_1k", "XDDDDDD", "Escribe «xd» en 1.000 mensajes.", R),
+        (2_000, "msg_xd_2000", "Xd sin edad", "Escribe «xd» en 2.000 mensajes.", R),
+        (5_000, "msg_xd_5000", "El último que escribe xd", "Escribe «xd» en 5.000 mensajes.", L),
         (10_000, "xd_10k", "Fósil de 2012", "Escribe «xd» en 10.000 mensajes.", L),
     ])  # fmt: skip
     a += _tiers("laughs", "laugh_emoji", [
         (25, "laugh_emoji_25", "Lagrimones de risa",
          "Ríete con 😂, 🤣 o un emoji de risa 25 veces.", C),
+        (75, "laugh_emoji_75", "Lagrimilla de risa", "Ríete con emojis 75 veces.", C),
+        (200, "laugh_emoji_200", "Llorando de risa", "Ríete con emojis 200 veces.", R),
         (500, "laugh_emoji_500", "Emoji del año 2015", "Ríete con emojis 500 veces.", R),
     ])  # fmt: skip
     a += _tiers("laughs", "laugh_skull", [
         (10, "laugh_skull_10", "Me morí 💀", "Mándale un 💀 a un chiste 10 veces.", C),
+        (25, "laugh_skull_25", "Muerto de risa", "Usa 💀 o ☠️ en 25 mensajes.", C),
+        (75, "laugh_skull_75", "Funeral de chistes", "Usa 💀 o ☠️ en 75 mensajes.", R),
         (200, "laugh_skull_200", "Cementerio de chistes", "Usa 💀 o ☠️ en 200 mensajes.", R),
     ])  # fmt: skip
     a += _tiers("laughs", "laugh_smash", [
         (10, "laugh_smash_10", "Teclado aporreado", "Aporrea el teclado (ajsjsjs) 10 veces.", C),
+        (20, "laugh_smash_20", "Golpe de teclado", "Aporrea el teclado 20 veces.", C),
+        (50, "laugh_smash_50", "asdasdasd", "Aporrea el teclado 50 veces.", R),
         (100, "laugh_smash_100", "asdfghjklñ", "Aporrea el teclado 100 veces.", R),
     ])  # fmt: skip
     a += _tiers("laughs", "laugh_intl", [
@@ -1153,14 +1233,21 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("laughs", "laugh_phrase", [
         (10, "laugh_phrase_10", "Me meo",
          "Ríete con palabras (me meo, me parto, lloro) 10 veces.", C),
+        (20, "laugh_phrase_20", "Me parto", "Ríete con palabras 20 veces.", C),
+        (50, "laugh_phrase_50", "Me desternillo", "Ríete con palabras 50 veces.", R),
         (100, "laugh_phrase_100", "Descojonado", "Ríete con palabras 100 veces.", R),
     ])  # fmt: skip
     a += _tiers("laughs", "msg_laugh_caps", [
         (10, "laugh_caps_10", "CARCAJADA DE MITIN", "Ríete EN MAYÚSCULAS en 10 mensajes.", C),
+        (20, "msg_laugh_caps_20", "RISA DE SIRENA", "Ríete en mayúsculas en 20 mensajes.", C),
+        (50, "msg_laugh_caps_50", "CARCAJADA CON ALTAVOZ",
+         "Ríete en mayúsculas en 50 mensajes.", R),
         (100, "laugh_caps_100", "TERREMOTO DE RISA", "Ríete en mayúsculas en 100 mensajes.", R),
     ])  # fmt: skip
     a += _tiers("laughs", "msg_laugh_dry", [
         (10, "laugh_dry_10", "Ja.", "Responde «ja.» 10 veces.", C),
+        (20, "msg_laugh_dry_20", "Risa de cortesía", "Ríete en seco («jaja.») 20 veces.", C),
+        (50, "msg_laugh_dry_50", "Jaja seco", "Ríete en seco («jaja.») 50 veces.", E),
         (100, "laugh_dry_100", "Me río por compromiso", "Ríete en seco («jaja.») 100 veces.", E),
     ])  # fmt: skip
     a += _tiers("laughs", "laugh_night", [
@@ -1197,13 +1284,20 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("funny", "laugh_replies", [
         (50, "laugh_reply_50", "Risa de saldo",
          "Ríete respondiendo a 50 mensajes.", C),
+        (150, "laugh_replies_150", "Público fiel", "Ríete respondiendo a 150 mensajes.", C),
+        (250, "laugh_replies_250", "Risa de abonado", "Ríete respondiendo a 250 mensajes.", R),
         (500, "laugh_reply_500", "Público del Club de la Comedia",
          "Ríete respondiendo a 500 mensajes.", R),
     ])  # fmt: skip
     a += _tiers("funny", "laughs_caused", [
         (10, "funny_10", "Tienes más gracia que un pato mareado",
          "Que se rían respondiendo a tus mensajes 10 veces.", C),
+        (20, "laughs_caused_20", "Gracioso de pasillo", "Haz reír (con respuesta) 20 veces.", C),
+        (50, "laughs_caused_50", "Chistoso con licencia", "Haz reír (con respuesta) 50 veces.", R),
         (100, "funny_100", "Payaso oficial de la corte", "Haz reír (con respuesta) 100 veces.", R),
+        (200, "laughs_caused_200", "Animador de la fiesta",
+         "Haz reír (con respuesta) 200 veces.", R),
+        (500, "laughs_caused_500", "Rey del monólogo", "Haz reír (con respuesta) 500 veces.", L),
         (1_000, "funny_1k", "Especial de Nochevieja", "Haz reír (con respuesta) 1.000 veces.", L),
     ])  # fmt: skip
     a += _tiers("funny", "laugh_self", [
@@ -1227,13 +1321,24 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("funny", "laugh_reacts_given", [
         (50, "laugh_react_50", "Reacciono, luego existo",
          "Reacciona con 😂, 🤣 o 💀 a 50 mensajes.", C),
+        (150, "laugh_reacts_given_150", "Reacción de risa fácil",
+         "Reacciona con risa a 150 mensajes.", C),
+        (250, "laugh_reacts_given_250", "Pulgar risueño", "Reacciona con risa a 250 mensajes.", R),
         (500, "laugh_react_500", "Claque profesional", "Reacciona con risa a 500 mensajes.", R),
     ])  # fmt: skip
     a += _tiers("funny", "laugh_reacts_received", [
         (25, "laughed_25", "Chiquito de la Calzada en potencia",
          "Recibe 25 reacciones de risa.", C),
+        (50, "laugh_reacts_received_50", "Hace gracia y lo sabe",
+         "Recibe 50 reacciones de risa.", C),
+        (150, "laugh_reacts_received_150", "Chistes con aplauso",
+         "Recibe 150 reacciones de risa.", E),
         (250, "laughed_250", "Graciosillo de guardia",
          "Recibe 250 reacciones de risa.", E),
+        (500, "laugh_reacts_received_500", "Monologuista de bar",
+         "Recibe 500 reacciones de risa.", E),
+        (1_500, "laugh_reacts_received_1500", "Teatro lleno",
+         "Recibe 1.500 reacciones de risa.", L),
         (2_500, "laughed_2500", "Monologuista de la tele", "Recibe 2.500 reacciones de risa.", L),
     ])  # fmt: skip
     a += _tiers("funny", "laugh_reacts_on_message_max", [
@@ -1247,20 +1352,33 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("lengua", "msg_canario", [
         (10, "canario_10", "¡Chacho!",
          "Habla en canario (guagua, ños, cotufas…) en 10 mensajes.", C),
+        (20, "msg_canario_20", "Pibe canario", "Habla en canario en 20 mensajes.", C),
+        (50, "msg_canario_50", "Chacho, qué bien hablas", "Habla en canario en 50 mensajes.", R),
         (100, "canario_100", "Más canario que el gofio", "Habla en canario en 100 mensajes.", R),
+        (200, "msg_canario_200", "Mi niño, de toda la vida",
+         "Habla en canario en 200 mensajes.", R),
+        (500, "msg_canario_500", "Guagua llena de acento", "Habla en canario en 500 mensajes.", L),
         (1_000, "canario_1k", "Ños, qué fleje", "Habla en canario en 1.000 mensajes.", L),
     ])  # fmt: skip
     a += _tiers("lengua", "msg_boricua", [
         (10, "boricua_10", "Acento del Caribe",
          "Habla en boricua (wepa, bendito, janguear…) en 10 mensajes.", C),
+        (20, "msg_boricua_20", "Acento de vacaciones", "Habla en boricua en 20 mensajes.", C),
+        (50, "msg_boricua_50", "Caribe en el teclado", "Habla en boricua en 50 mensajes.", R),
         (100, "boricua_100", "Boricua honorario",
          "Habla en boricua en 100 mensajes.", R),
+        (250, "msg_boricua_250", "Más caribeño que el ron", "Habla en boricua en 250 mensajes.", L),
         (500, "boricua_500", "Más boricua que Jovani", "Habla en boricua en 500 mensajes.", L),
     ])  # fmt: skip
     a += _tiers("lengua", "msg_swear", [
         (25, "swear_25", "Me cago en la leche",
          "Suelta una palabrota en 25 mensajes.", C),
+        (50, "msg_swear_50", "Palabrotas de mercadillo", "Suelta palabrotas en 50 mensajes.", C),
+        (150, "msg_swear_150", "Taco de oro", "Suelta palabrotas en 150 mensajes.", R),
         (250, "swear_250", "Boca de cloaca", "Suelta palabrotas en 250 mensajes.", R),
+        (500, "msg_swear_500", "Lengua de camionero", "Suelta palabrotas en 500 mensajes.", R),
+        (1_500, "msg_swear_1500", "Diccionario de tacos",
+         "Suelta palabrotas en 1.500 mensajes.", E),
         (2_500, "swear_2500", "Mecagüen la mar", "Suelta palabrotas en 2.500 mensajes.", E),
     ])  # fmt: skip
     a += _tiers("lengua", "msg_mild_swear", [
@@ -1270,7 +1388,11 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("lengua", "msg_thanks", [
         (10, "thanks_10", "Gracias, gracias, demasiado amables",
          "Da las gracias en 10 mensajes.", C),
+        (20, "msg_thanks_20", "Muchas gracias, de verdad", "Da las gracias en 20 mensajes.", C),
+        (50, "msg_thanks_50", "Educado de manual", "Da las gracias en 50 mensajes.", R),
         (100, "thanks_100", "Tu madre estaría orgullosa", "Da las gracias en 100 mensajes.", R),
+        (200, "msg_thanks_200", "Gracias por su atención", "Da las gracias en 200 mensajes.", R),
+        (500, "msg_thanks_500", "Le estoy muy agradecido", "Da las gracias en 500 mensajes.", E),
         (1_000, "thanks_1k", "Mayordomo inglés", "Da las gracias en 1.000 mensajes.", E),
     ])  # fmt: skip
     a += _tiers("lengua", "msg_sorry", [
@@ -1280,17 +1402,25 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("lengua", "msg_good_morning", [
         (10, "morning_hi_10", "Buenos días, España", "Da los buenos días 10 veces.", C),
+        (20, "msg_good_morning_20", "Buenos días, alegría", "Da los buenos días 20 veces.", C),
+        (50, "msg_good_morning_50", "Café y buenos días", "Da los buenos días 50 veces.", R),
         (100, "morning_hi_100", "Buenos días, princesa",
          "Da los buenos días 100 veces.", R),
         (365, "morning_hi_365", "Ni un día sin saludar", "Da los buenos días 365 veces.", L),
     ])  # fmt: skip
     a += _tiers("lengua", "msg_good_night", [
         (10, "night_bye_10", "Buenas noches y buena suerte", "Da las buenas noches 10 veces.", C),
+        (20, "msg_good_night_20", "Buenas noches, tortolitos", "Da las buenas noches 20 veces.", C),
+        (50, "msg_good_night_50", "Arropado y a dormir", "Da las buenas noches 50 veces.", R),
         (100, "night_bye_100", "Cierre de emisión", "Da las buenas noches 100 veces.", R),
     ])  # fmt: skip
     a += _tiers("lengua", "msg_politics", [
         (10, "politics_10", "Cuñado en Nochebuena", "Habla de política en 10 mensajes.", C),
+        (20, "msg_politics_20", "Política de sobremesa", "Habla de política en 20 mensajes.", C),
+        (50, "msg_politics_50", "Opinólogo de guardia", "Habla de política en 50 mensajes.", R),
         (100, "politics_100", "Tertuliano de sobremesa", "Habla de política en 100 mensajes.", R),
+        (200, "msg_politics_200", "Mitin a domicilio", "Habla de política en 200 mensajes.", R),
+        (500, "msg_politics_500", "Debate a cinco", "Habla de política en 500 mensajes.", L),
         (1_000, "politics_1k", "Todólogo de plató", "Habla de política en 1.000 mensajes.", L),
     ])  # fmt: skip
     a += _tiers("lengua", "msg_falcon", [
@@ -1453,12 +1583,15 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "first_1", "Abre la persiana",
          "Escribe el primer mensaje del día del servidor.", C),
         (30, "first_30", "Primero en fichar", "Abre el chat del día 30 veces.", L),
+        (75, "msg_first_of_day_75", "Fichaje a primera hora", "Abre el chat del día 75 veces.", L),
         (200, "first_200", "Funcionario de ventanilla", "Abre el chat del día 200 veces.", L),
     ])  # fmt: skip
     a += _tiers("convo", "msg_echo", [
         (1, "echo_1", "Eco de tertulia",
          "Repite tal cual el mensaje que acaba de escribir otro.", C),
         (25, "echo_25", "Aplauso de bancada", "Repite lo que dice otro 25 veces.", R),
+        (50, "msg_echo_50", "Coro de la bancada", "Repite lo que dice otro 50 veces.", R),
+        (150, "msg_echo_150", "Copia y pega humano", "Repite lo que dice otro 150 veces.", L),
         (250, "echo_250", "Eco, eco, eco…", "Repite lo que dice otro 250 veces.", L),
     ])  # fmt: skip
     a += _tiers("convo", "msg_necro", [
@@ -1468,23 +1601,39 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("convo", "msg_edits", [
         (10, "edit_10", "Donde dije digo, digo «cambio de opinión»", "Edita 10 mensajes.", C),
+        (20, "msg_edits_20", "Retoque discreto", "Edita 20 mensajes.", C),
+        (50, "msg_edits_50", "Tipex digital", "Edita 50 mensajes.", R),
         (100, "edit_100", "No es mentir, es cambiar de opinión", "Edita 100 mensajes.", R),
+        (200, "msg_edits_200", "Corrector de pruebas", "Edita 200 mensajes.", R),
+        (500, "msg_edits_500", "Editor jefe", "Edita 500 mensajes.", E),
         (1_000, "edit_1k", "Rectificar es de sabios", "Edita 1.000 mensajes.", E),
     ])  # fmt: skip
 
     # 🗓️ Horarios y fechas ----------------------------------------------------------------
     a += _tiers("time", "msg_night", [
         (10, "night_10", "Búho con wifi", "Escribe 10 mensajes entre las 2:00 y las 6:00.", C),
+        (20, "msg_night_20", "Desvelado", "Escribe 20 mensajes entre las 2:00 y las 6:00.", C),
+        (50, "msg_night_50", "Noctámbulo de oficio",
+         "Escribe 50 mensajes entre las 2:00 y las 6:00.", R),
         (100, "night_100", "Contando ovejas por el chat",
          "Escribe 100 mensajes entre las 2:00 y las 6:00.", R),
+        (200, "msg_night_200", "Lechuza del teclado",
+         "Escribe 200 mensajes entre las 2:00 y las 6:00.", R),
+        (500, "msg_night_500", "Turno de noche",
+         "Escribe 500 mensajes entre las 2:00 y las 6:00.", E),
         (1_000, "night_1k", "Drácula con wifi",
          "Escribe 1.000 mensajes entre las 2:00 y las 6:00.", E),
     ])  # fmt: skip
     a += _tiers("time", "msg_morning", [
         (10, "morning_10", "Antes que el panadero",
          "Escribe 10 mensajes entre las 6:00 y las 8:00.", C),
+        (20, "msg_morning_20", "Despertador humano", "Escribe 20 mensajes antes de las 8:00.", C),
+        (50, "msg_morning_50", "Primer café del chat", "Escribe 50 mensajes antes de las 8:00.", R),
         (100, "morning_100", "Al que madruga, Dios le ayuda",
          "Escribe 100 mensajes antes de las 8:00.", R),
+        (200, "msg_morning_200", "Gallo de granja", "Escribe 200 mensajes antes de las 8:00.", R),
+        (500, "msg_morning_500", "Madrugador de oposición",
+         "Escribe 500 mensajes antes de las 8:00.", E),
         (1_000, "morning_1k", "Gallo del corral", "Escribe 1.000 mensajes antes de las 8:00.", E),
     ])  # fmt: skip
     a += _tiers(
@@ -1522,18 +1671,31 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("time", "msg_siesta", [
         (100, "siesta_100", "Siesta, ¿qué siesta?",
          "Escribe 100 mensajes entre las 15:00 y las 17:00.", C),
+        (200, "msg_siesta_200", "Siesta de pie", "Escribe 200 mensajes a la hora de la siesta.", C),
+        (500, "msg_siesta_500", "Ni una cabezada",
+         "Escribe 500 mensajes a la hora de la siesta.", R),
         (1_000, "siesta_1k", "Antisiesta", "Escribe 1.000 mensajes a la hora de la siesta.", R),
     ])  # fmt: skip
     a += _tiers("time", "msg_office", [
         (100, "office_100", "Teletrabajando, se supone",
          "Escribe 100 mensajes entre semana de 9:00 a 14:00.", C),
+        (200, "msg_office_200", "Café de máquina",
+         "Escribe 200 mensajes en horario de oficina.", C),
+        (500, "msg_office_500", "Jornada intensiva de chat",
+         "Escribe 500 mensajes en horario de oficina.", R),
         (1_000, "office_1k", "Productividad a la española",
          "Escribe 1.000 mensajes en horario de oficina.", R),
+        (2_000, "msg_office_2000", "Productividad negativa",
+         "Escribe 2.000 mensajes en horario de oficina.", R),
+        (5_000, "msg_office_5000", "Reunión que podía ser un correo",
+         "Escribe 5.000 mensajes en horario de oficina.", E),
         (10_000, "office_10k", "Absentismo digital",
          "Escribe 10.000 mensajes en horario de oficina.", E),
     ])  # fmt: skip
     a += _tiers("time", "msg_weekend", [
         (100, "weekend_100", "Ni el finde descansas", "Escribe 100 mensajes en fin de semana.", C),
+        (200, "msg_weekend_200", "Domingo de chat", "Escribe 200 mensajes en fin de semana.", C),
+        (500, "msg_weekend_500", "Vermú y mensajes", "Escribe 500 mensajes en fin de semana.", R),
         (1_000, "weekend_1k", "Sábado sabadete", "Escribe 1.000 mensajes en fin de semana.", R),
     ])  # fmt: skip
     a += _tiers("time", "msg_cinderella", [
@@ -1593,7 +1755,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
     # 🎙️ Voz ------------------------------------------------------------------------------
     a += _tiers("voice", "voice_minutes", [
         (60, "voice_1h", "¿Se me oye?", "Pasa 1 hora en llamada con más gente.", C),
+        (300, "voice_minutes_300", "Primer programa de radio", "Pasa 5 horas en llamada.", C),
         (600, "voice_10h", "Tertulia de Al rojo vivo", "Pasa 10 horas en llamada.", C),
+        (1_500, "voice_minutes_1500", "Locutor de cabecera", "Pasa 25 horas en llamada.", R),
         (3_000, "voice_50h", "Locutor de Radio Nacional", "Pasa 50 horas en llamada.", R),
         (6_000, "voice_100h", "Podcaster de Ibai", "Pasa 100 horas en llamada.", R),
         (15_000, "voice_250h", "Vives en la llamada", "Pasa 250 horas en llamada.", E),
@@ -1611,18 +1775,29 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("voice", "voice_night", [
         (60, "vnight_1h", "Tertulia de madrugada",
          "Pasa 1 hora en llamada entre las 2:00 y las 6:00.", C),
+        (300, "voice_night_300", "Locutor de madrugada",
+         "Pasa 5 horas en llamada de madrugada.", R),
         (600, "vnight_10h", "Los 40 nocturnos", "Pasa 10 horas en llamada de madrugada.", R),
+        (1_500, "voice_night_1500", "Radio pirata nocturna",
+         "Pasa 25 horas en llamada de madrugada.", E),
         (3_000, "vnight_50h", "Guardia nocturna", "Pasa 50 horas en llamada de madrugada.", E),
     ], unit="min")  # fmt: skip
     a += _tiers("voice_mic", "voice_stream", [
         (60, "stream_1h", "En directo y sin cortes", "Comparte pantalla durante 1 hora.", C),
+        (300, "voice_stream_300", "Canal de Twitch de tu primo",
+         "Comparte pantalla durante 5 horas.", R),
         (600, "stream_10h", "Streamer con sueños de Ibai",
          "Comparte pantalla durante 10 horas.", R),
+        (1_500, "voice_stream_1500", "Retransmisión en pruebas",
+         "Comparte pantalla durante 25 horas.", E),
         (3_000, "stream_50h", "Streamer de barrio", "Comparte pantalla durante 50 horas.", E),
     ], unit="min")  # fmt: skip
     a += _tiers("voice_mic", "voice_video", [
         (30, "cam_30m", "Dando la cara",
          "Pon la cámara durante 30 minutos.", C),
+        (75, "voice_video_75", "Cara de póker en cámara", "Pon la cámara durante 75 minutos.", C),
+        (200, "voice_video_200", "Cara de lunes en cámara",
+         "Pon la cámara durante 200 minutos.", R),
         (600, "cam_10h", "Influencer con aro de luz", "Pon la cámara durante 10 horas.", R),
     ], unit="min")  # fmt: skip
     a += _tiers("voice_mic", "voice_muted", [
@@ -1660,14 +1835,18 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ], unit="min")  # fmt: skip
     a += _tiers("voice", "voice_duo", [
         (60, "duo_1h", "Cara a cara electoral", "Pasa 1 hora en llamada con una sola persona.", C),
+        (300, "voice_duo_300", "Llamada de dos", "Pasa 5 horas en llamada a solas con alguien.", R),
         (600, "duo_10h", "Cariño, ¿cuelgas tú?",
          "Pasa 10 horas en llamada a solas con alguien.", R),
+        (1_500, "voice_duo_1500", "Novios por Discord", "Pasa 25 horas en llamada de a dos.", E),
         (3_000, "duo_50h", "Más horas juntos que en la luna de miel",
          "Pasa 50 horas en llamada de a dos.", E),
     ], unit="min")  # fmt: skip
     a += _tiers("voice", "voice_morning", [
         (60, "vmorning_1h", "Café en llamada. ¡Quiero café!",
          "Pasa 1 hora en llamada entre las 6:00 y las 8:00.", C),
+        (300, "voice_morning_300", "Desayuno en llamada",
+         "Pasa 5 horas en llamada de buena mañana.", R),
         (600, "vmorning_10h", "Tertulia matinal", "Pasa 10 horas en llamada de buena mañana.", R),
     ], unit="min")  # fmt: skip
     a += _tiers("voice", "voice_siesta", [
@@ -1679,6 +1858,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("voice", "voice_weekend", [
         (600, "vweekend_10h", "Plan de finde: sofá y llamada",
          "Pasa 10 horas en llamada en fin de semana.", C),
+        (1_500, "voice_weekend_1500", "Finde de cascos",
+         "Pasa 25 horas en llamada en fin de semana.", C),
+        (3_000, "voice_weekend_3000", "Sábado de llamada",
+         "Pasa 50 horas en llamada en fin de semana.", R),
         (6_000, "vweekend_100h", "Fin de semana en bucle",
          "Pasa 100 horas en llamada en fin de semana.", R),
     ], unit="min")  # fmt: skip
@@ -1700,7 +1883,12 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ], unit="min")  # fmt: skip
     a += _tiers("voice_mic", "voice_afk", [
         (60, "afk_1h", "Liberado sindical", "Pasa 1 hora en el canal AFK sin dar palo al agua.", C),
+        (300, "voice_afk_300", "Ausente con presencia", "Pasa 5 horas en el canal AFK.", R),
         (600, "afk_10h", "Asesor del ministerio", "Pasa 10 horas en el canal AFK.", R),
+        (1_500, "voice_afk_1500", "Canal AFK con plaza fija",
+         "Pasa 25 horas en el canal AFK cobrando igual.", R),
+        (3_000, "voice_afk_3000", "Vacaciones pagadas en AFK",
+         "Pasa 50 horas en el canal AFK cobrando igual.", E),
         (6_000, "afk_100h", "Liberado con dietas",
          "Pasa 100 horas en el canal AFK cobrando igual.", E),
     ], unit="min")  # fmt: skip
@@ -1721,18 +1909,28 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ], unit="min")  # fmt: skip
     a += _tiers("voice_mic", "voice_stream_starts", [
         (10, "stream_start_10", "¿Se ve mi pantalla?", "Empieza a compartir pantalla 10 veces.", C),
+        (20, "voice_stream_starts_20", "Pantalla compartida", "Comparte pantalla 20 veces.", C),
+        (50, "voice_stream_starts_50", "Presentación de diapositivas",
+         "Comparte pantalla 50 veces.", R),
         (100, "stream_start_100", "Presentador de PowerPoint", "Comparte pantalla 100 veces.", R),
     ])  # fmt: skip
 
     # 🚪 Entradas y salidas -------------------------------------------------------------
     a += _tiers("voice_moves", "voice_joins", [
         (10, "joins_10", "Toc, toc, ¿se puede?", "Entra 10 veces a un canal de voz.", C),
+        (20, "voice_joins_20", "Puerta de entrada", "Entra 20 veces a un canal de voz.", C),
+        (50, "voice_joins_50", "Visita frecuente", "Entra 50 veces a un canal de voz.", R),
         (100, "joins_100", "Como Pedro por su casa", "Entra 100 veces a un canal de voz.", R),
+        (200, "voice_joins_200", "Cliente con llave", "Entra 200 veces a un canal de voz.", R),
+        (500, "voice_joins_500", "Inquilino de voz", "Entra 500 veces a un canal de voz.", E),
         (1_000, "joins_1k", "Puerta giratoria de voz", "Entra 1.000 veces a un canal de voz.", E),
     ])  # fmt: skip
     a += _tiers("voice_moves", "voice_hops", [
         (10, "hops_10", "Saltimbanqui de partidos", "Cambia de canal de voz 10 veces.", C),
+        (20, "voice_hops_20", "Cambio de mesa", "Cambia de canal de voz 20 veces.", C),
+        (50, "voice_hops_50", "Nómada de canales", "Cambia de canal de voz 50 veces.", R),
         (100, "hops_100", "Saltimbanqui de canales", "Cambia de canal de voz 100 veces.", R),
+        (250, "voice_hops_250", "Trashumancia de voz", "Cambia de canal de voz 250 veces.", E),
         (500, "hops_500", "Cambio de chaqueta", "Cambia de canal de voz 500 veces.", E),
     ])  # fmt: skip
     a += _tiers("voice_moves", "voice_ghost", [
@@ -1749,7 +1947,12 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("voice_moves", "entrance_played", [
         (10, "entrance_play_10", "Entrada de torero en Las Ventas",
          "Que suene tu entrada 10 veces.", C),
+        (20, "entrance_played_20", "Tu entrada, en bucle", "Que suene tu entrada 20 veces.", C),
+        (50, "entrance_played_50", "Llegada triunfal", "Que suene tu entrada 50 veces.", R),
         (100, "entrance_play_100", "Llegó el que faltaba", "Que suene tu entrada 100 veces.", R),
+        (200, "entrance_played_200", "Banda de música particular",
+         "Que suene tu entrada 200 veces.", R),
+        (500, "entrance_played_500", "Entrada con fanfarria", "Que suene tu entrada 500 veces.", E),
         (1_000, "entrance_play_1k", "Himno nacional", "Que suene tu entrada 1.000 veces.", E),
     ])  # fmt: skip
     a += _tiers("voice_moves", "entrance_volume_max", [
@@ -1764,17 +1967,25 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("music", "music_queued", [
         (1, "music_1", "DJ de verbena", "Pon una canción con `poner`.", C),
         (50, "music_50", "Pinchadiscos de verbena", "Pon 50 canciones.", R),
+        (150, "music_queued_150", "Lista de reproducción de cumpleaños", "Pon 150 canciones.", R),
+        (250, "music_queued_250", "DJ de bodas y bautizos", "Pon 250 canciones.", E),
         (500, "music_500", "Radiofórmula de barrio", "Pon 500 canciones.", E),
     ])  # fmt: skip
     a += _tiers("music", "voice_music", [
         (60, "vmusic_1h", "Verbena de la Paloma",
          "Pasa 1 hora en llamada con el bot poniendo música.", C),
+        (300, "voice_music_300", "Hilo musical de ascensor",
+         "Pasa 5 horas en llamada con música.", R),
         (600, "vmusic_10h", "Discoteca de Ibiza en casa",
          "Pasa 10 horas en llamada con música.", R),
+        (1_500, "voice_music_1500", "Concierto de cinco horas",
+         "Pasa 25 horas en llamada con música.", E),
         (3_000, "vmusic_50h", "Tenderete", "Pasa 50 horas en llamada con música.", E),
     ], unit="min")  # fmt: skip
     a += _tiers("music", "music_skips", [
         (10, "skip_10", "Siguiente, que esta no", "Salta 10 canciones.", C),
+        (20, "music_skips_20", "Canción para saltar", "Salta 20 canciones.", C),
+        (50, "music_skips_50", "Mano en el siguiente", "Salta 50 canciones.", R),
         (100, "skip_100", "Ni la escuchas entera", "Salta 100 canciones.", R),
     ])  # fmt: skip
     a += _tiers("music", "music_stops", [
@@ -1819,21 +2030,29 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("memes", "img_made", [
         (1, "img_1", "Fotoshopero", "Genera tu primera imagen con un efecto (`memes`).", C),
         (50, "img_50", "Fábrica de memes", "Genera 50 imágenes.", R),
+        (150, "img_made_150", "Imprenta de memes", "Genera 150 imágenes.", R),
+        (250, "img_made_250", "Taller de Photoshop", "Genera 250 imágenes.", E),
         (420, "img_420", "Photoshop a las cuatro y veinte", "Genera 420 imágenes.", E, True),
         (500, "img_500", "Ministerio de Propaganda", "Genera 500 imágenes.", E),
     ])  # fmt: skip
     a += _tiers("memes", "img_magik", [
         (10, "magik_10", "Magia negra de la Agencia Tributaria",
          "Deforma 10 imágenes con `magik`.", C),
+        (20, "img_magik_20", "Varita de juguete", "Deforma 20 imágenes con `magik`.", C),
+        (50, "img_magik_50", "Hechizo casero", "Deforma 50 imágenes con `magik`.", R),
         (100, "magik_100", "Brujo de Teror", "Deforma 100 imágenes con `magik`.", R),
     ])  # fmt: skip
     a += _tiers("memes", "img_video", [
         (10, "img_video_10", "Productora audiovisual", "Genera 10 vídeos o GIFs con efectos.", C),
+        (20, "img_video_20", "Primer cortometraje", "Genera 20 vídeos o GIFs.", C),
+        (50, "img_video_50", "Productor de GIFs", "Genera 50 vídeos o GIFs.", R),
         (100, "img_video_100", "Televisión pública", "Genera 100 vídeos o GIFs.", R),
     ])  # fmt: skip
     a += _tiers("memes", "img_on_others", [
         (10, "img_others_10", "Bullying artístico",
          "Aplica un efecto al avatar de otro 10 veces.", C),
+        (20, "img_on_others_20", "Retrato robot", "Usa a otros de modelo 20 veces.", C),
+        (50, "img_on_others_50", "Caricatura a traición", "Usa a otros de modelo 50 veces.", R),
         (100, "img_others_100", "Caricaturista de feria", "Usa a otros de modelo 100 veces.", R),
     ])  # fmt: skip
     a += _tiers("memes", "img_self", [
@@ -1848,6 +2067,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("memes", "babel_phrases", [
         (1, "babel_1", "Torre de Babel", "Pasa una frase por `babel`.", C),
         (25, "babel_25", "Traductor de Google, nivel pinganillo", "Pasa 25 frases por `babel`.", R),
+        (50, "babel_phrases_50", "Diccionario de bolsillo", "Pasa 50 frases por `babel`.", R),
         (100, "babel_100", "Intérprete de la ONU", "Pasa 100 frases por `babel`.", E),
     ])  # fmt: skip
     a += _tiers("memes", "babel_renames", [
@@ -1872,14 +2092,23 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (50, "react_50", "Me gusta tu me gusta",
          "Reacciona a 50 mensajes de otros.", C),
         (69, "react_69", "Sesenta y nueve pulgares", "Reacciona a 69 mensajes de otros.", C, True),
+        (150, "reactions_given_150", "Corazoncito", "Reacciona a 150 mensajes de otros.", C),
+        (250, "reactions_given_250", "Me gusta y me gusta",
+         "Reacciona a 250 mensajes de otros.", R),
         (500, "react_500", "Dedo rápido de votación telemática",
          "Reacciona a 500 mensajes de otros.", R),
+        (1_500, "reactions_given_1500", "Dedo incansable", "Reacciona a 1.500 mensajes.", R),
+        (2_500, "reactions_given_2500", "Reacción en cadena", "Reacciona a 2.500 mensajes.", E),
         (5_000, "react_5k", "Reaccionador compulsivo", "Reacciona a 5.000 mensajes.", E),
     ])  # fmt: skip
     a += _tiers("social", "reactions_received", [
         (50, "liked_50", "Dando la nota",
          "Recibe 50 reacciones de otras personas.", C),
+        (150, "reactions_received_150", "Mensajes con aplausos", "Recibe 150 reacciones.", C),
+        (250, "reactions_received_250", "Gusta lo que dices", "Recibe 250 reacciones.", R),
         (500, "liked_500", "Carisma de estrella de rock", "Recibe 500 reacciones.", R),
+        (1_500, "reactions_received_1500", "Fan club propio", "Recibe 1.500 reacciones.", R),
+        (2_500, "reactions_received_2500", "Portada de revista", "Recibe 2.500 reacciones.", L),
         (5_000, "liked_5k", "Ídolo de masas", "Recibe 5.000 reacciones.", L),
     ])  # fmt: skip
     a += _tiers("social", "reactions_on_message_max", [
@@ -1891,6 +2120,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "greet_1", "Amigo de los de verdad",
          "Felicita a alguien por su cumpleaños.", C),
         (10, "greet_10", "Alma de la fiesta", "Felicita 10 cumpleaños.", R),
+        (20, "greetings_sent_20", "Tarta y velas", "Felicita 20 cumpleaños.", R),
         (50, "greet_50", "Tarta para todos", "Felicita 50 cumpleaños.", L),
     ])  # fmt: skip
     a += _tiers("social", "greetings_received", [
@@ -1916,9 +2146,11 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
 
     a += _tiers("social", "reactions_given", [
+        (15_000, "reactions_given_15000", "Pulgar incansable", "Reacciona a 15.000 mensajes.", M),
         (25_000, "react_25k", "Pulgar de acero", "Reacciona a 25.000 mensajes.", M),
     ])  # fmt: skip
     a += _tiers("social", "reactions_received", [
+        (15_000, "reactions_received_15000", "Celebridad del chat", "Recibe 15.000 reacciones.", M),
         (25_000, "liked_25k", "Influencer de barrio", "Recibe 25.000 reacciones.", M),
     ])  # fmt: skip
     a += _tiers("social", "reactions_on_message_max", [
@@ -1933,6 +2165,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("social", "msg_bot_call", [
         (100, "bot_call_100", "Pesado con el bot", "Menciona al bot o di su nombre 100 veces.", R),
+        (200, "msg_bot_call_200", "Llamada de cortesía", "Llama al bot 200 veces.", R),
+        (500, "msg_bot_call_500", "Pesado con cariño", "Llama al bot 500 veces.", E),
         (1_000, "bot_call_1k", "Mejor amigo de Jovani", "Llama al bot 1.000 veces.", E),
     ])  # fmt: skip
     a += _tiers("social", "msg_sanxe", [
@@ -1945,6 +2179,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Apunta tu primera tarea con `lista`.", C),
         (5, "todo_add_5", "Pósit en la nevera", "Apunta 5 tareas en la lista.", C),
         (25, "todo_add_25", "Agenda de Mary Poppins", "Apunta 25 tareas en la lista.", R),
+        (50, "todo_added_50", "Lista con propósitos", "Apunta 50 tareas en la lista.", R),
         (69, "todo_add_69", "Lista de posturas pendientes",
          "Apunta 69 tareas en la lista.", R, True),
         (100, "todo_add_100", "Jefe de proyecto", "Apunta 100 tareas en la lista.", E),
@@ -1956,14 +2191,17 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Tacha 5 tareas de la lista.", C),
         (25, "todo_done_25", "Tachando como si no hubiera mañana",
          "Tacha 25 tareas de la lista.", R),
+        (50, "todo_done_50", "Bolígrafo en la oreja", "Tacha 50 tareas de la lista.", R),
         (100, "todo_done_100", "Máquina de tachar promesas", "Tacha 100 tareas de la lista.", E),
     ])  # fmt: skip
 
     a += _tiers("todo", "todo_added", [
+        (250, "todo_added_250", "Libreta llena", "Apunta 250 tareas en la lista.", L),
         (500, "todo_add_500", "Lista de la compra del Mercadona",
          "Apunta 500 tareas en la lista.", L),
     ])  # fmt: skip
     a += _tiers("todo", "todo_done", [
+        (250, "todo_done_250", "Lo pendiente, hecho", "Tacha 250 tareas de la lista.", E),
         (404, "todo_done_404", "Error 404: tarea no encontrada",
          "Tacha 404 tareas de la lista.", E, True),
         (500, "todo_done_500", "Productividad alemana", "Tacha 500 tareas de la lista.", L),
@@ -1997,7 +2235,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "beer_sip_1", "El primer sorbo", "Bebe tu primer sorbo en una beernight.", C),
         (25, "beer_sip_25", "Calentando la garganta",
          "Bebe 25 sorbos en beernights.", C),
+        (50, "beer_sips_50", "Gargarismos de cerveza", "Bebe 50 sorbos en beernights.", C),
         (100, "beer_sip_100", "Hígado de acero", "Bebe 100 sorbos en beernights.", R),
+        (250, "beer_sips_250", "Tonel con patas", "Bebe 250 sorbos en beernights.", E),
         (500, "beer_sip_500", "Barril humano", "Bebe 500 sorbos en beernights.", E),
         (1_500, "beer_sip_1500", "Patrocinado por Tropical",
          "Bebe 1.500 sorbos en beernights.", L),
@@ -2022,7 +2262,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("beernight", "beer_reports_ok", [
         (1, "beer_snitch_1", "Chivato de patio de colegio", "Que te confirmen un chivatazo.", C),
         (10, "beer_snitch_10", "Chivato con jarra", "Que te confirmen 10 chivatazos.", R),
+        (20, "beer_reports_ok_20", "Chivato con premio", "Que te confirmen 20 chivatazos.", R),
         (50, "beer_snitch_50", "Pegasus con patas", "Que te confirmen 50 chivatazos.", E),
+        (75, "beer_reports_ok_75", "Cazado en el acto", "Que te confirmen 75 chivatazos.", E),
         (200, "beer_snitch_200", "Gran Hermano", "Que te confirmen 200 chivatazos.", L),
     ])  # fmt: skip
     a += _tiers("beernight", "beer_reports_false", [
@@ -2034,6 +2276,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("beernight", "beer_confirms", [
         (1, "beer_confirm_1", "Notario", "Confirma un chivatazo ajeno.", C),
         (25, "beer_confirm_25", "Fe pública", "Confirma 25 chivatazos ajenos.", R),
+        (50, "beer_confirms_50", "Notario de chivatazos", "Confirma 50 chivatazos ajenos.", R),
         (100, "beer_confirm_100", "Tribunal Supremo de la birra",
          "Confirma 100 chivatazos ajenos.", E),
     ])  # fmt: skip
@@ -2044,6 +2287,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("beernight", "beer_confessions", [
         (1, "beer_confess_1", "Confieso que he bebido", "Confiesa que has caído.", C),
         (10, "beer_confess_10", "Arrepentido", "Confiesa 10 veces que has caído.", R),
+        (20, "beer_confessions_20", "Confesión sin cura", "Confiesa 20 veces que has caído.", R),
         (50, "beer_confess_50", "Colaborador con la justicia",
          "Confiesa 50 veces que has caído.", E),
     ])  # fmt: skip
@@ -2052,17 +2296,20 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Bebe por un chivatazo confirmado.", C),
         (25, "beer_caught_25", "Investigado por la birra",
          "Bebe por 25 chivatazos confirmados.", R),
+        (50, "beer_accused_50", "Fichado por la birra", "Bebe por 50 chivatazos confirmados.", R),
         (100, "beer_caught_100", "Ficha policial", "Bebe por 100 chivatazos confirmados.", E),
     ])  # fmt: skip
     a += _tiers("beernight", "beer_event_hits", [
         (1, "beer_event_1", "Le tocó", "Bebe por un evento aleatorio.", C),
         (25, "beer_event_25", "Imán de desgracias", "Bebe por 25 eventos aleatorios.", R),
+        (50, "beer_event_hits_50", "Diana de la mala suerte", "Bebe por 50 eventos aleatorios.", R),
         (100, "beer_event_100", "El bombo te odia", "Bebe por 100 eventos aleatorios.", E),
     ])  # fmt: skip
     a += _tiers("beernight", "beer_duels_won", [
         (1, "beer_duel_win_1", "En guardia", "Gana un duelo de la beernight.", C),
         (10, "beer_duel_win_10", "Gladiador de la Puerta del Sol",
          "Gana 10 duelos de la beernight.", R),
+        (20, "beer_duels_won_20", "Duelista de jarra", "Gana 20 duelos de la beernight.", R),
         (50, "beer_duel_win_50", "Invicto del salón", "Gana 50 duelos de la beernight.", E),
     ])  # fmt: skip
     a += _tiers("beernight", "beer_duels_lost", [
@@ -2082,7 +2329,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("beernight", "beer_given", [
         (10, "beer_give_10", "Generoso con lo ajeno",
          "Haz beber 10 sorbos a otros con repartos o chivatazos.", C),
+        (20, "beer_given_20", "Bandeja de chupitos", "Haz beber 20 sorbos a otros.", C),
+        (50, "beer_given_50", "Ronda de la casa", "Haz beber 50 sorbos a otros.", R),
         (100, "beer_give_100", "Recaudador", "Haz beber 100 sorbos a otros.", R),
+        (250, "beer_given_250", "Repartidor de rondas", "Haz beber 250 sorbos a otros.", E),
         (500, "beer_give_500", "Agencia Tributaria de la birra",
          "Haz beber 500 sorbos a otros.", E),
     ])  # fmt: skip
@@ -2100,6 +2350,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Que alguien caiga en un mandamiento que propusiste.", C),
         (25, "beer_law_used_25", "Hecha la ley…",
          "Que caigan 25 veces en tus mandamientos.", R),
+        (50, "beer_custom_broken_50", "Legislador cervecero",
+         "Que caigan 50 veces en tus mandamientos.", R),
         (100, "beer_law_used_100", "Las tablas de la ley cervecera",
          "Que caigan 100 veces en tus mandamientos.", E),
     ])  # fmt: skip
@@ -2227,19 +2479,28 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "rl_1", "Hagan juego", "Juega tu primera tirada de ruleta.", C),
         (50, "rl_50", "Parroquiano de la ruleta",
          "Juega 50 tiradas de ruleta.", C),
+        (150, "roulette_spins_150", "Silla con tu nombre", "Juega 150 tiradas de ruleta.", R),
         (250, "rl_250", "Crupier honorario", "Juega 250 tiradas de ruleta.", R),
+        (500, "roulette_spins_500", "Mareado de tanto girar", "Juega 500 tiradas de ruleta.", E),
         (1_000, "rl_1k", "La bola es mi amiga", "Juega 1.000 tiradas de ruleta.", E),
+        (2_500, "roulette_spins_2500", "Con la bola en la cabeza",
+         "Juega 2.500 tiradas de ruleta.", L),
         (5_000, "rl_5k", "Vives en la mesa", "Juega 5.000 tiradas de ruleta.", L),
     ])  # fmt: skip
     a += _tiers("roulette", "roulette_wins", [
         (10, "rlw_10", "La bola te sonríe", "Gana 10 tiradas de ruleta.", C),
+        (20, "roulette_wins_20", "Rojo de alegría", "Gana 20 tiradas de ruleta.", C),
+        (50, "roulette_wins_50", "La bola se deja querer", "Gana 50 tiradas de ruleta.", R),
         (100, "rlw_100", "Ruleta rusa, pero con suerte", "Gana 100 tiradas de ruleta.", R),
+        (200, "roulette_wins_200", "Ruleta de la fortuna", "Gana 200 tiradas de ruleta.", R),
+        (500, "roulette_wins_500", "Crupier en la sombra", "Gana 500 tiradas de ruleta.", L),
         (1_000, "rlw_1k", "Rey de la ruleta", "Gana 1.000 tiradas de ruleta.", L),
     ])  # fmt: skip
     a += _tiers("roulette", "roulette_straight_wins", [
         (1, "pleno_1", "¡Pleno!", "Acierta un número suelto.", C),
         (10, "pleno_10", "Francotirador del tapete",
          "Acierta 10 plenos.", E),
+        (20, "roulette_straight_wins_20", "Pleno en la diana", "Acierta 20 plenos.", E),
         (50, "pleno_50", "Bruja Lola", "Acierta 50 plenos.", L),
     ])  # fmt: skip
     a += _tiers("roulette", "roulette_green_wins", [
@@ -2251,6 +2512,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("roulette", "roulette_color_wins", [
         (50, "color_50", "Rojos y azules",
          "Gana 50 apuestas a color.", C),
+        (150, "roulette_color_wins_150", "Daltónico con suerte", "Gana 150 apuestas a color.", C),
+        (250, "roulette_color_wins_250", "Paleta de pintor", "Gana 250 apuestas a color.", E),
         (500, "color_500", "Ajedrecista", "Gana 500 apuestas a color.", E),
     ])  # fmt: skip
     a += _tiers("roulette", "roulette_wagers_max", [
@@ -2280,11 +2543,19 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("roulette", "roulette_dozen_wins", [
         (25, "dozen_25", "Docena de huevos",
          "Gana 25 apuestas a docena o columna.", C),
+        (50, "roulette_dozen_wins_50", "Media docena de suerte",
+         "Gana 50 apuestas a docena o columna.", C),
+        (150, "roulette_dozen_wins_150", "Docena de churros",
+         "Gana 150 apuestas a docena o columna.", E),
         (250, "dozen_250", "Mayorista de docenas", "Gana 250 apuestas a docena o columna.", E),
     ])  # fmt: skip
     a += _tiers("roulette", "roulette_half_wins", [
         (50, "half_50", "Par o impar, qué más da",
          "Gana 50 apuestas a par, impar, 1-18 o 19-36.", C),
+        (150, "roulette_half_wins_150", "Par de ases, impar de reyes",
+         "Gana 150 apuestas a par, impar o mitades.", C),
+        (250, "roulette_half_wins_250", "Mitad y mitad",
+         "Gana 250 apuestas a par, impar o mitades.", E),
         (500, "half_500", "Cara o cruz profesional",
          "Gana 500 apuestas a par, impar o mitades.", E),
     ])  # fmt: skip
@@ -2354,6 +2625,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("roulette", "roulette_zero_sweep", [
         (10, "zero_10", "El cero, que es de la casa",
          "Pierde todo 10 veces porque sale el 0 o el 00.", R),
+        (20, "roulette_zero_sweep_20", "Cero a la izquierda",
+         "Que el cero te barra la mesa 20 veces.", R),
+        (50, "roulette_zero_sweep_50", "El cero te persigue",
+         "Que el cero te barra la mesa 50 veces.", E),
         (100, "zero_100", "Gafe del cero", "Que el cero te barra la mesa 100 veces.", E),
     ])  # fmt: skip
     # Rayos: la ruleta relámpago de los casinos en línea, con Perro Sanxe de Zeus.
@@ -2373,6 +2648,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Ten un pleno con rayo y que la bola caiga en otro sitio.", C),
         (25, "rayo_fallo_25", "La AEMET no avisó",
          "Ten rayo en tu número 25 veces sin que salga.", E),
+        (50, "roulette_lucky_missed_50", "Rayo sin tormenta",
+         "Ten rayo en tu número 50 veces sin que salga.", E),
         (100, "rayo_fallo_100", "Me cae el rayo al lado",
          "Ten rayo en tu número 100 veces sin que salga.", L),
     ])  # fmt: skip
@@ -2388,8 +2665,14 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("roulette", "roulette_near_miss", [
         (1, "casi_1", "Por una casilla", "Que la bola caiga a una o dos casillas de tu pleno.", C),
         (25, "casi_25", "Casi, casi", "Quédate a una o dos casillas de tu pleno 25 veces.", R),
+        (50, "roulette_near_miss_50", "Por un tris",
+         "Quédate a una o dos casillas de tu pleno 50 veces.", R),
+        (150, "roulette_near_miss_150", "Rozando el pleno",
+         "Quédate a una o dos casillas de tu pleno 150 veces.", L),
         (250, "casi_250", "El casi es mi apellido",
          "Quédate a una o dos casillas de tu pleno 250 veces.", L),
+        (500, "roulette_near_miss_500", "Coleccionista de casis",
+         "Quédate a una o dos casillas de tu pleno 500 veces y sigue jugando.", M),
         (1_000, "casi_1k", "El casi más largo del mundo",
          "Quédate a una o dos casillas de tu pleno 1.000 veces y sigue jugando.", M),
     ])  # fmt: skip
@@ -2416,13 +2699,20 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("blackjack", "bj_hands", [
         (1, "bj_1", "Barajando ilusiones", "Juega tu primera mano de blackjack.", C),
         (50, "bj_50", "Jugador de mus sin pareja", "Juega 50 manos de blackjack.", C),
+        (150, "bj_hands_150", "Mano de práctica", "Juega 150 manos de blackjack.", R),
         (250, "bj_250", "Tahúr", "Juega 250 manos de blackjack.", R),
+        (500, "bj_hands_500", "Habitual de la mesa verde", "Juega 500 manos de blackjack.", E),
         (1_000, "bj_1k", "Mesa reservada", "Juega 1.000 manos de blackjack.", E),
+        (2_500, "bj_hands_2500", "Mobiliario del blackjack", "Juega 2.500 manos de blackjack.", L),
         (5_000, "bj_5k", "Dueño del casino", "Juega 5.000 manos de blackjack.", L),
     ])  # fmt: skip
     a += _tiers("blackjack", "bj_wins", [
         (10, "bjw_10", "Le pillas el truco", "Gana 10 manos de blackjack.", C),
+        (20, "bj_wins_20", "Ganador en prácticas", "Gana 20 manos de blackjack.", C),
+        (50, "bj_wins_50", "Veintiuno a domicilio", "Gana 50 manos de blackjack.", R),
         (100, "bjw_100", "Veintiuno de cuna", "Gana 100 manos de blackjack.", R),
+        (200, "bj_wins_200", "Plantarse a tiempo", "Gana 200 manos de blackjack.", R),
+        (500, "bj_wins_500", "Mano de hierro", "Gana 500 manos de blackjack.", E),
         (1_000, "bjw_1k", "La banca te tiene miedo",
          "Gana 1.000 manos de blackjack.", E),
     ])  # fmt: skip
@@ -2430,6 +2720,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "natural_1", "¡Blackjack!", "Saca un blackjack (as y figura de salida).", C),
         (10, "natural_10", "As en la manga",
          "Saca 10 blackjacks.", R),
+        (20, "bj_naturals_20", "As y figura", "Saca 20 blackjacks.", R),
         (50, "natural_50", "Contador de cartas del KGB", "Saca 50 blackjacks.", E),
     ])  # fmt: skip
     a += _tiers("blackjack", "bj_double_wins", [
@@ -2498,15 +2789,22 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (2_500, "bjw_2500", "Banca rota", "Gana 2.500 manos de blackjack.", L),
     ])  # fmt: skip
     a += _tiers("blackjack", "bj_naturals", [
+        (75, "bj_naturals_75", "Blackjack de catálogo", "Saca 75 blackjacks.", E),
         (200, "natural_200", "Veintiuno de oro", "Saca 200 blackjacks.", L),
     ])  # fmt: skip
     a += _tiers("blackjack", "bj_busts", [
         (1_000, "bust_1k", "Pasado de vueltas", "Pásate de 21 mil veces.", L),
     ])  # fmt: skip
     a += _tiers("blackjack", "bj_pushes", [
+        (20, "bj_pushes_20", "Empate con empate", "Empata 20 manos.", C),
+        (50, "bj_pushes_50", "Tablas en la mesa", "Empata 50 manos.", E),
         (100, "push_100", "Tablas de ajedrez", "Empata 100 manos.", E),
     ])  # fmt: skip
     a += _tiers("blackjack", "bj_dealer_busts", [
+        (50, "bj_dealer_busts_50", "La banca revienta, tú cobras",
+         "Gana 50 manos porque la banca se pasa.", C),
+        (150, "bj_dealer_busts_150", "Paciencia de crupier",
+         "Gana 150 manos porque la banca se pasa.", E),
         (250, "dbust_250", "Banca en quiebra", "Gana 250 manos porque la banca se pasa.", E),
     ])  # fmt: skip
     a += _tiers("blackjack", "bj_suited_natural", [
@@ -2522,6 +2820,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("blackjack", "bj_double_loss", [
         (10, "dloss_10", "Doblar y llorar", "Pierde 10 manos después de doblar.", R),
+        (20, "bj_double_loss_20", "Doblar y perder", "Pierde 20 manos dobladas.", R),
+        (50, "bj_double_loss_50", "Doble disgusto", "Pierde 50 manos dobladas.", L),
         (100, "dloss_100", "Doble o nada, y salió nada", "Pierde 100 manos dobladas.", L),
     ])  # fmt: skip
     a += _tiers("blackjack", "bj_stand_low", [
@@ -2548,8 +2848,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Cobra el seguro: la banca tenía blackjack.", C),
         (10, "bj_rescate_25", "El FROB te quiere",
          "Cobra el seguro 10 veces.", E),
+        (20, "bj_dealer_bj_saved_20", "Seguro bien pagado", "Cobra el seguro 20 veces.", E),
         (50, "bj_rescate_250", "Tu ángel de la guarda cobra comisión",
          "Cobra el seguro 50 veces.", L),
+        (75, "bj_dealer_bj_saved_75", "Póliza bien pagada", "Cobra el seguro 75 veces.", L),
         (200, "bj_rescate_1k", "Rescatado con dinero de todos",
          "Cobra el seguro 200 veces.", M),
     ])  # fmt: skip
@@ -2595,6 +2897,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("blackjack", "bj_cut_cards", [
         (1, "bj_corte", "Carta de corte", "Juega hasta que salga la carta de corte.", C),
         (50, "bj_corte_50", "Zapatero remendón", "Llega 50 veces a la carta de corte.", R),
+        (150, "bj_cut_cards_150", "Fin de zapato", "Llega 150 veces a la carta de corte.", R),
+        (250, "bj_cut_cards_250", "Barajador de seis mazos",
+         "Llega 250 veces a la carta de corte.", E),
         (500, "bj_corte_500", "Seis barajas de memoria",
          "Llega 500 veces a la carta de corte.", E),
     ])  # fmt: skip
@@ -2603,6 +2908,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Gana una mano habiendo subido la ficha con la cuenta a +3 o más.", R),
         (25, "bj_mit", "Equipo del MIT",
          "Gana 25 manos habiendo subido la ficha con la cuenta a +3 o más.", E),
+        (50, "bj_hot_wins_50", "Contador en prácticas",
+         "Gana 50 manos habiendo subido la ficha con la cuenta a +3 o más.", E),
+        (150, "bj_hot_wins_150", "Cuenta alta, apuesta alta",
+         "Gana 150 manos habiendo subido la ficha con la cuenta a +3 o más.", L),
         (250, "bj_veintiuno", "Veintiuno, la película",
          "Gana 250 manos habiendo subido la ficha con la cuenta a +3 o más.", L),
     ])  # fmt: skip
@@ -2636,6 +2945,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "cuenta a +4 o más.", C),
         (10, "bj_caja_b", "Caja B de Génova",
          f"Gana 10 manos a {PIT_BOSS_SPREAD} veces tu ficha más baja con la cuenta a +4 o más.", R),
+        (20, "bj_whale_wins_20", "Apuesta gorda con la cuenta caliente",
+         "Gana 20 manos a 8 veces tu ficha más baja con la cuenta a +4 o más.", R),
+        (50, "bj_whale_wins_50", "Rain Man del blackjack",
+         "Gana 50 manos a 8 veces tu ficha más baja con la cuenta a +4 o más.", L),
         (100, "bj_rato", "Ni Rato en Bankia",
          f"Gana 100 manos a {PIT_BOSS_SPREAD} veces tu ficha más baja con la cuenta a +4 o "
          "más.", L),
@@ -2682,31 +2995,59 @@ def _build_catalog() -> tuple[Achievement, ...]:
     # 💰 Casino ---------------------------------------------------------------------------
     a += _tiers("casino", "casino_wagered", [
         (10_000, "wager_10k", "Apostador de barrio", "Apuesta 10.000 Y$ en total.", C),
+        (20_000, "casino_wagered_20000", "Ahorros de la Primera Comunión",
+         "Apuesta 20.000 Y$ en total.", C),
+        (50_000, "casino_wagered_50000", "Sueldo de becario apostado",
+         "Apuesta 50.000 Y$ en total.", R),
         (100_000, "wager_100k", "Fondos Next Generation ejecutados",
          "Apuesta 100.000 Y$ en total.", R),
+        (200_000, "casino_wagered_200000", "Hipoteca en fichas", "Apuesta 200.000 Y$ en total.", R),
+        (500_000, "casino_wagered_500000", "Medio millón en el tapete",
+         "Apuesta 500.000 Y$ en total.", E),
         (1_000_000, "wager_1m", "Ballena azul", "Apuesta 1.000.000 Y$ en total.", E),
+        (2_000_000, "casino_wagered_2000000", "Fortuna de cripto en el tapete",
+         "Apuesta 2.000.000 Y$ en total.", E),
+        (5_000_000, "casino_wagered_5000000", "Presupuesto de Champions",
+         "Apuesta 5.000.000 Y$ en total.", L),
         (10_000_000, "wager_10m", "Jeque del casino",
          "Apuesta 10.000.000 Y$ en total.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("casino", "casino_win_max", [
         (1_000, "bigwin_1k", "Golpe de suerte legal",
          "Gana 1.000 Y$ netos en una jugada.", C),
+        (2_000, "casino_win_max_2000", "Pellizco", "Gana 2.000 Y$ netos en una jugada.", C),
+        (5_000, "casino_win_max_5000", "Paga extra", "Gana 5.000 Y$ netos en una jugada.", R),
         (10_000, "bigwin_10k", "Pelotazo", "Gana 10.000 Y$ netos en una jugada.", R),
+        (20_000, "casino_win_max_20000", "Bonus de directivo",
+         "Gana 20.000 Y$ netos en una jugada.", R),
+        (50_000, "casino_win_max_50000", "Golpe de suerte de los gordos",
+         "Gana 50.000 Y$ netos en una jugada.", E),
         (100_000, "bigwin_100k", "El gran pelotazo",
          "Gana 100.000 Y$ netos en una jugada.", E),
+        (200_000, "casino_win_max_200000", "Atraco a la banca, legal",
+         "Gana 200.000 Y$ netos en una jugada.", E),
+        (500_000, "casino_win_max_500000", "Medio millón de golpe",
+         "Gana 500.000 Y$ netos en una jugada.", L),
         (1_000_000, "bigwin_1m", "Rompebancas", "Gana 1.000.000 Y$ netos en una jugada.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("casino", "casino_loss_max", [
         (1_000, "bigloss_1k", "Ay, que me duele",
          "Pierde 1.000 Y$ en una jugada.", C),
+        (2_000, "casino_loss_max_2000", "Pellizco al revés", "Pierde 2.000 Y$ en una jugada.", C),
+        (5_000, "casino_loss_max_5000", "Mordisco al bolsillo",
+         "Pierde 5.000 Y$ en una jugada.", R),
         (10_000, "bigloss_10k", "Eso ha dolido más que el IVA",
          "Pierde 10.000 Y$ en una jugada.", R),
+        (20_000, "casino_loss_max_20000", "Hachazo", "Pierde 20.000 Y$ en una jugada.", R),
+        (50_000, "casino_loss_max_50000", "Esto no se lo cuento a nadie",
+         "Pierde 50.000 Y$ en una jugada.", E),
         (100_000, "bigloss_100k", "Estoy destruido, pero por fuera",
          "Pierde 100.000 Y$ en una jugada.", E),
     ], unit="money")  # fmt: skip
     a += _tiers("casino", "casino_all_in", [
         (1, "allin_1", "All-in", "Apuesta todo tu saldo.", C),
         (10, "allin_10", "A pecho descubierto", "Ve all-in 10 veces.", R),
+        (20, "casino_all_in_20", "Valiente o inconsciente", "Ve all-in 20 veces.", R),
         (50, "allin_50", "YOLO, Elon", "Ve all-in 50 veces.", E),
     ])  # fmt: skip
     a += _tiers("casino", "casino_all_in_wins", [
@@ -2746,15 +3087,25 @@ def _build_catalog() -> tuple[Achievement, ...]:
     )
 
     a += _tiers("casino", "casino_wagered", [
+        (20_000_000, "casino_wagered_20000000", "Fichaje de Mbappé en fichas",
+         "Apuesta 20.000.000 Y$ en total.", L),
+        (50_000_000, "casino_wagered_50000000", "PIB de Andorra en fichas",
+         "Apuesta 50.000.000 Y$ en total.", M),
         (100_000_000, "wager_100m", "Ballena del casino", "Apuesta 100.000.000 Y$ en total.", M),
     ], unit="money")  # fmt: skip
     a += _tiers("casino", "casino_loss_max", [
+        (200_000, "casino_loss_max_200000", "Agujero en la cartera",
+         "Pierde 200.000 Y$ en una jugada.", E),
+        (500_000, "casino_loss_max_500000", "Se me ha caído medio millón",
+         "Pierde 500.000 Y$ en una jugada.", L),
         (1_000_000, "bigloss_1m", "Arruinado con estilo", "Pierde 1.000.000 Y$ en una jugada.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("casino", "casino_broke", [
+        (20, "casino_broke_20", "Ruina recurrente", "Quédate a cero en el casino 20 veces.", R),
         (50, "broke_50", "Cliente fiel del IMV", "Quédate a cero en el casino 50 veces.", E),
     ])  # fmt: skip
     a += _tiers("casino", "casino_all_in", [
+        (75, "casino_all_in_75", "Kamikaze del tapete", "Ve all-in 75 veces.", E),
         (200, "allin_200", "Todo o nada, siempre todo", "Ve all-in 200 veces.", L),
     ])  # fmt: skip
     a += _tiers("casino", "casino_win_streak_max", [
@@ -2838,14 +3189,23 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "slots_1", "Tirar de la palanca", "Juega tu primera tirada en la tragaperras.", C),
         (100, "slots_100", "Enganchado a la palanca",
          "Juega 100 tiradas en la tragaperras.", C),
+        (200, "slots_spins_200", "Doscientas palancas", "Juega 200 tiradas.", C),
+        (500, "slots_spins_500", "Muñeca de la palanca", "Juega 500 tiradas.", R),
         (1_000, "slots_1k", "Zombi de la máquina", "Juega 1.000 tiradas.", R),
+        (2_000, "slots_spins_2000", "Tendinitis de tragaperras", "Juega 2.000 tiradas.", R),
+        (5_000, "slots_spins_5000", "La palanca ya es tuya", "Juega 5.000 tiradas.", E),
         (10_000, "slots_10k", "La máquina te conoce", "Juega 10.000 tiradas.", E),
+        (25_000, "slots_spins_25000", "Monumento a la tragaperras", "Juega 25.000 tiradas.", M),
         (50_000, "slots_50k", "Parte del mobiliario", "Juega 50.000 tiradas.", M),
     ])  # fmt: skip
     a += _tiers("slots", "slots_wins", [
         (10, "slotsw_10", "Tilín tilín", "Gana 10 tiradas en la tragaperras.", C),
+        (20, "slots_wins_20", "Musiquita de premio", "Gana 20 tiradas en la tragaperras.", C),
+        (50, "slots_wins_50", "Premio de feria", "Gana 50 tiradas en la tragaperras.", R),
         (100, "slotsw_100", "Luces y campanas de Navidad de Vigo",
          "Gana 100 tiradas en la tragaperras.", R),
+        (200, "slots_wins_200", "Campanitas de bar", "Gana 200 tiradas en la tragaperras.", R),
+        (500, "slots_wins_500", "Luces de colores", "Gana 500 tiradas en la tragaperras.", E),
         (1_000, "slotsw_1k", "Máquina de premios", "Gana 1.000 tiradas en la tragaperras.", E),
     ])  # fmt: skip
     a += _tiers("slots", "slots_jackpots", [
@@ -2856,10 +3216,14 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("slots", "slots_jackpot_max", [
         # El bote cae solo antes de 50.000 (`POT_CAP`): la meta queda por debajo del tope.
         (40_000, "jackpot_50k", "El bote, de los gordos", "Llévate un bote de 40.000 Y$ o más.", E),
+        (75_000, "slots_jackpot_max_75000", "Bote de los que salen en las noticias",
+         "Llévate un bote de 75.000 Y$ o más.", E),
         (250_000, "jackpot_250k", "Bote histórico", "Llévate un bote de 250.000 Y$ o más.", M),
     ], unit="money")  # fmt: skip
     a += _tiers("slots", "slots_win_max", [
         (10_000, "slots_rain", "Lluvia de monedas", "Gana 10.000 Y$ en una tirada.", R),
+        (20_000, "slots_win_max_20000", "Granizada de monedas", "Gana 20.000 Y$ en una tirada.", R),
+        (50_000, "slots_win_max_50000", "Diluvio de monedas", "Gana 50.000 Y$ en una tirada.", M),
         (100_000, "slots_storm", "Tormenta de monedas", "Gana 100.000 Y$ en una tirada.", M),
     ], unit="money")  # fmt: skip
     a += _tiers("slots", "slots_three_C", [
@@ -2894,6 +3258,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("slots", "slots_ldw", [
         (1, "ldw_1", "Ganar perdiendo", "Cobra un premio más pequeño que tu apuesta.", C, True),
         (100, "ldw_100", "Me sale a cuenta", "Cobra 100 premios más pequeños que tu apuesta.", C),
+        (200, "slots_ldw_200", "Gano perdiendo",
+         "Cobra 200 premios más pequeños que tu apuesta.", C),
+        (500, "slots_ldw_500", "Premio de consolación",
+         "Cobra 500 premios más pequeños que tu apuesta.", E),
         (1_000, "ldw_1k", "Contabilidad creativa",
          "Cobra 1.000 premios más pequeños que tu apuesta.", E),
     ])  # fmt: skip
@@ -2906,6 +3274,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "nearmiss_1", "Por un pelo", "Quédate a un símbolo de un premio gordo.", C),
         (1_000, "nearmiss_25", "Casi, casi… ¡toma mangó!",
          "Quédate 1.000 veces a un símbolo del premio gordo.", E),
+        (2_500, "slots_near_miss_2500", "Quedarse a un símbolo",
+         "Quédate 2.500 veces a un símbolo.", L),
         (5_000, "nearmiss_100", "La próxima sí", "Quédate 5.000 veces a un símbolo.", L),
     ])  # fmt: skip
     # El tercer rodillo frena despacio cuando los dos primeros prometen premio gordo,
@@ -2913,6 +3283,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     # 10 % de las tiradas, y 100 salían en tres o cuatro días. 1.000 vuelve a ser Épico.
     a += _tiers("slots", "slots_anticipation", [
         (10, "antic_10", "Corazón en un puño", "Ve frenar despacio el tercer rodillo 10 veces.", R),
+        (50, "slots_anticipation_50", "Suspense en el tercer rodillo",
+         "Ve frenar despacio el tercer rodillo 50 veces.", R),
+        (200, "slots_anticipation_200", "Infarto en el tercer rodillo",
+         "Ve frenar despacio el tercer rodillo 200 veces.", M),
         (1_000, "antic_100", "Taquicardia",
          "Ve frenar despacio el tercer rodillo 1.000 veces.", M),
     ])  # fmt: skip
@@ -2932,6 +3306,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("slots", "slots_slipped", [
         (10, "slipped_10", "Se pasó de frenada",
          "Ve el símbolo gordo cruzar la línea en el frenazo lento y pasarse, 10 veces.", C),
+        (30, "slots_slipped_30", "Frenazo en seco",
+         "Ve 30 veces el símbolo gordo pasarse de la línea en el último momento.", C),
+        (75, "slots_slipped_75", "Freno de mano roto",
+         "Ve 75 veces el símbolo gordo pasarse de la línea en el último momento.", E),
         (300, "slipped_300", "Ni con el freno de mano",
          "Ve 300 veces el símbolo gordo pasarse de la línea en el último momento.", E),
     ])  # fmt: skip
@@ -2939,6 +3317,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "free_1", "Entrada VIP", "Consigue giros gratis.", C),
         (10, "free_10", "Pase de temporada del Bernabéu de Florentino",
          "Consigue giros gratis 10 veces.", R),
+        (20, "slots_free_triggers_20", "Tiradas por la cara", "Consigue giros gratis 20 veces.", R),
         (50, "free_50", "Abono vitalicio", "Consigue giros gratis 50 veces.", E),
     ])  # fmt: skip
     a += _tiers("slots", "slots_free_spins", [
@@ -2958,10 +3337,14 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("slots", "slots_wild_wins", [
         (10, "wild_10", "Comodín al rescate", "Gana 10 tiradas gracias al 🃏.", C),
+        (20, "slots_wild_wins_20", "Comodín del público", "Gana 20 tiradas gracias al 🃏.", C),
+        (50, "slots_wild_wins_50", "Carta salvadora", "Gana 50 tiradas gracias al 🃏.", R),
         (100, "wild_100", "Amigo del comodín", "Gana 100 tiradas gracias al 🃏.", R),
     ])  # fmt: skip
     a += _tiers("slots", "slots_turbo", [
         (100, "turbo_100", "A toda pastilla", "Juega 100 tiradas en modo turbo.", C),
+        (200, "slots_turbo_200", "Turbo encendido", "Juega 200 tiradas en modo turbo.", C),
+        (500, "slots_turbo_500", "Prisa por perder", "Juega 500 tiradas en modo turbo.", R),
         (1_000, "turbo_1k", "Turbodiésel", "Juega 1.000 tiradas en modo turbo.", R),
     ])  # fmt: skip
     a += _tiers("slots", "slots_auto", [
@@ -2977,7 +3360,11 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("slots", "slots_pot_fed", [
         # Umbrales doblados en la 7.2, cuando el bote pasó del 3 % al 6 % de cada apuesta.
         (2_000, "pot_1k", "Alimentador del bote", "Aporta 2.000 Y$ al bote.", C),
+        (4_000, "slots_pot_fed_4000", "Donante del bote", "Aporta 4.000 Y$ al bote.", C),
+        (7_500, "slots_pot_fed_7500", "Patrocinador del bote", "Aporta 7.500 Y$ al bote.", E),
         (20_000, "pot_10k", "Mecenas del bote", "Aporta 20.000 Y$ al bote.", E),
+        (40_000, "slots_pot_fed_40000", "Accionista del bote", "Aporta 40.000 Y$ al bote.", E),
+        (75_000, "slots_pot_fed_75000", "Benefactor del bote", "Aporta 75.000 Y$ al bote.", L),
         (200_000, "pot_100k", "Casi dueño del bote", "Aporta 200.000 Y$ al bote.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("slots", "slots_night", [
@@ -2994,6 +3381,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ))  # fmt: skip
 
     a += _tiers("slots", "slots_wins", [
+        (2_000, "slots_wins_2000", "Domingo de tragaperras",
+         "Gana 2.000 tiradas en la tragaperras.", E),
+        (5_000, "slots_wins_5000", "Rey del tilín", "Gana 5.000 tiradas en la tragaperras.", M),
         (10_000, "slotsw_10k", "Domador de tragaperras",
          "Gana 10.000 tiradas en la tragaperras.", M),
     ])  # fmt: skip
@@ -3004,18 +3394,26 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (25, "slots_777_25", "Sietes de ensueño", "Saca 25 tríos de 7️⃣.", M),
     ])  # fmt: skip
     a += _tiers("slots", "slots_free_triggers", [
+        (75, "slots_free_triggers_75", "Barra libre de giros",
+         "Consigue giros gratis 75 veces.", E),
         (200, "free_200", "Giros infinitos", "Consigue giros gratis 200 veces.", L),
     ])  # fmt: skip
     a += _tiers("slots", "slots_wild_wins", [
+        (200, "slots_wild_wins_200", "El comodín me quiere", "Gana 200 tiradas gracias al 🃏.", R),
+        (500, "slots_wild_wins_500", "Mano del comodín", "Gana 500 tiradas gracias al 🃏.", E),
         (1_000, "wild_1k", "Comodín de oro", "Gana 1.000 tiradas gracias al 🃏.", E),
     ])  # fmt: skip
     a += _tiers("slots", "slots_turbo", [
+        (2_000, "slots_turbo_2000", "Velocidad de la luz", "Juega 2.000 tiradas en turbo.", R),
+        (5_000, "slots_turbo_5000", "Fórmula 1 de tragaperras", "Juega 5.000 tiradas en turbo.", L),
         (10_000, "turbo_10k", "Sin animaciones, sin alma", "Juega 10.000 tiradas en turbo.", L),
     ])  # fmt: skip
     a += _tiers("slots", "slots_auto", [
         (500, "auto_500", "Manos libres", "Usa Ráfaga ×10 500 veces.", E),
     ])  # fmt: skip
     a += _tiers("slots", "slots_ldw", [
+        (2_500, "slots_ldw_2500", "Balance negativo con premio",
+         "Cobra 2.500 premios más pequeños que tu apuesta.", L),
         (5_000, "ldw_5k", "Pierdo ganando", "Cobra 5.000 premios más pequeños que tu apuesta.", L),
     ])  # fmt: skip
     a += _tiers("slots", "slots_near_miss", [
@@ -3032,14 +3430,24 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Juega una tirada con ▶️ Auto.", C),
         (100, "autoplay_100", "Que juegue ella, que yo me hago un café",
          "Juega 100 tiradas con ▶️ Auto.", C),
+        (200, "slots_autoplay_spins_200", "Que juegue la máquina",
+         "Juega 200 tiradas con ▶️ Auto.", C),
+        (500, "slots_autoplay_spins_500", "Me voy a por pan", "Juega 500 tiradas con ▶️ Auto.", R),
         (1_000, "autoplay_1k", "Roomba de tragaperras",
          "Juega 1.000 tiradas con ▶️ Auto.", R),
+        (2_000, "slots_autoplay_spins_2000", "Tragaperras sin manos",
+         "Juega 2.000 tiradas con ▶️ Auto.", R),
+        (5_000, "slots_autoplay_spins_5000", "Autómata del bar",
+         "Juega 5.000 tiradas con ▶️ Auto.", L),
         (10_000, "autoplay_10k", "Skynet ha tomado el control",
          "Juega 10.000 tiradas con ▶️ Auto.", L),
     ])  # fmt: skip
     a += _tiers("slots", "slots_autoplay_sessions", [
         (10, "autoplay_ses_10", "Sesión doble, triple, cuádruple",
          "Empieza 10 sesiones de ▶️ Auto.", C),
+        (20, "slots_autoplay_sessions_20", "Sesión de mañana",
+         "Empieza 20 sesiones de ▶️ Auto.", C),
+        (50, "slots_autoplay_sessions_50", "Sesión continua", "Empieza 50 sesiones de ▶️ Auto.", E),
         (100, "autoplay_ses_100", "Una sesión más y me voy",
          "Empieza 100 sesiones de ▶️ Auto.", E),
     ])  # fmt: skip
@@ -3048,6 +3456,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Completa una sesión de ▶️ Auto hasta el tope de 25 tiradas.", C),
         (10, "autoplay_full_10", "Maratón sin pausa",
          "Completa 10 sesiones de ▶️ Auto hasta el tope.", R),
+        (20, "slots_autoplay_full_20", "Sin parar hasta el final",
+         "Completa 20 sesiones de ▶️ Auto hasta el tope.", R),
         (50, "autoplay_full_50", "Cuatro años sin dimitir",
          "Completa 50 sesiones de ▶️ Auto hasta el tope.", E),
     ])  # fmt: skip
@@ -3056,6 +3466,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Que ▶️ Auto pare al perder 10 veces la apuesta.", C),
         (10, "autoplay_loss_10", "Freno ABS",
          "Que ▶️ Auto pare por el límite de pérdidas 10 veces.", C),
+        (20, "slots_autoplay_loss_limit_20", "Pisando el freno",
+         "Que ▶️ Auto pare por el límite de pérdidas 20 veces.", C),
+        (50, "slots_autoplay_loss_limit_50", "Frenada de emergencia",
+         "Que ▶️ Auto pare por el límite de pérdidas 50 veces.", E),
         (100, "autoplay_loss_100", "Freno de mano",
          "Que ▶️ Auto pare por el límite de pérdidas 100 veces.", E),
     ])  # fmt: skip
@@ -3107,8 +3521,11 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("slots", "slots_respins", [
         (1, "respin_1", "Rescate exprés", "Re-gira el tercer rodillo tras un casi-premio.", C),
         (50, "respin_50", "Inyección de liquidez", "Re-gira el tercer rodillo 50 veces.", C),
+        (150, "slots_respins_150", "Segunda vuelta", "Re-gira el tercer rodillo 150 veces.", C),
+        (250, "slots_respins_250", "Re-giro de la casa", "Re-gira el tercer rodillo 250 veces.", E),
         (500, "respin_500", "Rodillo, que te rodillo",
          "Re-gira el tercer rodillo 500 veces.", E),
+        (1_500, "slots_respins_1500", "Rodillo loco", "Re-gira 1.500 veces.", L),
         (2_500, "respin_2500", "Gira que te gira",
          "Re-gira 2.500 veces.", L),
     ])  # fmt: skip
@@ -3116,7 +3533,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "respin_saved_1", "Rescate en el último segundo",
          "Acierta un re-giro y cobra el premio.", C),
         (10, "respin_saved_10", "Too big to fail", "Acierta 10 re-giros.", C),
+        (20, "slots_respin_saved_20", "Segunda oportunidad", "Acierta 20 re-giros.", C),
         (50, "respin_saved_50", "El rescate que sí se devolvió", "Acierta 50 re-giros.", R),
+        (150, "slots_respin_saved_150", "Re-giro de oro", "Acierta 150 re-giros.", E),
         (250, "respin_saved_250", "Mago de la segunda oportunidad", "Acierta 250 re-giros.", E),
     ])  # fmt: skip
     # Fallar k seguidos en la misma tirada: 0,2^(k-1) × 0,9^k por re-giro empezado.
@@ -3144,11 +3563,19 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("slots", "slots_respin_price_max", [
         (1_000, "respin_price_1k", "Prima de riesgo",
          "Paga 1.000 Y$ o más por un solo re-giro.", R),
+        (2_000, "slots_respin_price_max_2000", "Re-giro de lujo",
+         "Paga 2.000 Y$ o más por un solo re-giro.", R),
+        (5_000, "slots_respin_price_max_5000", "Re-giro de caviar",
+         "Paga 5.000 Y$ o más por un solo re-giro.", M),
         (10_000, "respin_price_10k", "Prima de riesgo por las nubes",
          "Paga 10.000 Y$ o más por un solo re-giro.", M),
     ], unit="money")  # fmt: skip
     a += _tiers("slots", "slots_respin_spent", [
         (10_000, "respin_spent_10k", "Hucha de los re-giros", "Gasta 10.000 Y$ en re-giros.", C),
+        (20_000, "slots_respin_spent_20000", "Inversión en re-giros",
+         "Gasta 20.000 Y$ en re-giros.", C),
+        (50_000, "slots_respin_spent_50000", "Re-giros con deuda",
+         "Gasta 50.000 Y$ en re-giros.", E),
         (100_000, "respin_spent_100k", "Socializar las pérdidas",
          "Gasta 100.000 Y$ en re-giros.", E),
     ], unit="money")  # fmt: skip
@@ -3156,14 +3583,21 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("slots", "slots_doubles", [
         (1, "double_1", "¿Rojo o negro?", "Juega tu primer doble o nada tras un premio.", C),
         (100, "double_100", "Doble o nada, nada o doble", "Juega 100 dobles.", C),
+        (200, "slots_doubles_200", "Doble o nada, versión barra", "Juega 200 dobles.", C),
+        (500, "slots_doubles_500", "Tahúr de doble", "Juega 500 dobles.", E),
         (1_000, "double_1k", "Tahúr de feria", "Juega 1.000 dobles.", E),
+        (2_000, "slots_doubles_2000", "Doblador profesional", "Juega 2.000 dobles.", E),
+        (5_000, "slots_doubles_5000", "Vicio del doble", "Juega 5.000 dobles.", L),
         (10_000, "double_10k", "El rojo y el negro", "Juega 10.000 dobles.",
          L),
     ])  # fmt: skip
     a += _tiers("slots", "slots_double_wins", [
         (1, "double_win_1", "Lo doblo", "Gana un doble o nada.", C),
         (50, "double_win_50", "Ojo de halcón", "Gana 50 dobles.", C),
+        (150, "slots_double_wins_150", "Vista de lince", "Gana 150 dobles.", C),
+        (250, "slots_double_wins_250", "Adivino de cartas", "Gana 250 dobles.", E),
         (500, "double_win_500", "Pacto con el diablo", "Gana 500 dobles.", E),
+        (750, "slots_double_wins_750", "Tarotista del doble", "Gana 750 dobles.", E),
         (2_000, "double_win_2k", "La banca soy yo", "Gana 2.000 dobles.", L),
     ])  # fmt: skip
     # Ganar los cinco seguidos: 1 de cada 32 series, unos 3 días a 10 series al día.
@@ -3174,6 +3608,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("slots", "slots_double_fives", [
         (10, "double_fives_10", "Martingala a la española", "Gana 10 series de 5 dobles.", L),
+        (20, "slots_double_fives_20", "Cinco dobles seguidos", "Gana 20 series de 5 dobles.", L),
         (50, "double_fives_50", "Trato con la ruina", "Gana 50 series de 5 dobles.", M),
     ])  # fmt: skip
     a += _tiers("slots", "slots_double_nada", [
@@ -3185,6 +3620,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("slots", "slots_double_win_max", [
         (10_000, "double_rich", "Doble millonario", "Gana 10.000 Y$ o más en un solo doble.", E),
+        (25_000, "slots_double_win_max_25000", "Doble gordo",
+         "Gana 25.000 Y$ o más en un solo doble.", L),
         (50_000, "double_rich_50k", "Doble de oro", "Gana 50.000 Y$ o más en un solo doble.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("slots", "slots_double_loss_max", [
@@ -3226,6 +3663,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("slots", "slots_pot_drought", [
         (10_000, "drought_10k", "Le tocaba",
          "Llévate el bote cuando el servidor llevaba 10.000 tiradas sin él.", E),
+        (25_000, "slots_pot_drought_25000", "Bote de la sequía",
+         "Llévate el bote cuando el servidor llevaba 25.000 tiradas sin él.", M),
         (50_000, "drought_50k", "Sequía de la España vaciada",
          "Llévate el bote cuando el servidor llevaba 50.000 tiradas sin él.", M),
     ])  # fmt: skip
@@ -3254,12 +3693,15 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("slots", "slots_win_big", [
         (1, "win_big_1", "¡GRAN PREMIO!", "Gana de ×5 a ×15 lo apostado en una tirada.", C),
         (25, "win_big_25", "Fanfarria de barrio", "Saca 25 GRAN PREMIO.", C),
+        (50, "slots_win_big_50", "Gran premio de barrio", "Saca 50 GRAN PREMIO.", C),
         (100, "win_big_100", "Vecino de la orquesta", "Saca 100 GRAN PREMIO.", R),
+        (250, "slots_win_big_250", "Gran premio en serie", "Saca 250 GRAN PREMIO.", E),
         (500, "win_big_500", "Ya ni miro las luces", "Saca 500 GRAN PREMIO.", E),
     ])  # fmt: skip
     a += _tiers("slots", "slots_win_mega", [
         (1, "win_mega_1", "¡MEGAPREMIO!", "Gana de ×15 a ×50 lo apostado en una tirada.", C),
         (10, "win_mega_10", "Megaconstructora", "Saca 10 MEGAPREMIO.", R),
+        (20, "slots_win_mega_20", "Megapremio repetido", "Saca 20 MEGAPREMIO.", R),
         (50, "win_mega_50", "Mega, mega, mega", "Saca 50 MEGAPREMIO.", E),
     ])  # fmt: skip
     a += _tiers("slots", "slots_win_epic", [
@@ -3289,7 +3731,12 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("slots", "slots_bonus_fills", [
         (1, "bonus_1", "Tarjeta de cliente", "Llena la barra de bonus.", C),
         (10, "bonus_10", "Cliente preferente", "Llena la barra de bonus 10 veces.", R),
+        (20, "slots_bonus_fills_20", "Barra de bonus llena",
+         "Llena la barra de bonus 20 veces.", R),
+        (50, "slots_bonus_fills_50", "Cliente VIP del bonus",
+         "Llena la barra de bonus 50 veces.", E),
         (100, "bonus_100", "Socio de honor", "Llena la barra de bonus 100 veces.", E),
+        (250, "slots_bonus_fills_250", "Bonus de abonado", "Llena la barra de bonus 250 veces.", L),
         (500, "bonus_500", "Abonado vitalicio", "Llena la barra de bonus 500 veces.", L),
     ])  # fmt: skip
     a += _tiers("slots", "slots_bonus_slowest", [
@@ -3306,6 +3753,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("slots", "slots_cooled", [
         (1, "cooled_1", "Se enfrió el café", "Pierde calor de la máquina por no jugar.", C),
         (25, "cooled_25", "Me fui a por tabaco", "Pierde 25 puntos de calor por no jugar.", R),
+        (50, "slots_cooled_50", "Máquina fría", "Pierde 50 puntos de calor por no jugar.", R),
         (100, "cooled_100", "Corriente de aire", "Pierde 100 puntos de calor por no jugar.", E),
     ])  # fmt: skip
     a += _tiers("slots", "slots_cooled_max", [
@@ -3316,21 +3764,39 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("slots", "slots_tickets", [
         (1, "ticket_1", "Pase por caja", "Cierra la máquina y llévate el ticket.", C),
         (25, "ticket_25", "Tickets en la cartera", "Llévate 25 tickets de la tragaperras.", R),
+        (50, "slots_tickets_50", "Tickets en el bolsillo",
+         "Llévate 50 tickets de la tragaperras.", R),
+        (150, "slots_tickets_150", "Coleccionista de tickets",
+         "Llévate 150 tickets de la tragaperras.", E),
         (250, "ticket_250", "Archivo de Simancas", "Llévate 250 tickets de la tragaperras.", E),
     ])  # fmt: skip
     a += _tiers("slots", "slots_ticket_gross_max", [
         (10_000, "ticket_gross_10k", "Brutos pero honrados",
          "Cierra un ticket con 10.000 Y$ en premios cobrados.", C),
+        (20_000, "slots_ticket_gross_max_20000", "Ticket con premio",
+         "Cierra un ticket con 20.000 Y$ en premios cobrados.", C),
+        (50_000, "slots_ticket_gross_max_50000", "Ticket gordo",
+         "Cierra un ticket con 50.000 Y$ en premios cobrados.", R),
         (100_000, "ticket_gross_100k", "Facturación récord",
          "Cierra un ticket con 100.000 Y$ en premios cobrados.", R),
+        (200_000, "slots_ticket_gross_max_200000", "Ticket de récord",
+         "Cierra un ticket con 200.000 Y$ en premios cobrados.", R),
         (500_000, "ticket_gross_500k", "Millonario en bruto",
          "Cierra un ticket con 500.000 Y$ en premios cobrados.", E),
     ], unit="money")  # fmt: skip
     a += _tiers("slots", "slots_ticket_creative", [
         (10_000, "ticket_creative_10k", "Maquillaje contable",
          "Cierra con 10.000 Y$ en premios cobrados y aun así en negativo.", C),
+        (20_000, "slots_ticket_creative_20000", "Cuentas que no cuadran",
+         "Cierra con 20.000 Y$ en premios cobrados y aun así en negativo.", C),
+        (50_000, "slots_ticket_creative_50000", "Ganar y perder a la vez",
+         "Cierra con 50.000 Y$ en premios cobrados y aun así en negativo.", R),
         (100_000, "ticket_creative_100k", "La contabilidad en B",
          "Cierra con 100.000 Y$ en premios cobrados y aun así en negativo.", R),
+        (200_000, "slots_ticket_creative_200000", "Contabilidad imposible",
+         "Cierra con 200.000 Y$ en premios cobrados y aun así en negativo.", R),
+        (500_000, "slots_ticket_creative_500000", "Cuentas de la lechera",
+         "Cierra con 500.000 Y$ en premios cobrados y aun así en negativo.", L),
         (1_000_000, "ticket_creative_1m", "Las cuentas del Gran Capitán",
          "Cierra con 1.000.000 Y$ en premios cobrados y aun así en negativo.", L),
     ], unit="money")  # fmt: skip
@@ -3338,12 +3804,20 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (10_000, "ticket_best_10k", "Salir por la puerta grande",
          "Cierra un ticket con 10.000 Y$ netos o más.",
          R),
+        (20_000, "slots_ticket_best_20000", "Ticket ganador",
+         "Cierra un ticket con 20.000 Y$ netos o más.", R),
+        (50_000, "slots_ticket_best_50000", "Ticket de oro",
+         "Cierra un ticket con 50.000 Y$ netos o más.", L),
         (100_000, "ticket_best_100k", "Pelotazo inmobiliario",
          "Cierra un ticket con 100.000 Y$ netos o más.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("slots", "slots_ticket_loss_max", [
         (10_000, "ticket_loss_10k", "Agujero contable",
          "Cierra un ticket perdiendo 10.000 Y$ o más.", C),
+        (20_000, "slots_ticket_loss_max_20000", "Ticket con agujero",
+         "Cierra un ticket perdiendo 20.000 Y$ o más.", C),
+        (50_000, "slots_ticket_loss_max_50000", "Ticket hundido",
+         "Cierra un ticket perdiendo 50.000 Y$ o más.", E),
         (100_000, "ticket_loss_100k", "El agujero de las pensiones",
          "Cierra un ticket perdiendo 100.000 Y$ o más.", E),
     ], unit="money")  # fmt: skip
@@ -3385,10 +3859,14 @@ def _build_catalog() -> tuple[Achievement, ...]:
          C),
         (100, "botes_100", "Tío Gilito en prácticas",
          "Juega 100 tiradas en los botes.", C),
+        (200, "botes_spins_200", "Maletín de monedas", "Juega 200 tiradas en los botes.", C),
+        (500, "botes_spins_500", "Volcán caliente", "Juega 500 tiradas en los botes.", R),
         (777, "botes_777", "Tres sietes en el contador",
          "Juega 777 tiradas en los botes.", R, True),
         (1_000, "botes_1k", "Maletín al hombro", "Juega 1.000 tiradas en los botes.",
          R),
+        (2_000, "botes_spins_2000", "Lava en las venas", "Juega 2.000 tiradas en los botes.", R),
+        (5_000, "botes_spins_5000", "Cuenta en el volcán", "Juega 5.000 tiradas en los botes.", L),
         (10_000, "botes_10k", "Socio de la casa", "Juega 10.000 tiradas en los botes.",
          L),
     ])  # fmt: skip
@@ -3397,11 +3875,18 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("botes", "botes_spins_mina", [
         (100, "botes_mina", "Picando piedra, cobrando oro", "Juega 100 tiradas en la Mina.", C),
+        (200, "botes_spins_mina_200", "Minero de fin de semana",
+         "Juega 200 tiradas en la Mina.", C),
+        (500, "botes_spins_mina_500", "Pico y pala", "Juega 500 tiradas en la Mina.", R),
         (1_000, "botes_mina_1k", "Capataz del litio",
          "Juega 1.000 tiradas en la Mina.", R),
     ])  # fmt: skip
     a += _tiers("botes", "botes_spins_olimpo", [
         (100, "botes_olimpo", "Turista del Olimpo", "Juega 100 tiradas en el Olimpo.", C),
+        (200, "botes_spins_olimpo_200", "Turista en el Olimpo",
+         "Juega 200 tiradas en el Olimpo.", C),
+        (500, "botes_spins_olimpo_500", "Excursión al Olimpo",
+         "Juega 500 tiradas en el Olimpo.", R),
         (1_000, "botes_olimpo_1k", "Vecino de Zeus",
          "Juega 1.000 tiradas en el Olimpo.", R),
     ])  # fmt: skip
@@ -3429,6 +3914,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "botes_collect", "Recogida de basuras, pero de oro",
          "Recoge las monedas con el recogedor.", C),
         (50, "botes_collect_50", "Barrendero de monedas", "Haz 50 recogidas.", C),
+        (150, "botes_collects_150", "Recogida selectiva", "Haz 150 recogidas.", C),
+        (250, "botes_collects_250", "Bolsa de monedas", "Haz 250 recogidas.", R),
         (500, "botes_collect_500", "Aspiradora de monedas", "Haz 500 recogidas.", R),
     ])  # fmt: skip
     a += _tiers("botes", "botes_double_collect", [
@@ -3453,6 +3940,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("botes", "botes_bonuses", [
         (1, "botes_bonus", "¡Maletín lleno!", "Llena un maletín y juega su bonus.", C),
         (25, "botes_bonus_25", "Abonado al bonus de Abengoa", "Juega 25 bonus.", R),
+        (50, "botes_bonuses_50", "Bonus de los jueves", "Juega 50 bonus.", R),
         (100, "botes_bonus_100", "El bonus me conoce", "Juega 100 bonus.", E),
     ])  # fmt: skip
     a += _tiers("botes", "botes_bonus_green", [
@@ -3503,6 +3991,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("botes", "botes_bonus_max", [
         (10_000, "botes_bonus_10k", "Maletín de billetes", "Gana 10.000 Y$ en un bonus.", R),
+        (20_000, "botes_bonus_max_20000", "Maletín con billetes grandes",
+         "Gana 20.000 Y$ en un bonus.", R),
+        (50_000, "botes_bonus_max_50000", "Maletín de directivo", "Gana 50.000 Y$ en un bonus.", L),
         (100_000, "botes_bonus_100k", "Maletín de lingotes", "Gana 100.000 Y$ en un bonus.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("botes", "botes_win_max", [
@@ -3537,6 +4028,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("botes", "botes_slipped", [
         (10, "botes_slipped", "Ni frenó",
          "Ve pasar el recogedor por el quinto rodillo sin pararse, 10 veces.", C),
+        (20, "botes_slipped_20", "Recogedor despistado",
+         "Ve pasar de largo el recogedor 20 veces.", C),
+        (50, "botes_slipped_50", "El recogedor no me quiere",
+         "Ve pasar de largo el recogedor 50 veces.", E),
         (100, "botes_slipped_300", "Andén vacío",
          "Ve pasar de largo el recogedor 100 veces.", E),
     ])  # fmt: skip
@@ -3563,9 +4058,12 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
 
     a += _tiers("botes", "botes_spins", [
+        (25_000, "botes_spins_25000", "Vecino del volcán", "Juega 25.000 tiradas en los botes.", M),
         (50_000, "botes_50k", "Vulcanólogo", "Juega 50.000 tiradas en los botes.", M),
     ])  # fmt: skip
     a += _tiers("botes", "botes_collects", [
+        (1_500, "botes_collects_1500", "Saco de monedas", "Haz 1.500 recogidas.", R),
+        (2_500, "botes_collects_2500", "Camión de monedas", "Haz 2.500 recogidas.", L),
         (5_000, "botes_collect_5k", "Recogepelotas del volcán", "Haz 5.000 recogidas.", L),
     ])  # fmt: skip
     a += _tiers("botes", "botes_double_collect", [
@@ -3576,31 +4074,51 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Deja 250 puñados de monedas sin recoger.", R),
     ])  # fmt: skip
     a += _tiers("botes", "botes_ways_5", [
+        (50, "botes_ways_5_50", "Cinco en raya volcánica",
+         "Gana 50 veces con los cinco rodillos.", C),
+        (150, "botes_ways_5_150", "Rodillos alineados",
+         "Gana 150 veces con los cinco rodillos.", R),
         (250, "botes_five_250", "Cinco de cinco", "Gana 250 veces con los cinco rodillos.", R),
     ])  # fmt: skip
     a += _tiers("botes", "botes_wild_wins", [
+        (150, "botes_wild_wins_150", "Comodín de guardia",
+         "Gana 150 tiradas con ayuda del comodín.", C),
+        (250, "botes_wild_wins_250", "Comodín en nómina",
+         "Gana 250 tiradas con ayuda del comodín.", R),
         (500, "botes_wild_500", "Comodín volcánico", "Gana 500 tiradas con ayuda del comodín.", R),
     ])  # fmt: skip
     a += _tiers("botes", "botes_chips", [
+        (50, "botes_chips_50", "Fichas en la saca", "Saca 50 fichas de bote.", C),
+        (150, "botes_chips_150", "Fichero lleno", "Saca 150 fichas de bote.", R),
         (250, "botes_chips_250", "Saco de fichas", "Saca 250 fichas de bote.", R),
     ])  # fmt: skip
     a += _tiers("botes", "botes_bonuses", [
+        (250, "botes_bonuses_250", "Bonus con abono", "Juega 250 bonus.", L),
         (500, "botes_bonus_500", "Adicto al maletín", "Juega 500 bonus.", L),
     ])  # fmt: skip
     a += _tiers("botes", "botes_bonus_grand", [
+        (20, "botes_bonus_grand_20", "Gran bonus de la casa", "Juega 20 grandes bonus.", E),
         (50, "botes_grand_bonus_50", "Tricolor", "Juega 50 grandes bonus.", L),
     ])  # fmt: skip
     a += _tiers("botes", "botes_mini", [
+        (20, "botes_mini_20", "MINI de bolsillo", "Gana 20 botes MINI.", R),
+        (50, "botes_mini_50", "MINI en cadena", "Gana 50 botes MINI.", L),
         (100, "botes_mini_100", "Coleccionista de MINI", "Gana 100 botes MINI.", L),
     ])  # fmt: skip
     a += _tiers("botes", "botes_major", [
         (10, "botes_major_10", "MAJOR de MAJORES", "Gana 10 botes MAJOR.", L),
     ])  # fmt: skip
     a += _tiers("botes", "botes_instant", [
+        (20, "botes_instant_20", "Multiplicador de chispa",
+         "Saca 20 multiplicadores inmediatos.", E),
+        (50, "botes_instant_50", "Por dos, por tres, por cuatro",
+         "Saca 50 multiplicadores inmediatos.", L),
         (100, "botes_instant_100", "Lluvia de multiplicadores",
          "Saca 100 multiplicadores inmediatos.", L),
     ])  # fmt: skip
     a += _tiers("botes", "botes_mystery", [
+        (50, "botes_mystery_50", "Detective del volcán", "Destapa 50 símbolos misteriosos.", E),
+        (150, "botes_mystery_150", "Misterio de la lava", "Destapa 150 símbolos misteriosos.", L),
         (250, "botes_mystery_250", "Cuarto milenio del volcán",
          "Destapa 250 símbolos misteriosos.", L),
     ])  # fmt: skip
@@ -3614,15 +4132,23 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "crash_1", "Diez, nueve, ocho… ¡despegue!",
          "Juega tu primera ronda de Crash.", C),
         (100, "crash_100", "Piloto de pruebas", "Juega 100 rondas de Crash.", R),
+        (200, "crash_rounds_200", "Despegue rutinario", "Juega 200 rondas de Crash.", R),
+        (500, "crash_rounds_500", "Astronauta de la NASA", "Juega 500 rondas de Crash.", E),
         (1_000, "crash_1k", "Hasta el infinito y más allá",
          "Juega 1.000 rondas de Crash.", E),
+        (2_500, "crash_rounds_2500", "Cosmonauta veterano", "Juega 2.500 rondas de Crash.", L),
         (5_000, "crash_5k", "Más horas en órbita que un satélite",
          "Juega 5.000 rondas de Crash.", L),
     ])  # fmt: skip
     a += _tiers("crash", "crash_cashouts", [
         (10, "crashc_10", "Paracaidista prudente", "Retírate a tiempo 10 veces.", C),
+        (20, "crash_cashouts_20", "Saltar a tiempo", "Retírate a tiempo 20 veces.", C),
+        (50, "crash_cashouts_50", "Paracaídas abierto", "Retírate a tiempo 50 veces.", R),
         (100, "crashc_100", "Saltador profesional de partidos",
          "Retírate a tiempo 100 veces.", R),
+        (200, "crash_cashouts_200", "Salto base", "Retírate a tiempo 200 veces.", R),
+        (500, "crash_cashouts_500", "Instructor de paracaidismo",
+         "Retírate a tiempo 500 veces.", L),
         (1_000, "crashc_1k", "Saltar del barco a tiempo",
          "Retírate a tiempo 1.000 veces.", L),
     ])  # fmt: skip
@@ -3638,11 +4164,18 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("crash", "crash_win_max", [
         (10_000, "crash_fuel", "Gasolina de cohete",
          "Gana 10.000 Y$ en una ronda de Crash.", R),
+        (20_000, "crash_win_max_20000", "Billete de cohete",
+         "Gana 20.000 Y$ en una ronda de Crash.", R),
+        (50_000, "crash_win_max_50000", "Cohete de lujo",
+         "Gana 50.000 Y$ en una ronda de Crash.", L),
         (100_000, "crash_gold", "Cohete de oro",
          "Gana 100.000 Y$ en una ronda de Crash.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("crash", "crash_auto", [
         (10, "crasha_10", "Control de crucero de Tesla", "Cobra 10 veces con el auto-retiro.", C),
+        (20, "crash_auto_20", "Piloto automático espacial",
+         "Cobra 20 veces con el auto-retiro.", C),
+        (50, "crash_auto_50", "Aterrizaje sin manos", "Cobra 50 veces con el auto-retiro.", E),
         (100, "crasha_100", "Sin manos y en órbita",
          "Cobra 100 veces con el auto-retiro.", E),
     ])  # fmt: skip
@@ -3680,10 +4213,14 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (2_500, "crashc_2500", "Paracaidista profesional", "Retírate a tiempo 2.500 veces.", L),
     ])  # fmt: skip
     a += _tiers("crash", "crash_auto", [
+        (200, "crash_auto_200", "Ordenador de abordo", "Cobra 200 veces con el auto-retiro.", E),
+        (500, "crash_auto_500", "Ordenador central al mando",
+         "Cobra 500 veces con el auto-retiro.", L),
         (1_000, "crasha_1k", "Cohete sin piloto",
          "Cobra 1.000 veces con el auto-retiro.", L),
     ])  # fmt: skip
     a += _tiers("crash", "crash_close", [
+        (20, "crash_close_20", "Salto en marcha", "Retírate por los pelos 20 veces.", R),
         (50, "crash_close_50", "Saltar en marcha", "Retírate por los pelos 50 veces.", L),
     ])  # fmt: skip
     a += _tiers("crash", "crash_instant", [
@@ -3694,6 +4231,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("crash", "crash_cash_low", [
         (25, "crash_low_25", "Cobarde profesional", "Retírate en 1,10x o menos 25 veces.", C),
+        (50, "crash_cash_low_50", "Pies en el suelo", "Retírate en 1,10x o menos 50 veces.", C),
+        (150, "crash_cash_low_150", "Prudencia espacial",
+         "Retírate en 1,10x o menos 150 veces.", R),
         (250, "crash_low_250", "Funcionario del Crash", "Retírate en 1,10x o menos 250 veces.", R),
     ])  # fmt: skip
     a += _tiers("crash", "crash_missed_moon", [
@@ -3705,18 +4245,26 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("mines", "mines_games", [
         (1, "mines_1", "Zapador", "Juega tu primera partida de Minas.", C),
         (100, "mines_100", "Artificiero", "Juega 100 partidas de Minas.", C),
+        (200, "mines_games_200", "Paseo por el campo minado", "Juega 200 partidas de Minas.", C),
+        (500, "mines_games_500", "Desminador", "Juega 500 partidas de Minas.", E),
         (1_000, "mines_1k", "Campo minado de la política española",
          "Juega 1.000 partidas de Minas.", E),
     ])  # fmt: skip
     a += _tiers("mines", "mines_gems", [
         (100, "gems_100", "Buscador de litio", "Destapa 100 diamantes.", C),
+        (200, "mines_gems_200", "Joyero de barrio", "Destapa 200 diamantes.", C),
+        (500, "mines_gems_500", "Diamantes sin pulir", "Destapa 500 diamantes.", R),
         (1_000, "gems_1k", "Minero asturiano",
          "Destapa 1.000 diamantes.", R),
+        (2_000, "mines_gems_2000", "Mina de esmeraldas", "Destapa 2.000 diamantes.", R),
+        (5_000, "mines_gems_5000", "Tiffany de bolsillo", "Destapa 5.000 diamantes.", E),
         (10_000, "gems_10k", "Mina de diamantes sin multinacional", "Destapa 10.000 diamantes.", E),
     ])  # fmt: skip
     a += _tiers("mines", "mines_cashouts", [
         (10, "minesc_10", "Saber retirarse a tiempo",
          "Cobra 10 partidas de Minas.", C),
+        (20, "mines_cashouts_20", "Pulso de relojero", "Cobra 20 partidas de Minas.", C),
+        (50, "mines_cashouts_50", "Mano firme", "Cobra 50 partidas de Minas.", R),
         (100, "minesc_100", "Pulso firme de cirujano de la sanidad pública",
          "Cobra 100 partidas de Minas.", R),
     ])  # fmt: skip
@@ -3744,6 +4292,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("mines", "mines_win_max", [
         (10_000, "mines_rich", "Veta de oro del Banco de España",
          "Gana 10.000 Y$ en una partida de Minas.", R),
+        (20_000, "mines_win_max_20000", "Filón de oro",
+         "Gana 20.000 Y$ en una partida de Minas.", R),
+        (50_000, "mines_win_max_50000", "Veta del Potosí",
+         "Gana 50.000 Y$ en una partida de Minas.", L),
         (100_000, "mines_richer", "Filón de las mascarillas",
          "Gana 100.000 Y$ en una partida de Minas.", L),
     ], unit="money")  # fmt: skip
@@ -3769,15 +4321,21 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (50, "mines_dice", "Que decida el destino", "Destapa 50 casillas con 🎲.", C),
     ])  # fmt: skip
     a += _tiers("mines", "mines_games", [
+        (2_500, "mines_games_2500", "Zapador de carrera", "Juega 2.500 partidas de Minas.", L),
         (5_000, "mines_5k", "Artificiero jubilado", "Juega 5.000 partidas de Minas.", L),
     ])  # fmt: skip
     a += _tiers("mines", "mines_gems", [
+        (25_000, "mines_gems_25000", "Kimberley de las minas", "Destapa 25.000 diamantes.", M),
         (50_000, "gems_50k", "Joyería de la Gran Vía", "Destapa 50.000 diamantes.", M),
     ])  # fmt: skip
     a += _tiers("mines", "mines_cashouts", [
+        (200, "mines_cashouts_200", "Cirujano de explosivos", "Cobra 200 partidas de Minas.", R),
+        (500, "mines_cashouts_500", "Desactivador de bombas", "Cobra 500 partidas de Minas.", L),
         (1_000, "minesc_1k", "Artificiero jefe del CNI", "Cobra 1.000 partidas de Minas.", L),
     ])  # fmt: skip
     a += _tiers("mines", "mines_booms", [
+        (200, "mines_booms_200", "Pisotón explosivo", "Pisa 200 minas.", R),
+        (500, "mines_booms_500", "Petardo en el bolsillo", "Pisa 500 minas.", E),
         (666, "boom_666", "Traca satánica", "Pisa 666 minas.", E, True),
         (1_000, "boom_1k", "Fuegos artificiales de las fiestas",
          "Pisa 1.000 minas.", E),
@@ -3786,10 +4344,15 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (10, "mines_clear_10", "Campo despejado", "Destapa todas las casillas buenas 10 veces.", M),
     ])  # fmt: skip
     a += _tiers("mines", "mines_random", [
+        (150, "mines_random_150", "Que hable el dado", "Destapa 150 casillas con 🎲.", C),
+        (250, "mines_random_250", "Ruleta de casillas", "Destapa 250 casillas con 🎲.", E),
         (500, "mines_dice_500", "Que decida el dado", "Destapa 500 casillas con 🎲.", E),
     ])  # fmt: skip
     a += _tiers("mines", "mines_cash_one", [
         (25, "cash_one_25", "Con uno me vale", "Cobra 25 veces tras un solo diamante.", C),
+        (50, "mines_cash_one_50", "Diamante en mano", "Cobra 50 veces tras un solo diamante.", C),
+        (150, "mines_cash_one_150", "Más vale diamante en mano",
+         "Cobra 150 veces tras un solo diamante.", R),
         (250, "cash_one_250", "Diamante y a casa", "Cobra 250 veces tras un solo diamante.", R),
     ])  # fmt: skip
     a += _tiers("mines", "mines_greedy", [
@@ -3816,8 +4379,16 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Juega tu primera partida de la Torre del dragón.", C),
         (100, "tower_100", "Ascensorista del dragón", "Juega 100 partidas de la Torre del dragón.",
          C),
+        (200, "tower_games_200", "Escaleras arriba",
+         "Juega 200 partidas de la Torre del dragón.", C),
+        (500, "tower_games_500", "Vecino del dragón",
+         "Juega 500 partidas de la Torre del dragón.", E),
         (1_000, "tower_1k", "Capataz de la Torre de Babel",
          "Juega 1.000 partidas de la Torre del dragón.", E),
+        (1_337, "tower_games_1337", "T0rr3 d3 h4ck3r5",
+         "Juega 1.337 partidas de la Torre del dragón.", E, True),
+        (2_500, "tower_games_2500", "Cuidador de dragones",
+         "Juega 2.500 partidas de la Torre del dragón.", L),
         (5_000, "tower_5k", "Casa Targaryen",
          "Juega 5.000 partidas de la Torre del dragón.", L),
         (10_000, "tower_10k", "Rapunzel sin trenza",
@@ -3825,16 +4396,30 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("tower", "tower_floors", [
         (100, "tower_floors_100", "Escalador de la Torre Picasso", "Sube 100 pisos en total.", C),
+        (200, "tower_floors_200", "Escalera de incendios", "Sube 200 pisos en total.", C),
+        (500, "tower_floors_500", "Rellano a rellano", "Sube 500 pisos en total.", E),
+        (666, "tower_floors_666", "Escalera al infierno", "Sube 666 pisos en total.", E, True),
         (1_000, "tower_floors_1k", "Montañero del Teide", "Sube 1.000 pisos en total.", E),
+        (2_000, "tower_floors_2000", "Rascacielos de Benidorm", "Sube 2.000 pisos en total.", E),
+        (5_000, "tower_floors_5000", "Torre de Madrid a pie", "Sube 5.000 pisos en total.", L),
         (10_000, "tower_floors_10k", "Más pisos que la Sagrada Familia en obras",
          "Sube 10.000 pisos en total.", L),
+        (25_000, "tower_floors_25000", "Everest de escaleras", "Sube 25.000 pisos en total.", M),
         (50_000, "tower_floors_50k", "Burj Khalifa a pie", "Sube 50.000 pisos en total.", M),
     ])  # fmt: skip
     a += _tiers("tower", "tower_cashouts", [
         (10, "tower_cash_10", "Huevos a buen recaudo",
          "Cobra 10 partidas de la Torre del dragón.", C),
+        (20, "tower_cashouts_20", "Bajada con huevos",
+         "Cobra 20 partidas de la Torre del dragón.", C),
+        (50, "tower_cashouts_50", "Bajar con lo puesto",
+         "Cobra 50 partidas de la Torre del dragón.", R),
         (100, "tower_cash_100", "Bajada con el botín",
          "Cobra 100 partidas de la Torre del dragón.", R),
+        (200, "tower_cashouts_200", "Ascensor de cobro",
+         "Cobra 200 partidas de la Torre del dragón.", R),
+        (500, "tower_cashouts_500", "Botín escaleras abajo",
+         "Cobra 500 partidas de la Torre del dragón.", L),
         (1_000, "tower_cash_1k", "Tesorero del dragón",
          "Cobra 1.000 partidas de la Torre del dragón.", L),
     ])  # fmt: skip
@@ -3842,8 +4427,13 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "tower_burn_1", "Dracarys", "Que te queme un dragón por primera vez.", C),
         (10, "tower_burn_10", "Huevo pasado por agua… hirviendo",
          "Que te quemen 10 veces.", C),
+        (20, "tower_burns_20", "Chamuscado", "Que te quemen 20 veces.", C),
+        (50, "tower_burns_50", "Brasa de domingo", "Que te quemen 50 veces.", R),
         (100, "tower_burn_100", "Barbacoa de domingo",
          "Que te quemen 100 veces.", R),
+        (200, "tower_burns_200", "Carne al punto", "Que te quemen 200 veces.", R),
+        (451, "tower_burns_451", "Fahrenheit 451", "Que te quemen 451 veces.", E, True),
+        (500, "tower_burns_500", "Pollo al ast", "Que te quemen 500 veces.", E),
         (1_000, "tower_burn_1k", "Vuelta y vuelta",
          "Que te quemen 1.000 veces.", E),
     ])  # fmt: skip
@@ -3869,6 +4459,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("tower", "tower_cash_one", [
         (25, "tower_cash_one_25", "Con un piso me vale",
          "Cobra 25 veces tras un solo piso.", C),
+        (50, "tower_cash_one_50", "Primer piso y fuera", "Cobra 50 veces tras un solo piso.", C),
+        (150, "tower_cash_one_150", "Bajo al portal", "Cobra 150 veces tras un solo piso.", R),
         (250, "tower_cash_one_250", "Planta baja y a casa",
          "Cobra 250 veces tras un solo piso.", R),
     ])  # fmt: skip
@@ -3896,6 +4488,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("tower", "tower_win_max", [
         (10_000, "tower_rich", "Tesoro del dragón en un paraíso fiscal",
          "Gana 10.000 Y$ en una partida de la Torre del dragón.", R),
+        (20_000, "tower_win_max_20000", "Oro de dragón",
+         "Gana 20.000 Y$ en una partida de la Torre del dragón.", R),
+        (50_000, "tower_win_max_50000", "Tesoro de la cueva",
+         "Gana 50.000 Y$ en una partida de la Torre del dragón.", L),
         (100_000, "tower_richer", "Cueva de Smaug",
          "Gana 100.000 Y$ en una partida de la Torre del dragón.", L),
     ], unit="money")  # fmt: skip
@@ -3922,6 +4518,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("tower", "tower_crowns", [
         (10, "tower_crown_10", "Rey de la Torre de Babel",
          "Corona la torre 10 veces, en la dificultad que sea.", E),
+        (20, "tower_crowns_20", "Corona de fuego", "Corona la torre 20 veces.", E),
+        (50, "tower_crowns_50", "Dinastía Targaryen", "Corona la torre 50 veces.", M),
         (100, "tower_crown_100", "Rey de Poniente",
          "Corona la torre 100 veces.", M),
     ])  # fmt: skip
@@ -3954,6 +4552,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("tower", "tower_random", [
         (50, "tower_dice", "Que elija el dragón", "Elige 50 puertas con 🎲.", R),
+        (150, "tower_random_150", "Puerta al azar", "Elige 150 puertas con 🎲.", R),
+        (250, "tower_random_250", "Tómbola de puertas", "Elige 250 puertas con 🎲.", E),
         (500, "tower_dice_500", "A lo que salga",
          "Elige 500 puertas con 🎲.", E),
     ])  # fmt: skip
@@ -4007,10 +4607,16 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("allatu", "allatu_games", [
         (1, "allatu_1", "¿Trato o no trato?", "Juega tu primera partida de Allá tú.", C),
         (10, "allatu_10", "Concursante de la tarde", "Juega 10 partidas de Allá tú.", C),
+        (20, "allatu_games_20", "Concursante novato", "Juega 20 partidas de Allá tú.", C),
+        (50, "allatu_games_50", "Público del plató", "Juega 50 partidas de Allá tú.", R),
+        (69, "allatu_games_69", "Concurso picante", "Juega 69 partidas de Allá tú.", R, True),
         (100, "allatu_100", "Caja de resonancia",
          "Juega 100 partidas de Allá tú.", R),
+        (200, "allatu_games_200", "Habitual del concurso", "Juega 200 partidas de Allá tú.", R),
+        (500, "allatu_games_500", "Silla fija en el plató", "Juega 500 partidas de Allá tú.", E),
         (1_000, "allatu_1k", "Más horas de plató que Ana Rosa",
          "Juega 1.000 partidas de Allá tú.", E),
+        (2_500, "allatu_games_2500", "Mueble de televisión", "Juega 2.500 partidas de Allá tú.", L),
         (5_000, "allatu_5k", "Mobiliario de Telecinco",
          "Juega 5.000 partidas de Allá tú.", L),
         (10_000, "allatu_10k", "Concursante vitalicio de Pasapalabra",
@@ -4018,25 +4624,43 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("allatu", "allatu_boxes", [
         (100, "allatu_cajas_100", "Mozo de almacén de Amazon", "Abre 100 cajas en Allá tú.", C),
+        (200, "allatu_boxes_200", "Repartidor de cajas", "Abre 200 cajas en Allá tú.", C),
+        (500, "allatu_boxes_500", "Cajas y más cajas", "Abre 500 cajas en Allá tú.", C),
+        (666, "allatu_boxes_666", "Sorpresa del diablo", "Abre 666 cajas.", C, True),
         (1_000, "allatu_cajas_1k", "Cartero de Correos en campaña electoral",
          "Abre 1.000 cajas en Allá tú.", C),
+        (2_000, "allatu_boxes_2000", "Mudanza permanente", "Abre 2.000 cajas.", C),
+        (5_000, "allatu_boxes_5000", "Almacén logístico", "Abre 5.000 cajas.", E),
         (10_000, "allatu_cajas_10k", "Aduana del puerto de Algeciras",
          "Abre 10.000 cajas.", E),
+        (20_000, "allatu_boxes_20000", "Puerto de mercancías", "Abre 20.000 cajas.", E),
+        (50_000, "allatu_boxes_50000", "Contenedor de Rotterdam", "Abre 50.000 cajas.", M),
         (100_000, "allatu_cajas_100k", "Almacén central de Temu", "Abre 100.000 cajas.", M),
     ])  # fmt: skip
     a += _tiers("allatu", "allatu_deals", [
         (1, "allatu_trato", "Trato con la banca", "Acepta una oferta de Perro Sanxe.", C),
         (25, "allatu_trato_25", "Trato hecho", "Acepta 25 ofertas de Perro Sanxe.", R),
+        (50, "allatu_deals_50", "Trato hecho, mano estrechada", "Acepta 50 ofertas.", R),
+        (150, "allatu_deals_150", "Firma rápida", "Acepta 150 ofertas.", E),
         (250, "allatu_trato_250", "Mesa de diálogo permanente",
          "Acepta 250 ofertas.", E),
+        (500, "allatu_deals_500", "Negociador nato", "Acepta 500 ofertas.", E),
+        (1_500, "allatu_deals_1500", "Acuerdo marco", "Acepta 1.500 ofertas.", M),
         (2_500, "allatu_trato_2500", "Regateador de rastro",
          "Acepta 2.500 ofertas.", M),
     ])  # fmt: skip
     a += _tiers("allatu", "allatu_no_deals", [
         (10, "allatu_no_10", "No es no", "Di «no trato» 10 veces.", C),
+        (20, "allatu_no_deals_20", "Ni hablar", "Di «no trato» 20 veces.", C),
+        (50, "allatu_no_deals_50", "Que no, que no", "Di «no trato» 50 veces.", C),
         (100, "allatu_no_100", "El noesnoísmo", "Di «no trato» 100 veces.", C),
+        (200, "allatu_no_deals_200", "No, por principio", "Di «no trato» 200 veces.", C),
+        (404, "allatu_no_deals_404", "Trato not found", "Di «no trato» 404 veces.", C, True),
+        (500, "allatu_no_deals_500", "No es no, y punto", "Di «no trato» 500 veces.", E),
         (1_000, "allatu_no_1k", "Bloqueo del CGPJ",
          "Di «no trato» 1.000 veces.", E),
+        (2_000, "allatu_no_deals_2000", "Muro de negativas", "Di «no trato» 2.000 veces.", E),
+        (5_000, "allatu_no_deals_5000", "Muralla china del no", "Di «no trato» 5.000 veces.", L),
         (10_000, "allatu_no_10k", "Veto ruso en la ONU", "Di «no trato» 10.000 veces.", L),
     ])  # fmt: skip
     a += _tiers("allatu", "allatu_finals", [
@@ -4044,6 +4668,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Llega al final a dos cajas.", C),
         (50, "allatu_final_50", "Superviviente del plató",
          "Llega 50 veces al final a dos cajas.", R),
+        (150, "allatu_finals_150", "Hasta el final", "Llega 150 veces al final.", R),
+        (250, "allatu_finals_250", "Finalista de profesión", "Llega 250 veces al final.", E),
         (500, "allatu_final_500", "Resistencia de manual",
          "Llega 500 veces al final.", E),
     ])  # fmt: skip
@@ -4140,6 +4766,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("allatu", "allatu_win_max", [
         (10_000, "allatu_rich", "Sobre gordo",
          "Gana 10.000 Y$ en una partida de Allá tú.", E),
+        (20_000, "allatu_win_max_20000", "Sobre con premio",
+         "Gana 20.000 Y$ en una partida de Allá tú.", E),
+        (50_000, "allatu_win_max_50000", "Caja con premio gordo",
+         "Gana 50.000 Y$ en una partida de Allá tú.", M),
         (100_000, "allatu_richer", "Caja B del plató",
          "Gana 100.000 Y$ en una partida de Allá tú.", M),
     ], unit="money")  # fmt: skip
@@ -4218,6 +4848,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (300, "war_300", "Cuartel general de la baraja", "Juega 300 manos de la Guerra.", R),
         (1_000, "war_1k", "Veterano de mil batallas",
          "Juega 1.000 manos de la Guerra.", E),
+        (2_500, "war_hands_2500", "Soldado de siempre", "Juega 2.500 manos de la Guerra.", L),
         (5_000, "war_5k", "Más largo que la Guerra de los Cien Años",
          "Juega 5.000 manos de la Guerra.", L),
         (10_000, "war_10k", "Guerra sin fin",
@@ -4228,9 +4859,12 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Gana tu primera mano.", C),
         (50, "warw_50", "Mayoría de una carta",
          "Gana 50 manos.", C),
+        (150, "war_wins_150", "Batalla ganada", "Gana 150 manos.", R),
         (250, "warw_250", "Mayoría aplastante", "Gana 250 manos.", R),
+        (500, "war_wins_500", "Campaña victoriosa", "Gana 500 manos.", E),
         (1_000, "warw_1k", "Napoleón de la baraja",
          "Gana 1.000 manos.", E),
+        (2_000, "war_wins_2000", "General invicto", "Gana 2.000 manos.", L),
         (4_000, "warw_4k", "Alejandro Magno de los naipes",
          "Gana 4.000 manos.", L),
         (10_000, "warw_10k", "El arte de la guerra",
@@ -4241,8 +4875,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Empata la primera carta con la banca.", C),
         (25, "war_tie_25", "Empate en la trinchera",
          "Empata 25 veces.", R),
+        (50, "war_ties_50", "Tablas en el frente", "Empata 50 veces.", R),
         (100, "war_tie_100", "La guerra de las cifras",
          "Empata 100 veces.", E),
+        (250, "war_ties_250", "Frente estancado", "Empata 250 veces.", L),
         (500, "war_tie_500", "Guerra de los Cien Años",
          "Empata 500 veces.", L),
     ])  # fmt: skip
@@ -4250,8 +4886,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "war_war_1", "¡A la guerra!",
          "Ve a la guerra por primera vez.", C),
         (10, "war_war_10", "Guerra comercial", "Ve a la guerra 10 veces.", R),
+        (20, "war_wars_20", "Guerra declarada", "Ve a la guerra 20 veces.", R),
         (50, "war_war_50", "Guerra cultural",
          "Ve a la guerra 50 veces.", E),
+        (150, "war_wars_150", "Guerra total", "Ve a la guerra 150 veces.", L),
         (250, "war_war_250", "Señor de la guerra",
          "Ve a la guerra 250 veces.", L),
     ])  # fmt: skip
@@ -4259,8 +4897,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "war_surr_1", "Bandera blanca", "Ríndete por primera vez. Media ficha de vuelta.", C),
         (10, "war_surr_10", "Gila llamando al enemigo",
          "Ríndete 10 veces.", R),
+        (20, "war_surrenders_20", "Pañuelo blanco", "Ríndete 20 veces.", R),
         (50, "war_surr_50", "Haz el amor y no la guerra",
          "Ríndete 50 veces.", E),
+        (75, "war_surrenders_75", "Pacifista convencido", "Ríndete 75 veces.", E),
         (200, "war_surr_200", "Nobel de la Paz por adelantado",
          "Ríndete 200 veces.", L),
     ])  # fmt: skip
@@ -4269,7 +4909,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Gana tu primera guerra: cobras la ficha de la guerra y te devuelven la original.", C),
         (10, "war_ww_10", "Diez guerras y ni un rasguño",
          "Gana 10 guerras.", R),
+        (20, "war_war_wins_20", "Victoria en el frente", "Gana 20 guerras.", R),
         (50, "war_ww_50", "Comandante en jefe de nadie", "Gana 50 guerras.", E),
+        (75, "war_war_wins_75", "Mariscal de campo", "Gana 75 guerras.", E),
         (200, "war_ww_200", "Doscientas guerras de bolsillo", "Gana 200 guerras.", L),
     ])  # fmt: skip
     a += _tiers("war", "war_war_losses", [
@@ -4278,6 +4920,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          C),
         (10, "war_wl_10", "Guerra con los jueces",
          "Pierde 10 guerras.", R),
+        (20, "war_war_losses_20", "Repliegue estratégico", "Pierde 20 guerras.", R),
         (50, "war_wl_50", "Waterloo de Napoleón",
          "Pierde 50 guerras.", E),
     ])  # fmt: skip
@@ -4300,6 +4943,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
          C),
         (100, "war_side_100", "Abstencionista habitual",
          "Juega la lateral de empate 100 veces.", R),
+        (200, "war_side_bets_200", "Apuesta al empate", "Juega la lateral de empate 200 veces.", R),
+        (500, "war_side_bets_500", "Militante del empate",
+         "Juega la lateral de empate 500 veces.", E),
         (1_000, "war_side_1k", "Fiel a la abstención",
          "Juega la lateral de empate 1.000 veces.",
          E),
@@ -4309,6 +4955,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Cobra la lateral de empate: 10 a 1.", C),
         (10, "war_hit_10", "Adivino del empate",
          "Cobra la lateral de empate 10 veces.", E),
+        (20, "war_side_hits_20", "Profeta del empate", "Cobra la lateral de empate 20 veces.", E),
         (50, "war_hit_50", "El empate lo veías venir",
          "Cobra la lateral de empate 50 veces.", L),
     ])  # fmt: skip
@@ -4335,6 +4982,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("war", "war_win_max", [
         (10_000, "war_rich", "Botín de guerra",
          "Gana 10.000 Y$ en una sola mano de la Guerra.", R),
+        (20_000, "war_win_max_20000", "Botín de saqueo",
+         "Gana 20.000 Y$ en una sola mano de la Guerra.", R),
+        (50_000, "war_win_max_50000", "Tesoro de guerra",
+         "Gana 50.000 Y$ en una sola mano de la Guerra.", L),
         (100_000, "war_richer", "Reparto del botín pirata",
          "Gana 100.000 Y$ en una sola mano de la Guerra.", L),
     ], unit="money")  # fmt: skip
@@ -4406,27 +5057,44 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("coin", "coin_games", [
         (1, "moneda_1", "Echarlo a suertes", "Juega tu primera partida a cara o cruz.", C),
         (100, "moneda_100", "Decisiones de Estado", "Juega 100 partidas a cara o cruz.", C),
+        (200, "coin_games_200", "Tirar la moneda al aire", "Juega 200 partidas a cara o cruz.", C),
+        (500, "coin_games_500", "Numismático", "Juega 500 partidas a cara o cruz.", E),
         (1_000, "moneda_1k", "A cara o cruz se decide todo",
          "Juega 1.000 partidas a cara o cruz.", E),
+        (2_000, "coin_games_2000", "Casa de la moneda", "Juega 2.000 partidas a cara o cruz.", E),
+        (5_000, "coin_games_5000", "Banco central", "Juega 5.000 partidas a cara o cruz.", L),
         (10_000, "moneda_10k", "Política monetaria",
          "Juega 10.000 partidas a cara o cruz.", L),
     ])  # fmt: skip
     a += _tiers("coin", "coin_flips", [
         (100, "monedal_100", "Pulgar de oro", "Lanza la moneda 100 veces.", C),
+        (200, "coin_flips_200", "Lanzador amateur", "Lanza la moneda 200 veces.", C),
+        (500, "coin_flips_500", "Pulgar entrenado", "Lanza la moneda 500 veces.", R),
         (1_000, "monedal_1k", "Tendinitis del pulgar", "Lanza la moneda 1.000 veces.", R),
+        (2_500, "coin_flips_2500", "Moneda gastada", "Lanza la moneda 2.500 veces.", E),
         (5_000, "monedal_5k", "Fábrica Nacional de Moneda y Timbre",
          "Lanza la moneda 5.000 veces.", E),
+        (7_500, "coin_flips_7500", "Brazo de lanzador", "Lanza la moneda 7.500 veces.", E),
         (20_000, "monedal_20k", "La máquina de hacer euros", "Lanza la moneda 20.000 veces.", L),
     ])  # fmt: skip
     a += _tiers("coin", "coin_wins", [
         (50, "monedaw_50", "Echador de cartas", "Acierta 50 lanzamientos.", C),
+        (150, "coin_wins_150", "Buena vista", "Acierta 150 lanzamientos.", C),
+        (250, "coin_wins_250", "Ojo certero", "Acierta 250 lanzamientos.", R),
         (500, "monedaw_500", "Dos caras, un ganador", "Acierta 500 lanzamientos.", R),
+        (1_500, "coin_wins_1500", "Clarividente", "Acierta 1.500 lanzamientos.", E),
         (2_500, "monedaw_2500", "Vista de águila", "Acierta 2.500 lanzamientos.", E),
+        (5_000, "coin_wins_5000", "Nostradamus de la moneda", "Acierta 5.000 lanzamientos.", E),
         (10_000, "monedaw_10k", "Oráculo de Delfos", "Acierta 10.000 lanzamientos.", L),
     ])  # fmt: skip
     a += _tiers("coin", "coin_cashouts", [
         (10, "monedac_10", "Diez cobros y a casa", "Cobra 10 partidas a cara o cruz.", C),
+        (20, "coin_cashouts_20", "Cobro modesto", "Cobra 20 partidas a cara o cruz.", C),
+        (50, "coin_cashouts_50", "Hucha llena", "Cobra 50 partidas a cara o cruz.", R),
         (100, "monedac_100", "Hucha de cerdito", "Cobra 100 partidas a cara o cruz.", R),
+        (200, "coin_cashouts_200", "Ahorrador de monedas", "Cobra 200 partidas a cara o cruz.", R),
+        (400, "coin_cashouts_400", "Fondo de inversión numismático",
+         "Cobra 400 partidas a cara o cruz.", E),
         (800, "monedac_800", "Plan de pensiones", "Cobra 800 partidas a cara o cruz.", E),
         (3_000, "monedac_3k", "Cerdito hucha con sobrepeso",
          "Cobra 3.000 partidas a cara o cruz.", L),
@@ -4434,7 +5102,11 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("coin", "coin_losses", [
         (1, "monedap_1", "Salió la otra", "Falla tu primer lanzamiento.", C),
         (10, "monedap_10", "Mal fario de Hillary", "Falla 10 lanzamientos.", C),
+        (20, "coin_losses_20", "Moneda tramposa", "Falla 20 lanzamientos.", C),
+        (50, "coin_losses_50", "Mala racha de monedas", "Falla 50 lanzamientos.", C),
         (100, "monedap_100", "Ni a cara ni a cruz", "Falla 100 lanzamientos.", C),
+        (200, "coin_losses_200", "Moneda trucada", "Falla 200 lanzamientos.", C),
+        (500, "coin_losses_500", "Moneda con mala leche", "Falla 500 lanzamientos.", E),
         (1_000, "monedap_1k", "Manual de resistencia numismático",
          "Falla 1.000 lanzamientos.", E),
     ])  # fmt: skip
@@ -4442,6 +5114,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "moneda_canto", "Equilibrista de feria", "Que la moneda caiga de canto.", C),
         (10, "moneda_canto_10", "Inspección rutinaria",
          "Que la moneda caiga de canto 10 veces.", R),
+        (20, "coin_edges_20", "Canto rodado", "Que la moneda caiga de canto 20 veces.", R),
         (50, "moneda_canto_50", "Expediente abierto en la Agencia Tributaria",
          "Que la moneda caiga de canto 50 veces.", E),
         (150, "moneda_canto_150", "Ni cara ni cruz: canto",
@@ -4467,6 +5140,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("coin", "coin_win_max", [
         (10_000, "moneda_rich", "Lluvia de euros", "Gana 10.000 Y$ en una partida a cara o cruz.",
          E),
+        (20_000, "coin_win_max_20000", "Moneda de oro",
+         "Gana 20.000 Y$ en una partida a cara o cruz.", E),
+        (50_000, "coin_win_max_50000", "Doblón español",
+         "Gana 50.000 Y$ en una partida a cara o cruz.", M),
         (100_000, "moneda_richer", "Cara de rico",
          "Gana 100.000 Y$ en una partida a cara o cruz.",
          M),
@@ -4483,12 +5160,18 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("coin", "coin_gallina", [
         (25, "moneda_gallina", "Prudencia fiscal", "Cobra 25 veces tras un solo acierto.", C),
+        (50, "coin_gallina_50", "Uno y me voy", "Cobra 50 veces tras un solo acierto.", C),
+        (150, "coin_gallina_150", "Prudente de manual", "Cobra 150 veces tras un solo acierto.", E),
         (250, "moneda_gallina_250", "Prudencia, ante todo",
          "Cobra 250 veces tras un solo acierto.", E),
     ])  # fmt: skip
     a += _tiers("coin", "coin_first_fail", [
         (10, "moneda_ni_una", "Ni una, oye",
          "Falla el primer lanzamiento de 10 partidas.", C),
+        (30, "coin_first_fail_30", "Primer tropiezo",
+         "Falla el primer lanzamiento de 30 partidas.", C),
+        (75, "coin_first_fail_75", "Mal comienzo crónico",
+         "Falla el primer lanzamiento de 75 partidas.", R),
         (250, "moneda_ni_una_250", "Mal fario con sello oficial",
          "Falla el primer lanzamiento de 250 partidas.", R),
     ])  # fmt: skip
@@ -4519,6 +5202,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("coin", "coin_edge_lost", [
         (5_000, "moneda_contribuyente", "La moneda se la queda Hacienda",
          "Pierde 5.000 Y$ en monedas de canto.", E),
+        (15_000, "coin_edge_lost_15000", "Monedas al fisco",
+         "Pierde 15.000 Y$ en monedas de canto.", E),
+        (40_000, "coin_edge_lost_40000", "Canto de sirena fiscal",
+         "Pierde 40.000 Y$ en monedas de canto.", M),
         (100_000, "moneda_mecenas", "Hacienda te debe una cena",
          "Pierde 100.000 Y$ en monedas de canto.", M),
     ], unit="money")  # fmt: skip
@@ -4548,41 +5235,68 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("bus", "bus_games", [
         (1, "bus_1", "Sube, que no muerde", "Juega tu primera partida al autobús.", C),
         (100, "bus_100", "Abono transporte de Óscar Puente", "Juega 100 partidas al autobús.", C),
+        (200, "bus_games_200", "Viajero frecuente", "Juega 200 partidas al autobús.", C),
+        (500, "bus_games_500", "Bonobús gastado", "Juega 500 partidas al autobús.", E),
         (1_000, "bus_1k", "Abono gratis de Renfe",
          "Juega 1.000 partidas al autobús.", E),
+        (2_000, "bus_games_2000", "Conductor suplente", "Juega 2.000 partidas al autobús.", E),
+        (5_000, "bus_games_5000", "Jefe de línea", "Juega 5.000 partidas al autobús.", L),
         (10_000, "bus_10k", "Conductor de la EMT", "Juega 10.000 partidas al autobús.", L),
     ])  # fmt: skip
     a += _tiers("bus", "bus_hands", [
         (100, "busm_100", "Billete sencillo de Rodalies", "Juega 100 manos al autobús.", C),
+        (200, "bus_hands_200", "Primeras paradas", "Juega 200 manos al autobús.", C),
+        (500, "bus_hands_500", "Pasajero habitual", "Juega 500 manos al autobús.", R),
         (1_000, "busm_1k", "Bonobús de diez viajes", "Juega 1.000 manos al autobús.", R),
+        (2_000, "bus_hands_2000", "Línea de circunvalación", "Juega 2.000 manos al autobús.", R),
+        (5_000, "bus_hands_5000", "Trayecto de largo recorrido",
+         "Juega 5.000 manos al autobús.", L),
         (10_000, "busm_10k", "La Global de punta a punta", "Juega 10.000 manos al autobús.", L),
+        (25_000, "bus_hands_25000", "Vuelta a España en guagua",
+         "Juega 25.000 manos al autobús.", M),
         (50_000, "busm_50k", "Más kilómetros que un camionero",
          "Juega 50.000 manos al autobús.", M),
     ])  # fmt: skip
     a += _tiers("bus", "bus_wins", [
         (50, "busw_50", "Cartomante de parada", "Acierta 50 manos al autobús.", C),
+        (150, "bus_wins_150", "Vidente de la guagua", "Acierta 150 manos al autobús.", C),
+        (250, "bus_wins_250", "Tarotista del autobús", "Acierta 250 manos al autobús.", R),
         (500, "busw_500", "Echadora de cartas del Puerto", "Acierta 500 manos al autobús.", R),
+        (1_500, "bus_wins_1500", "Bola de cristal en la parada",
+         "Acierta 1.500 manos al autobús.", R),
+        (2_500, "bus_wins_2500", "Adivino de cocheras", "Acierta 2.500 manos al autobús.", L),
         (5_000, "busw_5k", "Conductor de la línea 1",
          "Acierta 5.000 manos al autobús.", L),
+        (7_500, "bus_wins_7500", "Pitoniso de la estación", "Acierta 7.500 manos al autobús.", L),
         (20_000, "busw_20k", "Vidente de la DGT", "Acierta 20.000 manos al autobús.", M),
     ])  # fmt: skip
     a += _tiers("bus", "bus_cashouts", [
         (10, "busc_10", "Próxima parada: mi casa", "Cobra 10 partidas al autobús.", C),
+        (20, "bus_cashouts_20", "Bajada en la parada", "Cobra 20 partidas al autobús.", C),
+        (50, "bus_cashouts_50", "Picar y cobrar", "Cobra 50 partidas al autobús.", R),
         (100, "busc_100", "Picar el billete", "Cobra 100 partidas al autobús.", R),
+        (200, "bus_cashouts_200", "Billete de vuelta", "Cobra 200 partidas al autobús.", R),
+        (500, "bus_cashouts_500", "Concesionario de la línea", "Cobra 500 partidas al autobús.", L),
         (1_000, "busc_1k", "Concesión de la línea", "Cobra 1.000 partidas al autobús.", L),
     ])  # fmt: skip
     a += _tiers("bus", "bus_losses", [
         (1, "busp_1", "Se te escapó la guagua", "Pierde tu primera partida al autobús.", C),
         (10, "busp_10", "Huelga de transporte",
          "Pierde 10 partidas al autobús.", C),
+        (20, "bus_losses_20", "Parada equivocada", "Pierde 20 partidas al autobús.", C),
+        (50, "bus_losses_50", "Retraso habitual", "Pierde 50 partidas al autobús.", C),
         (100, "busp_100", "Servicios mínimos",
          "Pierde 100 partidas al autobús.", C),
+        (200, "bus_losses_200", "Autobús que nunca llega", "Pierde 200 partidas al autobús.", C),
+        (500, "bus_losses_500", "Marquesina con vistas", "Pierde 500 partidas al autobús.", E),
         (1_000, "busp_1k", "Esperando a Godot en la marquesina",
          "Pierde 1.000 partidas al autobús.", E),
     ])  # fmt: skip
     a += _tiers("bus", "bus_complete", [
         (1, "bus_completo", "Fin de trayecto", "Acierta las cuatro manos del autobús.", C),
         (10, "bus_completo_10", "Abono anual del Imserso", "Acierta las cuatro manos 10 veces.", R),
+        (20, "bus_complete_20", "Cuatro de cuatro", "Acierta las cuatro manos 20 veces.", R),
+        (50, "bus_complete_50", "Trayecto perfecto", "Acierta las cuatro manos 50 veces.", L),
         (100, "bus_completo_100", "Jefe de cocheras", "Acierta las cuatro manos 100 veces.", L),
     ])  # fmt: skip
     a += _tiers("bus", "bus_turned", [
@@ -4605,22 +5319,32 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("bus", "bus_win_max", [
         (10_000, "bus_rich", "Billete premiado de la ONCE",
          "Gana 10.000 Y$ en una partida al autobús.", E),
+        (20_000, "bus_win_max_20000", "Premio en el billete",
+         "Gana 20.000 Y$ en una partida al autobús.", E),
+        (50_000, "bus_win_max_50000", "Billete de lotería con ruedas",
+         "Gana 50.000 Y$ en una partida al autobús.", M),
         (100_000, "bus_richer", "Concesión pública a dedo",
          "Gana 100.000 Y$ en una partida al autobús.", M),
     ], unit="money")  # fmt: skip
     a += _tiers("bus", "bus_win_igual", [
         (1, "bus_igual", "Gemelos de la baraja", "Acierta «igual» al autobús.", R),
         (10, "bus_igual_10", "Gemelos idénticos", "Acierta «igual» 10 veces.", E),
+        (20, "bus_win_igual_20", "Gemelos en el asiento", "Acierta «igual» 20 veces.", E),
         (50, "bus_igual_50", "Fotocopiadora humana", "Acierta «igual» 50 veces.", M),
     ])  # fmt: skip
     a += _tiers("bus", "bus_win_poste", [
         (1, "bus_poste", "Al palo", "Acierta «poste» al autobús.", R),
         (10, "bus_poste_10", "Parada de la marquesina", "Acierta «poste» 10 veces.", L),
+        (20, "bus_win_poste_20", "El poste de la parada", "Acierta «poste» 20 veces.", L),
         (50, "bus_poste_50", "Robin Hood del poste", "Acierta «poste» 50 veces.", M),
     ])  # fmt: skip
     a += _tiers("bus", "bus_suit_wins", [
         (10, "buss_10", "Tiro las cartas y acierto", "Acierta el palo 10 veces.", R),
+        (20, "bus_suit_wins_20", "Palo de la baraja", "Acierta el palo 20 veces.", R),
+        (50, "bus_suit_wins_50", "Tarot de bolsillo", "Acierta el palo 50 veces.", L),
         (100, "buss_100", "Tarotista de madrugada", "Acierta el palo 100 veces.", L),
+        (200, "bus_suit_wins_200", "Brujería de bonobús", "Acierta el palo 200 veces.", L),
+        (500, "bus_suit_wins_500", "Echadora de cartas oficial", "Acierta el palo 500 veces.", M),
         (1_000, "buss_1k", "Bruja con licencia", "Acierta el palo 1.000 veces.", M),
     ])  # fmt: skip
     a.append(Achievement(
@@ -4654,6 +5378,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("bus", "bus_contrarian", [
         (10, "bus_contra_10", "Llevar la contraria",
          "Acierta 10 manos eligiendo una opción menos probable que otra.", R),
+        (20, "bus_contrarian_20", "Llevo la contraria",
+         "Acierta 20 manos eligiendo una opción menos probable que otra.", R),
+        (50, "bus_contrarian_50", "A contrapelo",
+         "Acierta 50 manos eligiendo una opción menos probable que otra.", R),
         (100, "bus_contra_100", "A contracorriente",
          "Acierta 100 manos eligiendo una opción menos probable que otra.", R),
     ])  # fmt: skip
@@ -4664,6 +5392,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("bus", "bus_first_fail", [
         (10, "bus_ni_subir", "Ni subirse a la guagua",
          "Falla el color en 10 partidas.", C),
+        (30, "bus_first_fail_30", "Primer color fallado", "Falla el color en 30 partidas.", C),
+        (75, "bus_first_fail_75", "Daltónico de parada", "Falla el color en 75 partidas.", R),
         (250, "bus_ni_subir_250", "Vecino de la marquesina", "Falla el color en 250 partidas.", R),
     ])  # fmt: skip
     a += _tiers("bus", "bus_last_fail", [
@@ -4673,6 +5403,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("bus", "bus_gallina", [
         (25, "bus_gallina", "Me bajo en la próxima",
          "Cobra 25 veces tras acertar solo el color.", R),
+        (50, "bus_gallina_50", "Bajarse en marcha",
+         "Cobra 50 veces tras acertar solo el color.", R),
+        (150, "bus_gallina_150", "Usuario de una sola parada",
+         "Cobra 150 veces tras acertar solo el color.", R),
         (250, "bus_gallina_250", "Una parada y a casa",
          "Cobra 250 veces tras acertar solo el color.", R),
     ])  # fmt: skip
@@ -4723,12 +5457,21 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("poker", "poker_games", [
         (1, "poker_1", "Cartas sobre la mesa", "Juega tu primera mano de póker.", C),
         (100, "poker_100", "Timba de los jueves", "Juega 100 manos de póker.", C),
+        (200, "poker_games_200", "Partida de los viernes", "Juega 200 manos de póker.", C),
+        (500, "poker_games_500", "Mesa de fieltro verde", "Juega 500 manos de póker.", E),
         (1_000, "poker_1k", "Tahúr del Casino del Estado", "Juega 1.000 manos de póker.", E),
+        (2_000, "poker_games_2000", "Tapete gastado", "Juega 2.000 manos de póker.", E),
+        (5_000, "poker_games_5000", "Cara de póker permanente", "Juega 5.000 manos de póker.", M),
         (10_000, "poker_10k", "World Series del barrio", "Juega 10.000 manos de póker.", M),
     ])  # fmt: skip
     a += _tiers("poker", "poker_calls", [
         (100, "pokeri_100", "Voy, que me lo juego todo", "Ve 100 veces al final.", C),
+        (200, "poker_calls_200", "Voy a ver", "Ve 200 veces al final.", C),
+        (500, "poker_calls_500", "Aguanto hasta el final", "Ve 500 veces al final.", E),
         (1_000, "pokeri_1k", "Terco como una mula", "Ve 1.000 veces al final.", E),
+        (2_000, "poker_calls_2000", "Ni un paso atrás en la mesa", "Ve 2.000 veces al final.", E),
+        (5_000, "poker_calls_5000", "Insistencia de vendedor de seguros",
+         "Ve 5.000 veces al final.", M),
         (10_000, "pokeri_10k", "Ni una cuestión de confianza",
          "Ve 10.000 veces al final.", M),
     ])  # fmt: skip
@@ -4736,27 +5479,46 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "pokerr_1", "Me piro, vampiro", "Retírate de una mano de póker.", C),
         (50, "pokerr_50", "Me retiro con dignidad",
          "Retírate 50 veces.", C),
+        (150, "poker_folds_150", "Me retiro", "Retírate 150 veces.", C),
+        (250, "poker_folds_250", "Dimisión irrevocable", "Retírate 250 veces.", R),
         (500, "pokerr_500", "Dimisión en diferido",
          "Retírate 500 veces.", R),
     ])  # fmt: skip
     a += _tiers("poker", "poker_wins", [
         (10, "pokerw_10", "Le ganas a la banca", "Gana 10 manos a la banca enseñando cartas.", C),
+        (20, "poker_wins_20", "Mano ganadora", "Gana 20 manos a la banca.", C),
+        (50, "poker_wins_50", "Banca derrotada", "Gana 50 manos a la banca.", R),
         (100, "pokerw_100", "Cara de póker", "Gana 100 manos a la banca.", R),
+        (200, "poker_wins_200", "Martillo de la banca", "Gana 200 manos a la banca.", R),
+        (500, "poker_wins_500", "Pesadilla de la banca", "Gana 500 manos a la banca.", L),
         (1_000, "pokerw_1k", "Mayoría absoluta en el tapete", "Gana 1.000 manos a la banca.", L),
+        (2_500, "poker_wins_2500", "Azote de la banca", "Gana 2.500 manos a la banca.", M),
         (5_000, "pokerw_5k", "Más mano que el Gran Wyoming", "Gana 5.000 manos a la banca.", M),
     ])  # fmt: skip
     a += _tiers("poker", "poker_no_qualify", [
         (10, "pokernq_10", "La banca no se presenta",
          "Que la banca no juegue 10 veces cuando vas.", C),
+        (20, "poker_no_qualify_20", "La banca se esconde",
+         "Que la banca no juegue 20 veces cuando vas.", C),
+        (50, "poker_no_qualify_50", "Banca con miedo escénico",
+         "Que la banca no juegue 50 veces cuando vas.", R),
         (100, "pokernq_100", "Incomparecencia en el debate",
          "Que la banca no juegue 100 veces cuando vas.", R),
+        (200, "poker_no_qualify_200", "Banca de vacaciones",
+         "Que la banca no juegue 200 veces cuando vas.", R),
+        (500, "poker_no_qualify_500", "Banca en huelga",
+         "Que la banca no juegue 500 veces cuando vas.", L),
         (1_000, "pokernq_1k", "La banca se planta",
          "Que la banca no juegue 1.000 veces cuando vas.", L),
     ])  # fmt: skip
     a += _tiers("poker", "poker_losses", [
         (1, "pokerp_1", "La banca siempre gana", "Pierde tu primera mano de póker al final.", C),
         (10, "pokerp_10", "La banca rescatada por ti", "Pierde 10 manos al final.", C),
+        (20, "poker_losses_20", "Derrota digna", "Pierde 20 manos al final.", C),
+        (50, "poker_losses_50", "Perder con estilo", "Pierde 50 manos al final.", R),
         (100, "pokerp_100", "Lo importante es participar", "Pierde 100 manos al final.", R),
+        (200, "poker_losses_200", "Perdedor de oficio", "Pierde 200 manos al final.", R),
+        (500, "poker_losses_500", "Mal perdedor, buen jugador", "Pierde 500 manos al final.", L),
         (1_000, "pokerp_1k", "Sé fuerte, Luis", "Pierde 1.000 manos al final.", L),
     ])  # fmt: skip
     a += _tiers("poker", "poker_ties", [
@@ -4801,6 +5563,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("poker", "poker_win_max", [
         (10_000, "poker_rich", "Bote de la timba",
          "Gana 10.000 Y$ en una mano de póker.", E),
+        (20_000, "poker_win_max_20000", "Bote de los jueves",
+         "Gana 20.000 Y$ en una mano de póker.", E),
+        (50_000, "poker_win_max_50000", "Bote de campeonato",
+         "Gana 50.000 Y$ en una mano de póker.", M),
         (100_000, "poker_richer", "Farol de cien mil",
          "Gana 100.000 Y$ en una mano de póker.", M),
     ], unit="money")  # fmt: skip
@@ -4817,6 +5583,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("poker", "poker_fold_saved", [
         (10, "poker_bien_retirado", "Retirada a tiempo",
          "Retírate de 10 manos que habrías perdido.", C),
+        (20, "poker_fold_saved_20", "Olfato fino", "Retírate de 20 manos que habrías perdido.", C),
+        (50, "poker_fold_saved_50", "Nariz de sabueso",
+         "Retírate de 50 manos que habrías perdido.", R),
         (100, "poker_bien_retirado_100", "Olfato de sabueso",
          "Retírate de 100 manos que habrías perdido.", R),
     ])  # fmt: skip
@@ -4860,6 +5629,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("poker", "poker_air_call_wins", [
         (10, "poker_fe", "Fe ciega en el turn", "Gana 10 manos yendo con nada en el flop.", C),
+        (20, "poker_air_call_wins_20", "Fe de carbonero",
+         "Gana 20 manos yendo con nada en el flop.", C),
+        (50, "poker_air_call_wins_50", "Milagro en el river",
+         "Gana 50 manos yendo con nada en el flop.", E),
         (100, "poker_fe_100", "Hay que tener fe",
          "Gana 100 manos yendo con nada en el flop.", E),
     ])  # fmt: skip
@@ -4926,6 +5699,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "poker_reto_1", "Reto aceptado",
          "Cumple tu primer reto del día del póker.", C),
         (50, "poker_reto_50", "Medio centenar de deberes hechos", "Cumple 50 retos del día.", R),
+        (150, "poker_retos_150", "Deberes de todo el curso", "Cumple 150 retos del día.", L),
         (300, "poker_reto_300", "Plan Quinquenal cumplido", "Cumple 300 retos del día.", L),
         (1_000, "poker_reto_1k", "Más objetivos que la Agenda 2030", "Cumple 1.000 retos del día.",
          M),
@@ -4941,6 +5715,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("poker", "poker_bonus_bets", [
         (1, "poker_bote_1", "Un diamante es para siempre", "Juega el 💎 Bote del póker.", C),
         (100, "poker_bote_100", "Inversor de criptodiamantes", "Juega el 💎 Bote 100 veces.", C),
+        (200, "poker_bonus_bets_200", "Inversor en diamantes", "Juega el 💎 Bote 200 veces.", C),
+        (500, "poker_bonus_bets_500", "Diamantes a cucharadas", "Juega el 💎 Bote 500 veces.", R),
         (1_000, "poker_bote_1k", "Fondo de inversión del bote", "Juega el 💎 Bote 1.000 veces.",
          R),
     ])  # fmt: skip
@@ -4965,6 +5741,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Juega una mano de póker con más gente en la mesa.", C),
         (100, "poker_mesa_100", "Tertulia de casino", "Juega 100 manos con más gente en la mesa.",
          R),
+        (200, "poker_table_hands_200", "Mesa con compañía",
+         "Juega 200 manos con más gente en la mesa.", R),
+        (500, "poker_table_hands_500", "Peña del tapete",
+         "Juega 500 manos con más gente en la mesa.", E),
         (1_000, "poker_mesa_1k", "Peña de la timba", "Juega 1.000 manos con más gente en la mesa.",
          E),
     ])  # fmt: skip
@@ -4983,33 +5763,58 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("timba", "timba_hands", [
         (1, "timba_1", "Silla en la timba", "Juega tu primera mano de timba.", C),
         (100, "timba_100", "Habitual de la trastienda", "Juega 100 manos de timba.", C),
+        (200, "timba_hands_200", "Trastienda de bar", "Juega 200 manos de timba.", C),
+        (500, "timba_hands_500", "Partida clandestina", "Juega 500 manos de timba.", E),
         (1_000, "timba_1k", "Timbero de carné", "Juega 1.000 manos de timba.", E),
+        (2_000, "timba_hands_2000", "Timbero de toda la vida", "Juega 2.000 manos de timba.", E),
+        (5_000, "timba_hands_5000", "Leyenda de la trastienda", "Juega 5.000 manos de timba.", L),
         (10_000, "timba_10k", "Leyenda de la partida ilegal del Raval",
          "Juega 10.000 manos de timba.", L),
     ])  # fmt: skip
     a += _tiers("timba", "timba_pots_won", [
         (10, "timbab_10", "Primeros botes", "Gana 10 botes en la timba.", C),
+        (20, "timba_pots_won_20", "Primer bote", "Gana 20 botes en la timba.", C),
+        (50, "timba_pots_won_50", "Bote tras bote", "Gana 50 botes en la timba.", R),
         (100, "timbab_100", "Recaudador de la timba", "Gana 100 botes en la timba.", R),
+        (200, "timba_pots_won_200", "Hucha de la timba", "Gana 200 botes.", R),
+        (500, "timba_pots_won_500", "Cobrador de la timba", "Gana 500 botes.", E),
         (1_000, "timbab_1k", "Agencia Tributaria de los colegas", "Gana 1.000 botes.", E),
+        (2_500, "timba_pots_won_2500", "Banquero de la trastienda", "Gana 2.500 botes.", L),
         (5_000, "timbab_5k", "El que siempre gana", "Gana 5.000 botes.", L),
     ])  # fmt: skip
     a += _tiers("timba", "timba_showdowns_won", [
         (10, "timbas_10", "Cartas boca arriba", "Gana 10 botes enseñando cartas.", C),
+        (20, "timba_showdowns_won_20", "Juego limpio", "Gana 20 botes enseñando cartas.", C),
+        (50, "timba_showdowns_won_50", "Sin trampa ni cartón",
+         "Gana 50 botes enseñando cartas.", R),
         (100, "timbas_100", "Cartas sobre la mesa, siempre",
          "Gana 100 botes enseñando cartas.", R),
+        (200, "timba_showdowns_won_200", "Transparencia total",
+         "Gana 200 botes enseñando cartas.", R),
+        (500, "timba_showdowns_won_500", "Cristal de la timba",
+         "Gana 500 botes enseñando cartas.", L),
         (1_000, "timbas_1k", "Portal de transparencia", "Gana 1.000 botes enseñando cartas.", L),
     ])  # fmt: skip
     a += _tiers("timba", "timba_steals", [
         (10, "timbar_10", "Farol en la trastienda",
          "Gana 10 botes sin enseñar después de subir.", C),
+        (20, "timba_steals_20", "Farol de bolsillo",
+         "Gana 20 botes sin enseñar después de subir.", C),
+        (50, "timba_steals_50", "Farolero", "Gana 50 botes sin enseñar después de subir.", R),
         (100, "timbar_100", "Faroles sin enseñar",
          "Gana 100 botes sin enseñar después de subir.", R),
+        (200, "timba_steals_200", "Farola encendida", "Gana 200 botes sin enseñar.", R),
+        (500, "timba_steals_500", "Faro de Maspalomas del póker", "Gana 500 botes sin enseñar.", E),
         (1_000, "timbar_1k", "Faroles de feria",
          "Gana 1.000 botes sin enseñar.", E),
     ])  # fmt: skip
     a += _tiers("timba", "timba_raises", [
         (100, "timbasub_100", "Sube, que es gratis", "Sube 100 veces en la timba.", C),
+        (200, "timba_raises_200", "Subidón", "Sube 200 veces en la timba.", C),
+        (500, "timba_raises_500", "Subida de impuestos", "Sube 500 veces en la timba.", R),
         (1_000, "timbasub_1k", "Subida del IPC", "Sube 1.000 veces en la timba.", R),
+        (2_000, "timba_raises_2000", "Escalada de precios", "Sube 2.000 veces.", R),
+        (5_000, "timba_raises_5000", "Hiperinflación", "Sube 5.000 veces.", L),
         (10_000, "timbasub_10k", "Inflación argentina", "Sube 10.000 veces.", L),
     ])  # fmt: skip
     a += _tiers("timba", "timba_allins", [
@@ -5019,6 +5824,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("timba", "timba_allin_wins", [
         (1, "timba_allin_gana", "Doble o pringue", "Gana un bote yendo con todo.", C),
         (25, "timba_allin_gana_25", "Resurrección de Lázaro", "Gana 25 botes yendo con todo.", R),
+        (50, "timba_allin_wins_50", "Todo al rojo", "Gana 50 botes yendo con todo.", R),
         (100, "timba_allin_gana_100", "Resurrección en la timba",
          "Gana 100 botes yendo con todo.", E),
     ])  # fmt: skip
@@ -5031,11 +5837,17 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "timba_elimina", "Lo dejaste tieso",
          "Déjale tieso a alguien en la timba.", C),
         (50, "timba_elimina_50", "Purga de Stalin", "Deja tiesos a 50 jugadores.", R),
+        (150, "timba_knockouts_150", "Exterminador de la timba", "Deja tiesos a 150 jugadores.", R),
+        (250, "timba_knockouts_250", "Limpia de mesa", "Deja tiesos a 250 jugadores.", E),
         (500, "timba_elimina_500", "Terminator de la timba", "Deja tiesos a 500 jugadores.", E),
     ])  # fmt: skip
     a += _tiers("timba", "timba_pot_max", [
         (10_000, "timba_bote_10k", "Bote de narcolancha",
          "Gana un bote de 10.000 Y$ o más en la timba.", E),
+        (20_000, "timba_pot_max_20000", "Bote de narcotraficante",
+         "Gana un bote de 20.000 Y$ o más.", E),
+        (50_000, "timba_pot_max_50000", "Bote de película de Scorsese",
+         "Gana un bote de 50.000 Y$ o más.", M),
         (100_000, "timba_bote_100k", "Bote de los ERE", "Gana un bote de 100.000 Y$ o más.", M),
     ], unit="money")  # fmt: skip
     a += _tiers("timba", "timba_splits", [
@@ -5097,6 +5909,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("timba", "timba_preflop_folds", [
         (100, "timba_paciencia", "Paciencia de opositor", "Retírate 100 veces antes del flop.", C),
+        (200, "timba_preflop_folds_200", "Paciencia infinita",
+         "Retírate 200 veces antes del flop.", C),
+        (500, "timba_preflop_folds_500", "Retirada preventiva",
+         "Retírate 500 veces antes del flop.", R),
         (1_000, "timba_paciencia_1k", "Plaza fija en el banquillo",
          "Retírate 1.000 veces antes del flop.", R),
     ])  # fmt: skip
@@ -5107,6 +5923,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("timba", "timba_rake", [
         (1_000, "timba_iaj_1k", "Contribuyente de la timba",
          "Paga 1.000 Y$ de comisión al Estado ganando botes.", R),
+        (5_000, "timba_rake_5000", "Diezmo de la timba",
+         "Paga 5.000 Y$ de comisión al Estado ganando botes.", R),
+        (20_000, "timba_rake_20000", "Mecenas de Hacienda en la timba",
+         "Paga 20.000 Y$ de comisión al Estado ganando botes.", L),
         (100_000, "timba_iaj_100k", "Gran contribuyente de la timba",
          "Paga 100.000 Y$ de comisión al Estado ganando botes.", L),
     ], unit="money")  # fmt: skip
@@ -5129,22 +5949,35 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("dice", "dice_games", [
         (1, "dados_1", "Alea iacta est", "Juega tu primera partida de dados.", C),
         (100, "dados_100", "Habitual de la mesa de craps", "Juega 100 partidas de dados.", C),
+        (200, "dados_games_200", "Tirador de feria", "Juega 200 partidas de dados.", C),
+        (500, "dados_games_500", "Croupier del cubilete", "Juega 500 partidas de dados.", E),
         (1_000, "dados_1k", "Tirador de plantilla", "Juega 1.000 partidas de dados.", E),
+        (2_000, "dados_games_2000", "Cubiletero", "Juega 2.000 partidas de dados.", E),
+        (5_000, "dados_games_5000", "Leyenda de los dados", "Juega 5.000 partidas de dados.", L),
         (10_000, "dados_10k", "Funcionario de carrera del cubilete",
          "Juega 10.000 partidas de dados.", L),
     ])  # fmt: skip
     a += _tiers("dice", "dice_rolls", [
         (100, "dadost_100", "Muñeca suelta", "Tira los dados 100 veces.", C),
+        (200, "dados_rolls_200", "Primeras tiradas", "Tira los dados 200 veces.", C),
+        (500, "dados_rolls_500", "Codo caliente", "Tira los dados 500 veces.", R),
         (1_000, "dadost_1k", "Codo de tirador", "Tira los dados 1.000 veces.", R),
+        (2_000, "dados_rolls_2000", "Tirador incansable", "Tira los dados 2.000 veces.", R),
+        (5_000, "dados_rolls_5000", "Hombro dislocado", "Tira los dados 5.000 veces.", E),
         (10_000, "dadost_10k", "Diez mil tiradas y ni una ampolla",
          "Tira los dados 10.000 veces.", E),
+        (25_000, "dados_rolls_25000", "Cubilete de oro", "Tira los dados 25.000 veces.", M),
         (50_000, "dadost_50k", "El cubilete no descansa", "Tira los dados 50.000 veces.", M),
     ])  # fmt: skip
     a += _tiers("dice", "dice_wins", [
         (50, "dadosw_50", "Mayoría simple", "Gana 50 partidas de dados.", C),
+        (150, "dados_wins_150", "Racha de dados", "Gana 150 partidas de dados.", C),
+        (250, "dados_wins_250", "Dados cargados (legalmente)", "Gana 250 partidas de dados.", E),
         (500, "dadosw_500", "Mayoría absoluta en el cubilete", "Gana 500 partidas de dados.", E),
+        (1_500, "dados_wins_1500", "Ludópata de los dados", "Gana 1.500 partidas de dados.", L),
         (2_500, "dadosw_2500", "Dios no juega a los dados, tú sí",
          "Gana 2.500 partidas de dados.", L),
+        (5_000, "dados_wins_5000", "Dados de la suerte", "Gana 5.000 partidas de dados.", L),
         (10_000, "dadosw_10k", "Señor de los dados",
          "Gana 10.000 partidas de dados.", M),
     ])  # fmt: skip
@@ -5152,31 +5985,45 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "dados_natural", "¡Natural!", "Saca un 7 o un 11 en la tirada de salida.", C),
         (100, "dados_natural_100", "Naturalidad institucional",
          "Saca 100 sietes u onces en la salida.", R),
+        (200, "dados_naturals_200", "Natural de toda la vida",
+         "Saca 200 sietes u onces en la salida.", R),
+        (500, "dados_naturals_500", "Siete de serie", "Saca 500 sietes u onces en la salida.", L),
         (1_000, "dados_natural_1k", "Más natural que el gofio",
          "Saca 1.000 sietes u onces en la salida.", L),
     ])  # fmt: skip
     a += _tiers("dice", "dice_craps_rolls", [
         (1, "dados_pifia", "Pifia de salida", "Saca un 2, un 3 o un 12 en la tirada de salida.", C),
         (100, "dados_pifia_100", "Cien pifias de salida", "Saca 100 pifias en la salida.", E),
+        (200, "dados_craps_rolls_200", "Pifia institucional", "Saca 200 pifias en la salida.", E),
+        (500, "dados_craps_rolls_500", "Pifia perpetua", "Saca 500 pifias en la salida.", L),
         (1_000, "dados_pifia_1k", "Crisis diplomática permanente",
          "Saca 1.000 pifias en la salida.", L),
     ])  # fmt: skip
     a += _tiers("dice", "dice_points_set", [
         (10, "dados_punto_10", "Punto de partida", "Pon el punto 10 veces.", C),
+        (30, "dados_points_set_30", "Puntero láser", "Pon el punto 30 veces.", C),
+        (75, "dados_points_set_75", "Poner los puntos sobre las íes", "Pon el punto 75 veces.", R),
         (300, "dados_punto_300", "Punto y seguido", "Pon el punto 300 veces.", R),
+        (750, "dados_points_set_750", "Punto de no retorno", "Pon el punto 750 veces.", R),
         (2_000, "dados_punto_2k", "Punto de inflexión", "Pon el punto 2.000 veces.", E),
     ])  # fmt: skip
     a += _tiers("dice", "dice_points_made", [
         (1, "dados_hecho", "Promesa cumplida",
          "Repite el punto antes que el siete.", C),
         (50, "dados_hecho_50", "Cumplir el programa electoral", "Haz 50 puntos.", R),
+        (150, "dados_points_made_150", "Promesa de dados cumplida", "Haz 150 puntos.", R),
+        (250, "dados_points_made_250", "Lo prometido es deuda", "Haz 250 puntos.", E),
         (500, "dados_hecho_500", "Hemeroteca impecable", "Haz 500 puntos.", E),
+        (1_500, "dados_points_made_1500", "Programa electoral cumplido entero",
+         "Haz 1.500 puntos.", L),
         (2_500, "dados_hecho_2500", "Punto y seguido, punto y aparte", "Haz 2.500 puntos.", L),
     ])  # fmt: skip
     a += _tiers("dice", "dice_seven_outs", [
         (1, "dados_siete_fuera", "Siete fuera",
          "Saca un 7 con el punto puesto y pierde los dados.", C),
         (100, "dados_siete_fuera_100", "El siete maldito", "Saca 100 sietes fuera.", R),
+        (200, "dados_seven_outs_200", "El siete inoportuno", "Saca 200 sietes fuera.", R),
+        (500, "dados_seven_outs_500", "Siete de mal agüero", "Saca 500 sietes fuera.", E),
         (1_000, "dados_siete_fuera_1k", "Disolución de las Cortes", "Saca 1.000 sietes fuera.", E),
     ])  # fmt: skip
     a += _tiers("dice", "dice_hand_points_max", [
@@ -5214,6 +6061,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "dados_pegasus", "Ojos de Pegasus",
          "Saca dos unos.", C, True),
         (50, "dados_pegasus_50", "Pinchazo telefónico", "Saca dos unos 50 veces.", R),
+        (150, "dados_snake_eyes_150", "Ojos de serpiente", "Saca dos unos 150 veces.", L),
         (300, "dados_pegasus_300", "El CNI ya ni disimula", "Saca dos unos 300 veces.", L),
     ])  # fmt: skip
     a += _tiers("dice", "dice_boxcars", [
@@ -5256,6 +6104,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "dados_odds", "Odds de verdad",
          "Pon Odds por primera vez (la apuesta sin ventaja para la casa).", C),
         (100, "dados_odds_100", "El que sabe, sabe", "Pon Odds en 100 partidas.", R),
+        (200, "dados_odds_games_200", "Cuentas de la abuela", "Pon Odds en 200 partidas.", R),
+        (500, "dados_odds_games_500", "Probabilidad de catedrático",
+         "Pon Odds en 500 partidas.", E),
         (1_000, "dados_odds_1k", "Catedrático de probabilidad", "Pon Odds en 1.000 partidas.",
          E),
     ])  # fmt: skip
@@ -5278,6 +6129,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "dados_en_contra", "Votar en contra", "Gana apostando a No pase.", C),
         (100, "dados_en_contra_100", "Llevando la contraria",
          "Gana 100 veces apostando a No pase.", E),
+        (250, "dados_dont_wins_250", "Siempre en contra", "Gana 250 veces apostando a No pase.", L),
         (500, "dados_en_contra_500", "Abogado del diablo",
          "Gana 500 veces apostando a No pase.", L),
     ])  # fmt: skip
@@ -5315,11 +6167,19 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("dice", "dice_win_max", [
         (10_000, "dados_rich", "Pelotazo en el tapete",
          "Gana 10.000 Y$ en una partida de dados.", E),
+        (20_000, "dados_win_max_20000", "Golpe en la mesa de dados",
+         "Gana 20.000 Y$ en una partida de dados.", E),
+        (50_000, "dados_win_max_50000", "Recalificación del cubilete",
+         "Gana 50.000 Y$ en una partida de dados.", M),
         (100_000, "dados_richer", "Recalificación del tapete",
          "Gana 100.000 Y$ en una partida de dados.", M),
     ])  # fmt: skip
     a += _tiers("dice", "dice_profit", [
         (10_000, "dados_plusvalia", "Plusvalía", "Gana 10.000 Y$ en total con los dados.", C),
+        (30_000, "dados_profit_30000", "Ganancia patrimonial",
+         "Gana 30.000 Y$ en total con los dados.", C),
+        (75_000, "dados_profit_75000", "Fortuna de cubilete",
+         "Gana 75.000 Y$ en total con los dados.", E),
         (250_000, "dados_plusvalia_250k", "Patrimonio a declarar",
          "Gana 250.000 Y$ en total con los dados.", E),
     ], unit="money")  # fmt: skip
@@ -5359,8 +6219,16 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Juega una tirada en la mesa compartida de los dados.", C),
         (10, "dadosm_10", "Tertulia de cubilete",
          "Juega 10 tiradas en la mesa compartida de los dados.", C),
+        (20, "dados_table_rolls_20", "Corrillo de dados",
+         "Juega 20 tiradas en la mesa compartida de los dados.", C),
+        (50, "dados_table_rolls_50", "Peña de los dados",
+         "Juega 50 tiradas en la mesa compartida de los dados.", R),
         (100, "dadosm_100", "Habitual del corrillo",
          "Juega 100 tiradas en la mesa compartida de los dados.", R),
+        (200, "dados_table_rolls_200", "Peña del cubilete",
+         "Juega 200 tiradas en la mesa compartida de los dados.", R),
+        (500, "dados_table_rolls_500", "Socio de la mesa",
+         "Juega 500 tiradas en la mesa compartida de los dados.", E),
         (1_000, "dadosm_1k", "Parroquiano de la mesa",
          "Juega 1.000 tiradas en la mesa compartida de los dados.", E),
     ])  # fmt: skip
@@ -5369,6 +6237,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Sé el tirador de una ronda en la mesa compartida.", C),
         (10, "dadosm_tirador_10", "El que tira la primera piedra",
          "Sé el tirador de 10 rondas en la mesa compartida.", C),
+        (20, "dados_shooter_20", "Mano de tirador",
+         "Sé el tirador de 20 rondas en la mesa compartida.", C),
+        (50, "dados_shooter_50", "Dueño del cubilete",
+         "Sé el tirador de 50 rondas en la mesa compartida.", R),
         (100, "dadosm_tirador_100", "El cubilete es mío y me lo llevo",
          "Sé el tirador de 100 rondas en la mesa compartida.", R),
     ])  # fmt: skip
@@ -5389,6 +6261,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Gana una partida con la mano de otro tirador.", C),
         (25, "dadosm_gracias_25", "Mano de cocinero amigo",
          "Gana 25 partidas con la mano de otros tiradores.", R),
+        (50, "dados_table_shooter_wins_50", "Gorrón de la buena suerte",
+         "Gana 50 partidas con la mano de otros tiradores.", R),
+        (150, "dados_table_shooter_wins_150", "Mano prestada",
+         "Gana 150 partidas con la mano de otros tiradores.", E),
         (250, "dadosm_gracias_250", "Tirador de cabecera, médico de familia",
          "Gana 250 partidas con la mano de otros tiradores.", E),
     ])  # fmt: skip
@@ -5397,6 +6273,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Apuesta a No pase contra el tirador, que va a Pase, y gana.", C),
         (25, "dadosm_contra_25", "Cordón sanitario al cubilete",
          "Gana 25 veces apostando a No pase contra el tirador.", R),
+        (50, "dados_table_vs_shooter_50", "Oposición en la mesa",
+         "Gana 50 veces apostando a No pase contra el tirador.", R),
+        (150, "dados_table_vs_shooter_150", "Resistencia organizada",
+         "Gana 150 veces apostando a No pase contra el tirador.", E),
         (250, "dadosm_contra_250", "La resistencia rebelde",
          "Gana 250 veces apostando a No pase contra el tirador.", E),
     ])  # fmt: skip
@@ -5428,24 +6308,40 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "pollo_1", "¿Por qué cruzó el pollo la carretera?",
          "Juega tu primera partida del Pollo.", C),
         (100, "pollo_100", "Carnet por puntos", "Juega 100 partidas del Pollo.", C),
+        (200, "chicken_games_200", "Pollo novato", "Juega 200 partidas del Pollo.", C),
+        (500, "chicken_games_500", "Pollo con multas", "Juega 500 partidas del Pollo.", E),
         (1_000, "pollo_1k", "La DGT te tiene fichado", "Juega 1.000 partidas del Pollo.", E),
+        (2_000, "chicken_games_2000", "Pollo sin carnet", "Juega 2.000 partidas del Pollo.", E),
+        (5_000, "chicken_games_5000", "Pollo de autopista", "Juega 5.000 partidas del Pollo.", L),
         (10_000, "pollo_10k", "El pollo más viajado de España",
          "Juega 10.000 partidas del Pollo.", L),
     ])  # fmt: skip
     a += _tiers("chicken", "chicken_lanes", [
         (100, "pollol_100", "Peatón de fondo de la Castellana", "Cruza 100 carriles.", C),
+        (200, "chicken_lanes_200", "Paso de cebra", "Cruza 200 carriles.", C),
+        (500, "chicken_lanes_500", "Peatón temerario", "Cruza 500 carriles.", R),
         (1_000, "pollol_1k", "Paso de cebra del Ministerio", "Cruza 1.000 carriles.", R),
+        (2_000, "chicken_lanes_2000", "Cruce de semáforos", "Cruza 2.000 carriles.", R),
+        (5_000, "chicken_lanes_5000", "Autopista de peaje", "Cruza 5.000 carriles.", E),
         (10_000, "pollol_10k", "Red de Carreteras del Estado", "Cruza 10.000 carriles.", E),
     ])  # fmt: skip
     a += _tiers("chicken", "chicken_cashouts", [
         (10, "polloc_10", "Pollo pera", "Cobra 10 partidas del Pollo.", C),
+        (20, "chicken_cashouts_20", "Gallina ponedora", "Cobra 20 partidas del Pollo.", C),
+        (50, "chicken_cashouts_50", "Corral rentable", "Cobra 50 partidas del Pollo.", R),
         (100, "polloc_100", "Gallina vieja hace buen caldo", "Cobra 100 partidas del Pollo.", R),
+        (200, "chicken_cashouts_200", "Huevos de oro", "Cobra 200 partidas del Pollo.", R),
+        (500, "chicken_cashouts_500", "Gallina de los huevos de oro",
+         "Cobra 500 partidas del Pollo.", E),
         (1_000, "polloc_1k", "Granja rentable con la PAC", "Cobra 1.000 partidas del Pollo.", E),
     ])  # fmt: skip
     a += _tiers("chicken", "chicken_splats", [
         (1, "pollos_1", "Pollo a la plancha", "Que te atropellen por primera vez.", C),
         (10, "pollos_10", "Pechuga fileteada de Mercadona", "Que te atropellen 10 veces.", C),
+        (20, "chicken_splats_20", "Pechuga a la plancha", "Que te atropellen 20 veces.", C),
+        (50, "chicken_splats_50", "Alitas de carretera", "Que te atropellen 50 veces.", C),
         (100, "pollos_100", "Nuggets de Temu", "Que te atropellen 100 veces.", C),
+        (250, "chicken_splats_250", "Pollo frito de gasolinera", "Que te atropellen 250 veces.", R),
         (500, "pollos_500", "Pollo sin cabeza",
          "Que te atropellen 500 veces.", R),
     ])  # fmt: skip
@@ -5467,6 +6363,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("chicken", "chicken_win_max", [
         (10_000, "pollo_rich", "Gallina con cuenta en el banco",
          "Gana 10.000 Y$ en una partida del Pollo.", R),
+        (20_000, "chicken_win_max_20000", "Gallina con ahorros",
+         "Gana 20.000 Y$ en una partida del Pollo.", R),
+        (50_000, "chicken_win_max_50000", "Pollo con cuenta en Suiza",
+         "Gana 50.000 Y$ en una partida del Pollo.", L),
         (100_000, "pollo_richer", "Granja de oro",
          "Gana 100.000 Y$ en una partida del Pollo.", L),
     ])  # fmt: skip
@@ -5504,6 +6404,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("chicken", "chicken_auto_runs", [
         (10, "polloa_10", "Pollo autónomo con Estatuto propio", "Usa el autocobro 10 veces.", C),
+        (20, "chicken_auto_runs_20", "Pollo con piloto automático",
+         "Usa el autocobro 20 veces.", C),
+        (50, "chicken_auto_runs_50", "Pollo sin conductor", "Usa el autocobro 50 veces.", R),
         (100, "polloa_100", "El pollo conduce solo", "Usa el autocobro 100 veces.", R),
     ])  # fmt: skip
     a += _tiers("chicken", "chicken_auto_lanes", [
@@ -5512,6 +6415,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("chicken", "chicken_gallina", [
         (25, "pollo_gallina", "Gallina, cocó",
          "Cobra 25 veces tras un solo carril.", C),
+        (50, "chicken_gallina_50", "Gallina de corral", "Cobra 50 veces tras un solo carril.", C),
+        (150, "chicken_gallina_150", "Cobardía avícola", "Cobra 150 veces tras un solo carril.", R),
         (250, "pollo_gallina_250", "Cagueta profesional",
          "Cobra 250 veces tras un solo carril.", R),
     ])  # fmt: skip
@@ -5582,9 +6487,11 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (30_000, "pollol_30k", "Kilómetro cero", "Cruza 30.000 carriles.", L),
     ])  # fmt: skip
     a += _tiers("chicken", "chicken_cashouts", [
+        (2_500, "chicken_cashouts_2500", "Pollo con pensión", "Cobra 2.500 partidas del Pollo.", L),
         (5_000, "polloc_5k", "Pollo del año", "Cobra 5.000 partidas del Pollo.", L),
     ])  # fmt: skip
     a += _tiers("chicken", "chicken_splats", [
+        (1_500, "chicken_splats_1500", "Croquetas de pollo", "Que te atropellen 1.500 veces.", L),
         (2_500, "pollos_2500", "Pollo asado de carretera", "Que te atropellen 2.500 veces.", L),
     ])  # fmt: skip
     a += _tiers("chicken", "chicken_first_splat", [
@@ -5592,6 +6499,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Que te atropellen en el primer carril 25 veces.", C),
     ])  # fmt: skip
     a += _tiers("chicken", "chicken_close", [
+        (20, "chicken_close_20", "Frenazo a tiempo",
+         "Cobra 20 veces justo un carril antes del coche.", R),
         (50, "pollo_pelos_50", "Cruzar en ámbar",
          "Cobra 50 veces justo un carril antes del coche.", E),
     ])  # fmt: skip
@@ -5619,13 +6528,21 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("pachinko", "pachinko_volleys", [
         (1, "pachi_1", "Primera bola, primer amor", "Lanza tu primera tanda en el pachinko.", C),
         (100, "pachi_100", "Salón de Akihabara", "Lanza 100 tandas en el pachinko.", C),
+        (200, "pachinko_volleys_200", "Bolas a granel", "Lanza 200 tandas en el pachinko.", C),
+        (500, "pachinko_volleys_500", "Salón de neón", "Lanza 500 tandas en el pachinko.", E),
         (1_000, "pachi_1k", "Ojos de neón",
          "Lanza 1.000 tandas en el pachinko.", E),
+        (2_000, "pachinko_volleys_2000", "Nativo de Akihabara",
+         "Lanza 2.000 tandas en el pachinko.", E),
+        (5_000, "pachinko_volleys_5000", "Bolsillo lleno de bolas",
+         "Lanza 5.000 tandas en el pachinko.", L),
         (10_000, "pachi_10k", "Vives en el salón",
          "Lanza 10.000 tandas en el pachinko.", L),
     ])  # fmt: skip
     a += _tiers("pachinko", "pachinko_starts", [
         (100, "pachi_start_100", "Por la ranura", "Mete 100 bolas por START.", C),
+        (200, "pachinko_starts_200", "Bola en la ranura", "Mete 200 bolas por START.", C),
+        (500, "pachinko_starts_500", "Puntería de feria", "Mete 500 bolas por START.", R),
         (1_000, "pachi_start_1k", "Tulipán abierto", "Mete 1.000 bolas por START.", R),
     ])  # fmt: skip
     a += _tiers("pachinko", "pachinko_reach", [
@@ -5638,6 +6555,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("pachinko", "pachinko_atari", [
         (1, "pachi_atari", "¡ATARI!", "Saca tres iguales en la pantalla.", C),
         (25, "pachi_atari_25", "Bendecido por Jovani", "Saca 25 ataris.", R),
+        (50, "pachinko_atari_50", "Atari a la vista", "Saca 50 ataris.", R),
         (100, "pachi_atari_100", "La compuerta te quiere", "Saca 100 ataris.", E),
     ])  # fmt: skip
     a += _tiers("pachinko", "pachinko_rush", [
@@ -5697,6 +6615,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("pachinko", "pachinko_win_max", [
         (10_000, "pachi_rich", "Bandeja llena", "Gana 10.000 Y$ en una tanda.", R),
+        (20_000, "pachinko_win_max_20000", "Bandeja a rebosar", "Gana 20.000 Y$ en una tanda.", R),
+        (50_000, "pachinko_win_max_50000", "Bandeja de oro", "Gana 50.000 Y$ en una tanda.", L),
         (100_000, "pachi_richer", "Rey del salón", "Gana 100.000 Y$ en una tanda.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("pachinko", "pachinko_session_max", [
@@ -5877,19 +6797,26 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ))  # fmt: skip
 
     a += _tiers("pachinko", "pachinko_volleys", [
+        (25_000, "pachinko_volleys_25000", "Pachinko a jornada completa",
+         "Lanza 25.000 tandas en el pachinko.", M),
         (50_000, "pachi_50k", "Pachinko de por vida", "Lanza 50.000 tandas en el pachinko.", M),
     ])  # fmt: skip
     a += _tiers("pachinko", "pachinko_atari", [
+        (250, "pachinko_atari_250", "Atari a mansalva", "Saca 250 ataris.", L),
         (500, "pachi_atari_500", "Fiebre del atari", "Saca 500 ataris.", L),
     ])  # fmt: skip
     a += _tiers("pachinko", "pachinko_rush", [
+        (20, "pachinko_rush_20", "Hora punta en Tokio", "Saca 20 rush.", R),
+        (50, "pachinko_rush_50", "Rush de lunes", "Saca 50 rush.", E),
         (100, "pachi_rush_100", "Hora punta en Shibuya", "Saca 100 rush.", E),
     ])  # fmt: skip
     a += _tiers("pachinko", "pachinko_super", [
         (10, "pachi_super_10", "Siete del Imperio", "Saca 10 SUPER RUSH.", E),
+        (20, "pachinko_super_20", "Súper Rush en serie", "Saca 20 SUPER RUSH.", E),
         (50, "pachi_super_50", "Emperador del pachinko", "Saca 50 SUPER RUSH.", L),
     ])  # fmt: skip
     a += _tiers("pachinko", "pachinko_corners", [
+        (50, "pachinko_corners_50", "Esquinas encontradas", "Mete 50 bolas en las esquinas.", R),
         (100, "pachi_corner_100", "Esquinero", "Mete 100 bolas en las esquinas.", E),
     ])  # fmt: skip
     a += _tiers("pachinko", "pachinko_full_hold", [
@@ -5910,12 +6837,19 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("pachinko", "pachinko_bounces", [
         (1_000, "pachi_bounce_1k", "Mil rebotes",
          "Acumula 1.000 rebotes de bolas en los clavos.", C),
+        (2_000, "pachinko_bounces_2000", "Rebote fácil", "Acumula 2.000 rebotes en los clavos.", C),
+        (5_000, "pachinko_bounces_5000", "Pelota de goma",
+         "Acumula 5.000 rebotes en los clavos.", C),
         (10_000, "pachi_bounce_10k", "Rebote técnico del Ibex",
          "Acumula 10.000 rebotes en los clavos.", C),
+        (25_000, "pachinko_bounces_25000", "Ping pong de clavos", "Acumula 25.000 rebotes.", R),
         (50_000, "pachi_bounce_50k", "Entran, salen y vuelven",
          "Acumula 50.000 rebotes.", R),
+        (150_000, "pachinko_bounces_150000", "Rebote infinito",
+         "Acumula 150.000 rebotes, de clavo en clavo.", E),
         (250_000, "pachi_bounce_250k", "De clavo en clavo",
          "Acumula 250.000 rebotes, de clavo en clavo.", E),
+        (500_000, "pachinko_bounces_500000", "Bola saltarina", "Acumula 500.000 rebotes.", L),
         (1_000_000, "pachi_bounce_1m", "Resistencia numantina",
          "Acumula 1.000.000 de rebotes.", L),
         (5_000_000, "pachi_bounce_5m", "Rebote del gato muerto",
@@ -5945,8 +6879,16 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "pachi_slow_1", "Retraso de Renfe", "Mira una bola tardar casi 2 segundos en caer.", C),
         (100, "pachi_slow_100", "Cercanías en hora punta",
          "Mira 100 bolas tardar casi 2 segundos en caer.", C),
+        (200, "pachinko_slow_balls_200", "Bola con sueño",
+         "Mira 200 bolas tardar casi 2 segundos en caer.", C),
+        (500, "pachinko_slow_balls_500", "Caída a cámara lenta",
+         "Mira 500 bolas tardar casi 2 segundos en caer.", R),
         (1_000, "pachi_slow_1k", "Obras en la M-30",
          "Mira 1.000 bolas tardar casi 2 segundos en caer.", R),
+        (2_000, "pachinko_slow_balls_2000", "Bola de domingo",
+         "Mira 2.000 bolas tardar casi 2 segundos en caer.", R),
+        (5_000, "pachinko_slow_balls_5000", "Caída en diferido",
+         "Mira 5.000 bolas tardar casi 2 segundos en caer.", L),
         (10_000, "pachi_slow_10k", "Variante de Pajares",
          "Mira 10.000 bolas tardar casi 2 segundos en caer.", L),
     ])  # fmt: skip
@@ -5955,8 +6897,14 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Mira una bola caer en 1,1 segundos o menos.", C),
         (100, "pachi_swift_100", "Maquinista con prisa",
          "Mira 100 bolas caer en 1,1 segundos o menos.", R),
+        (200, "pachinko_swift_balls_200", "Bola exprés",
+         "Mira 200 bolas caer en 1,1 segundos o menos.", R),
+        (500, "pachinko_swift_balls_500", "AVE de bolas",
+         "Mira 500 bolas caer en 1,1 segundos o menos.", E),
         (1_000, "pachi_swift_1k", "Alta velocidad, baja fiabilidad",
          "Mira 1.000 bolas caer en 1,1 segundos o menos.", E),
+        (2_500, "pachinko_swift_balls_2500", "Bola de rayo",
+         "Mira 2.500 bolas caer en 1,1 segundos o menos.", L),
         (5_000, "pachi_swift_5k", "Hyperloop de Teruel",
          "Mira 5.000 bolas caer en 1,1 segundos o menos.", L),
     ])  # fmt: skip
@@ -5977,8 +6925,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "pachi_hit_1", "El primer beso de dos bolas",
          "Haz que dos bolas choquen entre sí por primera vez.", C),
         (100, "pachi_hit_100", "Rifirrafe de cafetería", "Provoca 100 choques entre bolas.", C),
+        (250, "pachinko_hits_250", "Colisión de bolas", "Provoca 250 choques entre bolas.", R),
         (500, "pachi_hit_500", "Junta de vecinos",
          "Provoca 500 choques entre bolas.", R),
+        (750, "pachinko_hits_750", "Atasco de bolas", "Provoca 750 choques entre bolas.", R),
         (2_000, "pachi_hit_2k", "Cacerolada en Ferraz", "Provoca 2.000 choques entre bolas.", E),
         (5_000, "pachi_hit_5k", "Autos de choque",
          "Provoca 5.000 choques entre bolas.", L),
@@ -6026,6 +6976,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Lanza una tanda en la que ninguna bola choque con otra.", C),
         (100, "pachi_calm_100", "Aforo limitado",
          "Lanza 100 tandas sin ningún choque entre bolas.", C),
+        (200, "pachinko_no_hits_200", "Bolas con distancia",
+         "Lanza 200 tandas sin ningún choque entre bolas.", C),
+        (500, "pachinko_no_hits_500", "Bolas sin rozarse",
+         "Lanza 500 tandas sin ningún choque entre bolas.", E),
         (1_000, "pachi_calm_1k", "Burbuja de convivientes",
          "Lanza 1.000 tandas sin ningún choque entre bolas.", E),
     ])  # fmt: skip
@@ -6034,6 +6988,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Mira una bola esperar turno para salir.", C),
         (100, "pachi_wait_100", "Lista de espera de la Sanidad",
          "Mira 100 bolas esperar turno para salir.", E),
+        (200, "pachinko_delayed_200", "Cola de bolas",
+         "Mira 200 bolas esperar turno para salir.", E),
+        (500, "pachinko_delayed_500", "Bola en lista de espera",
+         "Mira 500 bolas esperar turno para salir.", L),
         (1_000, "pachi_wait_1k", "Plaza de funcionario",
          "Mira 1.000 bolas esperar turno para salir.", L),
     ])  # fmt: skip
@@ -6055,14 +7013,26 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Juega una tanda con ▶️ Auto.", C),
         (100, "pachi_auto_100", "Tandas sin manos",
          "Juega 100 tandas con ▶️ Auto.", C),
+        (200, "pachinko_autoplay_volleys_200", "Pachinko automático",
+         "Juega 200 tandas con ▶️ Auto.", C),
+        (500, "pachinko_autoplay_volleys_500", "Bolas sin manos",
+         "Juega 500 tandas con ▶️ Auto.", E),
         (1_000, "pachi_auto_1k", "La máquina se juega sola",
          "Juega 1.000 tandas con ▶️ Auto.", E),
+        (2_000, "pachinko_autoplay_volleys_2000", "Robot del salón",
+         "Juega 2.000 tandas con ▶️ Auto.", E),
+        (5_000, "pachinko_autoplay_volleys_5000", "Autómata del pachinko",
+         "Juega 5.000 tandas con ▶️ Auto.", L),
         (10_000, "pachi_auto_10k", "HAL 9000 del pachinko",
          "Juega 10.000 tandas con ▶️ Auto.", L),
     ])  # fmt: skip
     a += _tiers("pachinko", "pachinko_autoplay_sessions", [
         (10, "pachi_auto_ses_10", "Pleno extraordinario",
          "Empieza 10 sesiones de ▶️ Auto en el pachinko.", C),
+        (20, "pachinko_autoplay_sessions_20", "Sesión de pachinko",
+         "Empieza 20 sesiones de ▶️ Auto.", C),
+        (50, "pachinko_autoplay_sessions_50", "Maratón de bolas",
+         "Empieza 50 sesiones de ▶️ Auto.", E),
         (100, "pachi_auto_ses_100", "Bucle infinito",
          "Empieza 100 sesiones de ▶️ Auto.", E),
     ])  # fmt: skip
@@ -6080,6 +7050,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Que ▶️ Auto pare en el pachinko al perder 10 veces la apuesta.", C),
         (10, "pachi_auto_loss_10", "Corralito",
          "Que ▶️ Auto pare por el límite de pérdidas del pachinko 10 veces.", R),
+        (20, "pachinko_autoplay_loss_limit_20", "Freno al vicio",
+         "Que ▶️ Auto pare por el límite de pérdidas del pachinko 20 veces.", R),
+        (50, "pachinko_autoplay_loss_limit_50", "Ángel guardián de la cartera",
+         "Que ▶️ Auto pare por el límite de pérdidas del pachinko 50 veces.", L),
         (100, "pachi_auto_loss_100", "El ángel de la guarda",
          "Que ▶️ Auto pare por el límite de pérdidas del pachinko 100 veces.", L),
     ])  # fmt: skip
@@ -6088,8 +7062,12 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Que ▶️ Auto pare porque ha salido un atari.", C),
         (10, "pachi_auto_atari_10", "Parada en boxes",
          "Que ▶️ Auto pare por un atari 10 veces.", C),
+        (20, "pachinko_autoplay_bigwin_20", "Parada por premio",
+         "Que ▶️ Auto pare por un atari 20 veces.", C),
         (50, "pachi_auto_atari_50", "Entras, cobras y sales",
          "Que ▶️ Auto pare por un atari 50 veces.", R),
+        (150, "pachinko_autoplay_bigwin_150", "Cobro y me voy",
+         "Que ▶️ Auto pare por un atari 150 veces.", E),
         (250, "pachi_auto_atari_250", "Fichaje de expresidente",
          "Que ▶️ Auto pare por un atari 250 veces.", E),
     ])  # fmt: skip
@@ -6129,6 +7107,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("pachinko", "pachinko_autoplay_fake_reach", [
         (50, "pachi_auto_fake_50", "Promesas electorales",
          "Pierde 50 reach por un número mientras ▶️ Auto juega por ti.", C),
+        (75, "pachinko_autoplay_fake_reach_75", "Reach fallido",
+         "Pierde 75 reach por un número con ▶️ Auto.", C),
         (200, "pachi_auto_fake_200", "La tercera vez tampoco",
          "Pierde 200 reach por un número con ▶️ Auto.", R),
         (1_000, "pachi_auto_fake_1k", "Programa electoral cumplido",
@@ -6147,12 +7127,17 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("bizum", "bizum_sent_count", [
         (1, "bizum_1", "Te hago un Bizum", "Manda tu primer Bizum.", C),
         (25, "bizum_25", "Cuentas claras, amistades largas", "Manda 25 Bizums.", R),
+        (50, "bizum_sent_count_50", "Cobrador de Bizums", "Manda 50 Bizums.", R),
         (100, "bizum_100", "Tesorero del grupo", "Manda 100 Bizums.", E),
     ])  # fmt: skip
     a += _tiers("bizum", "bizum_sent", [
         (10_000, "bizumy_10k", "Invito yo, que hoy cobro",
          "Manda 10.000 Y$ en Bizums.", C),
+        (20_000, "bizum_sent_20000", "Pagafantas", "Manda 20.000 Y$ en Bizums.", C),
+        (50_000, "bizum_sent_50000", "Invitación a la ronda", "Manda 50.000 Y$ en Bizums.", R),
         (100_000, "bizumy_100k", "Banco de los colegas", "Manda 100.000 Y$ en Bizums.", R),
+        (200_000, "bizum_sent_200000", "Mecenas de los colegas", "Manda 200.000 Y$ en Bizums.", R),
+        (500_000, "bizum_sent_500000", "Tío rico de América", "Manda 500.000 Y$ en Bizums.", E),
         (1_000_000, "bizumy_1m", "Herencia en vida", "Manda 1.000.000 Y$ en Bizums.", E),
     ], unit="money")  # fmt: skip
     a += _tiers("bizum", "bizum_received_count", [
@@ -6194,16 +7179,25 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
 
     a += _tiers("bizum", "bizum_sent_count", [
+        (250, "bizum_sent_count_250", "Caja de ahorros con patas", "Manda 250 Bizums.", L),
         (500, "bizum_500", "Banco de los amigos", "Manda 500 Bizums.", L),
     ])  # fmt: skip
     a += _tiers("bizum", "bizum_sent", [
+        (2_000_000, "bizum_sent_2000000", "Fondo de rescate para amigos",
+         "Manda 2.000.000 Y$ en Bizums.", E),
+        (5_000_000, "bizum_sent_5000000", "Banco Mundial de los colegas",
+         "Manda 5.000.000 Y$ en Bizums.", L),
         (10_000_000, "bizumy_10m", "Transferencia a las islas Caimán",
          "Manda 10.000.000 Y$ en Bizums.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("bizum", "bizum_received_count", [
+        (50, "bizum_received_count_50", "Me lo pagas mañana", "Recibe 50 Bizums.", R),
         (100, "bizumr_100", "Me lo debes", "Recibe 100 Bizums.", E),
     ])  # fmt: skip
     a += _tiers("bizum", "bizum_received", [
+        (200_000, "bizum_received_200000", "Mantenido de lujo", "Recibe 200.000 Y$ en Bizums.", R),
+        (500_000, "bizum_received_500000", "Becado por los amigos",
+         "Recibe 500.000 Y$ en Bizums.", E),
         (1_000_000, "bizumr_1m", "Vivir de los colegas", "Recibe 1.000.000 Y$ en Bizums.", E),
     ], unit="money")  # fmt: skip
     a += _tiers("bizum", "bizum_min", [
@@ -6217,30 +7211,52 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("rastro", "market_sold", [
         (1, "rastro_sold_1", "Domingo en Cascorro", "Vende algo en el Rastro.", C),
         (10, "rastro_sold_10", "Comerciante de Ribera de Curtidores", "Vende 10 cosas.", R),
+        (20, "market_sold_20", "Puesto del domingo", "Vende 20 cosas.", R),
         (50, "rastro_sold_50", "El rey del regateo", "Vende 50 cosas.", E),
+        (69, "market_sold_69", "Venta picantona", "Vende 69 cosas.", E, True),
+        (75, "market_sold_75", "Mercader de Venecia", "Vende 75 cosas.", E),
         (200, "rastro_sold_200", "Amancio Ortega de segunda mano", "Vende 200 cosas.", L),
     ])  # fmt: skip
     a += _tiers("rastro", "market_bought", [
         (1, "rastro_bought_1", "Lo compré en el Rastro", "Compra algo de segunda mano.", C),
         (10, "rastro_bought_10", "Cazador de gangas", "Compra 10 cosas de segunda mano.", R),
+        (20, "market_bought_20", "Ojo para las gangas", "Compra 20 cosas de segunda mano.", R),
+        (33, "market_bought_33", "Reliquias a los 33", "Compra 33 cosas de segunda mano.", R, True),
         (50, "rastro_bought_50", "Coleccionista de Wallapop",
          "Compra 50 cosas de segunda mano.", E),
+        (75, "market_bought_75", "Trastero de gangas", "Compra 75 cosas de segunda mano.", E),
         (200, "rastro_bought_200", "Diógenes con presupuesto",
          "Compra 200 cosas de segunda mano.", L),
     ])  # fmt: skip
     a += _tiers("rastro", "market_sold_y", [
         (10_000, "rastro_soldy_10k", "¿Último precio?",
          "Cobra 10.000 Y$ vendiendo en el Rastro.", C),
+        (20_000, "market_sold_y_20000", "Calderilla del Rastro",
+         "Cobra 20.000 Y$ vendiendo en el Rastro.", C),
+        (50_000, "market_sold_y_50000", "Buen ojo comercial",
+         "Cobra 50.000 Y$ vendiendo en el Rastro.", R),
         (100_000, "rastro_soldy_100k", "Negocio redondo",
          "Cobra 100.000 Y$ vendiendo en el Rastro.", R),
+        (200_000, "market_sold_y_200000", "Tendero de éxito",
+         "Cobra 200.000 Y$ vendiendo en el Rastro.", R),
+        (500_000, "market_sold_y_500000", "Magnate del mercadillo",
+         "Cobra 500.000 Y$ vendiendo en el Rastro.", E),
         (1_000_000, "rastro_soldy_1m", "Pelotazo marbellí",
          "Cobra 1.000.000 Y$ vendiendo en el Rastro.", E),
+        (2_000_000, "market_sold_y_2000000", "Imperio de segunda mano",
+         "Cobra 2.000.000 Y$ vendiendo en el Rastro.", E),
+        (5_000_000, "market_sold_y_5000000", "Multinacional del Rastro",
+         "Cobra 5.000.000 Y$ vendiendo en el Rastro.", L),
         (10_000_000, "rastro_soldy_10m", "Gil y Gil vende Marbella",
          "Cobra 10.000.000 Y$ vendiendo en el Rastro.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("rastro", "market_spent", [
         (100_000, "rastro_spent_100k", "Se me fue la mano",
          "Gasta 100.000 Y$ en el Rastro, ITP incluido.", R),
+        (200_000, "market_spent_200000", "Comprador sin freno",
+         "Gasta 200.000 Y$ en el Rastro, ITP incluido.", R),
+        (500_000, "market_spent_500000", "Gastos de anticuario",
+         "Gasta 500.000 Y$ en el Rastro, ITP incluido.", E),
         (1_000_000, "rastro_spent_1m", "Florentino ficha en el Rastro",
          "Gasta 1.000.000 Y$ en el Rastro, ITP incluido.", E),
     ], unit="money")  # fmt: skip
@@ -6255,6 +7271,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ))  # fmt: skip
     a += _tiers("rastro", "market_itp", [
         (10_000, "rastro_itp_10k", "Contribuyente de segunda mano", "Paga 10.000 Y$ de ITP.", R),
+        (20_000, "market_itp_20000", "ITP de bolsillo", "Paga 20.000 Y$ de ITP.", R),
+        (50_000, "market_itp_50000", "ITP de los gordos", "Paga 50.000 Y$ de ITP.", E),
         (100_000, "rastro_itp_100k", "Transmisión patrimonial a lo grande",
          "Paga 100.000 Y$ de ITP.", E),
     ], unit="money")  # fmt: skip
@@ -6293,6 +7311,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("rastro", "market_bids", [
         (1, "rastro_bid_1", "A la una…", "Puja en una subasta del Rastro.", C),
         (25, "rastro_bid_25", "A las dos…", "Puja 25 veces.", R),
+        (50, "market_bids_50", "Pujador de feria", "Puja 50 veces.", R),
         (100, "rastro_bid_100", "Pujador compulsivo", "Puja 100 veces.", E),
     ])  # fmt: skip
     a += _tiers("rastro", "market_auction_won", [
@@ -6313,6 +7332,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("rastro", "market_bought_max", [
         (100_000, "rastro_max_100k", "Capricho de segunda mano",
          "Paga 100.000 Y$ por una sola cosa de segunda mano.", R),
+        (200_000, "market_bought_max_200000", "Capricho de coleccionista",
+         "Paga 200.000 Y$ por una sola cosa de segunda mano.", R),
+        (500_000, "market_bought_max_500000", "Antigüedad de museo",
+         "Paga 500.000 Y$ por una sola cosa de segunda mano.", L),
         (1_000_000, "rastro_max_1m", "El cuadro del millón",
          "Paga 1.000.000 Y$ por una sola cosa de segunda mano.", L),
     ], unit="money")  # fmt: skip
@@ -6355,8 +7378,11 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("rastro", "market_swaps", [
         (1, "trueque_1", "Cambio de cromos en el recreo", "Haz tu primer `trueque`.", C),
         (10, "trueque_10", "Mercadillo de cromos del domingo", "Haz 10 trueques.", R),
+        (20, "market_swaps_20", "Te lo cambio", "Haz 20 trueques.", R),
+        (42, "market_swaps_42", "El trueque definitivo", "Haz 42 trueques.", R, True),
         (50, "trueque_50", "Cambio, cambio, recambio",
          "Haz 50 trueques.", E),
+        (75, "market_swaps_75", "Trueque de patio", "Haz 75 trueques.", E),
         (200, "trueque_200", "Bolsa de Valores del patio del colegio", "Haz 200 trueques.", L),
     ])  # fmt: skip
     a += _tiers("rastro", "market_swap_money", [
@@ -6391,16 +7417,26 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "pisos_buy_1", "Primer ladrillo",
          "Compra tu primera participación de un inmueble.", C),
         (10, "pisos_buy_10", "Pequeño inversor", "Compra participaciones 10 veces.", R),
+        (20, "pisos_bought_20", "Comprador de ladrillos", "Compra 20 veces.", R),
         (50, "pisos_buy_50", "Fondo de inversión de barrio", "Compra 50 veces.", E),
+        (75, "pisos_bought_75", "Monopoly en vivo", "Compra 75 veces.", E),
         (200, "pisos_buy_200", "Blackstone de Canarias", "Compra 200 veces.", L),
     ])  # fmt: skip
     a += _tiers("pisos", "pisos_spent", [
         (100_000, "pisos_spent_100k", "La entrada del zulo",
          "Gasta 100.000 Y$ en pisos, impuestos incluidos.", C),
+        (200_000, "pisos_spent_200000", "Primera piedra", "Gasta 200.000 Y$ en pisos.", C),
+        (500_000, "pisos_spent_500000", "Inversión en ladrillo", "Gasta 500.000 Y$ en pisos.", R),
         (1_000_000, "pisos_spent_1m", "Los ahorros de toda una vida",
          "Gasta 1.000.000 Y$ en pisos.", R),
+        (2_000_000, "pisos_spent_2000000", "Promotor de urbanización",
+         "Gasta 2.000.000 Y$ en pisos.", R),
+        (5_000_000, "pisos_spent_5000000", "Constructor de la costa",
+         "Gasta 5.000.000 Y$ en pisos.", E),
         (10_000_000, "pisos_spent_10m", "Ladrillazo de los 2000",
          "Gasta 10.000.000 Y$ en pisos.", E),
+        (20_000_000, "pisos_spent_20000000", "Burbuja inmobiliaria personal",
+         "Gasta 20.000.000 Y$ en pisos.", E),
         (50_000_000, "pisos_spent_50m", "La burbuja de 2007", "Gasta 50.000.000 Y$ en pisos.", L),
         (150_000_000, "pisos_spent_150m", "Comprar Canarias",
          "Gasta 150.000.000 Y$ en pisos.", M),
@@ -6410,6 +7446,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Paga el ITP de un inmueble: el 6,5 % en Canarias.", C),
         (100_000, "pisos_itp_100k", "Contribuyente de la piedra",
          "Paga 100.000 Y$ de ITP comprando pisos.", R),
+        (200_000, "pisos_itp_200000", "ITP de escritura",
+         "Paga 200.000 Y$ de ITP comprando pisos.", R),
+        (500_000, "pisos_itp_500000", "ITP con vistas al mar",
+         "Paga 500.000 Y$ de ITP comprando pisos.", E),
         (1_000_000, "pisos_itp_1m", "Mecenas de la Agencia Tributaria Canaria",
          "Paga 1.000.000 Y$ de ITP comprando pisos.", E),
     ], unit="money")  # fmt: skip
@@ -6590,6 +7630,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("pisos", "pisos_gain_max", [
         (100_000, "pisos_gain_100k", "Plusvalía de manual",
          "Gana 100.000 Y$ de una vez vendiendo un piso.", R),
+        (200_000, "pisos_gain_max_200000", "Pellizco del ladrillo",
+         "Gana 200.000 Y$ de una vez vendiendo un piso.", R),
+        (500_000, "pisos_gain_max_500000", "Venta de chalet",
+         "Gana 500.000 Y$ de una vez vendiendo un piso.", E),
         (1_000_000, "pisos_gain_1m", "Pelotazo de la costa",
          "Gana 1.000.000 Y$ de una vez vendiendo un piso.", E),
     ], unit="money")  # fmt: skip
@@ -6611,10 +7655,18 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("pisos", "pisos_rent", [
         (100_000, "pisos_rent_100k", "Del alquiler se vive",
          "Cobra 100.000 Y$ de alquileres.", R),
+        (200_000, "pisos_rent_200000", "Casero de barrio", "Cobra 200.000 Y$ de alquileres.", R),
+        (500_000, "pisos_rent_500000", "Alquileres al día", "Cobra 500.000 Y$ de alquileres.", E),
         (1_000_000, "pisos_rent_1m", "El alquiler me paga el barraquito",
          "Cobra 1.000.000 Y$ de alquileres.", E),
+        (2_000_000, "pisos_rent_2000000", "Rentista de primera línea",
+         "Cobra 2.000.000 Y$ de alquileres.", E),
+        (5_000_000, "pisos_rent_5000000", "Casero de medio barrio",
+         "Cobra 5.000.000 Y$ de alquileres.", L),
         (10_000_000, "pisos_rent_10m", "Rentista de Puerto de Mogán",
          "Cobra 10.000.000 Y$ de alquileres.", L),
+        (20_000_000, "pisos_rent_20000000", "Señor feudal",
+         "Cobra 20.000.000 Y$ de alquileres.", L),
         (50_000_000, "pisos_rent_50m", "SOCIMI unipersonal",
          "Cobra 50.000.000 Y$ de alquileres.", M),
     ], unit="money")  # fmt: skip
@@ -6703,8 +7755,16 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("pisos", "pisos_tax_total", [
         (100_000, "pisos_tax_100k", "El ladrillo también tributa",
          "Paga 100.000 Y$ de impuestos por tus pisos (ITP, IBI e IRPF).", R),
+        (200_000, "pisos_tax_total_200000", "Tributo de la piedra",
+         "Paga 200.000 Y$ de impuestos por tus pisos.", R),
+        (500_000, "pisos_tax_total_500000", "Recibo del IBI eterno",
+         "Paga 500.000 Y$ de impuestos por tus pisos.", E),
         (1_000_000, "pisos_tax_1m", "Perro Sanxe vive en tu ático",
          "Paga 1.000.000 Y$ de impuestos por tus pisos.", E),
+        (2_000_000, "pisos_tax_total_2000000", "Gran contribuyente inmobiliario",
+         "Paga 2.000.000 Y$ de impuestos por tus pisos.", E),
+        (5_000_000, "pisos_tax_total_5000000", "Hacienda vive en tus pisos",
+         "Paga 5.000.000 Y$ de impuestos por tus pisos.", L),
         (10_000_000, "pisos_tax_10m", "Socio capitalista de Hacienda",
          "Paga 10.000.000 Y$ de impuestos por tus pisos.", L),
     ], unit="money")  # fmt: skip
@@ -6745,6 +7805,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("pisos", "pisos_loan_max", [
         (1_000_000, "pisos_loan_1m", "Hipoteca de las de antes",
          "Que el banco te preste 1.000.000 Y$ de una vez.", R),
+        (2_000_000, "pisos_loan_max_2000000", "Préstamo gordo",
+         "Que el banco te preste 2.000.000 Y$ de una vez.", R),
+        (5_000_000, "pisos_loan_max_5000000", "Hipoteca de rascacielos",
+         "Que el banco te preste 5.000.000 Y$ de una vez.", E),
         (10_000_000, "pisos_loan_10m", "Préstamo de la burbuja",
          "Que el banco te preste 10.000.000 Y$ de una vez.", E),
     ], unit="money")  # fmt: skip
@@ -6769,6 +7833,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("pisos", "pisos_installments", [
         (30, "pisos_inst_30", "Treinta cuotas sin fallar",
          "Paga 30 cuotas de hipoteca enteras.", R),
+        (75, "pisos_installments_75", "Cuotas al día", "Paga 75 cuotas de hipoteca enteras.", R),
+        (150, "pisos_installments_150", "Hipotecado de por vida",
+         "Paga 150 cuotas de hipoteca enteras.", L),
         (360, "pisos_inst_360", "Hipoteca liquidada",
          "Paga 360 cuotas de hipoteca enteras.", L),
     ])  # fmt: skip
@@ -6913,6 +7980,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("pisos", "pisos_promoter_fees", [
         (100_000, "pisos_promofee_100k", "El 5 % de la burbuja",
          "Cobra 100.000 Y$ de comisión de promotor.", E),
+        (200_000, "pisos_promoter_fees_200000", "Comisión de promotor",
+         "Cobra 200.000 Y$ de comisión de promotor.", E),
+        (500_000, "pisos_promoter_fees_500000", "Promotora de la costa",
+         "Cobra 500.000 Y$ de comisión de promotor.", L),
         (1_000_000, "pisos_promofee_1m", "Margen de promotora",
          "Cobra 1.000.000 Y$ de comisión de promotor.", L),
     ], unit="money")  # fmt: skip
@@ -6930,11 +8001,21 @@ def _build_catalog() -> tuple[Achievement, ...]:
     # 🏛️ Economía y Hacienda -------------------------------------------------------------
     a += _tiers("economy", "balance_max", [
         (10_000, "rich_10k", "Clase media, especie en extinción", "Ten 10.000 Y$ a la vez.", C),
+        (20_000, "balance_max_20000", "Colchón con ahorros", "Ten 20.000 Y$ a la vez.", C),
+        (50_000, "balance_max_50000", "Clase media alta", "Ten 50.000 Y$ a la vez.", R),
         (100_000, "rich_100k", "Acomodado de Pozuelo", "Ten 100.000 Y$ a la vez.", R),
+        (200_000, "balance_max_200000", "Cuenta con ceros", "Ten 200.000 Y$ a la vez.", R),
+        (500_000, "balance_max_500000", "Medio millonario", "Ten 500.000 Y$ a la vez.", E),
         (1_000_000, "rich_1m", "¿Quién quiere ser millonario?",
          "Ten 1.000.000 Y$ a la vez.", E),
+        (2_000_000, "balance_max_2000000", "Millonario de verdad", "Ten 2.000.000 Y$ a la vez.", E),
+        (5_000_000, "balance_max_5000000", "Fortuna de revista", "Ten 5.000.000 Y$ a la vez.", L),
         (10_000_000, "rich_10m", "Tío Gilito con piscina",
          "Ten 10.000.000 Y$ a la vez.", L),
+        (20_000_000, "balance_max_20000000", "Lista Forbes del servidor",
+         "Ten 20.000.000 Y$ a la vez.", L),
+        (50_000_000, "balance_max_50000000", "Más que el PIB de Tuvalu",
+         "Ten 50.000.000 Y$ a la vez.", M),
         (100_000_000, "rich_100m", "Paraíso fiscal", "Ten 100.000.000 Y$ a la vez.", M),
     ], unit="money")  # fmt: skip
     a += _tiers("economy", "imv_claims", [
@@ -6968,13 +8049,21 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ))  # fmt: skip
     a += _tiers("economy", "tax_paid", [
         (1_000, "tax_1k", "Contribuyente de a pie", "Paga 1.000 Y$ de IRPF.", C),
+        (2_000, "tax_paid_2000", "Primer mordisco del IRPF", "Paga 2.000 Y$ de IRPF.", C),
+        (5_000, "tax_paid_5000", "Contribuyente responsable", "Paga 5.000 Y$ de IRPF.", R),
         (10_000, "tax_10k", "Patriota fiscal", "Paga 10.000 Y$ de IRPF.", R),
+        (20_000, "tax_paid_20000", "Pagador ejemplar", "Paga 20.000 Y$ de IRPF.", R),
+        (50_000, "tax_paid_50000", "Ciudadano modelo", "Paga 50.000 Y$ de IRPF.", E),
         (100_000, "tax_100k", "Favorito de Perro Sanxe", "Paga 100.000 Y$ de IRPF.", E),
+        (200_000, "tax_paid_200000", "Columna del Estado", "Paga 200.000 Y$ de IRPF.", E),
+        (500_000, "tax_paid_500000", "Pilar de la Seguridad Social", "Paga 500.000 Y$ de IRPF.", L),
         (1_000_000, "tax_1m", "Mecenas del Estado", "Paga 1.000.000 Y$ de IRPF.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("economy", "wealth_tax_paid", [
         (1, "wealth_1", "Grande de España", "Paga el Impuesto sobre el Patrimonio.", E),
         (10_000, "wealth_10k", "Fortuna amenazada", "Paga 10.000 Y$ de Patrimonio.", L),
+        (20_000, "wealth_tax_paid_20000", "Rico con factura", "Paga 20.000 Y$ de Patrimonio.", L),
+        (50_000, "wealth_tax_paid_50000", "Fortuna declarada", "Paga 50.000 Y$ de Patrimonio.", L),
         (100_000, "wealth_100k", "Perro Sanxe te pone velas",
          "Paga 100.000 Y$ de Patrimonio.", L),
     ], unit="money")  # fmt: skip
@@ -7012,13 +8101,22 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "interest_1", "La octava maravilla del mundo",
          "Cobra intereses por primera vez.", C),
         (1_000, "interest_1k", "El dinero trabaja por ti", "Cobra 1.000 Y$ netos de intereses.", R),
+        (2_000, "interest_earned_2000", "Intereses de calderilla",
+         "Cobra 2.000 Y$ netos de intereses.", R),
+        (5_000, "interest_earned_5000", "Rentista novato", "Cobra 5.000 Y$ netos de intereses.", E),
         (10_000, "interest_10k", "Vivir de las rentas", "Cobra 10.000 Y$ netos de intereses.", E),
+        (20_000, "interest_earned_20000", "Cuenta remunerada de las buenas",
+         "Cobra 20.000 Y$ netos de intereses.", E),
+        (50_000, "interest_earned_50000", "Vivir de los intereses",
+         "Cobra 50.000 Y$ netos de intereses.", L),
         (100_000, "interest_100k", "Rentista de toda la vida",
          "Cobra 100.000 Y$ netos de intereses.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("bizum", "interest_days", [
         (30, "interest_30d", "Interés compuesto y descompuesto",
          "Cobra intereses 30 días.", E),
+        (75, "interest_days_75", "Dos meses y medio de intereses", "Cobra intereses 75 días.", E),
+        (150, "interest_days_150", "Cinco meses de intereses", "Cobra intereses 150 días.", M),
         (365, "interest_365d", "El BCE me sigue en Instagram", "Cobra intereses 365 días.", M),
     ])  # fmt: skip
     a.append(Achievement(
@@ -7034,6 +8132,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (INTEREST_TIERS[0][0], "interest_tier_2", "He leído la letra pequeña",
          f"Pasa de {_thousands(INTEREST_TIERS[0][0])} Y$ de saldo medio y que el banco te baje "
          "el tipo.", C),
+        (15_000, "interest_avg_max_15000", "Saldo medio sensato",
+         "Ten 15.000 Y$ de saldo medio: el banco no paga nada por encima de 70.000.", C),
+        (30_000, "interest_avg_max_30000", "Saldo medio de manual",
+         "Ten 30.000 Y$ de saldo medio: el banco no paga nada por encima de 70.000.", R),
         (100_000, "interest_mattress", "Para eso lo dejo en el colchón",
          f"Ten 100.000 Y$ de saldo medio: el banco no paga nada por encima de "
          f"{_thousands(INTEREST_TOP)}.", R),
@@ -7101,6 +8203,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "donate_1", "Alma caritativa",
          "Dona a una ONG.", C),
         (10_000, "donate_10k", "Filántropo de postureo", "Dona 10.000 Y$ a ONGs.", R),
+        (20_000, "donated_20000", "Donante de base", "Dona 20.000 Y$ a ONGs.", R),
+        (50_000, "donated_50000", "Generoso de verdad", "Dona 50.000 Y$ a ONGs.", E),
         (100_000, "donate_100k", "Mecenas del chiringuito", "Dona 100.000 Y$ a ONGs.", E),
     ], unit="money")  # fmt: skip
     a += _tiers("economy", "ongs_supported", [
@@ -7108,7 +8212,11 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("economy", "donations", [
         (10, "donations_10", "Socio de cuota", "Haz 10 donativos.", C),
+        (20, "donations_20", "Donativo fijo", "Haz 20 donativos.", C),
+        (50, "donations_50", "Corazón solidario", "Haz 50 donativos.", R),
         (100, "donations_100", "Socio de honor con placa en la sede", "Haz 100 donativos.", R),
+        (200, "donations_200", "Donante de cabecera", "Haz 200 donativos.", R),
+        (500, "donations_500", "Solidario de carné", "Haz 500 donativos.", E),
         (1_000, "donations_1k", "Benefactor de chiringuitos con nombre de calle",
          "Haz 1.000 donativos.", E),
     ])  # fmt: skip
@@ -7149,31 +8257,51 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("economy", "renta_refunded", [
         (10_000, "renta_10k", "Devolución gorda", "Recupera 10.000 Y$ con la renta.", R),
+        (20_000, "renta_refunded_20000", "Devolución jugosa",
+         "Recupera 20.000 Y$ con la renta.", R),
+        (50_000, "renta_refunded_50000", "Devolución de las buenas",
+         "Recupera 50.000 Y$ con la renta.", E),
         (100_000, "renta_100k", "Hacienda somos todos", "Recupera 100.000 Y$ con la renta.", E),
     ], unit="money")  # fmt: skip
 
     a += _tiers("economy", "tax_paid", [
+        (2_000_000, "tax_paid_2000000", "Benefactor de Hacienda", "Paga 2.000.000 Y$ de IRPF.", L),
+        (5_000_000, "tax_paid_5000000", "Hacienda te hace una estatua",
+         "Paga 5.000.000 Y$ de IRPF.", M),
         (10_000_000, "tax_10m", "Contribuyente del año", "Paga 10.000.000 Y$ de IRPF.", M),
     ], unit="money")  # fmt: skip
     a += _tiers("economy", "wealth_tax_paid", [
+        (200_000, "wealth_tax_paid_200000", "Gran patrimonio", "Paga 200.000 Y$ de Patrimonio.", L),
+        (500_000, "wealth_tax_paid_500000", "Patrimonio de campeonato",
+         "Paga 500.000 Y$ de Patrimonio.", M),
         (1_000_000, "wealth_1m", "El millón que duele",
          "Paga 1.000.000 Y$ de Patrimonio.", M),
     ], unit="money")  # fmt: skip
     a += _tiers("economy", "wealth_tax_weeks", [
+        (25, "wealth_tax_weeks_25", "Rico con ritual semanal", "Paga Patrimonio 25 semanas.", M),
         (52, "wealth_52w", "Rico de cuna", "Paga Patrimonio 52 semanas.", M),
     ])  # fmt: skip
     a += _tiers("economy", "donated", [
+        (200_000, "donated_200000", "Filántropo de barrio", "Dona 200.000 Y$ a ONGs.", E),
+        (500_000, "donated_500000", "Mecenas solidario", "Dona 500.000 Y$ a ONGs.", L),
         (1_000_000, "donate_1m", "Bill Gates de barrio", "Dona 1.000.000 Y$ a ONGs.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("economy", "tax_refunds", [
         (10, "refund_10", "Sanxe me devuelve lo mío",
          "Recupera IRPF del casino perdiendo el mismo día 10 veces.", R),
+        (20, "tax_refunds_20", "Devolución exprés", "Recupera IRPF del casino 20 veces.", R),
+        (50, "tax_refunds_50", "Recuperador fiscal", "Recupera IRPF del casino 50 veces.", E),
         (100, "refund_100", "Ingeniero fiscal", "Recupera IRPF del casino 100 veces.", E),
     ])  # fmt: skip
     a += _tiers("economy", "renta_filed", [
+        (25, "renta_filed_25", "Medio año declarando", "Presenta la renta 25 veces.", M),
         (52, "renta_52", "Un año entero declarando", "Presenta la renta 52 veces.", M),
     ])  # fmt: skip
     a += _tiers("economy", "renta_refunded", [
+        (200_000, "renta_refunded_200000", "Hacienda te paga la cena",
+         "Recupera 200.000 Y$ con la renta.", E),
+        (500_000, "renta_refunded_500000", "Hacienda te paga las vacaciones",
+         "Recupera 500.000 Y$ con la renta.", L),
         (1_000_000, "renta_1m", "Hacienda me debe la vida",
          "Recupera 1.000.000 Y$ con la renta.", L),
     ], unit="money")  # fmt: skip
@@ -7186,6 +8314,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Cobra 1.000.000 Y$ netos de intereses.", M, True),
     ], unit="money")  # fmt: skip
     a += _tiers("bizum", "interest_tax", [
+        (20_000, "interest_tax_20000", "Mordisco a los ahorros",
+         "Paga 20.000 Y$ de IRPF por tus intereses.", E),
+        (50_000, "interest_tax_50000", "Hacienda en la libreta",
+         "Paga 50.000 Y$ de IRPF por tus intereses.", L),
         (100_000, "interest_tax_100k", "Ahorros con mordisco",
          "Paga 100.000 Y$ de IRPF por tus intereses.", L),
     ], unit="money")  # fmt: skip
@@ -7201,24 +8333,45 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("lottery", "lottery_bets", [
         (1, "lotto_1", "Hoy me toca", "Compra un décimo o una apuesta.", C),
         (50, "lotto_50", "Socio de la administración", "Compra 50 décimos o apuestas.", R),
+        (150, "lottery_bets_150", "Cliente de la administración",
+         "Compra 150 décimos o apuestas.", R),
+        (250, "lottery_bets_250", "Habitual de la lotería", "Compra 250 décimos o apuestas.", E),
         (500, "lotto_500", "Cliente de Doña Manolita", "Compra 500 décimos o apuestas.", E),
+        (1_500, "lottery_bets_1500", "Coleccionista de décimos",
+         "Compra 1.500 décimos o apuestas.", E),
+        (2_500, "lottery_bets_2500", "Abonado al azar", "Compra 2.500 décimos o apuestas.", L),
         (5_000, "lotto_5k", "La suerte al por mayor", "Compra 5.000 décimos o apuestas.", L),
     ])  # fmt: skip
     a += _tiers("lottery", "lottery_spent", [
         (10_000, "lspend_10k", "Impuesto a la ilusión", "Juega 10.000 Y$ a la lotería.", C),
+        (20_000, "lottery_spent_20000", "Ilusión a plazos", "Juega 20.000 Y$.", C),
+        (50_000, "lottery_spent_50000", "Ilusión de pago", "Juega 50.000 Y$.", R),
         (100_000, "lspend_100k", "El Estado te lo agradece", "Juega 100.000 Y$.", R),
+        (200_000, "lottery_spent_200000", "Sueños caros", "Juega 200.000 Y$.", R),
+        (500_000, "lottery_spent_500000", "Hipoteca en décimos", "Juega 500.000 Y$.", E),
         (1_000_000, "lspend_1m", "Mecenas de Hacienda", "Juega 1.000.000 Y$.", E),
     ], unit="money")  # fmt: skip
     a += _tiers("lottery", "lottery_prizes", [
         (1, "lwin_1", "¡Me ha tocado!", "Cobra un premio de lotería, aunque sea el reintegro.", C),
         (25, "lwin_25", "Tocado por la varita", "Cobra 25 premios de lotería.", R),
+        (50, "lottery_prizes_50", "Suerte repetida", "Cobra 50 premios de lotería.", R),
+        (150, "lottery_prizes_150", "Afortunado en serie", "Cobra 150 premios de lotería.", E),
         (250, "lwin_250", "Cuestión de estadística",
          "Cobra 250 premios de lotería.", E),
     ])  # fmt: skip
     a += _tiers("lottery", "lottery_won", [
         (10_000, "lwon_10k", "Gastos de representación", "Gana 10.000 Y$ en loterías.", C),
+        (20_000, "lottery_won_20000", "Pellizco de lotería", "Gana 20.000 Y$ en loterías.", C),
+        (50_000, "lottery_won_50000", "Premio que alegra el mes", "Gana 50.000 Y$ en loterías.", R),
         (100_000, "lwon_100k", "Pellizco gordo", "Gana 100.000 Y$ en loterías.", R),
+        (200_000, "lottery_won_200000", "Premio que alegra el año",
+         "Gana 200.000 Y$ en loterías.", R),
+        (500_000, "lottery_won_500000", "Premio de portada", "Gana 500.000 Y$ en loterías.", E),
         (1_000_000, "lwon_1m", "Pelotazo de lotería", "Gana 1.000.000 Y$ en loterías.", E),
+        (2_000_000, "lottery_won_2000000", "Millonario con décimo",
+         "Gana 2.000.000 Y$ en loterías.", E),
+        (5_000_000, "lottery_won_5000000", "Jubilación anticipada por lotería",
+         "Gana 5.000.000 Y$ en loterías.", L),
         (10_000_000, "lwon_10m", "Me jubilo", "Gana 10.000.000 Y$ en loterías.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("lottery", "lottery_win_max", [
@@ -7263,6 +8416,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("lottery", "lottery_scratches", [
         (1, "rasca_1", "Rasca y gana", "Rasca un boleto de la ONCE.", C),
         (100, "rasca_100", "Uña de oro de la ONCE", "Rasca 100 boletos.", R),
+        (200, "lottery_scratches_200", "Uña rascadora", "Rasca 200 boletos.", R),
+        (500, "lottery_scratches_500", "Rascador habitual", "Rasca 500 boletos.", E),
         (1_000, "rasca_1k", "Sin uñas", "Rasca 1.000 boletos.", E),
     ])  # fmt: skip
     a += _tiers("lottery", "lottery_scratch_top", [
@@ -7287,28 +8442,42 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ))  # fmt: skip
 
     a += _tiers("lottery", "lottery_bets", [
+        (15_000, "lottery_bets_15000", "Lotero mayorista", "Compra 15.000 décimos o apuestas.", M),
         (25_000, "lotto_25k", "Administración de loterías", "Compra 25.000 décimos o apuestas.", M),
     ])  # fmt: skip
     a += _tiers("lottery", "lottery_spent", [
+        (2_000_000, "lottery_spent_2000000", "Gran jugador de lotería",
+         "Juega 2.000.000 Y$ a la lotería.", E),
+        (5_000_000, "lottery_spent_5000000", "Patrocinador de Loterías",
+         "Juega 5.000.000 Y$ a la lotería.", L),
         (10_000_000, "lspend_10m", "Contribuyente voluntario",
          "Juega 10.000.000 Y$ a la lotería.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("lottery", "lottery_prizes", [
+        (500, "lottery_prizes_500", "Tocado por los dioses", "Cobra 500 premios de lotería.", L),
         (1_000, "lwin_1k", "Afortunado crónico", "Cobra 1.000 premios de lotería.", L),
     ])  # fmt: skip
     a += _tiers("lottery", "lottery_reintegros", [
+        (150, "lottery_reintegros_150", "Recupero lo jugado", "Cobra 150 reintegros.", R),
+        (250, "lottery_reintegros_250", "Reintegro de serie", "Cobra 250 reintegros.", E),
         (500, "reint_500", "Me quedo como estaba", "Cobra 500 reintegros.", E),
     ])  # fmt: skip
     a += _tiers("lottery", "lottery_scratches", [
+        (2_000, "lottery_scratches_2000", "Uña de cristal", "Rasca 2.000 boletos.", E),
+        (5_000, "lottery_scratches_5000", "Uña de titanio", "Rasca 5.000 boletos.", L),
         (10_000, "rasca_10k", "Uñas de acero", "Rasca 10.000 boletos.", L),
     ])  # fmt: skip
     a += _tiers("lottery", "lottery_navidad", [
+        (40, "lottery_navidad_40", "Peña de Navidad", "Compra 40 décimos de Navidad.", R),
         (100, "xmas_100", "Peña de la oficina", "Compra 100 décimos de Navidad.", E),
     ])  # fmt: skip
     a += _tiers("lottery", "lottery_nino", [
         (20, "nino_20", "Los Reyes ya pasaron", "Compra 20 décimos del Niño.", R),
     ])  # fmt: skip
     a += _tiers("lottery", "lottery_euro_bets", [
+        (200, "lottery_euro_bets_200", "Euroilusión", "Juega 200 apuestas de Euromillones.", R),
+        (500, "lottery_euro_bets_500", "Ciudadano de la Eurozona",
+         "Juega 500 apuestas de Euromillones.", E),
         (1_000, "euro_1k", "Ciudadano europeo", "Juega 1.000 apuestas de Euromillones.", E),
     ])  # fmt: skip
     a += _tiers("lottery", "lottery_game_primitiva", [
@@ -7358,20 +8527,34 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("shop", "shop_purchases", [
         (1, "shop_1", "Estrenando cartera", "Compra algo en la tienda.", C),
         (10, "shop_10", "Cliente fijo de Temu", "Haz 10 compras en la tienda.", C),
+        (20, "shop_purchases_20", "Cliente asiduo", "Haz 20 compras en la tienda.", C),
         (50, "shop_50", "Comprador compulsivo de AliExpress", "Haz 50 compras en la tienda.", R),
+        (75, "shop_purchases_75", "Tarjeta de fidelidad llena", "Haz 75 compras en la tienda.", R),
         (200, "shop_200", "Más puntos que la tarjeta del Carrefour",
          "Haz 200 compras en la tienda.", E),
     ])  # fmt: skip
     a += _tiers("shop", "shop_spent", [
         (10_000, "spend_10k", "Carrito lleno, cartera vacía",
          "Gasta 10.000 Y$ en la tienda.", C),
+        (20_000, "shop_spent_20000", "Carrito lleno", "Gasta 20.000 Y$ en la tienda.", C),
+        (50_000, "shop_spent_50000", "Gasto con alegría", "Gasta 50.000 Y$ en la tienda.", R),
         (100_000, "spend_100k", "Motor de la economía", "Gasta 100.000 Y$ en la tienda.", R),
+        (200_000, "shop_spent_200000", "Consumidor ejemplar", "Gasta 200.000 Y$ en la tienda.", R),
+        (500_000, "shop_spent_500000", "Rebajas todo el año", "Gasta 500.000 Y$ en la tienda.", E),
         (1_000_000, "spend_1m", "El PIB eres tú", "Gasta 1.000.000 Y$ en la tienda.", E),
+        (2_000_000, "shop_spent_2000000", "Gastador de élite",
+         "Gasta 2.000.000 Y$ en la tienda.", E),
+        (5_000_000, "shop_spent_5000000", "Tarjeta sin límite",
+         "Gasta 5.000.000 Y$ en la tienda.", L),
         (10_000_000, "spend_10m", "Ballena de la tienda", "Gasta 10.000.000 Y$ en la tienda.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("shop", "shop_igic", [
         (1_000, "igic_1k", "Aquí hasta el café paga", "Paga 1.000 Y$ de IGIC.", C),
+        (3_000, "shop_igic_3000", "IGIC de bolsillo", "Paga 3.000 Y$ de IGIC.", C),
+        (7_500, "shop_igic_7500", "IGIC del café", "Paga 7.500 Y$ de IGIC.", R),
         (25_000, "igic_25k", "Sostén del Cabildo", "Paga 25.000 Y$ de IGIC.", R),
+        (50_000, "shop_igic_50000", "IGIC de manual", "Paga 50.000 Y$ de IGIC.", R),
+        (150_000, "shop_igic_150000", "Pilar del IGIC", "Paga 150.000 Y$ de IGIC.", E),
         (250_000, "igic_250k", "Contribuyente canario de honor", "Paga 250.000 Y$ de IGIC.", E),
     ], unit="money")  # fmt: skip
     a += _tiers("shop", "shop_roles", [
@@ -7386,6 +8569,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "boost_1", "Pisar el acelerador", "Compra un potenciador de XP.", C),
         (10, "boost_10", "Más chutes que un futbolista",
          "Compra 10 potenciadores de XP.", R),
+        (20, "shop_boosts_20", "Chute de XP", "Compra 20 potenciadores de XP.", R),
         (50, "boost_50", "Nitro humano", "Compra 50 potenciadores de XP.", E),
     ])  # fmt: skip
     a += _tiers("shop", "shop_boost_queue_max", [
@@ -7413,6 +8597,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("shop", "shop_big_buy_max", [
         (50_000, "bigbuy_50k", "Capricho caro", "Paga 50.000 Y$ de una sola vez.", R),
+        (150_000, "shop_big_buy_max_150000", "Caprichito", "Paga 150.000 Y$ de una sola vez.", R),
+        (250_000, "shop_big_buy_max_250000", "Compra de jeque",
+         "Paga 250.000 Y$ de una sola vez.", L),
         (500_000, "bigbuy_500k", "Tarjeta negra", "Paga 500.000 Y$ de una sola vez.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("shop", "shop_limited", [
@@ -7431,14 +8618,20 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
 
     a += _tiers("shop", "shop_purchases", [
+        (500, "shop_purchases_500", "Comprador de la semana", "Haz 500 compras en la tienda.", L),
         (1_000, "shop_1k", "Cliente VIP con plaza de parking",
          "Haz 1.000 compras en la tienda.", L),
     ])  # fmt: skip
     a += _tiers("shop", "shop_spent", [
+        (20_000_000, "shop_spent_20000000", "Centro comercial con patas",
+         "Gasta 20.000.000 Y$ en la tienda.", L),
+        (50_000_000, "shop_spent_50000000", "Black Friday perpetuo",
+         "Gasta 50.000.000 Y$ en la tienda.", M),
         (100_000_000, "spend_100m", "Consumismo de Estado",
          "Gasta 100.000.000 Y$ en la tienda.", M),
     ], unit="money")  # fmt: skip
     a += _tiers("shop", "shop_igic", [
+        (500_000, "shop_igic_500000", "Mecenas del IGIC", "Paga 500.000 Y$ de IGIC.", L),
         (1_000_000, "igic_1m", "Canarias te lo agradece", "Paga 1.000.000 Y$ de IGIC.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("shop", "shop_roles", [
@@ -7448,17 +8641,22 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (25, "renew_25", "Alquiler indefinido", "Renueva un alquiler de rol 25 veces.", E),
     ])  # fmt: skip
     a += _tiers("shop", "shop_boosts", [
+        (75, "shop_boosts_75", "Dopaje de experiencia", "Compra 75 potenciadores de XP.", E),
         (200, "boost_200", "Esteroides de XP", "Compra 200 potenciadores de XP.", L),
     ])  # fmt: skip
     a += _tiers("shop", "shop_sale_buys", [
+        (20, "shop_sale_buys_20", "Cazador de ofertas", "Compra 20 cosas rebajadas.", R),
+        (50, "shop_sale_buys_50", "Rebajas de enero", "Compra 50 cosas rebajadas.", E),
         (100, "sale_100", "Black Friday permanente", "Compra 100 cosas rebajadas.", E),
     ])  # fmt: skip
     a += _tiers("shop", "shop_luxury", [
+        (20, "shop_luxury_20", "Lujo con impuesto", "Compra 20 cosas con IGIC de lujo.", E),
         (50, "luxury_50", "Lujo asiático", "Compra 50 cosas con IGIC de lujo.", L),
     ])  # fmt: skip
     a += _tiers("shop", "shop_limited", [
         (10, "limited_10", "Edición de coleccionista",
          "Compra 10 unidades de ediciones limitadas.", R),
+        (20, "shop_limited_20", "Edición limitada", "Compra 20 unidades limitadas.", R),
         (50, "limited_50", "Revendedor de zapatillas", "Compra 50 unidades limitadas.", E),
     ])  # fmt: skip
     a += _tiers("shop", "shop_first_serial", [
@@ -7476,8 +8674,12 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("shop", "shop_uses", [
         (1, "use_1", "Pa' eso lo compré", "Usa un objeto de la mochila.", C),
         (25, "use_25", "Gamberro de barrio", "Usa 25 objetos.", C),
+        (50, "shop_uses_50", "Juguetes nuevos", "Usa 50 objetos.", C),
         (100, "use_100", "Altercado público", "Usa 100 objetos.", R),
+        (200, "shop_uses_200", "Barrio revuelto", "Usa 200 objetos.", R),
+        (500, "shop_uses_500", "Destrozo con estilo", "Usa 500 objetos.", E),
         (1_000, "use_1k", "Terror del servidor", "Usa 1.000 objetos.", E),
+        (2_500, "shop_uses_2500", "Gamberro de leyenda", "Usa 2.500 objetos.", L),
         (5_000, "use_5k", "Vandalismo de Estado", "Usa 5.000 objetos.", L),
     ])  # fmt: skip
     a += _tiers("shop", SHOP_USE_KINDS_STAT, [
@@ -7490,12 +8692,16 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "target_1", "Puntería con cariño",
          "Usa un objeto contra alguien.", C),
         (50, "target_50", "Francotirador de tupper", "Usa 50 objetos contra alguien.", R),
+        (150, "shop_use_targeted_150", "Diana fija", "Usa 150 objetos contra alguien.", R),
+        (250, "shop_use_targeted_250", "Tirador de élite", "Usa 250 objetos contra alguien.", E),
         (500, "target_500", "Enemigo público nº 1", "Usa 500 objetos contra alguien.", E),
     ])  # fmt: skip
     a += _tiers("shop", "shop_got_hit", [
         (1, "hit_1", "Diana humana",
          "Que alguien use un objeto contra ti.", C),
         (25, "hit_25", "Saco de boxeo", "Que usen 25 objetos contra ti.", R),
+        (50, "shop_got_hit_50", "Blanco fácil", "Que usen 50 objetos contra ti.", R),
+        (150, "shop_got_hit_150", "Diana del servidor", "Que usen 150 objetos contra ti.", E),
         (250, "hit_250", "Pim, pam, pum del servidor", "Que usen 250 objetos contra ti.", E),
     ])  # fmt: skip
     a += _tiers("shop", "shop_got_messy", [
@@ -7575,6 +8781,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("shop", "shop_mystery", [
         (1, "mystery_1", "Caja de Pandora", "Abre una caja botín.", C),
         (25, "mystery_25", "Ludopatía de cajas botín", "Abre 25 cajas botín.", R),
+        (50, "shop_mystery_50", "Cajas botín de saldo", "Abre 50 cajas botín.", R),
+        (150, "shop_mystery_150", "Botín en cadena", "Abre 150 cajas botín.", E),
         (250, "mystery_250", "Ley de cajas botín, ¿para cuándo?", "Abre 250 cajas botín.", E),
     ])  # fmt: skip
     a += _tiers("shop", "shop_mystery_dupe", [
@@ -7593,8 +8801,12 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("shop", "lootbox_opened", [
         (1, "box_open_1", "Abre que es regalo", "Abre tu primera caja del colmado.", C),
         (10, "box_open_10", "Ludopatía de cartón", "Abre 10 cajas.", R),
+        (20, "lootbox_opened_20", "Cajas de cartón", "Abre 20 cajas.", R),
+        (50, "lootbox_opened_50", "Mudanza de cajas", "Abre 50 cajas.", E),
         (100, "box_open_100", "Cien cajas y un cajero",
          "Abre 100 cajas.", E),
+        (200, "lootbox_opened_200", "Almacén de cajas", "Abre 200 cajas.", E),
+        (500, "lootbox_opened_500", "Centro logístico", "Abre 500 cajas.", L),
         (1_000, "box_open_1k", "Presupuesto prorrogado en cartón",
          "Abre 1.000 cajas.", L),
     ])  # fmt: skip
@@ -7785,12 +8997,18 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "box_free_1", "Cortesía de la casa",
          "Gana una caja gratis jugando en el casino o subiendo de nivel.", C),
         (10, "box_free_10", "Diez regalos sin envolver", "Gana 10 cajas gratis.", R),
+        (20, "lootbox_free_20", "Regalo de la casa", "Gana 20 cajas gratis.", R),
+        (50, "lootbox_free_50", "Cajas por la patilla", "Gana 50 cajas gratis.", L),
         (100, "box_free_100", "Cajas por la cara",
          "Gana 100 cajas gratis.", L),
     ])  # fmt: skip
     a += _tiers("shop", "lootbox_dupes", [
         (10, "box_dupe_10", "Repe, repe y más repe",
          "Que las cajas te den 10 piezas que ya tenías.", R),
+        (20, "lootbox_dupes_20", "Repetidas a montones",
+         "Que las cajas te den 20 piezas que ya tenías. Hay un Rastro para eso.", R),
+        (50, "lootbox_dupes_50", "Colección de repes",
+         "Que las cajas te den 50 piezas que ya tenías. Hay un Rastro para eso.", E),
         (100, "box_dupe_100", "Mercadillo de repes",
          "Que las cajas te den 100 piezas que ya tenías. Hay un Rastro para eso.", E),
     ])  # fmt: skip
@@ -7800,6 +9018,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("shop", "shop_consumed", [
         (100, "consumed_100", "Usar y tirar", "Gasta 100 objetos de un solo uso.", R),
+        (200, "shop_consumed_200", "Kleenex de objetos", "Gasta 200 objetos de un solo uso.", R),
+        (500, "shop_consumed_500", "Usar y tirar, versión pro",
+         "Gasta 500 objetos de un solo uso.", E),
         (1_000, "consumed_1k", "Sociedad de consumo", "Gasta 1.000 objetos de un solo uso.", E),
     ])  # fmt: skip
     a += _tiers("shop", "shop_use_night", [
@@ -7867,6 +9088,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "skin_image_1", "Autorretrato en el fieltro", "Sube una imagen a tu tapete propio.", C),
         (10, "skin_image_10", "Más cambios de look que Yolanda",
          "Cambia la imagen de tu tapete propio 10 veces.", R),
+        (20, "shop_skin_image_uploads_20", "Galería de arte propia",
+         "Sube 20 imágenes a tu tapete propio.", R),
         (50, "skin_image_50", "Comisario de tu propio Prado",
          "Sube 50 imágenes a tu tapete propio.", E),
     ])  # fmt: skip
@@ -8063,7 +9286,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("pets", "pet_cares", [
         (1, "pet_care_1", "Primera caricia", "Cuida a una mascota.", C),
         (50, "pet_care_50", "Cuidador del Imserso", "Cuida 50 veces a tus mascotas.", R),
+        (150, "pet_cares_150", "Cuidador de mascotas", "Cuida 150 veces a tus mascotas.", R),
+        (250, "pet_cares_250", "Niñera de animales", "Cuida 250 veces a tus mascotas.", E),
         (500, "pet_care_500", "Veterinario sin título", "Cuida 500 veces a tus mascotas.", E),
+        (750, "pet_cares_750", "Granja escuela", "Cuida 750 veces a tus mascotas.", E),
         (2_000, "pet_care_2k", "Protectora con patas", "Cuida 2.000 veces a tus mascotas.", L),
     ])  # fmt: skip
     a += _tiers("pets", "pet_petted", [
@@ -8107,12 +9333,15 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "pet_gift_1", "El gato te trae un presente",
          "Que una mascota te traiga un regalo.", C),
         (10, "pet_gift_10", "Lo que trae el gato", "Que tus mascotas te traigan 10 regalos.", E),
+        (20, "pet_gifts_20", "Regalos de la mascota", "Que tus mascotas te traigan 20 regalos.", E),
         (50, "pet_gift_50", "Mantenido por la mascota",
          "Que tus mascotas te traigan 50 regalos.", L),
     ])  # fmt: skip
     a += _tiers("pets", "pet_cameos", [
         (1, "pet_cameo_1", "Robaescenas", "Que tu mascota salga en un mensaje del bot.", C),
         (100, "pet_cameo_100", "Estrella invitada", "Que tu mascota salga 100 veces.", R),
+        (200, "pet_cameos_200", "Mascota con fama", "Que tu mascota salga 200 veces.", R),
+        (500, "pet_cameos_500", "Mascota de portada", "Que tu mascota salga 500 veces.", E),
         (1_000, "pet_cameo_1k", "Más pantalla que Jovani", "Que tu mascota salga 1.000 veces.",
          E),
     ])  # fmt: skip
@@ -8180,7 +9409,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("work", "work_shifts", [
         (1, "pala_1", "Coge la pala", "Ficha tu primer turno.", C),
         (10, "pala_10", "Pico, pala y nómina", "Ficha 10 turnos.", C),
+        (20, "work_shifts_20", "Primeros turnos", "Ficha 20 turnos.", C),
+        (50, "work_shifts_50", "Callo en la mano", "Ficha 50 turnos.", R),
         (100, "pala_100", "Obrero del mes, todos los meses", "Ficha 100 turnos.", R),
+        (250, "work_shifts_250", "Currante de verdad", "Ficha 250 turnos.", E),
         (500, "pala_500", "Mula de carga de Amazon", "Ficha 500 turnos.", E),
         (1_000, "pala_1k", "Toda una vida con la pala", "Ficha 1.000 turnos.", L),
     ])  # fmt: skip
@@ -8244,12 +9476,17 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("work", "work_happy_shifts", [
         (25, "conciliacion", "Conciliación, esa leyenda",
          "Ficha 25 turnos con la familia en casa feliz.", R),
+        (50, "work_happy_shifts_50", "Familia contenta",
+         "Ficha 50 turnos con la familia en casa feliz.", R),
+        (75, "work_happy_shifts_75", "Hogar dulce hogar",
+         "Ficha 75 turnos con la familia en casa feliz.", E),
         (200, "conciliacion_real", "Conciliación de la de verdad",
          "Ficha 200 turnos con la familia en casa feliz.", E),
     ])  # fmt: skip
     a += _tiers("work", "work_gifts", [
         (1, "un_detalle", "Un detalle", "Dale un regalo a tu familia desde `pala`.", C),
         (10, "floristeria", "Cliente fijo de la floristería", "Dale 10 regalos a tu familia.", R),
+        (20, "work_gifts_20", "Detallista con la familia", "Dale 20 regalos a tu familia.", R),
         (50, "paz_a_plazos", "La paz en casa, a plazos", "Dale 50 regalos a tu familia.", E),
     ])  # fmt: skip
     a += _tiers("work", "work_gift_finde_sur", [
@@ -8346,6 +9583,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
 
     a += _tiers("work", "work_shifts", [
+        (2_500, "work_shifts_2500", "Pala de oro macizo", "Ficha 2.500 turnos.", M),
         (5_000, "pala_5k", "Pala de por vida", "Ficha 5.000 turnos.", M),
     ])  # fmt: skip
     a += _tiers("work", "work_promotions", [
@@ -8359,17 +9597,22 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("work", "work_perfect", [
         (10, "turno_100_10", "Perfeccionista de la pala", "Saca un 100 en 10 turnos.", E),
+        (20, "work_perfect_20", "Turno perfecto en serie", "Saca 20 turnos de 100.", E),
         (50, "turno_100_50", "Trabajador del mes, del año y del siglo",
          "Saca 50 turnos de 100.", L),
     ])  # fmt: skip
     a += _tiers("work", "work_good", [
+        (40, "work_good_40", "Notable alto", "Haz 40 turnos de 90 o más.", R),
         (100, "empleado_100", "Empleado del trimestre", "Haz 100 turnos de 90 o más.", E),
+        (250, "work_good_250", "Sobresaliente de oficio", "Haz 250 turnos de 90 o más.", L),
         (500, "empleado_500", "Ejemplo para la plantilla", "Haz 500 turnos de 90 o más.", L),
     ])  # fmt: skip
     a += _tiers("work", "work_night", [
+        (50, "work_night_50", "Sereno de la obra", "Ficha 50 turnos de madrugada.", E),
         (100, "vampiro_100", "Turno de noche fijo", "Ficha 100 turnos de madrugada.", L),
     ])  # fmt: skip
     a += _tiers("work", "work_sunday", [
+        (20, "work_sunday_20", "Domingo de curro", "Ficha 20 turnos en domingo.", R),
         (50, "domingo_50", "Los domingos, a la obra", "Ficha 50 turnos en domingo.", E),
     ])  # fmt: skip
     a += _tiers("work", "work_streak_max", [
@@ -8383,6 +9626,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (25, "job_changes_25", "Currículum de Infojobs", "Cambia de oficio 25 veces.", E),
     ])  # fmt: skip
     a += _tiers("work", "work_taxes", [
+        (2_000_000, "work_taxes_2000000", "Cotizante de oro",
+         "Paga 2.000.000 Y$ entre IRPF y Seguridad Social trabajando.", E),
+        (5_000_000, "work_taxes_5000000", "Seguridad Social con tu nombre",
+         "Paga 5.000.000 Y$ entre IRPF y Seguridad Social trabajando.", L),
         (10_000_000, "sanxe_pala_10m", "Pilar del Estado del bienestar",
          "Paga 10.000.000 Y$ entre IRPF y Seguridad Social trabajando.", L),
     ], unit="money")  # fmt: skip
@@ -8410,6 +9657,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Que una herramienta te perdone un fallo.", C),
         (50, "rectificar_50", "No es mentira, es un cambio de opinión",
          "Que las herramientas te perdonen 50 fallos.", R),
+        (150, "work_saves_150", "Herramienta comprensiva",
+         "Que las herramientas te perdonen 150 fallos.", R),
+        (250, "work_saves_250", "Perdón de la pala",
+         "Que las herramientas te perdonen 250 fallos.", E),
         (500, "rectificar_500", "Manual de rectificación",
          "Que las herramientas te perdonen 500 fallos.", E),
     ])  # fmt: skip
@@ -8421,6 +9672,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("work", "work_fifty", [
         (10, "chuleta", "Con chuleta", "Acierta 10 preguntas con una respuesta tachada.", C),
+        (40, "work_fifty_40", "Descarte inteligente",
+         "Acierta 40 preguntas con una respuesta tachada.", C),
+        (150, "work_fifty_150", "Eliminación por descarte",
+         "Acierta 150 preguntas con una respuesta tachada.", E),
         (500, "chuleta_500", "Opositor con chuleta",
          "Acierta 500 preguntas con una respuesta tachada.", E),
     ])  # fmt: skip
@@ -8554,27 +9809,37 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (100, "pipes_100", "Fontanero de guardia", "Rompe 100 cosas cavando.", E),
     ])  # fmt: skip
     a += _tiers("jobs", "work_slackers", [
+        (40, "work_slackers_40", "Ojo de capataz", "Pilla a 40 escaqueados.", R),
         (100, "slackers_100", "Capataz implacable", "Pilla a 100 escaqueados.", E),
     ])  # fmt: skip
     a += _tiers("jobs", "work_overruns", [
+        (40, "work_overruns_40", "Auditor de obra", "Encuentra 40 sobrecostes.", E),
         (100, "overruns_100", "Tribunal de Cuentas", "Encuentra 100 sobrecostes.", L),
     ])  # fmt: skip
     a += _tiers("hosteleria", "work_perfect_orders", [
+        (250, "work_perfect_orders_250", "Comanda de diez", "Saca 250 comandas perfectas.", L),
         (500, "orders_500", "Camarero de la Estrella Michelin", "Saca 500 comandas perfectas.", L),
     ])  # fmt: skip
     a += _tiers("hosteleria", "work_happy_clients", [
+        (75, "work_happy_clients_75", "Paciencia de camarero", "Atiende bien 75 marrones.", E),
         (150, "clients_150", "El cliente siempre tiene razón (no)",
          "Atiende bien 150 marrones.", E),
     ])  # fmt: skip
     a += _tiers("jobs", "work_perfect_votes", [
+        (150, "work_perfect_votes_150", "Votación en bloque",
+         "Vota 150 veces lo que diga el partido.", E),
         (250, "votes_250", "Diputado de pulsar el botón",
          "Vota 250 veces lo que diga el partido.", E),
     ])  # fmt: skip
     a += _tiers("jobs", "work_dodged", [
+        (40, "work_dodged_40", "Regate en rueda de prensa",
+         "Esquiva 40 preguntas en rueda de prensa.", R),
         (100, "dodged_100", "Escapista de rueda de prensa",
          "Esquiva 100 preguntas en rueda de prensa.", E),
     ])  # fmt: skip
     a += _tiers("jobs", "work_no_recuerdo", [
+        (40, "work_no_recuerdo_40", "No recuerdo, señoría",
+         "Sal vivo de 40 preguntas en comisión.", E),
         (100, "no_recuerdo_100", "Amnesia selectiva", "Sal vivo de 100 preguntas en comisión.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_envelope", [
@@ -8602,18 +9867,29 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("jobs", "work_posters", [
         (1, "cartel_1", "Engrudo en los dedos", "Pega tu primera ruta de carteles perfecta.", C),
         (10, "carteles_10", "Empapelando el barrio", "Pega 10 rutas de carteles perfectas.", C),
+        (20, "work_posters_20", "Engrudo y brocha", "Pega 20 rutas de carteles perfectas.", C),
+        (50, "work_posters_50", "Cartelería urbana", "Pega 50 rutas de carteles perfectas.", R),
         (100, "carteles_100", "Las farolas son del partido",
          "Pega 100 rutas de carteles perfectas.", R),
+        (250, "work_posters_250", "Empapelador oficial",
+         "Pega 250 rutas de carteles perfectas.", E),
         (500, "carteles_500", "Brigada del engrudo", "Pega 500 rutas de carteles perfectas.", E),
     ])  # fmt: skip
     a += _tiers("jobs", "work_clean_digs", [
         (10, "sin_averias", "Manos de cirujano con pico",
          "Haz 10 turnos de cavar sin romper nada.", C),
+        (20, "work_clean_digs_20", "Pico fino", "Haz 20 turnos de cavar sin romper nada.", C),
+        (50, "work_clean_digs_50", "Excavación limpia",
+         "Haz 50 turnos de cavar sin romper nada.", E),
         (100, "zahori", "Zahorí", "Haz 100 turnos de cavar sin romper nada.", E),
     ])  # fmt: skip
     a += _tiers("jobs", "work_board", [
         (20, "consejero_20", "Consejero de florero",
          "Acierta 20 respuestas en el consejo de administración.", L),
+        (40, "work_board_40", "Consejero de oficio",
+         "Acierta 40 respuestas en el consejo de administración.", L),
+        (75, "work_board_75", "Silla en el consejo",
+         "Acierta 75 respuestas en el consejo de administración.", L),
         (200, "consejero_200", "Dietas por asistir",
          "Acierta 200 respuestas en el consejo de administración.", L),
     ])  # fmt: skip
@@ -8626,6 +9902,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ))  # fmt: skip
     a += _tiers("sanidad", "work_guards", [
         (10, "guardia_10", "De guardia", "Haz 10 guardias.", R),
+        (20, "work_guards_20", "Guardia de 24 horas", "Haz 20 guardias.", R),
         (50, "guardia_50", "Vives en el hospital", "Haz 50 guardias.", E),
         (100, "guardia_100", "La cama de guardias es tuya", "Haz 100 guardias.", L),
     ])  # fmt: skip
@@ -8649,6 +9926,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("sanidad", "work_triage", [
         (30, "ojo_clinico", "Ojo clínico", "Acierta 30 triajes.", R),
+        (75, "work_triage_75", "Triaje rápido", "Acierta 75 triajes.", R),
         (200, "manchester", "Triaje de Manchester", "Acierta 200 triajes.", E),
     ])  # fmt: skip
     a += _tiers("sanidad", "work_mir", [
@@ -8691,18 +9969,23 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
 
     a += _tiers("sanidad", "work_stretcher", [
+        (150, "work_stretcher_150", "Camilla veloz", "Haz 150 traslados perfectos.", E),
         (250, "stretcher_250", "Celador del año", "Haz 250 traslados perfectos.", E),
     ])  # fmt: skip
     a += _tiers("sanidad", "work_rounds", [
+        (150, "work_rounds_150", "Ronda impecable", "Haz 150 rondas perfectas en planta.", E),
         (250, "rounds_250", "Planta controlada", "Haz 250 rondas perfectas en planta.", E),
     ])  # fmt: skip
     a += _tiers("sanidad", "work_triage", [
+        (500, "work_triage_500", "Triaje de oro", "Acierta 500 triajes.", L),
         (1_000, "triage_1k", "Ojo de rayos X", "Acierta 1.000 triajes.", L),
     ])  # fmt: skip
     a += _tiers("sanidad", "work_mir", [
+        (150, "work_mir_150", "Especialidad elegida", "Acierta 150 preguntas del MIR.", L),
         (250, "mir_250", "Plaza en Dermatología", "Acierta 250 preguntas del MIR.", L),
     ])  # fmt: skip
     a += _tiers("sanidad", "work_google", [
+        (75, "work_google_75", "Consulta sin fallos", "Gana 75 consultas.", E),
         (150, "google_150", "Más listo que el Dr. Google", "Gana 150 consultas.", E),
     ])  # fmt: skip
     a += _tiers("sanidad", "work_aggressive", [
@@ -8798,24 +10081,31 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
 
     a += _tiers("oficina", "work_coffee_orders", [
+        (150, "work_coffee_orders_150", "Ronda de cafés perfecta",
+         "Acierta 150 rondas de cafés.", E),
         (250, "coffee_250", "Barista corporativo", "Acierta 250 rondas de cafés.", E),
     ])  # fmt: skip
     a += _tiers("oficina", "work_bugs", [
+        (250, "work_bugs_250", "Cazador de errores", "Encuentra 250 bugs.", L),
         (500, "bugs_500", "Entomólogo del código", "Encuentra 500 bugs.", L),
     ])  # fmt: skip
     a += _tiers("oficina", "work_reviews", [
+        (75, "work_reviews_75", "Muro de producción", "Para 75 cambios peligrosos.", E),
         (150, "reviews_150", "Portero de producción", "Para 150 cambios peligrosos.", E),
     ])  # fmt: skip
     a += _tiers("oficina", "work_meetings", [
+        (75, "work_meetings_75", "Reunión exprés", "Acorta 75 reuniones.", E),
         (150, "meetings_150", "Esto podía ser un correo", "Acorta 150 reuniones.", E),
     ])  # fmt: skip
     a += _tiers("oficina", "work_pitches", [
         (100, "pitches_100", "Vendehúmos certificado", "Convence a 100 inversores.", L),
     ])  # fmt: skip
     a += _tiers("oficina", "work_remote", [
+        (150, "work_remote_150", "Oficina en pijama", "Teletrabaja 150 turnos.", E),
         (250, "remote_250", "Nómada del sofá", "Teletrabaja 250 turnos.", E),
     ])  # fmt: skip
     a += _tiers("oficina", "work_office", [
+        (150, "work_office_150", "Presencialista", "Ve a la oficina 150 turnos.", E),
         (250, "office_250", "Calientasillas", "Ve a la oficina 250 turnos.", E),
     ])  # fmt: skip
     a += _tiers("oficina", "work_always_online", [
@@ -8842,7 +10132,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("hongkong", "work_hk_shifts", [
         (10, "hk_10", "Expat de manual", "Haz 10 turnos desde Hong Kong.", R),
+        (20, "work_hk_shifts_20", "Turno en Kowloon", "Haz 20 turnos desde Hong Kong.", R),
+        (50, "work_hk_shifts_50", "Expatriado de largo", "Haz 50 turnos desde Hong Kong.", E),
         (100, "hk_100", "Ya no vuelves", "Haz 100 turnos desde Hong Kong.", E),
+        (250, "work_hk_shifts_250", "Residente en Hong Kong", "Haz 250 turnos desde Hong Kong.", L),
         (500, "hk_500", "Más de aquí que de allí", "Haz 500 turnos desde Hong Kong.", L),
     ])  # fmt: skip
     a.append(Achievement(
@@ -8902,7 +10195,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("hongkong", "hk_clock", [
         (1, "hkclock_1", "¿Qué hora es allí?", "Mira la hora de Hong Kong.", C),
         (25, "hkclock_25", "Reloj de Robuso", "Mira la hora de Hong Kong 25 veces.", R),
+        (50, "hk_clock_50", "Reloj doble", "Mira la hora de Hong Kong 50 veces.", R),
         (100, "hkclock_100", "Doble zona horaria", "Mira la hora de Hong Kong 100 veces.", E),
+        (250, "hk_clock_250", "Relojero internacional", "Mira la hora de Hong Kong 250 veces.", L),
         (500, "hkclock_500", "Doctor Who de los husos horarios",
          "Mira la hora de Hong Kong 500 veces.", L),
     ])  # fmt: skip
@@ -8944,12 +10239,18 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (10, "expat_10", "Más viajes que Robuso", "Vete a Hong Kong 10 veces.", L),
     ])  # fmt: skip
     a += _tiers("hongkong", "work_hk_shifts", [
+        (750, "work_hk_shifts_750", "Hongkonés honorario", "Haz 750 turnos desde Hong Kong.", L),
         (2_000, "hk_2000", "Hongkonés de adopción", "Haz 2.000 turnos desde Hong Kong.", M),
     ])  # fmt: skip
     a += _tiers("hongkong", "work_jetlag", [
+        (50, "work_jetlag_50", "Desfase horario", "Haz 50 turnos con jet lag.", R),
         (100, "jetlag_100", "Reloj biológico en huelga", "Haz 100 turnos con jet lag.", E),
     ])  # fmt: skip
     a += _tiers("hongkong", "work_hk_tax", [
+        (400_000, "work_hk_tax_400000", "Impuestos en dólares",
+         "Deja 400.000 Y$ en impuestos de Hong Kong.", R),
+        (750_000, "work_hk_tax_750000", "Contribuyente oriental",
+         "Deja 750.000 Y$ en impuestos de Hong Kong.", L),
         (2_000_000, "hk_tax_2m", "Contribuyente de Hong Kong",
          "Deja 2.000.000 Y$ en impuestos de Hong Kong.", L),
     ], unit="money")  # fmt: skip
@@ -9012,12 +10313,19 @@ def _build_catalog() -> tuple[Achievement, ...]:
 
     # 💬 Chat, ✍️ Estilo y 🧵 Conversación
     a += more("chat", "msg_replies", [
+        (15_000, "msg_replies_15000", "Hilo de Twitter con mil respuestas",
+         "Responde a 15.000 mensajes.", L),
         (25_000, "reply_25k", "Réplica y contrarréplica", "Responde a 25.000 mensajes.", L),
     ])  # fmt: skip
     a += more("chat", "msg_mentions", [
+        (1_500, "msg_mentions_1500", "Notificación en el bolsillo de todos",
+         "Menciona a alguien en 1.500 mensajes.", R),
+        (2_500, "msg_mentions_2500", "Más arrobas que un correo de los noventa",
+         "Menciona a alguien en 2.500 mensajes.", E),
         (5_000, "ping_5k", "Acoso y derribo", "Menciona a alguien en 5.000 mensajes.", E),
     ])  # fmt: skip
     a += more("chat", "msg_attachments", [
+        (2_500, "msg_attachments_2500", "Fototeca municipal", "Sube 2.500 archivos o imágenes.", L),
         (5_000, "pic_5k", "Filtración masiva", "Sube 5.000 archivos o imágenes.", L),
     ])  # fmt: skip
     a += more("chat", "msg_everyone", [
@@ -9029,32 +10337,62 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Menciona a 5 personas o más en un mismo mensaje 50 veces.", L, True),
     ])  # fmt: skip
     a += more("style", "msg_long", [
+        (200, "msg_long_200", "Columnista de domingo",
+         "Escribe 200 mensajes de 600 caracteres o más.", E),
+        (500, "msg_long_500", "Enciclopedia por fascículos",
+         "Escribe 500 mensajes de 600 caracteres o más.", L),
         (1_000, "long_1k", "Tesis doctoral de chat",
          "Escribe 1.000 mensajes de 600 caracteres o más.", L),
     ])  # fmt: skip
     a += more("style", "msg_short", [
+        (2_000, "msg_short_2000", "Conversación por señales de humo",
+         "Manda 2.000 mensajes de 3 caracteres o menos.", R),
+        (5_000, "msg_short_5000", "Economía del lenguaje",
+         "Manda 5.000 mensajes de 3 caracteres o menos.", E),
         (10_000, "short_10k", "Telegrama", "Manda 10.000 mensajes de 3 caracteres o menos.", E),
     ])  # fmt: skip
     a += more("style", "msg_exclaim", [
+        (500, "msg_exclaim_500", "Sorpresa permanente", "Escribe «!!!» en 500 mensajes.", R),
+        (1_500, "msg_exclaim_1500", "Pregonero de fiestas", "Escribe «!!!» en 1.500 mensajes.", E),
         (2_500, "exclaim_2500", "Mitin de campaña", "Escribe «!!!» en 2.500 mensajes.", E),
     ])  # fmt: skip
     a += more("style", "msg_spoiler", [
+        (200, "msg_spoiler_200", "Expediente reservado",
+         "Esconde 200 mensajes tras un spoiler.", R),
+        (500, "msg_spoiler_500", "Cofre del tesoro con candado",
+         "Esconde 500 mensajes tras un spoiler.", E),
         (1_000, "spoiler_1k", "Ley de Secretos Oficiales de 1968",
          "Esconde 1.000 mensajes tras un spoiler.", E),
     ])  # fmt: skip
     a += more("style", "msg_code", [
+        (200, "msg_code_200", "Ingeniero de backtick",
+         "Escribe código (`así`) en 200 mensajes.", R),
+        (500, "msg_code_500", "Desarrollador sin documentación",
+         "Escribe código (`así`) en 500 mensajes.", E),
         (1_000, "code_1k", "Programador del SEPE",
          "Escribe código (`así`) en 1.000 mensajes.", E),
     ])  # fmt: skip
     a += more("style", "msg_emoji_heavy", [
+        (200, "msg_emoji_heavy_200", "Emojis de cumpleaños",
+         "Mete 5 emojis o más en 200 mensajes.", R),
+        (500, "msg_emoji_heavy_500", "Árbol de Navidad de emojis",
+         "Mete 5 emojis o más en 500 mensajes.", E),
         (1_000, "emoji_heavy_1k", "Tía en el grupo de la familia",
          "Mete 5 emojis o más en 1.000 mensajes.", E),
     ])  # fmt: skip
     a += more("style", "msg_only_emoji", [
+        (1_500, "msg_only_emoji_1500", "Lengua franca del emoji",
+         "Manda 1.500 mensajes hechos solo de emojis.", R),
+        (2_500, "msg_only_emoji_2500", "Traductor de emojis jurado",
+         "Manda 2.500 mensajes hechos solo de emojis.", E),
         (5_000, "only_emoji_5k", "Piedra de Rosetta",
          "Manda 5.000 mensajes hechos solo de emojis.", E),
     ])  # fmt: skip
     a += more("style", "msg_stretch", [
+        (200, "msg_stretch_200", "Vocales de goma",
+         "Repite una letra 6 veces seguidas en 200 mensajes.", R),
+        (500, "msg_stretch_500", "Chicle de letras",
+         "Repite una letra 6 veces seguidas en 500 mensajes.", E),
         (1_000, "stretch_1k", "Holaaaaaaaaaa",
          "Repite una letra 6 veces seguidas en 1.000 mensajes.", E),
     ])  # fmt: skip
@@ -9071,64 +10409,110 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Sé el primero en escribir del día 365 veces.", M),
     ])  # fmt: skip
     a += more("convo", "msg_echo", [
+        (500, "msg_echo_500", "Disco rayado",
+         "Repite tal cual lo que acaba de escribir otro 500 veces.", L),
         (1_000, "echo_1k", "Loro de pirata",
          "Repite tal cual lo que acaba de escribir otro 1.000 veces.", L),
     ])  # fmt: skip
     a += more("convo", "msg_necro", [
+        (20, "msg_necro_20", "Nigromante del chat",
+         "Escribe 20 veces en un canal que llevaba 24 h muerto.", R),
         (50, "necro_50", "Exhumación",
          "Escribe 50 veces en un canal que llevaba 24 h muerto.", E),
     ])  # fmt: skip
     a += more("convo", "msg_edits", [
+        (2_000, "msg_edits_2000", "Reescribiendo la historia", "Edita 2.000 mensajes.", E),
+        (5_000, "msg_edits_5000", "Ministerio de la Verdad", "Edita 5.000 mensajes.", L),
         (10_000, "edits_10k", "Fe de erratas profesional", "Edita 10.000 mensajes.", L),
     ])  # fmt: skip
 
     # 😂 Risas, 🤡 Hacer reír, 🗣️ Lengua
     a += more("laughs", "laugh_en", [
+        (1_500, "laugh_en_1500", "Humor británico importado", "Ríete en inglés 1.500 veces.", E),
+        (2_500, "laugh_en_2500", "Carcajada de la BBC", "Ríete en inglés 2.500 veces.", L),
         (5_000, "laugh_en_5k", "Spanglish de Miami", "Ríete en inglés 5.000 veces.", L),
     ])  # fmt: skip
     a += more("laughs", "msg_xd", [
         (50_000, "xd_50k", "xDDDDDDDDD", "Escribe xd en 50.000 mensajes.", M, True),
     ])  # fmt: skip
     a += more("laughs", "laugh_emoji", [
+        (1_500, "laugh_emoji_1500", "Fábrica de lágrimas amarillas",
+         "Ríete con emojis 1.500 veces.", R),
+        (2_500, "laugh_emoji_2500", "Inundación de 😂", "Ríete con emojis 2.500 veces.", E),
         (5_000, "laugh_emoji_5k", "😂😂😂😂😂", "Ríete con emojis 5.000 veces.", E),
     ])  # fmt: skip
     a += more("laughs", "laugh_skull", [
+        (400, "laugh_skull_400", "Resucitado para reírse",
+         "Mándale un 💀 a un chiste 400 veces.", R),
+        (750, "laugh_skull_750", "Cementerio de chistes malos",
+         "Mándale un 💀 a un chiste 750 veces.", E),
         (2_000, "laugh_skull_2k", "Cementerio de memes",
          "Mándale un 💀 a un chiste 2.000 veces.", E),
     ])  # fmt: skip
     a += more("laughs", "laugh_smash", [
+        (200, "laugh_smash_200", "Teclado con traumas",
+         "Aporrea el teclado (ajsjsjs) 200 veces.", R),
+        (500, "laugh_smash_500", "Teclado reconstruido",
+         "Aporrea el teclado (ajsjsjs) 500 veces.", E),
         (1_000, "laugh_smash_1k", "Teclado sin garantía",
          "Aporrea el teclado (ajsjsjs) 1.000 veces.", E),
     ])  # fmt: skip
     a += more("laughs", "laugh_phrase", [
+        (200, "laugh_phrase_200", "Me meo encima",
+         "Ríete con palabras (me meo, me parto, lloro) 200 veces.", R),
+        (500, "laugh_phrase_500", "Pañal de risa",
+         "Ríete con palabras (me meo, me parto, lloro) 500 veces.", E),
         (1_000, "laugh_phrase_1k", "Me meo de verdad",
          "Ríete con palabras (me meo, me parto, lloro) 1.000 veces.", E),
     ])  # fmt: skip
     a += more("laughs", "msg_laugh_caps", [
+        (200, "msg_laugh_caps_200", "ME DESCOJONO EN MAYÚSCULAS",
+         "Ríete EN MAYÚSCULAS en 200 mensajes.", R),
+        (500, "msg_laugh_caps_500", "EL VECINO YA SE HA QUEJADO",
+         "Ríete EN MAYÚSCULAS en 500 mensajes.", E),
         (1_000, "laugh_caps_1k", "JAJAJAJA A GRITOS",
          "Ríete EN MAYÚSCULAS en 1.000 mensajes.", E),
     ])  # fmt: skip
     a += more("laughs", "msg_laugh_dry", [
+        (200, "msg_laugh_dry_200", "Ja. Punto.", "Responde «ja.» 200 veces.", E),
+        (500, "msg_laugh_dry_500", "Sequía de risas", "Responde «ja.» 500 veces.", L),
         (1_000, "laugh_dry_1k", "Ja. Ja. Ja.",
          "Responde «ja.» 1.000 veces.", L),
     ])  # fmt: skip
     a += more("laughs", "laugh_night", [
+        (50, "laugh_night_50", "Risa de guardia nocturna",
+         "Ríete en 50 mensajes entre las 2:00 y las 6:00.", R),
+        (150, "laugh_night_150", "Hiena de madrugada",
+         "Ríete en 150 mensajes entre las 2:00 y las 6:00.", E),
         (250, "laugh_night_250", "Risas a las tantas",
          "Ríete en 250 mensajes entre las 2:00 y las 6:00.", E),
     ])  # fmt: skip
     a += more("laughs", "laugh_intl", [
+        (150, "laugh_intl_150", "Risa de intercambio",
+         "Ríete en otro idioma (kkkk, mdr, wwww, ㅋㅋ…) 150 veces.", E),
+        (250, "laugh_intl_250", "Carcajada sin fronteras",
+         "Ríete en otro idioma (kkkk, mdr, wwww, ㅋㅋ…) 250 veces.", L),
         (500, "laugh_intl_500", "Me río en cinco idiomas",
          "Ríete en otro idioma (kkkk, mdr, wwww, ㅋㅋ…) 500 veces.", L),
     ])  # fmt: skip
     a += more("funny", "laugh_replies", [
+        (1_500, "laugh_replies_1500", "Claque de teatro",
+         "Ríete respondiendo a 1.500 mensajes.", R),
+        (2_500, "laugh_replies_2500", "Risas de La Hora Chanante",
+         "Ríete respondiendo a 2.500 mensajes.", E),
         (5_000, "laugh_replies_5k", "Público de plató",
          "Ríete respondiendo a 5.000 mensajes.", E),
     ])  # fmt: skip
     a += more("funny", "laughs_caused", [
+        (2_500, "laughs_caused_2500", "Gira de humoristas",
+         "Que se rían respondiendo a tus mensajes 2.500 veces.", M),
         (5_000, "laughs_caused_5k", "Club de la Comedia",
          "Que se rían respondiendo a tus mensajes 5.000 veces.", M),
     ])  # fmt: skip
     a += more("funny", "laugh_at_bot", [
+        (50, "laugh_at_bot_50", "Risas con el bot", "Ríete respondiendo al bot 50 veces.", R),
+        (150, "laugh_at_bot_150", "Me caes bien, máquina",
+         "Ríete respondiendo al bot 150 veces.", E),
         (250, "laugh_bot_250", "Te ríes de una máquina",
          "Ríete respondiendo al bot 250 veces.", E),
     ])  # fmt: skip
@@ -9137,10 +10521,16 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Que 12 personas se rían seguidas en un canal.", L, True),
     ])  # fmt: skip
     a += more("funny", "laugh_reacts_given", [
+        (1_500, "laugh_reacts_given_1500", "Me río y punto",
+         "Reacciona con 😂, 🤣 o 💀 a 1.500 mensajes.", R),
+        (2_500, "laugh_reacts_given_2500", "Aplauso con lágrimas",
+         "Reacciona con 😂, 🤣 o 💀 a 2.500 mensajes.", E),
         (5_000, "laugh_given_5k", "Risas enlatadas",
          "Reacciona con 😂, 🤣 o 💀 a 5.000 mensajes.", E),
     ])  # fmt: skip
     a += more("funny", "laugh_reacts_received", [
+        (5_000, "laugh_reacts_received_5000", "Gira por todo el país",
+         "Recibe 5.000 reacciones de risa.", L),
         (10_000, "laugh_received_10k", "Humorista de Estado",
          "Recibe 10.000 reacciones de risa.", M),
     ])  # fmt: skip
@@ -9149,52 +10539,88 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Que 15 personas se rían (con reacción) del mismo mensaje.", L),
     ])  # fmt: skip
     a += more("lengua", "msg_canario", [
+        (2_500, "msg_canario_2500", "Diccionario canario de bolsillo",
+         "Habla en canario en 2.500 mensajes.", M),
         (5_000, "canario_5k", "Más canario que un barraquito",
          "Habla en canario en 5.000 mensajes.", M),
     ])  # fmt: skip
     a += more("lengua", "msg_swear", [
+        (5_000, "msg_swear_5000", "Enciclopedia del taco",
+         "Suelta una palabrota en 5.000 mensajes.", E),
+        (15_000, "msg_swear_15000", "Hostia, qué vocabulario",
+         "Suelta una palabrota en 15.000 mensajes.", L),
         (25_000, "swear_25k", "Hostia puta, qué récord",
          "Suelta una palabrota en 25.000 mensajes.", L),
     ])  # fmt: skip
     a += more("lengua", "msg_thanks", [
+        (2_000, "msg_thanks_2000", "Usted primero", "Da las gracias en 2.000 mensajes.", E),
+        (5_000, "msg_thanks_5000", "Cortesía de embajador", "Da las gracias en 5.000 mensajes.", L),
         (10_000, "thanks_10k", "Educación de colegio de monjas",
          "Da las gracias en 10.000 mensajes.", L),
     ])  # fmt: skip
     a += more("lengua", "msg_sorry", [
+        (50, "msg_sorry_50", "Perdón por existir", "Pide perdón en 50 mensajes.", R),
+        (150, "msg_sorry_150", "Disculpas oficiales", "Pide perdón en 150 mensajes.", E),
         (250, "sorry_250", "Lo siento mucho, me he equivocado, no volverá a ocurrir",
          "Pide perdón en 250 mensajes.", E),
     ])  # fmt: skip
     a += more("lengua", "msg_good_night", [
+        (200, "msg_good_night_200", "Hasta mañana, si Dios quiere",
+         "Da las buenas noches 200 veces.", R),
+        (500, "msg_good_night_500", "Persianas bajadas", "Da las buenas noches 500 veces.", E),
         (1_000, "good_night_1k", "Ya me voy, que mañana madrugo",
          "Da las buenas noches 1.000 veces.", E),
     ])  # fmt: skip
     a += more("lengua", "msg_hacienda", [
+        (150, "msg_hacienda_150", "Modelo 100 de memoria", "Nombra a Hacienda 150 veces.", R),
+        (250, "msg_hacienda_250", "Inspector de bar", "Nombra a Hacienda 250 veces.", E),
         (500, "hacienda_500", "Hacienda somos todos (menos tú)",
          "Nombra a Hacienda 500 veces.", E),
     ])  # fmt: skip
     a += more("lengua", "msg_bizum_ask", [
+        (50, "msg_bizum_ask_50", "Mano tendida", "Pide un Bizum por el chat 50 veces.", R),
+        (150, "msg_bizum_ask_150", "Pedigüeño de guante blanco",
+         "Pide un Bizum por el chat 150 veces.", E),
         (250, "bizum_ask_250", "Sablista",
          "Pide un Bizum por el chat 250 veces.", E),
     ])  # fmt: skip
 
     # 🗓️ Horarios y ❤️ Social
     a += more("time", "msg_night", [
+        (2_000, "msg_night_2000", "Vigilante nocturno",
+         "Escribe 2.000 mensajes entre las 2:00 y las 6:00.", E),
+        (5_000, "msg_night_5000", "Murciélago del grupo",
+         "Escribe 5.000 mensajes entre las 2:00 y las 6:00.", L),
         (10_000, "night_10k", "Drácula del teclado",
          "Escribe 10.000 mensajes entre las 2:00 y las 6:00.", L),
     ])  # fmt: skip
     a += more("time", "msg_morning", [
+        (2_000, "msg_morning_2000", "Lechero digital",
+         "Escribe 2.000 mensajes entre las 6:00 y las 8:00.", E),
+        (5_000, "msg_morning_5000", "Puesta de sol al revés",
+         "Escribe 5.000 mensajes entre las 6:00 y las 8:00.", L),
         (10_000, "morning_10k", "Panadero digital",
          "Escribe 10.000 mensajes entre las 6:00 y las 8:00.", L),
     ])  # fmt: skip
     a += more("time", "msg_siesta", [
+        (2_000, "msg_siesta_2000", "Insomnio a las cuatro de la tarde",
+         "Escribe 2.000 mensajes entre las 15:00 y las 17:00.", R),
+        (5_000, "msg_siesta_5000", "Siesta prohibida por ley",
+         "Escribe 5.000 mensajes entre las 15:00 y las 17:00.", E),
         (10_000, "siesta_10k", "La siesta es para los débiles",
          "Escribe 10.000 mensajes entre las 15:00 y las 17:00.", E),
     ])  # fmt: skip
     a += more("time", "msg_office", [
+        (25_000, "msg_office_25000", "Oficina sin jefe",
+         "Escribe 25.000 mensajes entre semana de 9:00 a 14:00.", L),
         (50_000, "office_50k", "Funcionario en su salsa",
          "Escribe 50.000 mensajes entre semana de 9:00 a 14:00.", L),
     ])  # fmt: skip
     a += more("time", "msg_weekend", [
+        (2_000, "msg_weekend_2000", "Finde enganchado",
+         "Escribe 2.000 mensajes en fin de semana.", R),
+        (5_000, "msg_weekend_5000", "Lunes, ¿qué lunes?",
+         "Escribe 5.000 mensajes en fin de semana.", E),
         (10_000, "weekend_10k", "Sin vida los findes",
          "Escribe 10.000 mensajes en fin de semana.", E),
     ])  # fmt: skip
@@ -9207,10 +10633,16 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Da la bienvenida a 100 recién llegados.", M),
     ])  # fmt: skip
     a += more("social", "msg_bot_call", [
+        (2_000, "msg_bot_call_2000", "Amistad con el bot",
+         "Menciona al bot o di su nombre 2.000 veces.", E),
+        (5_000, "msg_bot_call_5000", "Más visto que Jovani en verbenas",
+         "Menciona al bot o di su nombre 5.000 veces.", L),
         (10_000, "bot_call_10k", "Amigo íntimo del bot",
          "Menciona al bot o di su nombre 10.000 veces.", L),
     ])  # fmt: skip
     a += more("social", "msg_sanxe", [
+        (200, "msg_sanxe_200", "Obsesión con la mascota", "Nombra a Perro Sanxe 200 veces.", R),
+        (500, "msg_sanxe_500", "Perro Sanxe en el desayuno", "Nombra a Perro Sanxe 500 veces.", E),
         (1_000, "sanxe_1k", "Monotema",
          "Nombra a Perro Sanxe 1.000 veces.", E),
     ])  # fmt: skip
@@ -9225,6 +10657,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Pasa 200 horas en llamada con una sola persona.", L),
     ])  # fmt: skip
     a += more("voice", "voice_morning", [
+        (1_500, "voice_morning_1500", "Radio despertador",
+         "Pasa 25 horas en llamada entre las 6:00 y las 8:00.", E),
         (3_000, "voice_morning_3k", "Tertuliano matinal",
          "Pasa 50 horas en llamada entre las 6:00 y las 8:00.", E),
     ])  # fmt: skip
@@ -9233,6 +10667,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Pasa 100 horas en llamada entre las 15:00 y las 17:00.", E),
     ])  # fmt: skip
     a += more("voice", "voice_weekend", [
+        (15_000, "voice_weekend_15000", "Sofá y voz hasta el lunes",
+         "Pasa 250 horas en llamada en fin de semana.", L),
         (30_000, "voice_weekend_30k", "El finde es para la llamada",
          "Pasa 500 horas en llamada en fin de semana.", L),
     ])  # fmt: skip
@@ -9241,6 +10677,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Comparte pantalla durante 200 horas.", L),
     ])  # fmt: skip
     a += more("voice_mic", "voice_video", [
+        (1_500, "voice_video_1500", "Videoconferencia eterna",
+         "Pon la cámara durante 25 horas.", E),
         (3_000, "video_3k", "Presentador del telediario",
          "Pon la cámara durante 50 horas.", E),
     ])  # fmt: skip
@@ -9253,18 +10691,30 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Pasa 100 horas en llamada con el sonido quitado.", E, True),
     ])  # fmt: skip
     a += more("voice_mic", "voice_afk", [
+        (15_000, "voice_afk_15000", "Monumento al AFK",
+         "Pasa 250 horas en el canal AFK sin dar palo al agua.", L),
         (30_000, "afk_30k", "Quinientas horas de siesta",
          "Pasa 500 horas en el canal AFK sin dar palo al agua.", L),
     ])  # fmt: skip
     a += more("voice_mic", "voice_stream_crowd", [
+        (300, "voice_stream_crowd_300", "Pase privado de cine",
+         "Comparte pantalla 5 horas con 4 personas o más mirando.", E),
         (600, "stream_crowd_600", "Audiencia de Eurovisión",
          "Comparte pantalla 10 horas con 4 personas o más mirando.", E),
     ])  # fmt: skip
     a += more("voice_mic", "voice_multitask", [
+        (75, "voice_multitask_75", "Equilibrista de la webcam",
+         "Pon cámara y comparte pantalla a la vez 75 minutos.", R),
+        (150, "voice_multitask_150", "Tres pantallas a la vez",
+         "Pon cámara y comparte pantalla a la vez 150 minutos.", E),
         (300, "multitask_300", "Pulpo de seis brazos",
          "Pon cámara y comparte pantalla a la vez 5 horas.", E),
     ])  # fmt: skip
     a += more("voice_mic", "voice_stream_starts", [
+        (200, "voice_stream_starts_200", "Retransmisión en directo",
+         "Empieza a compartir pantalla 200 veces.", R),
+        (500, "voice_stream_starts_500", "Productora de streaming",
+         "Empieza a compartir pantalla 500 veces.", E),
         (1_000, "stream_starts_1k", "Zapeador", "Empieza a compartir pantalla 1.000 veces.", E),
     ])  # fmt: skip
     a += more("voice_mic", "voice_mute_streak_max", [
@@ -9272,10 +10722,13 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Aguanta 24 horas seguidas silenciado en llamada.", L, True),
     ])  # fmt: skip
     a += more("voice_moves", "voice_joins", [
+        (2_500, "voice_joins_2500", "Portero automático",
+         "Entra 2.500 veces a un canal de voz.", L),
         (5_000, "joins_5k", "Puerta del Sol en Nochevieja",
          "Entra 5.000 veces a un canal de voz.", L),
     ])  # fmt: skip
     a += more("voice_moves", "voice_hops", [
+        (750, "voice_hops_750", "Veleta de canales", "Cambia de canal de voz 750 veces.", E),
         (2_000, "hops_2k", "Dos mil cambios de canal",
          "Cambia de canal de voz 2.000 veces.", L),
     ])  # fmt: skip
@@ -9284,14 +10737,19 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Entra en un canal de voz y vete en menos de 15 s, 100 veces.", E, True),
     ])  # fmt: skip
     a += more("voice_moves", "entrance_saved", [
+        (20, "entrance_saved_20", "Entrada, versión 20",
+         "Guarda tu sonido de entrada 20 veces.", R),
         (50, "entrance_saved_50", "Nunca me decido",
          "Guarda tu sonido de entrada 50 veces.", E),
     ])  # fmt: skip
     a += more("voice_moves", "entrance_played", [
+        (2_500, "entrance_played_2500", "Sintonía de telenovela",
+         "Que suene tu entrada 2.500 veces.", L),
         (5_000, "entrance_played_5k", "Himno sin letra",
          "Que suene tu entrada 5.000 veces.", L),
     ])  # fmt: skip
     a += more("music", "music_queued", [
+        (750, "music_queued_750", "Disc jockey de feria", "Pon 750 canciones con `poner`.", E),
         (2_000, "queued_2k", "Los 40 Principales",
          "Pon 2.000 canciones con `poner`.", L),
     ])  # fmt: skip
@@ -9300,14 +10758,19 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Pasa 200 horas en llamada con el bot poniendo música.", L),
     ])  # fmt: skip
     a += more("music", "music_skips", [
+        (200, "music_skips_200", "No me gusta ninguna", "Salta 200 canciones.", R),
+        (500, "music_skips_500", "Paciencia de cinco segundos", "Salta 500 canciones.", E),
         (1_000, "skips_1k", "Siguiente, por favor",
          "Salta 1.000 canciones.", E),
     ])  # fmt: skip
     a += more("music", "music_stops", [
+        (50, "music_stops_50", "Corte de música", "Para la música con `parar` 50 veces.", R),
         (100, "stops_100", "El gran apagón",
          "Para la música con `parar` 100 veces.", E),
     ])  # fmt: skip
     a += more("music", "music_removes", [
+        (20, "music_removes_20", "Lista negra musical", "Quita 20 canciones de la cola.", R),
+        (50, "music_removes_50", "Censor de discos", "Quita 50 canciones de la cola.", E),
         (100, "removes_100", "Lápiz rojo del censor", "Quita 100 canciones de la cola.", E),
     ])  # fmt: skip
     a += more("music", "music_clears", [
@@ -9320,30 +10783,50 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += more("memes", "img_made", [
         (666, "img_666", "Filtro de la bestia", "Genera 666 imágenes.", E, True),
+        (750, "img_made_750", "Fábrica en tres turnos", "Genera 750 imágenes con efectos.", E),
         (2_000, "img_2k", "Fábrica de bulos",
          "Genera 2.000 imágenes con efectos.", L),
     ])  # fmt: skip
     a += more("memes", "img_magik", [
+        (200, "img_magik_200", "Aprendiz de brujo", "Deforma 200 imágenes con `magik`.", R),
+        (500, "img_magik_500", "Bruja de Halloween", "Deforma 500 imágenes con `magik`.", E),
         (1_000, "magik_1k", "Brujería de Estado",
          "Deforma 1.000 imágenes con `magik`.", E),
     ])  # fmt: skip
     a += more("memes", "img_video", [
+        (200, "img_video_200", "Animador de Pixar en paro",
+         "Genera 200 vídeos o GIFs con efectos.", R),
+        (500, "img_video_500", "Estudio de animación", "Genera 500 vídeos o GIFs con efectos.", E),
         (1_000, "img_video_1k", "Spielberg de barrio",
          "Genera 1.000 vídeos o GIFs con efectos.", E),
     ])  # fmt: skip
     a += more("memes", "img_on_others", [
+        (200, "img_on_others_200", "Pintor de cámara",
+         "Aplica un efecto al avatar de otro 200 veces.", R),
+        (500, "img_on_others_500", "Galería de retratos ajenos",
+         "Aplica un efecto al avatar de otro 500 veces.", E),
         (1_000, "img_others_1k", "Retratista sin permiso",
          "Aplica un efecto al avatar de otro 1.000 veces.", E),
     ])  # fmt: skip
     a += more("memes", "img_self", [
+        (20, "img_self_20", "Espejo deformante",
+         "Aplica un efecto a tu propio avatar 20 veces.", C),
+        (50, "img_self_50", "Autorretrato en serie",
+         "Aplica un efecto a tu propio avatar 50 veces.", R),
         (100, "img_self_100", "Selfie presidencial",
          "Aplica un efecto a tu propio avatar 100 veces.", R),
     ])  # fmt: skip
     a += more("memes", "babel_phrases", [
+        (200, "babel_phrases_200", "Traductor jurado", "Pasa 200 frases por `babel`.", E),
+        (500, "babel_phrases_500", "Babel de cinco plantas", "Pasa 500 frases por `babel`.", L),
         (1_000, "babel_1k", "Torre de Babel con pinganillo",
          "Pasa 1.000 frases por `babel`.", L),
     ])  # fmt: skip
     a += more("memes", "babel_renames", [
+        (50, "babel_renames_50", "Cura de los apodos",
+         "Cámbiale el apodo a alguien con `babel` 50 veces.", R),
+        (150, "babel_renames_150", "Padrino de bautizos",
+         "Cámbiale el apodo a alguien con `babel` 150 veces.", E),
         (250, "babel_renames_250", "Nombre en las cuatro lenguas cooficiales",
          "Cámbiale el apodo a alguien con `babel` 250 veces.", E),
     ])  # fmt: skip
@@ -9353,26 +10836,44 @@ def _build_catalog() -> tuple[Achievement, ...]:
 
     # 🎰 Casino
     a += more("casino", "casino_all_in_wins", [
+        (20, "casino_all_in_wins_20", "Superviviente del all-in", "Gana 20 all-in.", E),
         (50, "all_in_wins_50", "Manual de supervivencia",
          "Gana 50 all-in.", L),
     ])  # fmt: skip
     a += more("casino", "casino_broke", [
+        (75, "casino_broke_75", "Fénix de las cenizas", "Quédate a cero en el casino 75 veces.", E),
         (200, "broke_200", "Vuelta a la casilla de salida",
          "Quédate a cero en el casino 200 veces.", L),
     ])  # fmt: skip
     a += more("roulette", "roulette_color_wins", [
+        (1_500, "roulette_color_wins_1500", "Arcoíris de dos colores",
+         "Gana 1.500 apuestas a color.", E),
+        (2_500, "roulette_color_wins_2500", "Más colores que un mitin",
+         "Gana 2.500 apuestas a color.", L),
         (5_000, "color_5k", "Rojo, negro y paso de colores",
          "Gana 5.000 apuestas a color.", L),
     ])  # fmt: skip
     a += more("roulette", "roulette_dozen_wins", [
+        (500, "roulette_dozen_wins_500", "Columna vertebral del tapete",
+         "Gana 500 apuestas a docena o columna.", E),
+        (1_500, "roulette_dozen_wins_1500", "Docenas a granel",
+         "Gana 1.500 apuestas a docena o columna.", L),
         (2_500, "dozen_2500", "La docena del fraile",
          "Gana 2.500 apuestas a docena o columna.", L),
     ])  # fmt: skip
     a += more("roulette", "roulette_half_wins", [
+        (1_500, "roulette_half_wins_1500", "Ni frío ni calor",
+         "Gana 1.500 apuestas a par, impar, 1-18 o 19-36.", E),
+        (2_500, "roulette_half_wins_2500", "Equilibrista de mitades",
+         "Gana 2.500 apuestas a par, impar, 1-18 o 19-36.", L),
         (5_000, "half_5k", "Mitad de nada, el doble de todo",
          "Gana 5.000 apuestas a par, impar, 1-18 o 19-36.", L),
     ])  # fmt: skip
     a += more("roulette", "roulette_zero_sweep", [
+        (200, "roulette_zero_sweep_200", "Barrido por la casa",
+         "Pierde todo 200 veces porque sale el 0 o el 00.", E),
+        (500, "roulette_zero_sweep_500", "Ceros en la cuenta",
+         "Pierde todo 500 veces porque sale el 0 o el 00.", L),
         (1_000, "zero_sweep_1k", "La casa siempre gana",
          "Pierde todo 1.000 veces porque sale el 0 o el 00.", L),
     ])  # fmt: skip
@@ -9381,17 +10882,28 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Separa 100 parejas.", E),
     ])  # fmt: skip
     a += more("blackjack", "bj_double_wins", [
+        (50, "bj_double_wins_50", "Doblar sin temblar", "Gana 50 manos después de doblar.", E),
+        (150, "bj_double_wins_150", "Doble de riesgo", "Gana 150 manos después de doblar.", L),
         (250, "bj_double_250", "Doblando como un acordeón",
          "Gana 250 manos después de doblar.", L),
     ])  # fmt: skip
     a += more("blackjack", "bj_pushes", [
+        (200, "bj_pushes_200", "Sin vencedores ni vencidos", "Empata 200 manos.", E),
+        (500, "bj_pushes_500", "Eterno empate", "Empata 500 manos.", L),
         (1_000, "bj_pushes_1k", "Empate técnico en las encuestas", "Empata 1.000 manos.", L),
     ])  # fmt: skip
     a += more("blackjack", "bj_dealer_busts", [
+        (500, "bj_dealer_busts_500", "Esperar a que la banca se pase",
+         "Gana 500 manos porque la banca se pasa.", E),
+        (1_500, "bj_dealer_busts_1500", "Verdugo de la banca",
+         "Gana 1.500 manos porque la banca se pasa.", L),
         (2_500, "bj_dealer_busts_2500", "La banca se pasa de frenada",
          "Gana 2.500 manos porque la banca se pasa.", L),
     ])  # fmt: skip
     a += more("blackjack", "bj_21_multi", [
+        (50, "bj_21_multi_50", "Suma y sigue", "Suma 21 con tres cartas o más 50 veces.", R),
+        (150, "bj_21_multi_150", "Contable del veintiuno",
+         "Suma 21 con tres cartas o más 150 veces.", E),
         (250, "bj_21_multi_250", "Veintiuno a plazos",
          "Suma 21 con tres cartas o más 250 veces.", E),
     ])  # fmt: skip
@@ -9400,6 +10912,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Juega una ronda de crash con 8 personas.", E),
     ])  # fmt: skip
     a += more("crash", "crash_cash_low", [
+        (500, "crash_cash_low_500", "Plazo fijo del Crash",
+         "Retírate en 1,10x o menos 500 veces.", R),
+        (1_500, "crash_cash_low_1500", "Bono basura del Crash",
+         "Retírate en 1,10x o menos 1.500 veces.", E),
         (2_500, "crash_low_2500", "Inversor de letras del Tesoro",
          "Retírate en 1,10x o menos 2.500 veces.", E),
     ])  # fmt: skip
@@ -9416,6 +10932,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Pierde en 25 rondas que llegaron a 10x.", E, True),
     ])  # fmt: skip
     a += more("crash", "crash_auto", [
+        (2_500, "crash_auto_2500", "Tripulación robótica",
+         "Cobra 2.500 veces con el auto-retiro.", L),
         (5_000, "crash_auto_5k", "Aterrizaje de manual",
          "Cobra 5.000 veces con el auto-retiro.", L),
     ])  # fmt: skip
@@ -9431,13 +10949,16 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (100, "collect_100", "El colmado en casa", "Ten 100 objetos distintos.", M),
     ])  # fmt: skip
     a += more("shop", "shop_renewals", [
+        (50, "shop_renewals_50", "Rol de alquiler", "Renueva alquileres de rol 50 veces.", E),
         (100, "renewals_100", "Suscriptor de por vida",
          "Renueva alquileres de rol 100 veces.", L),
     ])  # fmt: skip
     a += more("shop", "shop_sale_buys", [
+        (250, "shop_sale_buys_250", "Outlet humano", "Compra 250 cosas rebajadas.", L),
         (500, "sale_500", "Cazador del Black Friday", "Compra 500 cosas rebajadas.", L),
     ])  # fmt: skip
     a += more("bizum", "bizum_received_count", [
+        (250, "bizum_received_count_250", "Cuenta corriente ajena", "Recibe 250 Bizums.", L),
         (500, "bizum_recv_500", "Mantenido",
          "Recibe 500 Bizums.", L),
     ])  # fmt: skip
@@ -9446,13 +10967,18 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Manda 250 Bizums de 5 Y$, el mínimo.", E, True),
     ])  # fmt: skip
     a += more("lottery", "lottery_reintegros", [
+        (1_500, "lottery_reintegros_1500", "Reintegro perpetuo", "Cobra 1.500 reintegros.", E),
+        (2_500, "lottery_reintegros_2500", "Ni gano ni pierdo", "Cobra 2.500 reintegros.", L),
         (5_000, "reintegros_5k", "Me ha tocado lo mismo que jugué", "Cobra 5.000 reintegros.", L),
     ])  # fmt: skip
     a += more("lottery", "lottery_nino", [
+        (40, "lottery_nino_40", "Niño con décimos", "Compra 40 décimos del Niño.", R),
         (100, "nino_100", "Carta a los Reyes Magos",
          "Compra 100 décimos del Niño.", E),
     ])  # fmt: skip
     a += more("economy", "tax_refunds", [
+        (250, "tax_refunds_250", "Contable del casino",
+         "Recupera IRPF del casino 250 veces perdiendo el mismo día.", L),
         (500, "refunds_500", "Devolución por domiciliación",
          "Recupera IRPF del casino 500 veces perdiendo el mismo día.", L),
     ])  # fmt: skip
@@ -9461,6 +10987,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Presenta la renta 104 semanas.", M),
     ])  # fmt: skip
     a += more("economy", "donated", [
+        (2_000_000, "donated_2000000", "Fundación propia", "Dona 2.000.000 Y$ a ONGs.", L),
+        (5_000_000, "donated_5000000", "Santo laico", "Dona 5.000.000 Y$ a ONGs.", M),
         (10_000_000, "donated_10m", "Robin Hood con cuenta en el banco",
          "Dona 10.000.000 Y$ a ONGs.", M),
     ])  # fmt: skip
@@ -9473,40 +11001,55 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (50, "promotions_50", "Ascenso por enchufe", "Consigue 50 ascensos.", L),
     ])  # fmt: skip
     a += more("work", "work_job_changes", [
+        (50, "work_job_changes_50", "Cambio de oficio en serie", "Cambia de oficio 50 veces.", E),
         (100, "job_changes_100", "Vida laboral de 40 páginas",
          "Cambia de oficio 100 veces.", L),
     ])  # fmt: skip
     a += more("work", "work_night", [
+        (250, "work_night_250", "Noctámbulo con nómina",
+         "Ficha 250 veces entre las 0:00 y las 6:00.", M),
         (500, "work_night_500", "Turno de noche perpetuo",
          "Ficha 500 veces entre las 0:00 y las 6:00.", M),
     ])  # fmt: skip
     a += more("hosteleria", "work_tip", [
+        (150, "work_tip_150", "Propina en el bolsillo", "Guárdate 150 propinas en el bolsillo.", R),
+        (250, "work_tip_250", "Bote de propinas lleno", "Guárdate 250 propinas en el bolsillo.", E),
         (500, "tip_500", "Propina sin declarar",
          "Guárdate 500 propinas en el bolsillo.", E),
     ])  # fmt: skip
     a += more("hosteleria", "work_happy_clients", [
+        (400, "work_happy_clients_400", "Santo de la barra", "Atiende bien 400 marrones.", L),
         (1_000, "happy_1k", "Trato de cinco estrellas",
          "Atiende bien 1.000 marrones.", L),
     ])  # fmt: skip
     a += more("jobs", "work_slackers", [
+        (250, "work_slackers_250", "Látigo de capataz", "Pilla a 250 escaqueados.", L),
         (500, "slackers_500", "Capataz de la obra", "Pilla a 500 escaqueados.", L),
     ])  # fmt: skip
     a += more("jobs", "work_dodged", [
+        (250, "work_dodged_250", "Maestro de la evasiva",
+         "Esquiva 250 preguntas en rueda de prensa.", L),
         (500, "dodged_500", "Escapista de micrófonos",
          "Esquiva 500 preguntas en rueda de prensa.", L),
     ])  # fmt: skip
     a += more("jobs", "work_perfect_votes", [
+        (500, "work_perfect_votes_500", "Mayoría disciplinada",
+         "Vota 500 veces lo que diga el partido.", L),
         (1_000, "votes_1k", "Rodillo parlamentario",
          "Vota 1.000 veces lo que diga el partido.", L),
     ])  # fmt: skip
     a += more("sanidad", "work_guards", [
+        (250, "work_guards_250", "Guardia vitalicia", "Haz 250 guardias.", M),
         (500, "guards_500", "Guardia eterna", "Haz 500 guardias.", M),
     ])  # fmt: skip
     a += more("sanidad", "work_stretcher", [
+        (500, "work_stretcher_500", "Celador estrella", "Haz 500 traslados perfectos.", L),
         (1_000, "stretcher_1k", "Celador de oro",
          "Haz 1.000 traslados perfectos.", L),
     ])  # fmt: skip
     a += more("sanidad", "work_rounds", [
+        (500, "work_rounds_500", "Pase de planta modélico",
+         "Haz 500 rondas perfectas en planta.", L),
         (1_000, "rounds_1k", "Pase de planta infinito",
          "Haz 1.000 rondas perfectas en planta.", L),
     ])  # fmt: skip
@@ -9515,10 +11058,13 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Gana 500 consultas.", L),
     ])  # fmt: skip
     a += more("sanidad", "work_aggressive", [
+        (50, "work_aggressive_50", "Paciencia de sala de espera",
+         "Sobrevive a 50 familiares alterados.", E),
         (100, "aggressive_100", "Chaleco antibalas en urgencias",
          "Sobrevive a 100 familiares alterados.", L),
     ])  # fmt: skip
     a += more("sanidad", "work_shift_swap", [
+        (50, "work_shift_swap_50", "Compañero salvavidas", "Acepta 50 cambios de turno.", E),
         (100, "swap_100", "Cuadrante imposible",
          "Acepta 100 cambios de turno.", L),
     ])  # fmt: skip
@@ -9527,6 +11073,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "«Optimiza» la lista de espera 50 veces.", L, True),
     ])  # fmt: skip
     a += more("oficina", "work_coffee_orders", [
+        (500, "work_coffee_orders_500", "Barista de oficina", "Acierta 500 rondas de cafés.", L),
         (1_000, "coffee_1k", "Becario eterno",
          "Acierta 1.000 rondas de cafés.", L),
     ])  # fmt: skip
@@ -9539,34 +11086,53 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Acorta 500 reuniones.", L),
     ])  # fmt: skip
     a += more("oficina", "work_remote", [
+        (500, "work_remote_500", "Teletrabajador veterano", "Teletrabaja 500 turnos.", L),
         (1_000, "remote_1k", "Teletrabajo desde Fuerteventura",
          "Teletrabaja 1.000 turnos.", L),
     ])  # fmt: skip
     a += more("oficina", "work_office", [
+        (500, "work_office_500", "Silla con tu forma", "Ve a la oficina 500 turnos.", L),
         (1_000, "office_shifts_1k", "Mueble de la oficina",
          "Ve a la oficina 1.000 turnos.", L),
     ])  # fmt: skip
     a += more("oficina", "work_useless_meeting", [
+        (150, "work_useless_meeting_150", "Superviviente de reuniones",
+         "Ve a 150 reuniones inútiles.", L),
         (250, "useless_250", "Comisión de investigación",
          "Ve a 250 reuniones inútiles.", L),
     ])  # fmt: skip
     a += more("oficina", "work_disconnect", [
+        (50, "work_disconnect_50", "Móvil en silencio", "No contestes fuera de hora 50 veces.", E),
         (100, "disconnect_100", "Desconectado de verdad",
          "No contestes fuera de hora 100 veces.", L),
     ])  # fmt: skip
     a += more("hongkong", "work_jetlag", [
+        (250, "work_jetlag_250", "Turno con jet lag",
+         "Ficha 250 veces desde Hong Kong cuando en Canarias es de madrugada.", L),
         (500, "jetlag_500", "Reloj biológico en Kowloon",
          "Ficha 500 veces desde Hong Kong cuando en Canarias es de madrugada.", L),
     ])  # fmt: skip
     a += more("hongkong", "hk_clock_tomorrow", [
+        (150, "hk_clock_tomorrow_150", "Visitante del futuro",
+         "Mira 150 veces la hora cuando en Hong Kong ya es mañana.", R),
+        (250, "hk_clock_tomorrow_250", "Mañana es hoy",
+         "Mira 250 veces la hora cuando en Hong Kong ya es mañana.", E),
         (500, "hk_tomorrow_500", "Viviendo en el futuro",
          "Mira 500 veces la hora cuando en Hong Kong ya es mañana.", E),
     ])  # fmt: skip
     a += more("hongkong", "hk_clock_sleeping", [
+        (50, "hk_clock_sleeping_50", "Despertador transoceánico",
+         "Mira 50 veces la hora cuando en Hong Kong son entre las 2:00 y las 6:00.", R),
+        (150, "hk_clock_sleeping_150", "Llamada a deshoras",
+         "Mira 150 veces la hora cuando en Hong Kong son entre las 2:00 y las 6:00.", E),
         (250, "hk_sleeping_250", "Robuso tiene el móvil en silencio",
          "Mira 250 veces la hora cuando en Hong Kong son entre las 2:00 y las 6:00.", E),
     ])  # fmt: skip
     a += more("hongkong", "hk_clock_lunch", [
+        (50, "hk_clock_lunch_50", "Hora del dim sum",
+         "Mira 50 veces la hora cuando Robuso está almorzando.", R),
+        (150, "hk_clock_lunch_150", "Almuerzo compartido",
+         "Mira 150 veces la hora cuando Robuso está almorzando.", E),
         (250, "hk_lunch_250", "Dim sum a distancia",
          "Mira 250 veces la hora cuando Robuso está almorzando.", E),
     ])  # fmt: skip
@@ -9651,6 +11217,139 @@ def _build_catalog() -> tuple[Achievement, ...]:
               "voice_moves", R, (("entrance_played", 100), ("music_queued", 50))),
     ]  # fmt: skip
 
+    # Escalones intermedios cuyo siguiente escalón está en el bloque de abajo.
+    a += _tiers("chat", "msg_questions", [
+        (15_000, "msg_questions_15000", "Interrogatorio de comisaría",
+         "Haz 15.000 preguntas.", M),
+    ])  # fmt: skip
+    a += _tiers("chat", "msg_mentions", [
+        (15_000, "msg_mentions_15000", "Llamada a filas",
+         "Menciona a alguien en 15.000 mensajes.", M),
+    ])  # fmt: skip
+    a += _tiers("chat", "msg_links", [
+        (5_000, "msg_links_5000", "Repositorio de enlaces",
+         "Comparte 5.000 enlaces.", E),
+    ])  # fmt: skip
+    a += _tiers("chat", "msg_stickers", [
+        (2_500, "msg_stickers_2500", "Carpeta forrada de pegatinas",
+         "Manda 2.500 stickers.", M),
+    ])  # fmt: skip
+    a += _tiers("style", "msg_short", [
+        (25_000, "msg_short_25000", "Gruñido de cavernícola",
+         "Manda 25.000 mensajes de 3 caracteres o menos.", M),
+    ])  # fmt: skip
+    a += _tiers("voice_mic", "voice_muted", [
+        (15_000, "voice_muted_15000", "Micro cerrado de por vida",
+         "Pasa 250 horas en llamada con el micro silenciado.", M),
+    ])  # fmt: skip
+    a += _tiers("voice", "voice_siesta", [
+        (15_000, "voice_siesta_15000", "Siesta de oro",
+         "Pasa 250 horas en llamada a la hora de la siesta.", M),
+    ])  # fmt: skip
+    a += _tiers("voice_mic", "voice_deaf", [
+        (7_500, "voice_deaf_7500", "Auriculares de adorno",
+         "Pasa 125 horas en llamada con el sonido quitado.", M),
+    ])  # fmt: skip
+    a += _tiers("voice_mic", "voice_stream_starts", [
+        (2_500, "voice_stream_starts_2500", "Canal de televisión propio",
+         "Empieza a compartir pantalla 2.500 veces.", M),
+    ])  # fmt: skip
+    a += _tiers("music", "music_skips", [
+        (2_500, "music_skips_2500", "Tres segundos por canción",
+         "Salta 2.500 canciones.", M),
+    ])  # fmt: skip
+    a += _tiers("music", "music_stops", [
+        (250, "music_stops_250", "Apagón de verbena",
+         "Para la música con `parar` 250 veces.", L),
+    ])  # fmt: skip
+    a += _tiers("music", "music_removes", [
+        (250, "music_removes_250", "Comité de censura",
+         "Quita 250 canciones de la cola.", L),
+    ])  # fmt: skip
+    a += _tiers("memes", "img_magik", [
+        (2_500, "img_magik_2500", "Mago del Hormiguero",
+         "Deforma 2.500 imágenes con `magik`.", M),
+    ])  # fmt: skip
+    a += _tiers("memes", "img_self", [
+        (200, "img_self_200", "Mi cara en todos los filtros",
+         "Aplica un efecto a tu propio avatar 200 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("memes", "img_self", [
+        (500, "img_self_500", "Museo de mí mismo",
+         "Aplica un efecto a tu propio avatar 500 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("memes", "babel_renames", [
+        (500, "babel_renames_500", "Alcalde de los apodos",
+         "Cámbiale el apodo a alguien con `babel` 500 veces.", L),
+    ])  # fmt: skip
+    a += _tiers("todo", "todo_added", [
+        (750, "todo_added_750", "Diario de tareas",
+         "Apunta 750 tareas en la lista.", L),
+    ])  # fmt: skip
+    a += _tiers("todo", "todo_done", [
+        (750, "todo_done_750", "Más tachones que un examen",
+         "Tacha 750 tareas de la lista.", L),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_spins_mina", [
+        (2_000, "botes_spins_mina_2000", "Galería profunda",
+         "Juega 2.000 tiradas en la Mina.", R),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_spins_mina", [
+        (5_000, "botes_spins_mina_5000", "Minero de la cuenca",
+         "Juega 5.000 tiradas en la Mina.", L),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_spins_olimpo", [
+        (2_000, "botes_spins_olimpo_2000", "Ambrosía de los dioses",
+         "Juega 2.000 tiradas en el Olimpo.", R),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_spins_olimpo", [
+        (5_000, "botes_spins_olimpo_5000", "Hijo de Zeus",
+         "Juega 5.000 tiradas en el Olimpo.", L),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_near_miss", [
+        (500, "botes_near_miss_500", "Monedas al aire",
+         "Deja 500 puñados de monedas sin recoger.", R),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_near_miss", [
+        (1_500, "botes_near_miss_1500", "Hucha con agujero",
+         "Deja 1.500 puñados de monedas sin recoger.", E),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_wild_wins", [
+        (1_500, "botes_wild_wins_1500", "Comodín fijo",
+         "Gana 1.500 tiradas con ayuda del comodín.", R),
+    ])  # fmt: skip
+    a += _tiers("botes", "botes_wild_wins", [
+        (2_500, "botes_wild_wins_2500", "Baraja de comodines",
+         "Gana 2.500 tiradas con ayuda del comodín.", E),
+    ])  # fmt: skip
+    a += _tiers("crash", "crash_cashouts", [
+        (5_000, "crash_cashouts_5000", "Eyección automática",
+         "Retírate a tiempo 5.000 veces.", L),
+    ])  # fmt: skip
+    a += _tiers("mines", "mines_cashouts", [
+        (2_500, "mines_cashouts_2500", "Artificiero de la Guardia Civil",
+         "Cobra 2.500 partidas de Minas.", M),
+    ])  # fmt: skip
+    a += _tiers("mines", "mines_booms", [
+        (2_500, "mines_booms_2500", "Mascletà de Valencia",
+         "Pisa 2.500 minas.", L),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_cashouts", [
+        (2_500, "tower_cashouts_2500", "Cajero del dragón",
+         "Cobra 2.500 partidas de la Torre del dragón.", M),
+    ])  # fmt: skip
+    a += _tiers("tower", "tower_burns", [
+        (2_500, "tower_burns_2500", "Torrezno del dragón",
+         "Que te quemen 2.500 veces.", L),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_games", [
+        (25_000, "chicken_games_25000", "Gallinero nacional",
+         "Juega 25.000 partidas del Pollo.", M),
+    ])  # fmt: skip
+    a += _tiers("chicken", "chicken_splats", [
+        (5_000, "chicken_splats_5000", "Atropellos en serie",
+         "Que te atropellen 5.000 veces.", L),
+    ])  # fmt: skip
     # ⬆️ Escalones de más arriba para contadores que se quedaban a medio camino.
     for category, stat, rows in (
         (
@@ -9966,11 +11665,20 @@ def _build_catalog() -> tuple[Achievement, ...]:
     # 🎰 Casino entero, desde `apuestas.record` (`casino_record_stats`) ---------------------
     a += _tiers("casino", "casino_plays", [
         (100, "plays_100", "Habitual de la barra", "Juega 100 partidas en el casino.", C),
+        (200, "casino_plays_200", "Cliente de casino", "Juega 200 partidas en el casino.", C),
+        (500, "casino_plays_500", "Habitual de las fichas", "Juega 500 partidas en el casino.", R),
         (1_000, "plays_1k", "Tarjeta de cliente fiel", "Juega 1.000 partidas en el casino.", R),
+        (2_000, "casino_plays_2000", "Abonado al casino", "Juega 2.000 partidas en el casino.", R),
+        (5_000, "casino_plays_5000", "Butaca en el casino",
+         "Juega 5.000 partidas en el casino.", E),
         (10_000, "plays_10k", "Ya eres parte de la decoración",
          "Juega 10.000 partidas en el casino.", E),
+        (25_000, "casino_plays_25000", "Inquilino del casino",
+         "Juega 25.000 partidas en el casino.", L),
         (50_000, "plays_50k", "Más horas que el croupier",
          "Juega 50.000 partidas en el casino.", L),
+        (150_000, "casino_plays_150000", "Residente del casino",
+         "Juega 150.000 partidas en el casino.", M),
         (250_000, "plays_250k", "Ciudad del pecado",
          "Juega 250.000 partidas en el casino.", M),
     ])  # fmt: skip
@@ -10490,7 +12198,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("meta", "achievements_common", [
         (10, "meta_common_10", "Normal y corriente", "Desbloquea 10 logros comunes.", C),
+        (20, "achievements_common_20", "Logros de diario", "Desbloquea 20 logros comunes.", C),
         (50, "meta_common_50", "Del montón", "Desbloquea 50 logros comunes.", R),
+        (75, "achievements_common_75", "Normalidad acumulada", "Desbloquea 75 logros comunes.", R),
         (200, "meta_common_200", "El pan de cada día", "Desbloquea 200 logros comunes.", E),
         (500, "meta_common_500", "Clase media", "Desbloquea 500 logros comunes.", L),
         (1_000, "meta_common_1000", "Ciudadano de a pie", "Desbloquea 1.000 logros comunes.", M),
@@ -10498,6 +12208,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("meta", "achievements_rare", [
         (1, "meta_rare_1", "Rara avis", "Desbloquea un logro raro.", R),
         (25, "meta_rare_25", "Raro, raro", "Desbloquea 25 logros raros.", R),
+        (50, "achievements_rare_50", "Rareza en racha", "Desbloquea 50 logros raros.", R),
         (100, "meta_rare_100", "Bicho raro", "Desbloquea 100 logros raros.", E),
         (250, "meta_rare_250", "Gabinete de curiosidades", "Desbloquea 250 logros raros.", L),
         (500, "meta_rare_500", "Iker Jiménez lo investiga", "Desbloquea 500 logros raros.", M),
@@ -10507,6 +12218,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("meta", "achievements_epic", [
         (1, "meta_epic_1", "Érase una vez", "Desbloquea un logro épico.", R),
         (10, "meta_epic_10", "Épica de película", "Desbloquea 10 logros épicos.", E),
+        (20, "achievements_epic_20", "Épica de barrio", "Desbloquea 20 logros épicos.", E),
         (50, "meta_epic_50", "Cantar de gesta", "Desbloquea 50 logros épicos.", L),
         (100, "meta_epic_100", "La Odisea", "Desbloquea 100 logros épicos.", L),
         (250, "meta_epic_250", "Juego de Tronos con final digno",
@@ -10562,6 +12274,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("meta", "achievement_points", [
         (1_000, "meta_pts_1k", "Mil puntos y sumando",
          "Suma 1.000 puntos de logros.", R),
+        (2_500, "achievement_points_2500", "Puntos de sobra", "Suma 2.500 puntos.", E),
         (5_000, "meta_pts_5k", "Carné por puntos impecable", "Suma 5.000 puntos.", E),
         (15_000, "meta_pts_15k", "Matrícula de honor", "Suma 15.000 puntos de logros.", E),
         (30_000, "meta_pts_30k", "Tarjeta Travel Club", "Suma 30.000 puntos de logros.", L),
@@ -10573,7 +12286,11 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("meta", "achievements_earned", [
         (25_000, "meta_money_25k", "Subvencionado",
          "Cobra 25.000 Y$ brutos en premios de logros.", R),
+        (50_000, "achievements_earned_50000", "Premios a la cuenta",
+         "Cobra 50.000 Y$ en premios.", R),
         (100_000, "meta_money_100k", "Chiringuito de logros", "Cobra 100.000 Y$ en premios.", E),
+        (200_000, "achievements_earned_200000", "Vivir de los logros",
+         "Cobra 200.000 Y$ en premios.", E),
         (500_000, "meta_money_500k", "Vivir del cuento", "Cobra 500.000 Y$ en premios.", L),
         (1_000_000, "meta_money_1m", "Lotería sin comprar décimo",
          "Cobra 1.000.000 Y$ en premios de logros.", M),
@@ -10591,14 +12308,25 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "views_1", "Primera visita al trastero", "Abre tus logros en `perfil`.", C),
         (10, "views_10", "Espejito, espejito",
          "Abre tus logros en `perfil` 10 veces.", C),
+        (20, "logros_views_20", "Mirada a la vitrina", "Abre tus logros en `perfil` 20 veces.", C),
+        (50, "logros_views_50", "Repaso de vitrina", "Abre tus logros en `perfil` 50 veces.", R),
         (100, "views_100", "Narciso de vitrina", "Abre tus logros en `perfil` 100 veces.", R),
+        (200, "logros_views_200", "Revisión de vitrina",
+         "Abre tus logros en `perfil` 200 veces.", R),
+        (500, "logros_views_500", "Vitrina pulida", "Abre tus logros en `perfil` 500 veces.", E),
         (1_000, "views_1000", "Contar logros para dormir",
          "Abre tus logros en `perfil` 1.000 veces.", E),
     ])  # fmt: skip
     a += _tiers("meta", "logros_others", [
         (1, "others_1", "Por el ojo de la cerradura", "Mira los logros de otra persona.", C),
         (10, "others_10", "Cotilla", "Mira los logros de otra persona 10 veces.", C),
+        (20, "logros_others_20", "Fisgón de vitrinas", "Mira los logros de otros 20 veces.", C),
+        (50, "logros_others_50", "Curioso de vitrinas", "Mira los logros de otros 50 veces.", R),
         (100, "others_100", "Portera del edificio", "Mira los logros de otros 100 veces.", R),
+        (200, "logros_others_200", "Inspector de vitrinas",
+         "Mira los logros de otros 200 veces.", R),
+        (500, "logros_others_500", "Vigilante de vitrinas ajenas",
+         "Mira los logros de otros 500 veces.", E),
         (1_000, "others_1000", "La vecina del quinto", "Mira los logros de otros 1.000 veces.", E),
     ])  # fmt: skip
     # 👤 Perfil: mirarse y mirar a otros es una decisión, nada pasa de Épico.
@@ -10606,11 +12334,15 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "perfil_1", "¿Quién soy yo? Yo soy yo",
          "Abre tu `perfil`.", C),
         (50, "perfil_50", "Selfie diario", "Abre tu `perfil` 50 veces.", R),
+        (150, "perfil_views_150", "Perfil en bucle", "Abre tu `perfil` 150 veces.", R),
+        (250, "perfil_views_250", "Me miro y me gusto", "Abre tu `perfil` 250 veces.", E),
         (500, "perfil_500", "Ego del tamaño del Teide", "Abre tu `perfil` 500 veces.", E),
     ])  # fmt: skip
     a += _tiers("meta", "perfil_others", [
         (1, "perfil_otro_1", "Fisgón de rellano", "Mira el `perfil` de otra persona.", C),
         (50, "perfil_otro_50", "Quisiera ser una mosca", "Mira perfiles ajenos 50 veces.", R),
+        (150, "perfil_others_150", "Visitante de perfiles", "Mira perfiles ajenos 150 veces.", R),
+        (250, "perfil_others_250", "Cotilla profesional", "Mira perfiles ajenos 250 veces.", E),
         (500, "perfil_otro_500", "Ojo que todo lo ve", "Mira perfiles ajenos 500 veces.", E),
     ])  # fmt: skip
     a += _tiers("meta", PERFIL_SECTIONS_STAT, [
@@ -10629,6 +12361,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "ranking_1", "¿Cómo voy?", "Mira el ranking de logros.", C),
         (25, "ranking_25", "Obsesionado con la clasificación",
          "Mira el ranking de logros 25 veces.", R),
+        (50, "logros_ranking_50", "Vigilante del ranking",
+         "Mira el ranking de logros 50 veces.", R),
+        (150, "logros_ranking_150", "Ranking de cabecera",
+         "Mira el ranking de logros 150 veces.", E),
         (250, "ranking_250", "Pegado a la tabla de la Liga",
          "Mira el ranking de logros 250 veces.", E),
     ])  # fmt: skip
@@ -10638,9 +12374,13 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("apuestas", "apuestas_views", [
         (1, "apuestas_1", "Mirar el extracto", "Consulta tus `apuestas` por primera vez.", C),
         (10, "apuestas_10", "Contable de la ruina", "Consulta las estadísticas 10 veces.", C),
+        (20, "apuestas_views_20", "Mirando las cuentas", "Consulta las estadísticas 20 veces.", C),
         (50, "apuestas_50", "Excel de la desgracia", "Consulta las estadísticas 50 veces.", C),
+        (150, "apuestas_views_150", "Repaso de cuentas", "Consulta las estadísticas 150 veces.", R),
         (250, "apuestas_250", "Asesor fiscal de ti mismo",
          "Consulta las estadísticas 250 veces.", R),
+        (500, "apuestas_views_500", "Auditor de uno mismo",
+         "Consulta las estadísticas 500 veces.", R),
         (1_000, "apuestas_1k", "Contable de Excel",
          "Consulta las estadísticas 1.000 veces.", R),
     ])  # fmt: skip
@@ -10724,9 +12464,12 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("porras", "porra_opened", [
         (1, "porra_open_1", "Montador de porras", "Monta tu primera `porra` a alguien.", C),
         (10, "porra_open_10", "Peñista", "Monta 10 porras.", C),
+        (20, "porra_opened_20", "Organizador de porras", "Monta 20 porras.", C),
         (50, "porra_open_50", "Corredor de apuestas de barra",
          "Monta 50 porras.", R),
+        (150, "porra_opened_150", "Corredor de apuestas", "Monta 150 porras.", E),
         (250, "porra_open_250", "Casa de apuestas clandestina", "Monta 250 porras.", E),
+        (500, "porra_opened_500", "Banca de la peña", "Monta 500 porras.", L),
         (1_000, "porra_open_1k", "Loterías y Apuestas del Barrio",
          "Monta 1.000 porras.", L),
     ])  # fmt: skip
@@ -10766,7 +12509,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("porras", "porra_accepted", [
         (1, "porra_star_1", "Estrella de la porra", "Acepta una porra sobre ti.", C),
         (10, "porra_star_10", "Carne de porra", "Acepta 10 porras sobre ti.", C),
+        (20, "porra_accepted_20", "Objeto de apuestas", "Acepta 20 porras sobre ti.", C),
         (50, "porra_star_50", "Personaje público", "Acepta 50 porras sobre ti.", R),
+        (150, "porra_accepted_150", "Protagonista de porras", "Acepta 150 porras sobre ti.", E),
         (250, "porra_star_250", "Famoseo de tertulia", "Acepta 250 porras sobre ti.", E),
     ])  # fmt: skip
     a += _tiers("porras", "porra_declined", [
@@ -10782,8 +12527,16 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("porras", "porra_image", [
         (10_000, "porra_image_10k", "Imagen de marca",
          "Cobra 10.000 Y$ en derechos de imagen.", R),
+        (20_000, "porra_image_20000", "Cobro por salir en porras",
+         "Cobra 20.000 Y$ en derechos de imagen.", R),
+        (50_000, "porra_image_50000", "Imagen cotizada",
+         "Cobra 50.000 Y$ en derechos de imagen.", E),
         (100_000, "porra_image_100k", "Contrato con una plataforma",
          "Cobra 100.000 Y$ en derechos de imagen.", E),
+        (200_000, "porra_image_200000", "Cara de anuncio",
+         "Cobra 200.000 Y$ en derechos de imagen.", E),
+        (500_000, "porra_image_500000", "Rostro de campaña",
+         "Cobra 500.000 Y$ en derechos de imagen.", L),
         (1_000_000, "porra_image_1m", "Influencer de Marbella",
          "Cobra 1.000.000 Y$ en derechos de imagen.", L),
     ], unit="money")  # fmt: skip
@@ -10810,8 +12563,16 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("porras", "porra_pool_max", [
         (1_000, "porra_pool_1k", "Hay expectación",
          "Protagoniza una porra con 1.000 Y$ en el bote.", C),
+        (2_000, "porra_pool_max_2000", "Bote de expectación",
+         "Protagoniza una porra con 2.000 Y$ en el bote.", C),
+        (5_000, "porra_pool_max_5000", "Bote con morbo",
+         "Protagoniza una porra con 5.000 Y$ en el bote.", R),
         (10_000, "porra_pool_10k", "Prime time",
          "Protagoniza una porra con 10.000 Y$ en el bote.", R),
+        (20_000, "porra_pool_max_20000", "Bote de final",
+         "Protagoniza una porra con 20.000 Y$ en el bote.", R),
+        (50_000, "porra_pool_max_50000", "Bote de Clásico",
+         "Protagoniza una porra con 50.000 Y$ en el bote.", E),
         (100_000, "porra_pool_100k", "Final de Champions",
          "Protagoniza una porra con 100.000 Y$ en el bote.", E),
     ], unit="money")  # fmt: skip
@@ -10819,18 +12580,28 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("porras", "porra_bets", [
         (1, "porra_bet_1", "Un euro a la porra", "Apuesta en una porra.", C),
         (10, "porra_bet_10", "Habitual del bar", "Apuesta 10 veces en porras.", C),
+        (20, "porra_bets_20", "Peñista de base", "Apuesta 20 veces en porras.", C),
+        (50, "porra_bets_50", "Apostador de peña", "Apuesta 50 veces en porras.", R),
         (100, "porra_bet_100", "Quinielista", "Apuesta 100 veces en porras.", R),
+        (200, "porra_bets_200", "Quinielista veterano", "Apuesta 200 veces.", R),
+        (500, "porra_bets_500", "Boleto de cabecera", "Apuesta 500 veces.", E),
         (1_000, "porra_bet_1k", "El del boleto en la cartera", "Apuesta 1.000 veces.", E),
+        (2_500, "porra_bets_2500", "Peñista de leyenda", "Apuesta 2.500 veces en porras.", L),
         (5_000, "porra_bet_5k", "Abonado de la peña", "Apuesta 5.000 veces en porras.", L),
     ])  # fmt: skip
     a += _tiers("porras", "porra_wins", [
         (1, "porra_win_1", "Lo sabía", "Acierta una porra.", C),
         (10, "porra_win_10", "Ojo de tasador", "Acierta 10 porras.", R),
+        (20, "porra_wins_20", "Buen pronóstico", "Acierta 20 porras.", R),
+        (50, "porra_wins_50", "Adivino de la peña", "Acierta 50 porras.", E),
         (100, "porra_win_100", "Pitoniso", "Acierta 100 porras.", E),
+        (250, "porra_wins_250", "Vidente de las porras", "Acierta 250 porras.", L),
         (500, "porra_win_500", "Oráculo de Teror", "Acierta 500 porras.", L),
     ])  # fmt: skip
     a += _tiers("porras", "porra_losses", [
         (10, "porra_loss_10", "Así es el fútbol", "Falla 10 porras.", C),
+        (20, "porra_losses_20", "Fallo de pronóstico", "Falla 20 porras.", C),
+        (50, "porra_losses_50", "Pronóstico al revés", "Falla 50 porras.", R),
         (100, "porra_loss_100", "Siempre al caballo cojo", "Falla 100 porras.", R),
     ])  # fmt: skip
     a += _tiers("porras", "porra_win_streak_max", [
@@ -10841,8 +12612,18 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("porras", "porra_win_max", [
         (1_000, "porra_big_1k", "Para cañas", "Gana 1.000 Y$ netos en una porra.", C),
+        (2_000, "porra_win_max_2000", "Porra para cañas", "Gana 2.000 Y$ netos en una porra.", C),
+        (5_000, "porra_win_max_5000", "Porra para la cena", "Gana 5.000 Y$ netos en una porra.", R),
         (10_000, "porra_big_10k", "Pelotazo de barra", "Gana 10.000 Y$ netos en una porra.", R),
+        (20_000, "porra_win_max_20000", "Porra para el finde",
+         "Gana 20.000 Y$ netos en una porra.", R),
+        (50_000, "porra_win_max_50000", "Porra para las vacaciones",
+         "Gana 50.000 Y$ netos en una porra.", E),
         (100_000, "porra_big_100k", "Golpe de mano", "Gana 100.000 Y$ netos en una porra.", E),
+        (200_000, "porra_win_max_200000", "Porra para el coche",
+         "Gana 200.000 Y$ netos en una porra.", E),
+        (500_000, "porra_win_max_500000", "Porra para el piso",
+         "Gana 500.000 Y$ netos en una porra.", L),
         (1_000_000, "porra_big_1m", "Millonario de la porra",
          "Gana 1.000.000 Y$ netos en una porra.", L),
     ], unit="money")  # fmt: skip
@@ -10868,6 +12649,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("porras", "porra_loyal_losses", [
         (10, "porra_loyal_10", "Fe ciega",
          "Apuesta a favor del protagonista y pierde 10 veces.", R),
+        (20, "porra_loyal_losses_20", "Fe en el amigo",
+         "Apuesta a favor del protagonista y pierde 20 veces.", R),
         (50, "porra_loyal_50", "Fiel hasta la ruina",
          "Apuesta a favor del protagonista y pierde 50 veces.", E),
     ])  # fmt: skip
@@ -10892,6 +12675,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ))  # fmt: skip
     a += _tiers("porras", "porra_iaj", [
         (10_000, "porra_iaj_10k", "La peña paga a Sanxe", "Paga 10.000 Y$ de IAJ.", R),
+        (20_000, "porra_iaj_20000", "Tasa de la peña", "Paga 20.000 Y$ de IAJ.", R),
+        (50_000, "porra_iaj_50000", "IAJ a lo grande", "Paga 50.000 Y$ de IAJ.", E),
         (100_000, "porra_iaj_100k", "Mecenas del juego", "Paga 100.000 Y$ de IAJ.", E),
     ], unit="money")  # fmt: skip
     a += _tiers("porras", "porra_crowd_max", [
@@ -10971,10 +12756,22 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("economy", "net_worth_max", [
         (50_000, "networth_50k", "Propietario, con hipoteca a 40 años",
          "Llega a 50.000 Y$ de patrimonio.", C),
+        (150_000, "net_worth_max_150000", "Patrimonio de piso",
+         "Llega a 150.000 Y$ de patrimonio.", C),
+        (250_000, "net_worth_max_250000", "Patrimonio de chalet",
+         "Llega a 250.000 Y$ de patrimonio.", R),
         (500_000, "networth_500k", "Rentista de pisos turísticos",
          "Llega a 500.000 Y$ de patrimonio.", R),
+        (1_500_000, "net_worth_max_1500000", "Patrimonio con piscina",
+         "Llega a 1.500.000 Y$ de patrimonio.", R),
+        (2_500_000, "net_worth_max_2500000", "Patrimonio de herencia",
+         "Llega a 2.500.000 Y$ de patrimonio.", E),
         (5_000_000, "networth_5m", "Fortuna con F mayúscula",
          "Llega a 5.000.000 Y$ de patrimonio.", E),
+        (15_000_000, "net_worth_max_15000000", "Patrimonio de yate",
+         "Llega a 15.000.000 Y$ de patrimonio.", E),
+        (25_000_000, "net_worth_max_25000000", "Patrimonio de isla privada",
+         "Llega a 25.000.000 Y$ de patrimonio.", L),
         (50_000_000, "networth_50m", "Lista Forbes de verdad",
          "Llega a 50.000.000 Y$ de patrimonio.", L),
     ], unit="money")  # fmt: skip
@@ -11017,14 +12814,22 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "caballo_1", "Día de carreras en Ascot",
          "Haz tu primer boleto en las carreras.", C),
         (10, "caballo_10", "Socio del hipódromo", "Haz 10 boletos en las carreras.", C),
+        (20, "horse_bets_20", "Boleto de hipódromo", "Haz 20 boletos en las carreras.", C),
+        (50, "horse_bets_50", "Aficionado a la hípica", "Haz 50 boletos en las carreras.", R),
         (100, "caballo_100", "Tribuna de honor", "Haz 100 boletos en las carreras.", R),
+        (200, "horse_bets_200", "Tribuna cubierta", "Haz 200 boletos en las carreras.", R),
+        (500, "horse_bets_500", "Palco de la Zarzuela", "Haz 500 boletos en las carreras.", E),
         (1_000, "caballo_1k", "Palco presidencial", "Haz 1.000 boletos en las carreras.", E),
+        (2_500, "horse_bets_2500", "Hipódromo propio", "Haz 2.500 boletos en las carreras.", L),
         (5_000, "caballo_5k", "Patrimonio Nacional", "Haz 5.000 boletos en las carreras.", L),
     ])  # fmt: skip
     a += _tiers("horses", "horse_hits", [
         (1, "caballo_hit_1", "¡Ha entrado!", "Cobra tu primer boleto.", C),
         (25, "caballo_hit_25", "Ojo de tratante", "Cobra 25 boletos.", R),
+        (50, "horse_hits_50", "Buen ojo para los caballos", "Cobra 50 boletos.", R),
+        (150, "horse_hits_150", "Tratante con suerte", "Cobra 150 boletos.", E),
         (250, "caballo_hit_250", "Pronóstico acertado, por una vez", "Cobra 250 boletos.", E),
+        (500, "horse_hits_500", "Cuadra ganadora", "Cobra 500 boletos.", L),
         (1_000, "caballo_hit_1k", "Mil y un boletos", "Cobra 1.000 boletos.", L),
     ])  # fmt: skip
     a += _tiers("horses", "horse_hits_colocado", [
@@ -11058,6 +12863,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("horses", "horse_win_max", [
         (10_000, "caballo_rich", "Premio gordo en el hipódromo",
          "Gana 10.000 Y$ con un boleto.", E),
+        (20_000, "horse_win_max_20000", "Boleto de oro", "Gana 20.000 Y$ con un boleto.", E),
+        (50_000, "horse_win_max_50000", "Boleto de platino", "Gana 50.000 Y$ con un boleto.", L),
         (100_000, "caballo_richer", "Cuadra en Marbella",
          "Gana 100.000 Y$ con un boleto.", L),
     ])  # fmt: skip
@@ -11081,6 +12888,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("horses", "horse_seconds", [
         (10, "caballo_segundo_10", "Eterno segundón",
          "Tu caballo a ganador entra 2º 10 veces.", C),
+        (20, "horse_seconds_20", "Segundón crónico", "Tu caballo a ganador entra 2º 20 veces.", C),
+        (50, "horse_seconds_50", "Plata en serie", "Tu caballo a ganador entra 2º 50 veces.", E),
         (100, "caballo_segundo_100", "Subcampeón del Estado",
          "Tu caballo a ganador entra 2º 100 veces.", E),
     ])  # fmt: skip
@@ -11128,6 +12937,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("horses", "horse_contra_sanxe", [
         (10, "caballo_oposicion", "Ni caso a Perro Sanxe",
          f"Gana 10 veces a ganador con otro caballo cuando {TAX_COLLECTOR} falla.", R),
+        (20, "horse_contra_sanxe_20", "Contra el pronóstico",
+         "Gana 20 veces llevándole la contraria a Perro Sanxe, y con razón.", R),
+        (50, "horse_contra_sanxe_50", "Llevar la contraria, y acertar",
+         "Gana 50 veces llevándole la contraria a Perro Sanxe, y con razón.", E),
         (100, "caballo_oposicion_100", "Llevar la contraria, y con razón",
          f"Gana 100 veces llevándole la contraria a {TAX_COLLECTOR}, y con razón.", E),
     ])  # fmt: skip
@@ -11144,6 +12957,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "caballo_listo", "Ni un minuto más", "Pulsa ✅ Listo en una carrera.", C),
         (25, "caballo_listo_25", "Prisa, prisa",
          "Pulsa ✅ Listo en 25 carreras.", R),
+        (50, "horse_ready_50", "Listo para correr", "Pulsa ✅ Listo en 50 carreras.", R),
+        (75, "horse_ready_75", "Siempre listo", "Pulsa ✅ Listo en 75 carreras.", E),
         (200, "caballo_listo_200", "Fast & Furious ecuestre",
          "Pulsa ✅ Listo en 200 carreras.", E),
     ])  # fmt: skip
@@ -11152,6 +12967,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Sé el último en pulsar ✅ Listo y que los caballos salgan por ti.", C),
         (20, "caballo_decreto", "¡Preparados, listos, ya!",
          "Arranca 20 carreras con tu ✅ Listo.", R),
+        (40, "horse_starter_40", "Juez de salida", "Arranca 40 carreras con tu ✅ Listo.", R),
         (100, "caballo_rodillo", "Mayoría absoluta de prisas",
          "Arranca 100 carreras con tu ✅ Listo.", E),
     ])  # fmt: skip
@@ -11172,6 +12988,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("horses", "horse_gp_bets", [
         (1, "caballo_gp_1", "Pamela de estreno", "Haz un boleto en el Gran Premio.", C),
         (10, "caballo_gp_10", "Habitual del Gran Premio", "Haz 10 boletos en el Gran Premio.", R),
+        (20, "horse_gp_bets_20", "Pamela de gala", "Haz 20 boletos en el Gran Premio.", R),
         (50, "caballo_gp_50", "Pamela y chaqué", "Haz 50 boletos en el Gran Premio.", E),
     ])  # fmt: skip
     a += _tiers("horses", "horse_pot_wins", [
@@ -11235,7 +13052,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ))  # fmt: skip
     a += _tiers("horses", HORSE_BACKED_MAX_STAT, [
         (25, "caballo_hincha", "Hincha", "Apuesta 25 veces por el mismo caballo.", C),
+        (50, "horse_backed_max_50", "Fiel a un caballo",
+         "Apuesta 50 veces por el mismo caballo.", C),
         (100, "caballo_socio", "Socio de número", "Apuesta 100 veces por el mismo caballo.", R),
+        (250, "horse_backed_max_250", "Amor equino", "Apuesta 250 veces por el mismo caballo.", E),
         (500, "caballo_pena_vida", "Peña de toda la vida",
          "Apuesta 500 veces por el mismo caballo.", E),
     ])  # fmt: skip
@@ -11290,11 +13110,14 @@ def _build_catalog() -> tuple[Achievement, ...]:
               "casino", R, (("crash_moon", 1), ("gallos_beat_marte", 1))),
     ]  # fmt: skip
     a += _tiers("casino", "casino_broke", [
+        (500, "casino_broke_500", "Quiebra técnica permanente",
+         "Quédate a cero en el casino 500 veces.", M),
         (1_000, "broke_1k", "Más quiebras que Lehman Brothers",
          "Quédate a cero en el casino 1.000 veces.",
          M),
     ])  # fmt: skip
     a += _tiers("casino", "casino_all_in", [
+        (500, "casino_all_in_500", "Adicto al todo o nada", "Ve all-in 500 veces.", M),
         (1_000, "allin_1k", "Mil veces a pecho descubierto",
          "Ve all-in 1.000 veces.", M),
     ])  # fmt: skip
@@ -11311,40 +13134,63 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("baccarat", "bac_hands", [
         (1, "bac_1", "Bond, James Bond", "Juega tu primera mano de bacará.", C),
         (100, "bac_100", "Habitual de Punto y Banca", "Juega 100 manos de bacará.", C),
+        (200, "bac_hands_200", "Punto y banca", "Juega 200 manos de bacará.", C),
+        (500, "bac_hands_500", "Mesa de bacará reservada", "Juega 500 manos de bacará.", E),
         (1_000, "bac_1k", "Socio del casino de Torrelodones", "Juega 1.000 manos de bacará.", E),
+        (2_000, "bac_hands_2000", "Esmoquin de diario", "Juega 2.000 manos de bacará.", E),
+        (5_000, "bac_hands_5000", "Ballena de Montecarlo", "Juega 5.000 manos de bacará.", L),
         (10_000, "bac_10k", "Ballena de Macao", "Juega 10.000 manos de bacará.", L),
+        (25_000, "bac_hands_25000", "Zapato con tu nombre", "Juega 25.000 manos de bacará.", M),
         (50_000, "bac_50k", "Dueño del zapato",
          "Juega 50.000 manos de bacará.", M),
     ])  # fmt: skip
     a += _tiers("baccarat", "bac_wins", [
         (50, "bacw_50", "Punto y aparte",
          "Gana 50 manos de bacará.", C),
+        (150, "bac_wins_150", "Bacará de andar por casa", "Gana 150 manos de bacará.", C),
+        (250, "bac_wins_250", "Ganador elegante", "Gana 250 manos de bacará.", E),
         (500, "bacw_500", "Mayoría en la mesa verde", "Gana 500 manos de bacará.", E),
+        (1_500, "bac_wins_1500", "Mayoría holgada en el bacará", "Gana 1.500 manos de bacará.", E),
+        (2_500, "bac_wins_2500", "Imbatible con pajarita", "Gana 2.500 manos de bacará.", L),
         (5_000, "bacw_5k", "Sanchismo de casino",
          "Gana 5.000 manos de bacará.", L),
+        (7_500, "bac_wins_7500", "James Bond de jubilación", "Gana 7.500 manos de bacará.", L),
         (20_000, "bacw_20k", "Veinte mil leguas de bacará", "Gana 20.000 manos de bacará.", M),
     ])  # fmt: skip
     a += _tiers("baccarat", "bac_losses", [
         (1, "bacp_1", "Shaken, not stirred", "Pierde tu primera mano de bacará.", C),
         (50, "bacp_50", "Cincuenta sombras de derrota", "Pierde 50 manos de bacará.", C),
+        (150, "bac_losses_150", "Perder con clase", "Pierde 150 manos de bacará.", C),
+        (250, "bac_losses_250", "Derrota con pajarita", "Pierde 250 manos de bacará.", E),
         (500, "bacp_500", "Contribuyente neto del casino", "Pierde 500 manos de bacará.", E),
+        (1_500, "bac_losses_1500", "Perdedor de esmoquin", "Pierde 1.500 manos de bacará.", E),
+        (2_500, "bac_losses_2500", "Pérdidas de alta sociedad", "Pierde 2.500 manos de bacará.", L),
         (5_000, "bacp_5k", "Déficit estructural", "Pierde 5.000 manos de bacará.", L),
     ])  # fmt: skip
     a += _tiers("baccarat", "bac_banker_wins", [
         (100, "bac_banca_100", "La Banca siempre gana, que se lo digan a Botín",
          "Gana 100 manos apostando a la Banca.", R),
+        (200, "bac_banker_wins_200", "Amigo de la Banca",
+         "Gana 200 manos apostando a la Banca.", R),
+        (500, "bac_banker_wins_500", "Accionista de la Banca",
+         "Gana 500 manos apostando a la Banca.", L),
         (1_000, "bac_banca_1k", "Consejero del Banco de España",
          "Gana 1.000 manos apostando a la Banca.", L),
     ])  # fmt: skip
     a += _tiers("baccarat", "bac_player_wins", [
         (100, "bac_jugador_100", "Player one",
          "Gana 100 manos apostando al Jugador.", R),
+        (200, "bac_player_wins_200", "Del lado del Jugador",
+         "Gana 200 manos apostando al Jugador.", R),
+        (500, "bac_player_wins_500", "Defensor del Jugador",
+         "Gana 500 manos apostando al Jugador.", L),
         (1_000, "bac_jugador_1k", "Sindicalista de la mesa verde",
          "Gana 1.000 manos apostando al Jugador.", L),
     ])  # fmt: skip
     a += _tiers("baccarat", "bac_tie_wins", [
         (1, "bac_empate", "Empate a todo", "Acierta un empate en el bacará (paga 8 a 1).", C),
         (10, "bac_empate_10", "Equidistante profesional", "Acierta 10 empates.", R),
+        (20, "bac_tie_wins_20", "Empate de lujo", "Acierta 20 empates.", R),
         (50, "bac_empate_50", "Tablas de surf", "Acierta 50 empates.", E),
     ])  # fmt: skip
     a += _tiers("baccarat", "bac_pushes", [
@@ -11357,6 +13203,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "bac_natural", "Natural como la vida misma",
          "Gana una mano con un natural (8 o 9 en dos cartas).", C),
         (100, "bac_natural_100", "Naturalidad ministerial", "Gana 100 manos con natural.", R),
+        (200, "bac_naturals_won_200", "Natural de serie", "Gana 200 manos con natural.", R),
+        (500, "bac_naturals_won_500", "Natural en serie", "Gana 500 manos con natural.", L),
         (1_000, "bac_natural_1k", "Más natural que el agua de Firgas",
          "Gana 1.000 manos con natural.", L),
     ])  # fmt: skip
@@ -11408,6 +13256,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("baccarat", "bac_win_max", [
         (10_000, "bac_rico", "Martini con aceituna de oro",
          "Gana 10.000 Y$ en una mano de bacará.", E),
+        (20_000, "bac_win_max_20000", "Martini agitado",
+         "Gana 20.000 Y$ en una mano de bacará.", E),
+        (50_000, "bac_win_max_50000", "Golpe de esmoquin",
+         "Gana 50.000 Y$ en una mano de bacará.", M),
         (100_000, "bac_millonario", "Al servicio de Su Majestad",
          "Gana 100.000 Y$ en una mano de bacará.", M),
     ], unit="money")  # fmt: skip
@@ -11472,8 +13324,16 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("baccarat", "bac_commission", [
         (1_000, "bac_comision", "El 5 % de toda la vida",
          "Paga 1.000 Y$ de comisión a la Banca.", R),
+        (2_000, "bac_commission_2000", "Comisión de cortesía",
+         "Paga 2.000 Y$ de comisión a la Banca.", R),
+        (5_000, "bac_commission_5000", "Comisión de gran señor",
+         "Paga 5.000 Y$ de comisión a la Banca.", L),
         (10_000, "bac_comision_10k", "Propina generosa",
          "Paga 10.000 Y$ de comisión a la Banca.", L),
+        (20_000, "bac_commission_20000", "Comisión de magnate",
+         "Paga 20.000 Y$ de comisión a la Banca.", L),
+        (50_000, "bac_commission_50000", "Comisión de rey del petróleo",
+         "Paga 50.000 Y$ de comisión a la Banca.", M),
         (100_000, "bac_comision_100k", "La banca te pone la alfombra",
          "Paga 100.000 Y$ de comisión a la Banca.", M),
     ], unit="money")  # fmt: skip
@@ -11501,8 +13361,13 @@ def _build_catalog() -> tuple[Achievement, ...]:
     fights = _tiers("gallos", "gallos_fights", [
         (1, "gallos_1", "Al reñidero", "Pelea con tu gallo por primera vez.", C),
         (10, "gallos_10", "Sacar el gallo a pasear", "Pelea 10 veces con tu gallo.", C),
+        (20, "gallos_fights_20", "Gallo de paseo", "Pelea 20 veces con tu gallo.", C),
+        (50, "gallos_fights_50", "Gallo con experiencia", "Pelea 50 veces con tu gallo.", R),
         (100, "gallos_100", "Gallera de barrio", "Pelea 100 veces con tu gallo.", R),
+        (200, "gallos_fights_200", "Gallo de pelea", "Pelea 200 veces con tu gallo.", R),
+        (500, "gallos_fights_500", "Gallero curtido", "Pelea 500 veces con tu gallo.", E),
         (1_000, "gallos_1k", "Gallero de toda la vida", "Pelea 1.000 veces con tu gallo.", E),
+        (2_500, "gallos_fights_2500", "Gallero de leyenda", "Pelea 2.500 veces.", L),
         (5_000, "gallos_5k", "Federación Gallística Internacional",
          "Pelea 5.000 veces.", L),
     ])  # fmt: skip
@@ -11511,23 +13376,33 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("gallos", "gallos_wins", [
         (1, "gallos_wins_1", "Kikirikí", "Gana tu primera pelea de gallos.", C),
         (25, "gallos_wins_25", "Rey del corral", "Gana 25 peleas de gallos.", C),
+        (50, "gallos_wins_50", "Kikirikí ganador", "Gana 50 peleas.", C),
         (100, "gallos_wins_100", "Gallo de oro",
          "Gana 100 peleas.", R),
+        (250, "gallos_wins_250", "Gallo campeón", "Gana 250 peleas de gallos.", E),
         (500, "gallos_wins_500", "Imperio del espolón", "Gana 500 peleas de gallos.", E),
+        (1_500, "gallos_wins_1500", "Gallo de leyenda", "Gana 1.500 peleas de gallos.", L),
         (2_500, "gallos_wins_2500", "El gallo que nunca se rinde",
          "Gana 2.500 peleas de gallos.", L),
     ])  # fmt: skip
     a += _tiers("gallos", "gallos_losses", [
         (1, "gallos_loss_1", "Caldo de gallina", "Pierde tu primera pelea de gallos.", C),
         (10, "gallos_loss_10", "Pollo asado", "Pierde 10 peleas de gallos.", C),
+        (20, "gallos_losses_20", "Pollo desplumado", "Pierde 20 peleas de gallos.", C),
+        (50, "gallos_losses_50", "Corral de los derrotados", "Pierde 50 peleas de gallos.", R),
         (100, "gallos_loss_100", "Gallina en pepitoria", "Pierde 100 peleas de gallos.", R),
+        (200, "gallos_losses_200", "Gallo apaleado", "Pierde 200 peleas de gallos.", R),
+        (500, "gallos_losses_500", "Plumas por el suelo", "Pierde 500 peleas de gallos.", E),
         (1_000, "gallos_loss_1k", "Más palos que una piñata",
          "Pierde 1.000 peleas de gallos.", E),
     ])  # fmt: skip
     a += _tiers("gallos", "gallos_kos", [
         (1, "gallos_ko_1", "KO técnico", "Gana una pelea por KO.", C),
         (25, "gallos_ko_25", "Mike Tyson con plumas", "Gana 25 peleas por KO.", R),
+        (50, "gallos_kos_50", "Nocaut de corral", "Gana 50 peleas por KO.", R),
+        (150, "gallos_kos_150", "KO en serie", "Gana 150 peleas por KO.", E),
         (250, "gallos_ko_250", "Rocky Balboa del corral", "Gana 250 peleas por KO.", E),
+        (500, "gallos_kos_500", "Puño de hierro con plumas", "Gana 500 peleas por KO.", L),
         (1_000, "gallos_ko_1k", "Kikirikó",
          "Gana 1.000 peleas por KO.", L),
     ])  # fmt: skip
@@ -11554,11 +13429,17 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("gallos", "gallos_crits", [
         (10, "gallos_crit_10", "Golpe crítico", "Da 10 golpes críticos.", C),
+        (20, "gallos_crits_20", "Espolón afilado", "Da 20 golpes críticos.", C),
+        (50, "gallos_crits_50", "Golpe certero", "Da 50 golpes críticos.", R),
         (100, "gallos_crit_100", "Recorte con motosierra", "Da 100 golpes críticos.", R),
+        (200, "gallos_crits_200", "Golpe maestro", "Da 200 golpes críticos.", R),
+        (500, "gallos_crits_500", "Golpe de gracia", "Da 500 golpes críticos.", E),
         (1_000, "gallos_crit_1k", "Golpe de gracia en serie", "Da 1.000 golpes críticos.", E),
     ])  # fmt: skip
     a += _tiers("gallos", "gallos_dodges", [
         (50, "gallos_cintura", "Cintura de torero", "Esquiva 50 golpes.", C),
+        (150, "gallos_dodges_150", "Esquiva de bailarín", "Esquiva 150 golpes.", C),
+        (250, "gallos_dodges_250", "Matrix del corral", "Esquiva 250 golpes.", R),
         (500, "gallos_ministro", "Neo esquivando balas",
          "Esquiva 500 golpes.", R),
     ])  # fmt: skip
@@ -11698,19 +13579,29 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("gallos", "gallos_win_max", [
         (10_000, "gallos_bolsa", "La bolsa de la pelea", "Gana 10.000 Y$ en una pelea.", R),
+        (20_000, "gallos_win_max_20000", "Bolsa del combate", "Gana 20.000 Y$ en una pelea.", R),
+        (50_000, "gallos_win_max_50000", "Bolsa de campeonato", "Gana 50.000 Y$ en una pelea.", E),
         (100_000, "gallos_velada", "Velada del año", "Gana 100.000 Y$ en una pelea.", E),
+        (200_000, "gallos_win_max_200000", "Velada millonaria", "Gana 200.000 Y$ en una pelea.", E),
+        (500_000, "gallos_win_max_500000", "Combate de leyenda",
+         "Gana 500.000 Y$ en una pelea.", L),
         (1_000_000, "gallos_millonario", "Combate del siglo",
          "Gana 1.000.000 Y$ en una pelea.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("gallos", "gallos_duels", [
         (1, "gallos_duelo_1", "Duelo al amanecer", "Pelea contra el gallo de otra persona.", C),
         (10, "gallos_duelo_10", "Pique de barrio", "Pelea 10 duelos contra otras personas.", C),
+        (20, "gallos_duels_20", "Duelo en el patio", "Pelea 20 duelos.", C),
+        (50, "gallos_duels_50", "Rivalidad de barrio", "Pelea 50 duelos.", R),
         (100, "gallos_duelo_100", "Rivalidad histórica", "Pelea 100 duelos.", R),
+        (250, "gallos_duels_250", "Rivalidad eterna", "Pelea 250 duelos.", E),
         (500, "gallos_duelo_500", "El clásico del gallinero", "Pelea 500 duelos.", E),
     ])  # fmt: skip
     a += _tiers("gallos", "gallos_duel_wins", [
         (1, "gallos_cuarenta", "Le has cantado las cuarenta", "Gana un duelo.", C),
         (25, "gallos_terror", "El terror del barrio", "Gana 25 duelos.", R),
+        (50, "gallos_duel_wins_50", "Ganador de duelos", "Gana 50 duelos.", R),
+        (150, "gallos_duel_wins_150", "Duelista invicto", "Gana 150 duelos.", E),
         (250, "gallos_maton", "Matón del gallinero", "Gana 250 duelos.", E),
     ])  # fmt: skip
     a += _tiers("gallos", "gallos_duel_big", [
@@ -11720,20 +13611,34 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("gallos", "gallos_crowd_max", [
         (1_000, "gallos_publico", "Con público",
          "Que el público apueste 1.000 Y$ en uno de tus duelos.", C),
+        (2_000, "gallos_crowd_max_2000", "Público en la grada",
+         "Que el público apueste 2.000 Y$ en uno de tus duelos.", C),
+        (5_000, "gallos_crowd_max_5000", "Graderío animado",
+         "Que el público apueste 5.000 Y$ en uno de tus duelos.", R),
         (10_000, "gallos_lleno", "Lleno en el reñidero",
          "Que el público apueste 10.000 Y$ en uno de tus duelos.", R),
+        (20_000, "gallos_crowd_max_20000", "Reñidero a rebosar",
+         "Que el público apueste 20.000 Y$ en uno de tus duelos.", R),
+        (50_000, "gallos_crowd_max_50000", "Retransmisión en abierto",
+         "Que el público apueste 50.000 Y$ en uno de tus duelos.", E),
         (100_000, "gallos_pantalla", "Pantalla gigante en Sol",
          "Que el público apueste 100.000 Y$ en uno de tus duelos.", E),
     ], unit="money")  # fmt: skip
     a += _tiers("gallos", "gallos_bets", [
         (1, "gallos_grada_1", "Apuesta de grada", "Apuesta en el duelo de otros.", C),
         (10, "gallos_grada_10", "Abonado de grada", "Apuesta en 10 duelos de otros.", C),
+        (20, "gallos_bets_20", "Espectador apostador", "Apuesta en 20 duelos de otros.", C),
+        (50, "gallos_bets_50", "Grada caliente", "Apuesta en 50 duelos de otros.", R),
         (100, "gallos_grada_100", "Gallero de sofá", "Apuesta en 100 duelos de otros.", R),
+        (200, "gallos_bets_200", "Grada de lujo", "Apuesta en 200 duelos de otros.", R),
+        (500, "gallos_bets_500", "Palco de la gallera", "Apuesta en 500 duelos de otros.", E),
         (1_000, "gallos_grada_1k", "Palco VIP", "Apuesta en 1.000 duelos de otros.", E),
     ])  # fmt: skip
     a += _tiers("gallos", "gallos_bets_won", [
         (1, "gallos_ojo", "Ojo de gallero", "Acierta una apuesta de grada.", C),
         (50, "gallos_tipster", "Tipster del reñidero", "Acierta 50 apuestas de grada.", R),
+        (150, "gallos_bets_won_150", "Vista de gallero", "Acierta 150 apuestas de grada.", R),
+        (250, "gallos_bets_won_250", "Profeta del reñidero", "Acierta 250 apuestas de grada.", E),
         (500, "gallos_vidente", "Vidente con espolones", "Acierta 500 apuestas de grada.", E),
     ])  # fmt: skip
     a += _tiers("gallos", "gallos_bet_odds_max", [
@@ -11855,8 +13760,12 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Entrena a tu gallo por primera vez.", C),
         (10, "gallos_gym_10", "Escalera de Filadelfia",
          "Entrena 10 veces.", C),
+        (20, "gallos_trains_20", "Gallo en forma", "Entrena 20 veces.", C),
+        (50, "gallos_trains_50", "Gallo musculado", "Entrena 50 veces.", E),
         (100, "gallos_gym_100", "Pechuga de gimnasio",
          "Entrena 100 veces.", E),
+        (200, "gallos_trains_200", "Culturista del corral", "Entrena 200 veces.", E),
+        (500, "gallos_trains_500", "Gallo de Mister Olympia", "Entrena 500 veces.", M),
         (1_000, "gallos_gym_1k", "Vuelta ciclista al corral",
          "Entrena 1.000 veces.", M),
     ])  # fmt: skip
@@ -11907,6 +13816,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Que muera tu gallo.", R),
         (10, "gallos_entierro_10", "Valle de los Caídos del gallinero",
          "Que mueran 10 gallos tuyos.", E),
+        (20, "gallos_deaths_20", "Cementerio de gallos", "Que mueran 20 gallos tuyos.", E),
         (50, "gallos_entierro_50", "Fosa común con sobrecoste",
          "Que mueran 50 gallos tuyos.",
          L),
@@ -11944,8 +13854,16 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("gallos", "gallos_train_spent", [
         (10_000, "gallos_cuota_gym", "Cuota del gimnasio",
          "Gasta 10.000 Y$ en entrenar gallos, IGIC incluido.", R),
+        (20_000, "gallos_train_spent_20000", "Gimnasio del gallo",
+         "Gasta 20.000 Y$ en entrenar gallos.", R),
+        (50_000, "gallos_train_spent_50000", "Entrenador personal de gallos",
+         "Gasta 50.000 Y$ en entrenar gallos.", E),
         (100_000, "gallos_gym_ayuso", "Gimnasio con sobrecostes",
          "Gasta 100.000 Y$ en entrenar gallos.", E),
+        (200_000, "gallos_train_spent_200000", "Preparador olímpico de gallos",
+         "Gasta 200.000 Y$ en entrenar gallos.", E),
+        (500_000, "gallos_train_spent_500000", "Centro de alto rendimiento avícola",
+         "Gasta 500.000 Y$ en entrenar gallos.", M),
         (1_000_000, "gallos_gym_estado", "Gimnasio de Estado",
          "Gasta 1.000.000 Y$ en entrenar gallos.",
          M),
@@ -12052,9 +13970,14 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "enraya_1", "La primera ficha nunca se olvida",
          "Juega tu primera partida de 4 en raya.", C),
         (10, "enraya_10", "Cliente del bar de las fichas", "Juega 10 partidas de 4 en raya.", C),
+        (20, "enraya_games_20", "Fichas en columna", "Juega 20 partidas de 4 en raya.", C),
+        (50, "enraya_games_50", "Cuatro en línea", "Juega 50 partidas de 4 en raya.", R),
         (100, "enraya_100", "Tablero de toda la vida", "Juega 100 partidas de 4 en raya.", R),
+        (200, "enraya_games_200", "Columna a columna", "Juega 200 partidas de 4 en raya.", R),
+        (500, "enraya_games_500", "Tablero gastado", "Juega 500 partidas de 4 en raya.", E),
         (1_000, "enraya_1k", "Mil y una rayas",
          "Juega 1.000 partidas de 4 en raya.", E),
+        (2_500, "enraya_games_2500", "Leyenda de las fichas", "Juega 2.500 partidas.", L),
         (5_000, "enraya_5k", "Federación Internacional de Fichas",
          "Juega 5.000 partidas.", L),
     ])  # fmt: skip
@@ -12062,16 +13985,23 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "enraya_win_1", "Conecta cuatro", "Gana tu primera partida.", C),
         (25, "enraya_win_25", "Mayoría absoluta en el tablero",
          "Gana 25 partidas de 4 en raya.", C),
+        (50, "enraya_wins_50", "Raya ganadora", "Gana 50 partidas de 4 en raya.", C),
         (100, "enraya_win_100", "Rodillo de fichas", "Gana 100 partidas de 4 en raya.", R),
+        (250, "enraya_wins_250", "Rayas a mansalva", "Gana 250 partidas de 4 en raya.", E),
         (500, "enraya_win_500", "Fichas atadas y bien atadas",
          "Gana 500 partidas de 4 en raya.", E),
+        (1_500, "enraya_wins_1500", "Rayas por millares", "Gana 1.500 partidas.", L),
         (2_500, "enraya_win_2500", "Mandato a la venezolana",
          "Gana 2.500 partidas.", L),
     ])  # fmt: skip
     a += _tiers("enraya", "enraya_losses", [
         (1, "enraya_loss_1", "Ficha perdida", "Pierde una partida de 4 en raya.", C),
         (10, "enraya_loss_10", "De los errores se aprende", "Pierde 10 partidas de 4 en raya.", C),
+        (20, "enraya_losses_20", "Ficha desperdiciada", "Pierde 20 partidas de 4 en raya.", C),
+        (50, "enraya_losses_50", "Derrota en columna", "Pierde 50 partidas de 4 en raya.", R),
         (100, "enraya_loss_100", "Manual de derrota", "Pierde 100 partidas de 4 en raya.", R),
+        (200, "enraya_losses_200", "Tablero en contra", "Pierde 200 partidas de 4 en raya.", R),
+        (500, "enraya_losses_500", "Perdedor de fichas", "Pierde 500 partidas de 4 en raya.", E),
         (1_000, "enraya_loss_1k", "Sé fuerte, ficha",
          "Pierde 1.000 partidas de 4 en raya.", E),
     ])  # fmt: skip
@@ -12165,7 +14095,11 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("enraya", "enraya_blocks", [
         (10, "enraya_tapon", "Tapón pegado a la botella", "Tapa 10 rayas del rival.", C),
+        (20, "enraya_blocks_20", "Tapón", "Tapa 20 rayas del rival.", C),
+        (50, "enraya_blocks_50", "Defensa cerrada", "Tapa 50 rayas del rival.", R),
         (100, "enraya_cordon", "Cordón sanitario en el tablero", "Tapa 100 rayas del rival.", R),
+        (200, "enraya_blocks_200", "Muralla de fichas", "Tapa 200 rayas del rival.", R),
+        (500, "enraya_blocks_500", "Portero del tablero", "Tapa 500 rayas del rival.", E),
         (1_000, "enraya_cupula", "Cúpula de Hierro del tablero", "Tapa 1.000 rayas del rival.", E),
     ])  # fmt: skip
     a += _tiers("enraya", "enraya_missed", [
@@ -12202,12 +14136,17 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("enraya", "enraya_duels", [
         (1, "enraya_duelo_1", "Cara a cara", "Juega un duelo de 4 en raya contra alguien.", C),
         (10, "enraya_duelo_10", "Debate a cuatro", "Juega 10 duelos de 4 en raya.", C),
+        (20, "enraya_duels_20", "Duelo de fichas", "Juega 20 duelos de 4 en raya.", C),
+        (50, "enraya_duels_50", "Rival habitual", "Juega 50 duelos de 4 en raya.", R),
         (100, "enraya_duelo_100", "Clásico del tablero", "Juega 100 duelos de 4 en raya.", R),
+        (250, "enraya_duels_250", "Duelos sin fin", "Juega 250 duelos.", E),
         (500, "enraya_duelo_500", "Ni contigo ni sin ti", "Juega 500 duelos.", E),
     ])  # fmt: skip
     a += _tiers("enraya", "enraya_duel_wins", [
         (1, "enraya_duelo_gana", "Le has cantado las fichas", "Gana un duelo de 4 en raya.", C),
         (25, "enraya_duelo_gana_25", "Terror de las fichas", "Gana 25 duelos.", R),
+        (50, "enraya_duel_wins_50", "Campeón de duelos", "Gana 50 duelos.", R),
+        (150, "enraya_duel_wins_150", "Rey de los duelos", "Gana 150 duelos.", E),
         (250, "enraya_duelo_gana_250", "El que manda en el tablero", "Gana 250 duelos.", E),
     ])  # fmt: skip
     a += _tiers("enraya", "enraya_friendlies", [
@@ -12220,23 +14159,39 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("enraya", "enraya_win_max", [
         (10_000, "enraya_bolsa", "Bolsa de las fichas", "Gana 10.000 Y$ en un duelo.", R),
+        (20_000, "enraya_win_max_20000", "Premio de fichas", "Gana 20.000 Y$ en un duelo.", R),
+        (50_000, "enraya_win_max_50000", "Bolsa del tablero", "Gana 50.000 Y$ en un duelo.", E),
         (100_000, "enraya_final", "Final del mundial de fichas",
          "Gana 100.000 Y$ en un duelo.", E),
+        (200_000, "enraya_win_max_200000", "Fichas de oro", "Gana 200.000 Y$ en un duelo.", E),
+        (500_000, "enraya_win_max_500000", "Raya millonaria", "Gana 500.000 Y$ en un duelo.", L),
         (1_000_000, "enraya_millon", "El millón en cuatro fichas",
          "Gana 1.000.000 Y$ en un duelo.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("enraya", "enraya_crowd_max", [
         (1_000, "enraya_publico", "Con público en la grada",
          "Que el público apueste 1.000 Y$ en uno de tus duelos de 4 en raya.", C),
+        (2_000, "enraya_crowd_max_2000", "Grada con fichas",
+         "Que el público apueste 2.000 Y$ en uno de tus duelos de 4 en raya.", C),
+        (5_000, "enraya_crowd_max_5000", "Afición entregada",
+         "Que el público apueste 5.000 Y$ en uno de tus duelos de 4 en raya.", R),
         (10_000, "enraya_lleno_grada", "Ambiente de final",
          "Que el público apueste 10.000 Y$ en uno de tus duelos de 4 en raya.", R),
+        (20_000, "enraya_crowd_max_20000", "Público de gala",
+         "Que el público apueste 20.000 Y$ en uno de tus duelos de 4 en raya.", R),
+        (50_000, "enraya_crowd_max_50000", "Final con taquilla",
+         "Que el público apueste 50.000 Y$ en uno de tus duelos de 4 en raya.", E),
         (100_000, "enraya_prime_time", "Audiencia de final",
          "Que el público apueste 100.000 Y$ en uno de tus duelos de 4 en raya.", E),
     ], unit="money")  # fmt: skip
     a += _tiers("enraya", "enraya_bets", [
         (1, "enraya_grada_1", "Desde la grada del tablero", "Apuesta en el duelo de otros.", C),
         (10, "enraya_grada_10", "Abonado al tablero", "Apuesta en 10 duelos de otros.", C),
+        (20, "enraya_bets_20", "Apostador de grada", "Apuesta en 20 duelos de otros.", C),
+        (50, "enraya_bets_50", "Grada fiel", "Apuesta en 50 duelos de otros.", R),
         (100, "enraya_grada_100", "Tertuliano de fichas", "Apuesta en 100 duelos de otros.", R),
+        (200, "enraya_bets_200", "Comentarista de tablero", "Apuesta en 200 duelos de otros.", R),
+        (500, "enraya_bets_500", "Palco de las fichas", "Apuesta en 500 duelos de otros.", E),
         (1_000, "enraya_grada_1k", "Palco de honor de las fichas",
          "Apuesta en 1.000 duelos de otros.", E),
     ])  # fmt: skip
@@ -12244,6 +14199,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "enraya_ojo", "Ojo de tertuliano", "Acierta una apuesta de grada en el 4 en raya.", C),
         (50, "enraya_tertuliano", "Tertuliano que acierta",
          "Acierta 50 apuestas de grada en el 4 en raya.", R),
+        (150, "enraya_bets_won_150", "Pronóstico certero", "Acierta 150 apuestas de grada.", R),
+        (250, "enraya_bets_won_250", "Vidente de las fichas", "Acierta 250 apuestas de grada.", E),
         (500, "enraya_oraculo", "Oráculo del tablero", "Acierta 500 apuestas de grada.", E),
     ])  # fmt: skip
     a += _tiers("enraya", "enraya_bet_odds_max", [
@@ -12277,7 +14234,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "enraya_reto_1", "Misión cumplida, agente", "Cumple un reto del día del 4 en raya.", C),
         (10, "enraya_reto_10", "Funcionario de los retos",
          "Cumple 10 retos del día del 4 en raya.", R),
+        (20, "enraya_retos_20", "Reto cumplido", "Cumple 20 retos del día.", R),
+        (50, "enraya_retos_50", "Retos en serie", "Cumple 50 retos del día.", E),
         (100, "enraya_reto_100", "Plan quinquenal de retos", "Cumple 100 retos del día.", E),
+        (250, "enraya_retos_250", "Coleccionista de retos", "Cumple 250 retos del día.", L),
         (500, "enraya_reto_500", "Agenda 2030 de las fichas", "Cumple 500 retos del día.", L),
     ])  # fmt: skip
     a += _tiers("enraya", "enraya_retos_full", [
@@ -12309,9 +14269,16 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("backgammon", "backgammon_games", [
         (1, "bg_1", "Que empiece el juego", "Juega tu primera partida de backgammon.", C),
         (10, "bg_10", "Parroquiano del tablero", "Juega 10 partidas de backgammon.", C),
+        (20, "backgammon_games_20", "Pips y dados", "Juega 20 partidas de backgammon.", C),
+        (50, "backgammon_games_50", "Tablero de madera", "Juega 50 partidas de backgammon.", R),
         (100, "bg_100", "Cuentapips de barrio", "Juega 100 partidas de backgammon.", R),
+        (200, "backgammon_games_200", "Habitual de las quince fichas",
+         "Juega 200 partidas de backgammon.", R),
+        (500, "backgammon_games_500", "Backgammon de cafetería",
+         "Juega 500 partidas de backgammon.", E),
         (1_000, "bg_1k", "Mil partidas en Mesopotamia",
          "Juega 1.000 partidas de backgammon.", E),
+        (2_500, "backgammon_games_2500", "Leyenda del backgammon", "Juega 2.500 partidas.", L),
         (5_000, "bg_5k", "Federación Mesopotámica de Backgammon",
          "Juega 5.000 partidas.", L),
     ])  # fmt: skip
@@ -12319,23 +14286,35 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "bg_win_1", "Quince fuera", "Gana tu primera partida de backgammon.", C),
         (25, "bg_win_25", "La comunidad de las quince fichas",
          "Gana 25 partidas de backgammon.", R),
+        (50, "backgammon_wins_50", "Victoria en el tablero", "Gana 50 partidas de backgammon.", R),
         (100, "bg_win_100", "Apisonadora persa", "Gana 100 partidas de backgammon.", R),
+        (250, "backgammon_wins_250", "Señor de las quince fichas",
+         "Gana 250 partidas de backgammon.", E),
         (500, "bg_win_500", "El rey de Mesopotamia",
          "Gana 500 partidas de backgammon.", E),
+        (1_500, "backgammon_wins_1500", "Emperador del backgammon", "Gana 1.500 partidas.", L),
         (2_500, "bg_win_2500", "Gran Maestro Jedi del cubilete",
          "Gana 2.500 partidas.", L),
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_losses", [
         (1, "bg_loss_1", "Bienvenido al cubilete", "Pierde una partida de backgammon.", C),
         (10, "bg_loss_10", "Diez lecciones de humildad", "Pierde 10 partidas de backgammon.", C),
+        (20, "backgammon_losses_20", "Lección aprendida", "Pierde 20 partidas de backgammon.", C),
+        (50, "backgammon_losses_50", "Derrota con dados", "Pierde 50 partidas de backgammon.", R),
         (100, "bg_loss_100", "Abonado a perder",
          "Pierde 100 partidas de backgammon.", R),
+        (200, "backgammon_losses_200", "Perder con dignidad",
+         "Pierde 200 partidas de backgammon.", R),
+        (500, "backgammon_losses_500", "Perdedor veterano",
+         "Pierde 500 partidas de backgammon.", E),
         (1_000, "bg_loss_1k", "Rocky perdió muchas antes de ganar",
          "Pierde 1.000 partidas de backgammon.", E),
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_gammons", [
         (1, "bg_gammon", "Gammon", "Gana un gammon: el rival no ha sacado ni una ficha.", C),
         (10, "bg_gammon_10", "Paliza por partida doble", "Gana 10 gammons.", R),
+        (20, "backgammon_gammons_20", "Gammon de manual", "Gana 20 gammons.", R),
+        (50, "backgammon_gammons_50", "Gammon en serie", "Gana 50 gammons.", E),
         (100, "bg_gammon_100", "Rodillo con efecto multiplicador", "Gana 100 gammons.", E),
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_backgammons", [
@@ -12388,20 +14367,34 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_hits", [
         (10, "bg_comer_10", "A la barra", "Come 10 fichas del rival.", C),
+        (20, "backgammon_hits_20", "Ficha a la barra", "Come 20 fichas del rival.", C),
+        (50, "backgammon_hits_50", "Barra llena", "Come 50 fichas del rival.", R),
         (100, "bg_comer_100", "Expropiación de fichas", "Come 100 fichas del rival.", R),
+        (200, "backgammon_hits_200", "Comilón de fichas", "Come 200 fichas del rival.", R),
+        (500, "backgammon_hits_500", "Pac-Man del backgammon", "Come 500 fichas del rival.", E),
         (1_000, "bg_comer_1k", "Come-cocos", "Come 1.000 fichas del rival.", E),
+        (2_000, "backgammon_hits_2000", "Glotón del tablero", "Come 2.000 fichas.", E),
+        (5_000, "backgammon_hits_5000", "Devorador de fichas", "Come 5.000 fichas.", L),
         (10_000, "bg_comer_10k", "Agujero negro de fichas",
          "Come 10.000 fichas.", L),
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_hit_taken", [
         (10, "bg_comido_10", "Grupo Mixto", "Que te coman 10 fichas.", C),
+        (20, "backgammon_hit_taken_20", "Ficha comida", "Que te coman 20 fichas.", C),
+        (50, "backgammon_hit_taken_50", "Fichas en la barra", "Que te coman 50 fichas.", R),
         (100, "bg_comido_100", "Abonado a la barra", "Que te coman 100 fichas.", R),
+        (200, "backgammon_hit_taken_200", "Barra de suplentes", "Que te coman 200 fichas.", R),
+        (500, "backgammon_hit_taken_500", "Abonado al banquillo", "Que te coman 500 fichas.", E),
         (1_000, "bg_comido_1k", "Te han comido más que a un chicle",
          "Que te coman 1.000 fichas.", E),
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_doubles", [
         (10, "bg_dobles_10", "Doble ración", "Saca 10 dobles al backgammon.", C),
+        (20, "backgammon_doubles_20", "Doble pareja", "Saca 20 dobles al backgammon.", C),
+        (50, "backgammon_doubles_50", "Dobles de suerte", "Saca 50 dobles al backgammon.", R),
         (100, "bg_dobles_100", "Dobles hasta en la sopa", "Saca 100 dobles al backgammon.", R),
+        (200, "backgammon_doubles_200", "Lluvia de dobles", "Saca 200 dobles.", R),
+        (500, "backgammon_doubles_500", "Dobles a destajo", "Saca 500 dobles.", E),
         (1_000, "bg_dobles_1k", "Mil dobles y ni un triple", "Saca 1.000 dobles.", E),
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_double_run", [
@@ -12416,6 +14409,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Cierra el tablero: los seis puntos de tu casa hechos y el rival en la barra.", C),
         (25, "bg_cierre_25", "Muralla de Invernalia",
          "Cierra el tablero al rival en 25 partidas.", R),
+        (50, "backgammon_closed_out_50", "Tablero cerrado",
+         "Cierra el tablero al rival en 50 partidas.", R),
+        (150, "backgammon_closed_out_150", "Cierre total",
+         "Cierra el tablero al rival en 150 partidas.", E),
         (250, "bg_cierre_250", "Muralla China del tablero",
          "Cierra el tablero al rival en 250 partidas.", E),
     ])  # fmt: skip
@@ -12496,7 +14493,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "bg_duelo_1", "Cara a cara con cubilete",
          "Juega un duelo de backgammon contra alguien.", C),
         (10, "bg_duelo_10", "Duelo de pistoleros con dados", "Juega 10 duelos de backgammon.", C),
+        (20, "backgammon_duels_20", "Duelo a dados", "Juega 20 duelos de backgammon.", C),
+        (50, "backgammon_duels_50", "Rival de cubilete", "Juega 50 duelos de backgammon.", R),
         (100, "bg_duelo_100", "Clásico de Montecarlo", "Juega 100 duelos de backgammon.", R),
+        (250, "backgammon_duels_250", "Duelos de leyenda", "Juega 250 duelos de backgammon.", E),
         (500, "bg_duelo_500", "Rivales de toda la vida",
          "Juega 500 duelos de backgammon.", E),
     ])  # fmt: skip
@@ -12504,6 +14504,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "bg_duelo_gana", "Le has sacado las quince antes",
          "Gana un duelo de backgammon.", C),
         (25, "bg_duelo_gana_25", "Terror del cubilete", "Gana 25 duelos de backgammon.", R),
+        (50, "backgammon_duel_wins_50", "Ganador del cubilete", "Gana 50 duelos de backgammon.", R),
+        (150, "backgammon_duel_wins_150", "Dueño del tablero", "Gana 150 duelos de backgammon.", E),
         (250, "bg_duelo_gana_250", "El que manda en el cubilete",
          "Gana 250 duelos de backgammon.", E),
     ])  # fmt: skip
@@ -12522,16 +14524,32 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_win_max", [
         (10_000, "bg_bolsa", "Bolsa del cubilete", "Gana 10.000 Y$ en un duelo de backgammon.", R),
+        (20_000, "backgammon_win_max_20000", "Premio del cubilete",
+         "Gana 20.000 Y$ en un duelo de backgammon.", R),
+        (50_000, "backgammon_win_max_50000", "Bolsa de Montecarlo",
+         "Gana 50.000 Y$ en un duelo de backgammon.", E),
         (100_000, "bg_final", "Final del mundial de Montecarlo",
          "Gana 100.000 Y$ en un duelo de backgammon.", E),
+        (200_000, "backgammon_win_max_200000", "Montecarlo en casa",
+         "Gana 200.000 Y$ en un duelo de backgammon.", E),
+        (500_000, "backgammon_win_max_500000", "Fortuna a quince fichas",
+         "Gana 500.000 Y$ en un duelo de backgammon.", L),
         (1_000_000, "bg_millon", "El millón a quince fichas",
          "Gana 1.000.000 Y$ en un duelo de backgammon.", L),
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_crowd_max", [
         (1_000, "bg_publico", "Con público alrededor del tablero",
          "Juega un duelo de backgammon con 1.000 Y$ apostados en la grada.", C),
+        (2_000, "backgammon_crowd_max_2000", "Grada con dados",
+         "Juega un duelo con 2.000 Y$ apostados en la grada.", C),
+        (5_000, "backgammon_crowd_max_5000", "Afición del cubilete",
+         "Juega un duelo con 5.000 Y$ apostados en la grada.", R),
         (10_000, "bg_lleno_grada", "Final de Montecarlo en la grada",
          "Juega un duelo con 10.000 Y$ apostados en la grada.", R),
+        (20_000, "backgammon_crowd_max_20000", "Taquilla de Montecarlo",
+         "Juega un duelo con 20.000 Y$ apostados en la grada.", R),
+        (50_000, "backgammon_crowd_max_50000", "Final retransmitida",
+         "Juega un duelo con 50.000 Y$ apostados en la grada.", E),
         (100_000, "bg_prime_time", "Retransmitido en el Telediario",
          "Juega un duelo con 100.000 Y$ apostados en la grada.", E),
     ])  # fmt: skip
@@ -12539,14 +14557,25 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "bg_grada_1", "Mirón de backgammon con apuesta",
          "Apuesta en el duelo de backgammon de otros.", C),
         (10, "bg_grada_10", "Abonado al cubilete", "Apuesta en 10 duelos de backgammon.", C),
+        (20, "backgammon_bets_20", "Apostador de cubilete",
+         "Apuesta en 20 duelos de backgammon.", C),
+        (50, "backgammon_bets_50", "Grada experta", "Apuesta en 50 duelos de backgammon.", R),
         (100, "bg_grada_100", "Comentarista de la NBA del tablero",
          "Apuesta en 100 duelos de backgammon.", R),
+        (200, "backgammon_bets_200", "Analista del tablero",
+         "Apuesta en 200 duelos de backgammon.", R),
+        (500, "backgammon_bets_500", "Palco del cubilete",
+         "Apuesta en 500 duelos de backgammon.", E),
         (1_000, "bg_grada_1k", "Palco de honor del backgammon",
          "Apuesta en 1.000 duelos de backgammon.", E),
     ])  # fmt: skip
     a += _tiers("backgammon", "backgammon_bets_won", [
         (1, "bg_ojo", "Ojo de tahúr", "Acierta una apuesta de grada en el backgammon.", C),
         (50, "bg_tahur", "Tahúr de grada", "Acierta 50 apuestas de grada en el backgammon.", R),
+        (150, "backgammon_bets_won_150", "Pronóstico del tablero",
+         "Acierta 150 apuestas de grada en el backgammon.", R),
+        (250, "backgammon_bets_won_250", "Profeta de los dados",
+         "Acierta 250 apuestas de grada en el backgammon.", E),
         (500, "bg_oraculo", "Oráculo del cubilete",
          "Acierta 500 apuestas de grada en el backgammon.", E),
     ])  # fmt: skip
@@ -12576,6 +14605,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("backgammon", "backgammon_rake", [
         (1_000, "bg_comision", "La casa también tira dados",
          "Deja 1.000 Y$ de comisión a la casa en el backgammon.", C),
+        (5_000, "backgammon_rake_5000", "Comisión de la casa",
+         "Deja 5.000 Y$ de comisión a la casa en el backgammon.", C),
+        (20_000, "backgammon_rake_20000", "Patrocinador del cubilete",
+         "Deja 20.000 Y$ de comisión a la casa en el backgammon.", E),
         (100_000, "bg_mecenas", "Mecenas del cubilete",
          "Deja 100.000 Y$ de comisión a la casa en el backgammon.", E),
     ])  # fmt: skip
@@ -12583,8 +14616,14 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "bg_reto_1", "Reto del cubilete cumplido", "Cumple un reto del día del backgammon.", C),
         (10, "bg_reto_10", "Diez misiones cumplidas",
          "Cumple 10 retos del día del backgammon.", R),
+        (20, "backgammon_retos_20", "Misión cumplida",
+         "Cumple 20 retos del día del backgammon.", R),
+        (50, "backgammon_retos_50", "Misiones en serie",
+         "Cumple 50 retos del día del backgammon.", E),
         (100, "bg_reto_100", "Cien retos y un cubilete",
          "Cumple 100 retos del día del backgammon.", E),
+        (250, "backgammon_retos_250", "Libro de retos lleno",
+         "Cumple 250 retos del día del backgammon.", L),
         (500, "bg_reto_500", "Libro de misiones completado",
          "Cumple 500 retos del día del backgammon.", L),
     ])  # fmt: skip
@@ -12682,6 +14721,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "cohete.", L),
     ])  # fmt: skip
     a += _tiers("reparto", "work_orders", [
+        (200, "work_orders_200", "Repartidor con cabeza", "Elige bien 200 pedidos.", R),
+        (500, "work_orders_500", "Navegador con patas", "Elige bien 500 pedidos.", E),
         (1_000, "pedidos_1k", "Algoritmo con patas", "Elige bien 1.000 pedidos.", E),
     ])  # fmt: skip
 
@@ -12703,60 +14744,92 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("reparto", "work_parcels", [
         (30, "rep_paquetes_30", "Cada carta a su buzón",
          "Manda 30 envíos a su sitio como jefe de unidad de reparto.", E),
+        (75, "work_parcels_75", "Cartero certero", "Manda 75 envíos a su sitio.", E),
+        (150, "work_parcels_150", "Cartero infalible", "Manda 150 envíos a su sitio.", L),
         (300, "rep_paquetes_300", "Ni un voto en el buzón equivocado",
          "Manda 300 envíos a su sitio.", L),
     ])  # fmt: skip
     a += _tiers("reparto", "work_rural_route", [
         (15, "rep_rural_15", "Cartero de la aldea de tres vecinos y un gallo",
          "Haz 15 rutas rurales perfectas.", E),
+        (30, "work_rural_route_30", "Ruta de montaña", "Haz 30 rutas rurales perfectas.", E),
+        (75, "work_rural_route_75", "Cartero de pueblo", "Haz 75 rutas rurales perfectas.", L),
         (150, "rep_rural_150", "Hasta el faro, sin cobertura",
          "Haz 150 rutas rurales perfectas.", L),
     ])  # fmt: skip
     a += _tiers("reparto", "work_lost_parcel", [
         (25, "rep_perdidos_25", "Objetos perdidos con membrete",
          "Encuentra 25 paquetes perdidos entre los normales.", E),
+        (50, "work_lost_parcel_50", "Detective de paquetes", "Encuentra 50 paquetes perdidos.", E),
+        (150, "work_lost_parcel_150", "Sabueso de Correos", "Encuentra 150 paquetes perdidos.", L),
         (250, "rep_perdidos_250", "El rey de las cartas de 2019",
          "Encuentra 250 paquetes perdidos.", L),
     ])  # fmt: skip
     a += _tiers("reparto", "work_correos_board", [
         (30, "rep_consejo_30", "Pérdidas millonarias, orgullo nacional",
          "Acierta 30 respuestas en el consejo de Correos como director general.", E),
+        (75, "work_correos_board_75", "Consejero de Correos",
+         "Acierta 75 respuestas en el consejo de Correos.", E),
+        (150, "work_correos_board_150", "Gestor de Correos",
+         "Acierta 150 respuestas en el consejo de Correos.", L),
         (300, "rep_consejo_300", "Servicio público, gestión eficiente",
          "Acierta 300 respuestas en el consejo de Correos.", L),
     ])  # fmt: skip
     a += _tiers("reparto", "work_correos_chair", [
         (25, "rep_presidencia_25", "Lealtad antes que contabilidad",
          "Acierta 25 respuestas como presidente de Correos.", L),
+        (50, "work_correos_chair_50", "Presidente de sellos",
+         "Acierta 50 respuestas como presidente de Correos.", L),
+        (150, "work_correos_chair_150", "Mandamás de Correos",
+         "Acierta 150 respuestas como presidente de Correos.", L),
         (250, "rep_presidencia_250", "Resistir, sellar y no mirar atrás",
          "Acierta 250 respuestas como presidente de Correos.", L),
     ])  # fmt: skip
     a += _tiers("reparto", "work_dark_store", [
         (15, "rep_dark_15", "Pedido en diez minutos (con la persiana bajada)",
          "Prepara 15 pedidos de diez minutos en orden como dueño de dark stores.", E),
+        (30, "work_dark_store_30", "Pedido en orden",
+         "Prepara 30 pedidos de diez minutos en orden.", E),
+        (75, "work_dark_store_75", "Supermercado exprés",
+         "Prepara 75 pedidos de diez minutos en orden.", L),
         (150, "rep_dark_150", "Ni el helado de pistacho se derrite",
          "Prepara 150 pedidos de diez minutos en orden.", L),
     ])  # fmt: skip
     a += _tiers("reparto", "work_rider_law", [
         (25, "rep_ley_rider_25", "Emprendedor de sí mismo (y de los demás)",
          "Acierta 25 respuestas en el Ministerio de Trabajo como lobista.", E),
+        (50, "work_rider_law_50", "Inspección superada",
+         "Acierta 50 respuestas en el Ministerio de Trabajo.", E),
+        (150, "work_rider_law_150", "Laboralista de despacho",
+         "Acierta 150 respuestas en el Ministerio de Trabajo.", L),
         (250, "rep_ley_rider_250", "Sentencia de transición hacia la nada",
          "Acierta 250 respuestas en el Ministerio de Trabajo.", L),
     ])  # fmt: skip
     a += _tiers("reparto", "work_last_mile", [
         (30, "rep_milla_30", "Última milla, primera factura",
          "Manda 30 pedidos a su reparto como rey de la última milla.", E),
+        (75, "work_last_mile_75", "Paquete a tiempo", "Manda 75 pedidos a su reparto.", E),
+        (150, "work_last_mile_150", "Entregas de récord", "Manda 150 pedidos a su reparto.", L),
         (300, "rep_milla_300", "Entregado (sin entregar)",
          "Manda 300 pedidos a su reparto.", L),
     ])  # fmt: skip
     a += _tiers("reparto", "work_labour_inspector", [
         (25, "rep_inspectora_25", "Olfato de empresario con algo que ocultar",
          "Descubre a 25 inspectoras de Trabajo infiltradas entre tus riders.", E),
+        (50, "work_labour_inspector_50", "Radar de inspectoras",
+         "Descubre a 50 inspectoras de Trabajo.", E),
+        (150, "work_labour_inspector_150", "Detector de inspecciones",
+         "Descubre a 150 inspectoras de Trabajo.", L),
         (250, "rep_inspectora_250", "Ni una inspectora sin descubrir",
          "Descubre a 250 inspectoras de Trabajo.", L),
     ])  # fmt: skip
     a += _tiers("reparto", "work_rocket", [
         (25, "rep_cohete_25", "Futuro de la humanidad, con dinero público",
          "Acierta 25 respuestas en la entrevista del hangar.", L),
+        (50, "work_rocket_50", "Respuesta de despegue",
+         "Acierta 50 respuestas en la entrevista del hangar.", L),
+        (150, "work_rocket_150", "Astronauta de entrevista",
+         "Acierta 150 respuestas en la entrevista del hangar.", L),
         (250, "rep_cohete_250", "Antes a la Luna que a Lanzarote",
          "Acierta 250 respuestas en la entrevista del hangar.", L),
     ])  # fmt: skip
@@ -12946,10 +15019,12 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("funcionariado", "work_study", [
         (1, "codos", "Hincar codos", "Estudia la oposición por primera vez.", C),
         (10, "biblioteca", "Opositor de biblioteca", "Estudia 10 turnos.", R),
+        (20, "work_study_20", "Codos en la mesa", "Estudia 20 turnos.", R),
         (50, "opositor_pro", "Opositor profesional", "Estudia 50 turnos.", E),
     ])  # fmt: skip
     a += _tiers("funcionariado", "work_temario", [
         (100, "temario_100", "Me sé la Constitución", "Acierta 100 preguntas del temario.", R),
+        (250, "work_temario_250", "Temario dominado", "Acierta 250 preguntas del temario.", E),
         (500, "temario_500", "Temario cantado", "Acierta 500 preguntas del temario.", E),
     ])  # fmt: skip
     a += _tiers("funcionariado", "work_ventanilla", [
@@ -12968,6 +15043,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("funcionariado", "work_frauds", [
         (30, "olfato_fiscal", "Olfato fiscal", "Destapa 30 declaraciones fraudulentas.", E),
+        (75, "work_frauds_75", "Lupa de inspector", "Destapa 75 declaraciones fraudulentas.", E),
         (200, "perro_te_quiere", "Perro Sanxe te quiere",
          "Destapa 200 declaraciones fraudulentas.", L),
     ])  # fmt: skip
@@ -13028,60 +15104,94 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("funcionariado", "work_boe", [
         (30, "fun_boe_30", "Sección II: la de los cuñados",
          "Manda 30 disposiciones a su sección del BOE como subdirector general.", E),
+        (75, "work_boe_75", "Ordenanza del BOE", "Manda 75 disposiciones a su sección del BOE.", E),
+        (150, "work_boe_150", "Archivero del BOE",
+         "Manda 150 disposiciones a su sección del BOE.", L),
         (300, "fun_boe_300", "Ni una errata sin corregir (en el siguiente número)",
          "Manda 300 disposiciones a su sección del BOE.", L),
     ])  # fmt: skip
     a += _tiers("funcionariado", "work_circuit", [
         (15, "fun_circuito_15", "Expediente con todos los sellos",
          "Haz 15 circuitos de expediente perfectos como director general.", E),
+        (30, "work_circuit_30", "Expediente con lazo",
+         "Haz 30 circuitos de expediente perfectos.", E),
+        (75, "work_circuit_75", "Expedientes de manual",
+         "Haz 75 circuitos de expediente perfectos.", L),
         (150, "fun_circuito_150", "Tres años después, firmado",
          "Haz 150 circuitos de expediente perfectos.", L),
     ])  # fmt: skip
     a += _tiers("funcionariado", "work_colada", [
         (25, "fun_colada_25", "Letra pequeña con letra grande",
          "Pilla 25 disposiciones coladas en una ley que no tiene nada que ver.", E),
+        (50, "work_colada_50", "Cazador de letra pequeña", "Pilla 50 disposiciones coladas.", E),
+        (150, "work_colada_150", "Lector de disposiciones adicionales",
+         "Pilla 150 disposiciones coladas.", L),
         (250, "fun_colada_250", "Lector oficial de disposiciones finales",
          "Pilla 250 disposiciones coladas.", L),
     ])  # fmt: skip
     a += _tiers("funcionariado", "work_undersecretaries", [
         (30, "fun_lunes_30", "Lunes, 9:00, mesa grande",
          "Acierta 30 respuestas en la Comisión de Subsecretarios.", E),
+        (75, "work_undersecretaries_75", "Subsecretario de guardia",
+         "Acierta 75 respuestas en la Comisión de Subsecretarios.", E),
+        (150, "work_undersecretaries_150", "Veterano de los lunes",
+         "Acierta 150 respuestas en la Comisión de Subsecretarios.", L),
         (300, "fun_lunes_300", "Se pactó el lunes (y nadie lo recuerda)",
          "Acierta 300 respuestas en la Comisión de Subsecretarios.", L),
     ])  # fmt: skip
     a += _tiers("funcionariado", "work_state_council", [
         (25, "fun_dictamen_25", "Dictamen sin molestar a nadie",
          "Acierta 25 respuestas en el pleno del Consejo de Estado.", L),
+        (50, "work_state_council_50", "Dictamen redondo",
+         "Acierta 50 respuestas en el pleno del Consejo de Estado.", L),
+        (150, "work_state_council_150", "Consejero de Estado de facto",
+         "Acierta 150 respuestas en el pleno del Consejo de Estado.", L),
         (250, "fun_dictamen_250", "No vinculante, pero muy bien encuadernado",
          "Acierta 250 respuestas en el pleno del Consejo de Estado.", L),
     ])  # fmt: skip
     a += _tiers("funcionariado", "work_wealth", [
         (30, "fun_patrimonio_30", "Cada millón en su cajón",
          "Manda 30 bienes a su escondite legal como asesor fiscal de grandes fortunas.", E),
+        (75, "work_wealth_75", "Escondite legal", "Manda 75 bienes a su escondite legal.", E),
+        (150, "work_wealth_150", "Arquitecto patrimonial",
+         "Manda 150 bienes a su escondite legal.", L),
         (300, "fun_patrimonio_300", "Patrimonio exento de casi todo",
          "Manda 300 bienes a su escondite legal.", L),
     ])  # fmt: skip
     a += _tiers("funcionariado", "work_big_four", [
         (30, "fun_big_four_30", "Murallas chinas de papel",
          "Acierta 30 respuestas como socio de una Big Four.", E),
+        (75, "work_big_four_75", "Auditor de confianza",
+         "Acierta 75 respuestas como socio de una Big Four.", E),
+        (150, "work_big_four_150", "Socio de la consultora",
+         "Acierta 150 respuestas como socio de una Big Four.", L),
         (300, "fun_big_four_300", "Todo legal hasta que lo diga un juez",
          "Acierta 300 respuestas como socio de una Big Four.", L),
     ])  # fmt: skip
     a += _tiers("funcionariado", "work_sandwich", [
         (15, "fun_sandwich_15", "Doble irlandés con sándwich holandés",
          "Traza 15 rutas del dinero perfectas como ingeniero fiscal.", E),
+        (30, "work_sandwich_30", "Ruta del dinero", "Traza 30 rutas del dinero perfectas.", E),
+        (75, "work_sandwich_75", "Atlas de paraísos", "Traza 75 rutas del dinero perfectas.", L),
         (150, "fun_sandwich_150", "Cuatro paraísos y ni un euro perdido",
          "Traza 150 rutas del dinero perfectas.", L),
     ])  # fmt: skip
     a += _tiers("funcionariado", "work_mariachis", [
         (25, "fun_mariachis_25", "El único socio que lee el contrato",
          "Encuentra a 25 inversores de verdad entre los mariachis de la SICAV.", E),
+        (50, "work_mariachis_50", "Ojo para inversores", "Encuentra a 50 inversores de verdad.", E),
+        (150, "work_mariachis_150", "Imán de inversores",
+         "Encuentra a 150 inversores de verdad.", L),
         (250, "fun_mariachis_250", "Cien socios y un solo inversor",
          "Encuentra a 250 inversores de verdad.", L),
     ])  # fmt: skip
     a += _tiers("funcionariado", "work_andorra_desk", [
         (25, "fun_andorra_25", "Residente en Andorra (con casa en Chamberí)",
          "Acierta 25 respuestas como asesor de fortunas en Andorra.", L),
+        (50, "work_andorra_desk_50", "Asesor de alta montaña",
+         "Acierta 50 respuestas como asesor de fortunas en Andorra.", L),
+        (150, "work_andorra_desk_150", "Banquero de los Pirineos",
+         "Acierta 150 respuestas como asesor de fortunas en Andorra.", L),
         (250, "fun_andorra_250", "El avi Florenci estaría orgulloso",
          "Acierta 250 respuestas como asesor de fortunas en Andorra.", L),
     ])  # fmt: skip
@@ -13301,8 +15411,15 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("influencer", "work_followers_max", [
         (10_000, "seguidores_10k", "Diez mil seguidores (la mitad, bots rusos)",
          "Llega a 10.000 seguidores.", R),
+        (20_000, "work_followers_max_20000", "Microinfluencer", "Llega a 20.000 seguidores.", R),
+        (50_000, "work_followers_max_50000", "Influencer de urbanización",
+         "Llega a 50.000 seguidores.", E),
         (100_000, "seguidores_100k", "Cien mil seguidores, más votos que Sumar en Galicia",
          "Llega a 100.000 seguidores.", E),
+        (200_000, "work_followers_max_200000", "Influencer de capital",
+         "Llega a 200.000 seguidores.", E),
+        (500_000, "work_followers_max_500000", "Influencer nacional",
+         "Llega a 500.000 seguidores.", L),
         (1_000_000, "seguidores_1m", "Un millón de seguidores y tu madre",
          "Llega a 1.000.000 de seguidores.", L),
     ])  # fmt: skip
@@ -13369,60 +15486,92 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("influencer", "work_tertulia", [
         (30, "inf_tertulia_30", "Opinión sin fundamento, pero con aplomo",
          "Acierta 30 respuestas como tertuliano.", E),
+        (75, "work_tertulia_75", "Tertuliano con carné",
+         "Acierta 75 respuestas como tertuliano.", E),
+        (150, "work_tertulia_150", "Tertuliano de prime time",
+         "Acierta 150 respuestas como tertuliano.", L),
         (300, "inf_tertulia_300", "Opina de todo, sabe de nada, no rectifica nunca",
          "Acierta 300 respuestas como tertuliano.", L),
     ])  # fmt: skip
     a += _tiers("influencer", "work_escaleta", [
         (15, "inf_escaleta_15", "Escaleta sin huecos (ni tiempo)",
          "Cumple 15 escaletas perfectas como presentador de magacín.", E),
+        (30, "work_escaleta_30", "Escaleta cuadrada", "Cumple 30 escaletas perfectas.", E),
+        (75, "work_escaleta_75", "Escaleta maestra", "Cumple 75 escaletas perfectas.", L),
         (150, "inf_escaleta_150", "La receta, el horóscopo y la lluvia, otra vez",
          "Cumple 150 escaletas perfectas.", L),
     ])  # fmt: skip
     a += _tiers("influencer", "work_guests", [
         (30, "inf_invitados_30", "Cada famoso en su sofá",
          "Manda 30 invitados a su bloque como presentador de prime time.", E),
+        (75, "work_guests_75", "Regidor de plató", "Manda 75 invitados a su bloque.", E),
+        (150, "work_guests_150", "Productor de plató", "Manda 150 invitados a su bloque.", L),
         (300, "inf_invitados_300", "Cuatro horas de programa y nadie se ha ido a casa",
          "Manda 300 invitados a su bloque.", L),
     ])  # fmt: skip
     a += _tiers("influencer", "work_share", [
         (25, "inf_share_25", "Share con lupa",
          "Encuentra 25 programas que hunden la audiencia como director de cadena.", E),
+        (50, "work_share_50", "Ojo de audímetro",
+         "Encuentra 50 programas que hunden la audiencia.", E),
+        (150, "work_share_150", "Auditor de audiencias",
+         "Encuentra 150 programas que hunden la audiencia.", L),
         (250, "inf_share_250", "El consejo te quiere (hasta el próximo trimestre)",
          "Encuentra 250 programas que hunden la audiencia.", L),
     ])  # fmt: skip
     a += _tiers("influencer", "work_rtve", [
         (25, "inf_rtve_25", "Todos los partidos, igual de molestos",
          "Acierta 25 respuestas como presidente de RTVE.", L),
+        (50, "work_rtve_50", "Presidente de la tele pública",
+         "Acierta 50 respuestas como presidente de RTVE.", L),
+        (150, "work_rtve_150", "Superviviente de Prado del Rey",
+         "Acierta 150 respuestas como presidente de RTVE.", L),
         (250, "inf_rtve_250", "Presidente por consenso (de nadie)",
          "Acierta 250 respuestas como presidente de RTVE.", L),
     ])  # fmt: skip
     a += _tiers("influencer", "work_subathon", [
         (15, "inf_subathon_15", "Veinticuatro horas y ni una alerta perdida",
          "Atiende 15 subathons perfectos como streamer exiliado.", E),
+        (30, "work_subathon_30", "Maratón de directo", "Atiende 30 subathons perfectos.", E),
+        (75, "work_subathon_75", "Subathon de récord", "Atiende 75 subathons perfectos.", L),
         (150, "inf_subathon_150", "El TTS ya te conoce por tu nombre",
          "Atiende 150 subathons perfectos.", L),
     ])  # fmt: skip
     a += _tiers("influencer", "work_brand", [
         (30, "inf_marca_30", "Cada idea en su lata",
          "Manda 30 ideas a su cajón como dueño de una bebida energética.", E),
+        (75, "work_brand_75", "Cajón de ideas", "Manda 75 ideas a su cajón.", E),
+        (150, "work_brand_150", "Archivo de ideas", "Manda 150 ideas a su cajón.", L),
         (300, "inf_marca_300", "Tres contenedores de jarabe y ninguna demanda (aún)",
          "Manda 300 ideas a su cajón.", L),
     ])  # fmt: skip
     a += _tiers("influencer", "work_boxing", [
         (30, "inf_velada_30", "Cara a cara de cartel",
          "Acierta 30 respuestas como organizador de veladas de boxeo.", E),
+        (75, "work_boxing_75", "Promotor de veladas",
+         "Acierta 75 respuestas como organizador de veladas.", E),
+        (150, "work_boxing_150", "Empresario del ring",
+         "Acierta 150 respuestas como organizador de veladas.", L),
         (300, "inf_velada_300", "El combate es lo de menos",
          "Acierta 300 respuestas como organizador de veladas.", L),
     ])  # fmt: skip
     a += _tiers("influencer", "work_rug_spotted", [
         (25, "inf_rugpull_25", "Olfato anti-timo",
          "Encuentra 25 proyectos que eran un rug pull como gurú cripto.", E),
+        (50, "work_rug_spotted_50", "Detector de humo cripto",
+         "Encuentra 50 proyectos que eran un rug pull.", E),
+        (150, "work_rug_spotted_150", "Antitimo profesional",
+         "Encuentra 150 proyectos que eran un rug pull.", L),
         (250, "inf_rugpull_250", "Ni una sola vez a la luna",
          "Encuentra 250 proyectos que eran un rug pull.", L),
     ])  # fmt: skip
     a += _tiers("influencer", "work_party", [
         (25, "inf_partido_25", "Contra la casta (con dietas)",
          "Acierta 25 respuestas como fundador de un partido antisistema.", E),
+        (50, "work_party_50", "Fundador con carné",
+         "Acierta 50 respuestas como fundador de un partido.", E),
+        (150, "work_party_150", "Partido de autor",
+         "Acierta 150 respuestas como fundador de un partido.", L),
         (250, "inf_partido_250", "Se acabó la fiesta (la tuya, no)",
          "Acierta 250 respuestas como fundador de un partido.", L),
     ])  # fmt: skip
@@ -13632,66 +15781,106 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Jubílate de la Consultora y del Unicornio.", L, True),
     ])  # fmt: skip
     a += _tiers("oficina", "work_options_max", [
+        (2_000_000, "work_options_max_2000000", "Millonario en acciones",
+         "Acumula 2.000.000 Y$ en stock options.", E),
+        (5_000_000, "work_options_max_5000000", "Stock options de leyenda",
+         "Acumula 5.000.000 Y$ en stock options.", L),
         (10_000_000, "ofi_papel_10m", "Millonario de Excel",
          "Acumula 10.000.000 Y$ en stock options.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("oficina", "work_hours_billed", [
         (30, "ofi_horas_30", "Cada hora al cliente que toca (y a veces al que no)",
          "Imputa 30 horas al cliente correcto como jefe de proyecto.", E),
+        (75, "work_hours_billed_75", "Horas imputadas", "Imputa 75 horas al cliente correcto.", E),
+        (150, "work_hours_billed_150", "Imputador de horas",
+         "Imputa 150 horas al cliente correcto.", L),
         (300, "ofi_horas_300", "Hora imputada, hora cobrada, hora que no existió",
          "Imputa 300 horas al cliente correcto.", L),
     ])  # fmt: skip
     a += _tiers("oficina", "work_tender_files", [
         (15, "ofi_licitacion_15", "Pliego, mesa, baja temeraria y recurso (en ese orden)",
          "Cierra 15 licitaciones perfectas como gerente de cuentas públicas.", E),
+        (30, "work_tender_files_30", "Licitación ganada", "Cierra 30 licitaciones perfectas.", E),
+        (75, "work_tender_files_75", "Rey de las licitaciones",
+         "Cierra 75 licitaciones perfectas.", L),
         (150, "ofi_licitacion_150", "El interventor ya ni mira",
          "Cierra 150 licitaciones perfectas.", L),
     ])  # fmt: skip
     a += _tiers("oficina", "work_public_app_bugs", [
         (25, "ofi_app_25", "Cl@ve te manda el PIN (a otro móvil)",
          "Encuentra 25 fallos que tumban la app pública.", E),
+        (50, "work_public_app_bugs_50", "Tester de la administración",
+         "Encuentra 50 fallos que tumban la app pública.", E),
+        (150, "work_public_app_bugs_150", "Cazador de caídas",
+         "Encuentra 150 fallos que tumban la app pública.", L),
         (250, "ofi_app_250", "Funciona perfectamente (en el entorno de pruebas)",
          "Encuentra 250 fallos que tumban la app pública.", L),
     ])  # fmt: skip
     a += _tiers("oficina", "work_partner_committee", [
         (25, "ofi_socios_25", "Se factura la hora, no el resultado",
          "Acierta 25 respuestas en el comité de socios.", E),
+        (50, "work_partner_committee_50", "Comité de socios",
+         "Acierta 50 respuestas en el comité de socios.", E),
+        (150, "work_partner_committee_150", "Socio veterano",
+         "Acierta 150 respuestas en el comité de socios.", L),
         (250, "ofi_socios_250", "Tu cuenta de explotación es un acto de fe",
          "Acierta 250 respuestas en el comité de socios.", L),
     ])  # fmt: skip
     a += _tiers("oficina", "work_managing_partner", [
         (25, "ofi_director_25", "Gane quien gane, tú sigues de cliente",
          "Acierta 25 respuestas como socio director.", L),
+        (50, "work_managing_partner_50", "Socio director de facto",
+         "Acierta 50 respuestas como socio director.", L),
+        (150, "work_managing_partner_150", "Socio de la casa grande",
+         "Acierta 150 respuestas como socio director.", L),
         (250, "ofi_director_250", "Los gobiernos pasan, el informe permanece",
          "Acierta 250 respuestas como socio director.", L),
     ])  # fmt: skip
     a += _tiers("oficina", "work_pitch_founder", [
         (30, "ofi_pitch_30", "Una curva hacia arriba y cara de póker",
          "Acierta 30 respuestas en pitches a inversores como fundador.", E),
+        (75, "work_pitch_founder_75", "Pitch convincente",
+         "Acierta 75 respuestas en pitches a inversores.", E),
+        (150, "work_pitch_founder_150", "Pitch de oro",
+         "Acierta 150 respuestas en pitches a inversores.", L),
         (300, "ofi_pitch_300", "Sin competencia, sin ingresos y sin vergüenza",
          "Acierta 300 respuestas en pitches a inversores.", L),
     ])  # fmt: skip
     a += _tiers("oficina", "work_pivots", [
         (30, "ofi_pivot_30", "Pivotar hasta marearse",
          "Manda 30 ideas a su moda del momento como CEO tras la serie A.", E),
+        (75, "work_pivots_75", "Moda del momento", "Manda 75 ideas a su moda del momento.", E),
+        (150, "work_pivots_150", "Pivote profesional", "Manda 150 ideas a su moda del momento.", L),
         (300, "ofi_pivot_300", "Esto era un buscador de recetas con IA, ahora es cripto",
          "Manda 300 ideas a su moda del momento.", L),
     ])  # fmt: skip
     a += _tiers("oficina", "work_runway_burn", [
         (25, "ofi_runway_25", "El futbolín de oro no se paga solo",
          "Encuentra 25 gastos que queman la caja como CEO de un unicornio.", E),
+        (50, "work_runway_burn_50", "Auditor de gastos",
+         "Encuentra 50 gastos que queman la caja.", E),
+        (150, "work_runway_burn_150", "Cortafuegos de caja",
+         "Encuentra 150 gastos que queman la caja.", L),
         (250, "ofi_runway_250", "Seis meses de caja y un ático de 400 metros",
          "Encuentra 250 gastos que queman la caja.", L),
     ])  # fmt: skip
     a += _tiers("oficina", "work_funding_rounds", [
         (15, "ofi_rondas_15", "De la semilla a la serie B (y al hoyo)",
          "Repasa 15 historiales de rondas perfectos como business angel.", E),
+        (30, "work_funding_rounds_30", "Historial de rondas",
+         "Repasa 30 historiales de rondas perfectos.", E),
+        (75, "work_funding_rounds_75", "Analista de rondas",
+         "Repasa 75 historiales de rondas perfectos.", L),
         (150, "ofi_rondas_150", "Has visto más down rounds que Wall Street",
          "Repasa 150 historiales de rondas perfectos.", L),
     ])  # fmt: skip
     a += _tiers("oficina", "work_social_network", [
         (25, "ofi_red_25", "Lo que dices tú es libertad de expresión",
          "Acierta 25 respuestas como tecnomillonario con red social propia.", L),
+        (50, "work_social_network_50", "Tecnomillonario de prácticas",
+         "Acierta 50 respuestas como tecnomillonario.", L),
+        (150, "work_social_network_150", "Tecnomillonario de verdad",
+         "Acierta 150 respuestas como tecnomillonario.", L),
         (250, "ofi_red_250", "Moderación: tú y tu megáfono",
          "Acierta 250 respuestas como tecnomillonario.", L),
     ])  # fmt: skip
@@ -13865,7 +16054,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "deseo_1", "Pide un deseo, que la lámpara no cobra",
          "Cumple tu primer deseo del día.", C),
         (10, "deseo_10", "Hada madrina sindical", "Cumple 10 deseos del día.", R),
+        (20, "work_wishes_20", "Deseo concedido", "Cumple 20 deseos del día.", R),
         (50, "deseo_50", "Frotando la lámpara", "Cumple 50 deseos del día.", E),
+        (75, "work_wishes_75", "Genio de la lámpara", "Cumple 75 deseos del día.", E),
         (200, "deseo_200", "Los Reyes Magos te tienen en nómina",
          "Cumple 200 deseos del día.", L),
     ])  # fmt: skip
@@ -13906,6 +16097,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("work", "work_pensions", [
         (1, "pension_1", "Por fin, la pensión", "Cobra tu pensión por primera vez.", E),
         (30, "pension_30", "Pensión vitalicia", "Cobra la pensión 30 días.", L),
+        (75, "work_pensions_75", "Pensionista de oro", "Cobra la pensión 75 días.", L),
+        (150, "work_pensions_150", "Pensión de leyenda", "Cobra la pensión 150 días.", M),
         (365, "pension_365", "Más años cobrando que cotizando",
          "Cobra la pensión 365 días.", M),
     ])  # fmt: skip
@@ -13927,51 +16120,81 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("jobs", "work_spokes", [
         (25, "portavoz_25", "Lo que diga el argumentario",
          "Contesta 25 preguntas como portavoz.", E),
+        (50, "work_spokes_50", "Portavoz de oficio", "Contesta 50 preguntas como portavoz.", E),
+        (150, "work_spokes_150", "Portavoz incombustible",
+         "Contesta 150 preguntas como portavoz.", L),
         (250, "portavoz_250", "Máquina de titulares vacíos",
          "Contesta 250 preguntas como portavoz.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_decrees", [
         (30, "decretos_30", "Al BOE", "Despacha 30 papeles como secretario de Estado.", E),
+        (75, "work_decrees_75", "Papeleo despachado", "Despacha 75 papeles.", E),
+        (150, "work_decrees_150", "Mesa despejada", "Despacha 150 papeles.", L),
         (300, "decretos_300", "Firmamanía",
          "Despacha 300 papeles.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_ministry", [
         (25, "ministerio_25", "Ministro de lo suyo", "Sal airoso de 25 marrones del ministerio.",
          E),
+        (50, "work_ministry_50", "Ministerio sin marrones",
+         "Sal airoso de 50 marrones del ministerio.", E),
+        (150, "work_ministry_150", "Ministro todoterreno",
+         "Sal airoso de 150 marrones del ministerio.", L),
         (250, "ministerio_250", "Superministro de veintidós ministerios",
          "Sal airoso de 250 marrones del ministerio.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_partners", [
         (15, "socios_15", "Agenda de socios con prefijo de Bélgica",
          "Recuerda 15 veces lo que le prometiste a cada socio.", E),
+        (30, "work_partners_30", "Memoria de socios",
+         "Recuerda 30 veces lo que le prometiste a cada socio.", E),
+        (75, "work_partners_75", "Memoria de elefante parlamentario",
+         "Recuerda 75 veces lo que le prometiste a cada socio.", L),
         (150, "socios_150", "Geometría variable, con siete socios",
          "Recuerda 150 veces lo que le prometiste a cada socio.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_control", [
         (30, "control_30", "Y tú más", "Sobrevive a 30 preguntas de la sesión de control.", E),
+        (75, "work_control_75", "Sesión de control superada",
+         "Sobrevive a 75 preguntas de la sesión de control.", E),
+        (150, "work_control_150", "Veterano de los miércoles",
+         "Sobrevive a 150 preguntas de la sesión de control.", L),
         (300, "control_300", "Los miércoles son míos",
          "Sobrevive a 300 preguntas de la sesión de control.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_plenary", [
         (15, "plenos_15", "Botón verde, botón rojo", "Vota bien 15 tandas del pleno europeo.", E),
+        (30, "work_plenary_30", "Votación limpia", "Vota bien 30 tandas del pleno.", E),
+        (75, "work_plenary_75", "Votante de manual", "Vota bien 75 tandas del pleno.", L),
         (150, "plenos_150", "Eurodiputado de manual", "Vota bien 150 tandas del pleno.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_amendments", [
         (30, "enmiendas_30", "Enmienda a la totalidad", "Manda 30 enmiendas a su sitio.", E),
+        (75, "work_amendments_75", "Enmienda colocada", "Manda 75 enmiendas a su sitio.", E),
+        (150, "work_amendments_150", "Ponente de leyes", "Manda 150 enmiendas a su sitio.", L),
         (300, "enmiendas_300", "Ponente estrella", "Manda 300 enmiendas a su sitio.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_lobbies", [
         (25, "lobbies_25", "Puertas abiertas (al lobby)", "Torea a 25 lobistas.", E),
+        (50, "work_lobbies_50", "Torero de lobbies", "Torea a 50 lobistas.", E),
+        (150, "work_lobbies_150", "Matador de lobistas", "Torea a 150 lobistas.", L),
         (250, "lobbies_250", "Registro de transparencia", "Torea a 250 lobistas.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_trilogues", [
         (30, "trilogo_30", "Trílogo a las cuatro de la mañana", "Cierra 30 puntos de un trílogo.",
          E),
+        (75, "work_trilogues_75", "Trílogo cerrado", "Cierra 75 puntos de un trílogo.", E),
+        (150, "work_trilogues_150", "Negociador de Bruselas",
+         "Cierra 150 puntos de un trílogo.", L),
         (300, "trilogo_300", "Acuerdo provisional", "Cierra 300 puntos de un trílogo.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_commission", [
         (20, "comision_20", "Multa a la red social de Musk",
          "Acierta 20 respuestas como comisario europeo.", L),
+        (40, "work_commission_40", "Comisario resolutivo",
+         "Acierta 40 respuestas como comisario.", L),
+        (75, "work_commission_75", "Comisario de manual",
+         "Acierta 75 respuestas como comisario.", L),
         (200, "comision_200", "Bruselas tiene la última palabra",
          "Acierta 200 respuestas como comisario.", L),
     ])  # fmt: skip
@@ -14095,42 +16318,64 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("jobs", "work_flats", [
         (15, "pisos_15", "Piso piloto con vistas (de lado)",
          "Enseña 15 pisos piloto como los pidió el cliente.", E),
+        (30, "work_flats_30", "Piso piloto vendido", "Enseña 30 pisos piloto.", E),
+        (75, "work_flats_75", "Comercial de pisos piloto", "Enseña 75 pisos piloto.", L),
         (150, "pisos_150", "Burbuja 2.0", "Enseña 150 pisos piloto.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_land", [
         (30, "terrenos_30", "Recalificador de guardia", "Manda 30 terrenos a su sitio.", E),
+        (75, "work_land_75", "Terreno colocado", "Manda 75 terrenos a su sitio.", E),
+        (150, "work_land_150", "Recalificación en serie", "Manda 150 terrenos a su sitio.", L),
         (300, "terrenos_300", "Ni un pinar en pie", "Manda 300 terrenos a su sitio.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_bank", [
         (25, "banco_25", "Refinanciado a treinta años", "Refinancia 25 deudas con el banco.", E),
+        (50, "work_bank_50", "Deuda refinanciada", "Refinancia 50 deudas.", E),
+        (150, "work_bank_150", "Refinanciador profesional", "Refinancia 150 deudas.", L),
         (250, "banco_250", "Rescate bancario a medida", "Refinancia 250 deudas.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_mayor", [
         (30, "alcalde_30", "Convenio urbanístico", "Cierra 30 convenios con el alcalde.", E),
+        (75, "work_mayor_75", "Convenio firmado", "Cierra 75 convenios con el alcalde.", E),
+        (150, "work_mayor_150", "Convenios en serie", "Cierra 150 convenios con el alcalde.", L),
         (300, "alcalde_300", "Marbella era esto", "Cierra 300 convenios con el alcalde.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_box", [
         (20, "palco_20", "De fútbol, lo justo", "Acierta 20 respuestas en el palco.", L),
+        (40, "work_box_40", "Palco con puro", "Acierta 40 respuestas en el palco.", L),
+        (75, "work_box_75", "Habitual del palco", "Acierta 75 respuestas en el palco.", L),
         (200, "palco_200", "Presidente de palco y puro",
          "Acierta 200 respuestas en el palco.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_tenders", [
         (30, "licitaciones_30", "Baja temeraria", "Manda 30 concursos a su sitio.", E),
+        (75, "work_tenders_75", "Concurso adjudicado", "Manda 75 concursos a su sitio.", E),
+        (150, "work_tenders_150", "Adjudicatario de oficio", "Manda 150 concursos a su sitio.", L),
         (300, "licitaciones_300", "Rey de la UTE", "Manda 300 concursos a su sitio.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_concessions", [
         (15, "concesiones_15", "Radial rescatada", "Renueva 15 tandas de concesiones.", E),
+        (30, "work_concessions_30", "Concesión renovada", "Renueva 30 tandas de concesiones.", E),
+        (75, "work_concessions_75", "Concesionario eterno", "Renueva 75 tandas de concesiones.", L),
         (150, "concesiones_150", "Peaje eterno", "Renueva 150 tandas de concesiones.", L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_ministry_deals", [
         (30, "modificados_30", "El modificado del modificado",
          "Saca 30 modificados en el ministerio.", E),
+        (75, "work_ministry_deals_75", "Modificado aprobado",
+         "Saca 75 modificados en el ministerio.", E),
+        (150, "work_ministry_deals_150", "Sobrecoste de manual",
+         "Saca 150 modificados en el ministerio.", L),
         (300, "modificados_300", "Presupuesto por tres", "Saca 300 modificados en el ministerio.",
          L),
     ])  # fmt: skip
     a += _tiers("jobs", "work_abroad_deals", [
         (20, "internacional_20", "Marca España (con sobrecoste)",
          "Acierta 20 respuestas en los contratos por el mundo.", L),
+        (40, "work_abroad_deals_40", "Contrato internacional",
+         "Acierta 40 respuestas en los contratos por el mundo.", L),
+        (75, "work_abroad_deals_75", "Constructor por el mundo",
+         "Acierta 75 respuestas en los contratos por el mundo.", L),
         (200, "internacional_200", "Del canal de Panamá al palacio de Erdoğan",
          "Acierta 200 respuestas en los contratos por el mundo.", L),
     ])  # fmt: skip
@@ -14198,58 +16443,90 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("sanidad", "work_surgeries", [
         (15, "san_quirofano_15", "Parte de quirófano sin tachones",
          "Cuadra 15 partes de quirófano como jefe de sección.", E),
+        (30, "work_surgeries_30", "Parte de quirófano", "Cuadra 30 partes de quirófano.", E),
+        (75, "work_surgeries_75", "Quirófano en hora", "Cuadra 75 partes de quirófano.", L),
         (150, "san_quirofano_150", "Quirófano a las ocho en punto",
          "Cuadra 150 partes de quirófano.", L),
     ])  # fmt: skip
     a += _tiers("sanidad", "work_referrals", [
         (30, "san_derivaciones_30", "Derivador oficial",
          "Manda 30 pacientes a su sitio como jefe de servicio.", E),
+        (75, "work_referrals_75", "Paciente derivado", "Manda 75 pacientes a su sitio.", E),
+        (150, "work_referrals_150", "Derivación perfecta", "Manda 150 pacientes a su sitio.", L),
         (300, "san_derivaciones_300", "Cada paciente en su cajón",
          "Manda 300 pacientes a su sitio.", L),
     ])  # fmt: skip
     a += _tiers("sanidad", "work_medical_director", [
         (25, "san_direccion_25", "Bombero con bata",
          "Apaga 25 incendios como director médico.", E),
+        (50, "work_medical_director_50", "Incendio apagado",
+         "Apaga 50 incendios como director médico.", E),
+        (150, "work_medical_director_150", "Bombero de hospital",
+         "Apaga 150 incendios como director médico.", L),
         (250, "san_direccion_250", "Estamos priorizando",
          "Apaga 250 incendios como director médico.", L),
     ])  # fmt: skip
     a += _tiers("sanidad", "work_hospital_manager", [
         (30, "san_gerencia_30", "Todo es un reto",
          "Acierta 30 respuestas con la Consejería como gerente.", E),
+        (75, "work_hospital_manager_75", "Gerente con respuestas",
+         "Acierta 75 respuestas como gerente del hospital.", E),
+        (150, "work_hospital_manager_150", "Gerente de oficio",
+         "Acierta 150 respuestas como gerente del hospital.", L),
         (300, "san_gerencia_300", "Gerente a prueba de goteras",
          "Acierta 300 respuestas como gerente del hospital.", L),
     ])  # fmt: skip
     a += _tiers("sanidad", "work_health_minister", [
         (20, "san_consejeria_20", "La culpa es del anterior",
          "Acierta 20 respuestas en el pleno como consejero de Sanidad.", L),
+        (40, "work_health_minister_40", "Consejero con respuestas",
+         "Acierta 40 respuestas en el pleno como consejero de Sanidad.", L),
+        (75, "work_health_minister_75", "Consejero de pleno",
+         "Acierta 75 respuestas en el pleno como consejero de Sanidad.", L),
         (200, "san_consejeria_200", "Herencia recibida",
          "Acierta 200 respuestas en el pleno como consejero de Sanidad.", L),
     ])  # fmt: skip
     a += _tiers("sanidad", "work_fine_print", [
         (25, "san_letra_25", "Lupa de mutua", "Encuentra 25 cláusulas de letra pequeña.", E),
+        (50, "work_fine_print_50", "Lupa de póliza", "Encuentra 50 cláusulas de letra pequeña.", E),
+        (150, "work_fine_print_150", "Lector de cláusulas",
+         "Encuentra 150 cláusulas de letra pequeña.", L),
         (250, "san_letra_250", "Cuerpo 4", "Encuentra 250 cláusulas de letra pequeña.", L),
     ])  # fmt: skip
     a += _tiers("sanidad", "work_touchups", [
         (15, "san_retoques_15", "Bisturí con filtro",
          "Haz 15 retoques tal como los pidió el cliente.", E),
+        (30, "work_touchups_30", "Retoque fino", "Haz 30 retoques perfectos.", E),
+        (75, "work_touchups_75", "Bisturí de autor", "Haz 75 retoques perfectos.", L),
         (150, "san_retoques_150", "Cara de cera, cuenta de oro", "Haz 150 retoques perfectos.",
          L),
     ])  # fmt: skip
     a += _tiers("sanidad", "work_clinic", [
         (25, "san_clinica_25", "El cliente siempre trae tarjeta",
          "Atiende a 25 clientes VIP en tu clínica.", E),
+        (50, "work_clinic_50", "Clínica VIP", "Atiende a 50 clientes VIP en tu clínica.", E),
+        (150, "work_clinic_150", "Clientela de lujo",
+         "Atiende a 150 clientes VIP en tu clínica.", L),
         (250, "san_clinica_250", "Barista en la sala de espera",
          "Atiende a 250 clientes VIP en tu clínica.", L),
     ])  # fmt: skip
     a += _tiers("sanidad", "work_health_deals", [
         (30, "san_conciertos_30", "Colaboración público-privada",
          "Cierra 30 conciertos con la Comunidad.", E),
+        (75, "work_health_deals_75", "Concierto firmado",
+         "Cierra 75 conciertos con la Comunidad.", E),
+        (150, "work_health_deals_150", "Conciertos en serie",
+         "Cierra 150 conciertos con la Comunidad.", L),
         (300, "san_conciertos_300", "Quirófanos libres (qué casualidad)",
          "Cierra 300 conciertos con la Comunidad.", L),
     ])  # fmt: skip
     a += _tiers("sanidad", "work_insurer", [
         (20, "san_poliza_20", "Prima, no siniestro",
          "Acierta 20 respuestas en la junta de accionistas de tu aseguradora.", L),
+        (40, "work_insurer_40", "Junta superada",
+         "Acierta 40 respuestas en la junta de accionistas.", L),
+        (75, "work_insurer_75", "Accionista satisfecho",
+         "Acierta 75 respuestas en la junta de accionistas.", L),
         (200, "san_poliza_200", "No me consta, no me consta",
          "Acierta 200 respuestas en la junta de accionistas.", L),
     ])  # fmt: skip
@@ -14257,6 +16534,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "san_contrato_dia", "Contrato de un día (renovable)",
          "Acepta un contrato de un día.", C),
         (10, "san_contrato_dia_10", "Once contratos al mes", "Acepta 10 contratos de un día.", R),
+        (20, "work_one_day_contract_20", "Contratos de usar y tirar",
+         "Acepta 20 contratos de un día.", R),
         (50, "san_contrato_dia_50", "Precariedad con bata", "Acepta 50 contratos de un día.", E),
     ])  # fmt: skip
     a += _tiers("sanidad", "work_or_dance", [
@@ -14396,58 +16675,88 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("hosteleria", "work_wristbands", [
         (15, "hos_pulseras_15", "Pulsera verde fosforito",
          "Cumple las peticiones de 15 huéspedes del vuelo de Mánchester sin equivocarte.", E),
+        (30, "work_wristbands_30", "Huésped contento",
+         "Cumple las peticiones de 30 huéspedes sin equivocarte.", E),
+        (75, "work_wristbands_75", "Recepcionista de oro",
+         "Cumple las peticiones de 75 huéspedes sin equivocarte.", L),
         (150, "hos_pulseras_150", "Todo incluido, hasta tu paciencia",
          "Cumple las peticiones de 150 huéspedes sin equivocarte.", L),
     ])  # fmt: skip
     a += _tiers("hosteleria", "work_complaints", [
         (30, "hos_quejas_30", "Lamentamos su experiencia",
          "Manda 30 reseñas a su departamento como director regional.", E),
+        (75, "work_complaints_75", "Reseña archivada", "Manda 75 reseñas a su departamento.", E),
+        (150, "work_complaints_150", "Gestor de reseñas",
+         "Manda 150 reseñas a su departamento.", L),
         (300, "hos_quejas_300", "Libro de reclamaciones encuadernado en piel",
          "Manda 300 reseñas a su departamento.", L),
     ])  # fmt: skip
     a += _tiers("hosteleria", "work_gatecrashers", [
         (25, "hos_colados_25", "Control de pulseras",
          "Pilla a 25 colados en el buffet de tu resort.", E),
+        (50, "work_gatecrashers_50", "Vigilante del buffet", "Pilla a 50 colados en el buffet.", E),
+        (150, "work_gatecrashers_150", "Guardián de las gambas",
+         "Pilla a 150 colados en el buffet.", L),
         (250, "hos_colados_250", "Ni una gamba sin pulsera",
          "Pilla a 250 colados en el buffet.", L),
     ])  # fmt: skip
     a += _tiers("hosteleria", "work_hotel_chain", [
         (30, "hos_cadena_30", "Todo es inversión",
          "Acierta 30 respuestas ante los inversores de tu cadena.", E),
+        (75, "work_hotel_chain_75", "Junta de inversores",
+         "Acierta 75 respuestas ante los inversores.", E),
+        (150, "work_hotel_chain_150", "Inversores contentos",
+         "Acierta 150 respuestas ante los inversores.", L),
         (300, "hos_cadena_300", "La eficiencia soy yo",
          "Acierta 300 respuestas ante los inversores.", L),
     ])  # fmt: skip
     a += _tiers("hosteleria", "work_employers", [
         (20, "hos_patronal_20", "Siempre hay crisis (menos en el balance)",
          "Acierta 20 respuestas en la mesa con el Gobierno como presidente de la patronal.", L),
+        (40, "work_employers_40", "Mesa con el Gobierno",
+         "Acierta 40 respuestas en la mesa con el Gobierno.", L),
+        (75, "work_employers_75", "Lobby turístico",
+         "Acierta 75 respuestas en la mesa con el Gobierno.", L),
         (200, "hos_patronal_200", "Mesa de diálogo con vistas al mar",
          "Acierta 200 respuestas en la mesa con el Gobierno.", L),
     ])  # fmt: skip
     a += _tiers("hosteleria", "work_plating", [
         (15, "hos_emplatado_15", "Pinzas de titanio",
          "Emplata 15 platos tal como mandaba la carta.", E),
+        (30, "work_plating_30", "Emplatado fino", "Emplata 30 platos perfectos.", E),
+        (75, "work_plating_75", "Emplatado de estrella", "Emplata 75 platos perfectos.", L),
         (150, "hos_emplatado_150", "Aire de papa arrugada",
          "Emplata 150 platos perfectos.", L),
     ])  # fmt: skip
     a += _tiers("hosteleria", "work_guide_inspector", [
         (25, "hos_inspector_25", "Olfato de Guía", "Pilla a 25 inspectores de la Guía.", E),
+        (50, "work_guide_inspector_50", "Inspector cazado", "Pilla a 50 inspectores.", E),
+        (150, "work_guide_inspector_150", "Cazainspectores", "Pilla a 150 inspectores.", L),
         (250, "hos_inspector_250", "Libreta contra libreta", "Pilla a 250 inspectores.", L),
     ])  # fmt: skip
     a += _tiers("hosteleria", "work_tv_judge", [
         (25, "hos_tv_25", "Humillar con gracia",
          "Acierta 25 respuestas en el talent de cocina como chef de la tele.", E),
+        (50, "work_tv_judge_50", "Juez de talent", "Acierta 50 respuestas en el talent.", E),
+        (150, "work_tv_judge_150", "Jurado de la tele", "Acierta 150 respuestas en el talent.", L),
         (250, "hos_tv_250", "Cuarto de hora de fama (y de gritos)",
          "Acierta 250 respuestas en el talent.", L),
     ])  # fmt: skip
     a += _tiers("hosteleria", "work_brigade", [
         (30, "hos_brigada_30", "Cada cual a su partida",
          "Manda a 30 cocineros a su partida como dueño de un grupo.", E),
+        (75, "work_brigade_75", "Jefe de partida", "Manda a 75 cocineros a su partida.", E),
+        (150, "work_brigade_150", "Jefe de cocina", "Manda a 150 cocineros a su partida.", L),
         (300, "hos_brigada_300", "El stagier sigue en el Office",
          "Manda a 300 cocineros a su partida.", L),
     ])  # fmt: skip
     a += _tiers("hosteleria", "work_dubai", [
         (20, "hos_dubai_20", "Pan de oro hasta en el agua",
          "Acierta 20 respuestas en tu restaurante de Dubái.", L),
+        (40, "work_dubai_40", "Restaurante en Dubái",
+         "Acierta 40 respuestas en tu restaurante de Dubái.", L),
+        (75, "work_dubai_75", "Franquicia del desierto",
+         "Acierta 75 respuestas en tu restaurante de Dubái.", L),
         (200, "hos_dubai_200", "Franquicia en Marte (pendiente)",
          "Acierta 200 respuestas en tu restaurante de Dubái.", L),
     ])  # fmt: skip

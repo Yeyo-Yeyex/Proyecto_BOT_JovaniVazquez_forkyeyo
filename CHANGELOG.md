@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.28.0 · 2026-10-18
+
+- Logros: 1.604 nuevos (5.865 en total). Escalones intermedios en casi todos los contadores (chat, voz, música, memes, casino, juegos, trabajo, tienda, pisos, loterías…) y nueve secretos más en Allá tú, el Rastro y la Torre
+
 ### 7.27.0 · 2026-10-18
 
 - Logros: 115 nuevos. Partidas en el casino y juegos distintos, fechas en cada juego (madrugada, viernes 13, Día de Canarias, Nochevieja) y en el casino entero, escalones más altos en chat, voz, música, memes, lista y juegos, y secretos con cifras con guasa. Seis logros que dependen de otros suben de rareza
