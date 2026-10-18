@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.31 · 2026-10-18
+
+- Interno: las pruebas vigilan las reglas de tono (frases normales, lo boricua y la muleta «como»)
+
 ### 7.25.30 · 2026-10-18
 
 - Interno: el informe de la auditoría de tono, al día, con las cifras de antes y después

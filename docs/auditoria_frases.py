@@ -112,8 +112,56 @@ FAMILIES: dict[str, str] = {
 BORICUA = r"\bwepa|bendito|mi amor|\bpapi\b|\bacho\b"
 #: La muleta «X, como [referencia]» que la Biblia prohíbe en los nombres de logros.
 COMPARISON = r",\s*como\s+(el|la|los|las|un|una|en)\b|\bcomo\s+[A-ZÁÉÍÓÚ]"
-#: Por debajo de esto, una lista no cumple la mitad de frases normales (solo informa).
+#: Por debajo de esto, una lista no cumple la mitad de frases normales.
 MIN_PLAIN_SHARE = 0.5
+#: Listas que ya estaban por debajo al acabar la auditoría (18/10/2026). Una lista nueva por
+#: debajo de la mitad es un aviso; una de estas que mejora también, para sacarla de aquí.
+KNOWN_UNDER_PLAIN = frozenset(
+    {
+        "cogs/allatu:HANG_LINES",
+        "cogs/allatu:WIN_LINES",
+        "cogs/backgammon:JOVANI_CHATTER",
+        "cogs/backgammon:JOVANI_DOUBLES",
+        "cogs/backgammon:SLEEP_LINES",
+        "cogs/birthdays:ANNIVERSARY_LINES",
+        "cogs/birthdays:BIRTHDAY_LINES",
+        "cogs/blackjack:PIT_BOSS_LINES",
+        "cogs/bus:WIN_LINES",
+        "cogs/casino:LOSS_LINES",
+        "cogs/gallos:TRAIN_LINES[Stat.ENDURANCE]",
+        "cogs/hold_win:COLLECT_LINES['olimpo']",
+        "cogs/hold_win:RESCUE_LINES",
+        "cogs/message_stats:LEVEL_LINES",
+        "cogs/timba:QUIPS",
+        "services/horses:RACE_NAMES",
+        "services/lootboxes:REVEAL_LINES[Rarity.MYTHIC]",
+        "services/pets:GENERIC_LINES[Event.BIRTHDAY]",
+        "services/pets:GENERIC_LINES[Event.IMV]",
+        "services/pets_catalog:SPECIES",
+        "services/pets_catalog:SPECIES[G]",
+        "services/pets_catalog:SPECIES[N]",
+        "services/tower:MILESTONES[3]",
+    }
+)
+#: Dónde lo boricua es contenido y se queda (Biblia, «El contenido se queda»): el caballo
+#: Wepa Boricua y su premio, las reglas de la beernight y la detección de «hablar en boricua».
+BORICUA_CONTENT_MODULES = frozenset(
+    {
+        "cogs/beernight",
+        "services/beernight_catalog",
+        "services/horses",
+        "services/horses_scene",
+    }
+)
+BORICUA_CONTENT_TEXTS = frozenset(
+    {
+        "wepa",
+        "bendito",
+        "acho",
+        "Habla en boricua (wepa, bendito, janguear…) en 10 mensajes.",
+        "Gana el Gran Premio a ganador con Wepa Boricua.",
+    }
+)
 #: Una lista con más coletillas que esto se marca: la otra mitad, frases normales (la Biblia).
 MAX_CATCHPHRASE_SHARE = 0.5
 #: Listas más cortas no se miran: con dos frases, una coletilla ya es la mitad.
@@ -219,6 +267,24 @@ def _lists_in(node: ast.AST, where: str) -> list[PhraseList]:
     return found
 
 
+def boricua_texts(root: Path = ROOT) -> list[str]:
+    """Textos del bot con lo boricua que no es de Jovani, fuera del contenido que se queda."""
+    found: list[str] = []
+    for path in sorted(root.rglob("*.py")):
+        module = path.relative_to(root).with_suffix("").as_posix()
+        if module in BORICUA_CONTENT_MODULES:
+            continue
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            text = _text(node)
+            if text and text not in BORICUA_CONTENT_TEXTS and re.search(BORICUA, text, re.I):
+                found.append(f"{module}: {text[:60]}")
+    for path in sorted(root.rglob("*.txt")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.startswith("#") and re.search(BORICUA, line, re.I):
+                found.append(f"{path.relative_to(root).as_posix()}: {line[:60]}")
+    return found
+
+
 def collect(root: Path = ROOT) -> tuple[list[PhraseList], Counter[str]]:
     """Las listas de frases de `root` y cuántas veces sale cada fuente en todo el texto."""
     lists: list[PhraseList] = []
@@ -279,6 +345,23 @@ def report(lists: list[PhraseList], sources: Counter[str]) -> list[str]:
         if len(places) > 1:
             print(f"  «{phrase[:70]}» en {', '.join(sorted(places))}")
             warnings.append(f"repetida: {phrase[:40]}")
+
+    print("\nListas por debajo de la mitad de frases normales (nuevas o que ya mejoraron):")
+    # Varias listas comparten nombre (una `SPECIES` por especie): cuenta la peor.
+    worst: dict[str, float] = {}
+    for pl in lists:
+        worst[pl.where] = min(worst.get(pl.where, 1.0), pl.plain_share())
+    for place, share in sorted(worst.items()):
+        under = share < MIN_PLAIN_SHARE
+        if under != (place in KNOWN_UNDER_PLAIN):
+            note = "nueva por debajo" if under else "ya cumple: sácala de KNOWN_UNDER_PLAIN"
+            print(f"  {share:4.0%}  {place} ({note})")
+            warnings.append(f"normales: {place}")
+
+    print("\nLo boricua que no es de Jovani (¡Wepa!, mi amor, ¡Ay, bendito!…):")
+    for line in boricua_texts():
+        print(f"  {line}")
+        warnings.append(f"boricua: {line[:40]}")
 
     print("\nFuentes de ironía (veces en todos los textos del bot):")
     for name, count in sorted(sources.items(), key=lambda kv: kv[1]):

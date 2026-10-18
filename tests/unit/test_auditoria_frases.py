@@ -62,3 +62,30 @@ def test_la_tabla_por_partes_cuenta_solo_esa_parte() -> None:
     rows = af.part_table(lists, ["cogs/slots"])
     assert all("cogs/blackjack" not in row for row in rows)
     assert any(row.startswith("\nTotal:") for row in rows)
+
+
+#: Frases hechas o de Jovani que llevan «como» y no son la muleta de la Biblia.
+COMO_IDIOMS = {"¡Azul, azul, como el mar azul!", "Al amanecer, como Dios manda"}
+
+
+def test_ningun_nombre_de_logro_usa_la_muleta_como_referencia() -> None:
+    """Biblia, «Logros»: nada de «X, como [referencia]» en los nombres."""
+    import re
+
+    from bot.services.achievements import AVAILABLE
+
+    bad = [
+        a.name for a in AVAILABLE if re.search(af.COMPARISON, a.name) and a.name not in COMO_IDIOMS
+    ]
+    assert bad == []
+
+
+def test_lo_boricua_solo_queda_en_el_contenido() -> None:
+    assert af.boricua_texts() == []
+
+
+def test_la_vigilancia_de_lo_boricua_salta_con_un_texto_nuevo(tmp_path) -> None:  # noqa: ANN001
+    (tmp_path / "cogs").mkdir()
+    (tmp_path / "cogs" / "nuevo.py").write_text('LINES = ("¡Wepa! Ganas.", "La banca gana.")\n')
+    (tmp_path / "cogs" / "beernight.py").write_text('X = "Quien diga «wepa»."\n')
+    assert af.boricua_texts(tmp_path) == ["cogs/nuevo: ¡Wepa! Ganas."]

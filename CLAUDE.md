@@ -32,7 +32,9 @@ Lo que más se olvida:
   las palabras fuertes, con los límites de la Biblia. Las herramientas de administración
   (`admin`) van sin bromas. Sección «Personalidad: frases y fuentes de ironía» de `Biblia.txt`; la
   auditoría de tono hecha y sus cifras, en `docs/auditoria-frases.md`
-  (`docs/auditoria_frases.py --parte` para medir una parte antes y después).
+  (`docs/auditoria_frases.py --parte` para medir una parte antes y después). Lo vigila
+  `tests/unit/test_auditoria_frases.py`: un aviso se arregla cambiando el texto, no
+  añadiendo excepciones.
 - **Tienda y mascotas:** un artículo nuevo sigue la ficha de alta de la Biblia (tipo por lo
   que hace, pasillo por su tema). Todo resultado nuevo deja hablar a la mascota activa:
   pasa un `Moment` a `renta.hint` o llama a `mascotas.cameo`. Sección «Mascotas y cameos»

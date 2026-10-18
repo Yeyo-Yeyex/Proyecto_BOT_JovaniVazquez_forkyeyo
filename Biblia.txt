@@ -269,6 +269,8 @@ Criterios para dar una parte por buena:
 
 Herramienta: `docs/auditoria_frases.py` cuenta coletillas, repeticiones y fuentes, y con `--parte cogs/tower` saca la tabla de una parte: por lista, la parte de frases normales (la meta es la mitad), las comparaciones «como…», lo boricua que no es de Jovani y las familias de temas (`FAMILIES`). Se pasa antes y después de revisar cada parte.
 
+**Lo vigilan las pruebas.** `tests/unit/test_auditoria_frases.py` falla si una lista de frases pasa de la mitad de coletillas, si una broma se copia de un juego a otro, si una lista nueva tiene menos de la mitad de frases normales (las que ya estaban por debajo van en `KNOWN_UNDER_PLAIN`; si una mejora, se saca de ahí), si aparece lo boricua que no es de Jovani fuera del contenido (`BORICUA_CONTENT_MODULES` y `BORICUA_CONTENT_TEXTS`) o si un nombre de logro usa «X, como [referencia]». Un aviso se arregla cambiando el texto, no ampliando las listas de excepciones; solo entra en ellas contenido nuevo de verdad.
+
 **El contenido se queda.** La auditoría cambia textos, nunca quita contenido: el tapete monoestrellado, el coquí, el caballo Wepa Boricua o el nivel del café de Puerto Rico siguen; solo cambian las frases y nombres que los rodean.
 
 ### Logros
