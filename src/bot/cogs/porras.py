@@ -605,7 +605,7 @@ class Porras(commands.Cog):
             )
             return None
         if subject.bot:
-            await send_error("A los bots no se les monta porras, mi amor. Siempre ganan.")
+            await send_error("A los bots no se les monta porras. Siempre ganan.")
             return None
         if subject.id == opener.id:
             await send_error(
@@ -830,7 +830,7 @@ class Porras(commands.Cog):
             except InsufficientFundsError as error:
                 await notify(
                     interaction,
-                    f"¡Ay, bendito! No te llega: tienes {format_amount(error.balance)}.",
+                    f"No te llega: tienes {format_amount(error.balance)}.",
                 )
                 return
             except PorraSideError as error:

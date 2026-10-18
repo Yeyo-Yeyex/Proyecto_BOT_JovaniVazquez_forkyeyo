@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.24 · 2026-10-18
+
+- Lotería, Porras y Botes: fuera los últimos «¡Ay, bendito!» y «mi amor» del casino
+
 ### 7.25.23 · 2026-10-18
 
 - Botes y Caballos: frases nuevas, más normales y con Jovani

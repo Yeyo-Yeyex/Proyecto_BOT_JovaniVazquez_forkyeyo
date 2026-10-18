@@ -240,7 +240,7 @@ def scratch_text(game: Game, prize: Prize | None, cells: list[int], tax: int) ->
             " ".join(f"||`{format_amount(c):^{width}}`||" for c in cells[row * 3 : row * 3 + 3])
         )
     if prize is None:
-        verdict = "||Esta vez no, mi amor. El próximo rasca tiene tu nombre.||"
+        verdict = "||Esta vez no. El próximo rasca tiene tu nombre.||"
     else:
         verdict = f"||🎉 ¡Tres iguales! Premio de **{format_amount(prize.amount)}**||"
     lines = [f"### {game.emoji} {game.name} · rasca las casillas", *rows, verdict]
@@ -688,7 +688,7 @@ class Loteria(commands.Cog):
     async def _mine_text(self, guild_id: int, user_id: int) -> str:
         records = await self.repository.history(guild_id, user_id, limit=HISTORY_SIZE)
         if not records:
-            return "## 🎟️ Mis boletos\nNada todavía. Hoy puede ser tu día, mi amor."
+            return "## 🎟️ Mis boletos\nNada todavía. Hoy puede ser tu día."
         pending = [r for r in records if r.status == "open"]
         done = [r for r in records if r.status != "open"]
         lines = ["## 🎟️ Mis boletos"]
@@ -761,7 +761,7 @@ class Loteria(commands.Cog):
             panel.notice = f"❌ {error}"
         except InsufficientFundsError as error:
             panel.notice = (
-                f"❌ ¡Ay, bendito! Son {format_amount(cost)} y tienes "
+                f"❌ Son {format_amount(cost)} y tienes "
                 f"{format_amount(error.balance)}. Cobra el `imv` y vuelve."
             )
         else:

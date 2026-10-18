@@ -528,7 +528,7 @@ def bonus_end_text(theme: Theme, payout: BonusPayout) -> str:
     for name, value in zip(result.jackpots, result.jackpot_values, strict=True):
         lines.append(f"### 🏆 ¡{name.upper()}! +{format_amount(to_amount(value, payout.stake))}")
     if result.coins == 19:
-        lines.append("¡Una moneda para el GRAND! ¡Ay, bendito!")
+        lines.append("¡Una moneda para el GRAND! Sofía, cállate, que no respiro.")
     return "\n".join(lines)
 
 
