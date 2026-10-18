@@ -38,6 +38,7 @@ from bot.services.achievements import (
     with_derived,
 )
 from bot.services.economy import STARTING_BALANCE, EconomyService
+from bot.services.housing_furniture import FURNITURE, FURNITURE_KEYS
 from bot.services.levels import TIMEZONE
 from bot.services.lootboxes import (
     BOX_BY_KEY,
@@ -163,7 +164,7 @@ def test_ficha_de_alta_de_cada_pasillo(aisle: Aisle) -> None:
     # «Hacer algo» es usarse desde la mochila o tener efecto con solo tenerlo (las
     # herramientas de `pala`, los prismáticos y la libreta de la porra), o darse
     # desde `pala` (los regalos para la familia).
-    passive = TOOL_KEYS | set(GIFT_BY_KEY) | {BINOCULARS_KEY, NOTEBOOK_KEY}
+    passive = TOOL_KEYS | set(GIFT_BY_KEY) | {BINOCULARS_KEY, NOTEBOOK_KEY} | FURNITURE_KEYS
     assert any(e.use or e.key in passive for e in on_sale), f"{aisle.key}: nada hace nada"
 
 
@@ -335,6 +336,7 @@ def test_caja_botin_pierde_dinero_pero_no_es_una_estafa_total() -> None:
         and not e.title
         and not e.key.startswith("skin_")
         and not is_piece(e.key)
+        and e.key not in FURNITURE_KEYS
     ]
     expected = mystery_expected(prizes)
     assert 0.5 * box.price < expected < box.price
@@ -1224,3 +1226,13 @@ def test_los_logros_de_cajas_se_consiguen_con_lo_que_suma_el_cog() -> None:
     assert {"box_open_1", "box_first_carton", "box_got_common"} <= unlocked
     free = set(newly_unlocked(lootbox_free_stats(1).add, []))
     assert "box_free_1" in free
+
+
+def test_los_muebles_del_vacacional_son_los_articulos_de_su_pasillo() -> None:
+    """Como las herramientas de `pala`: la misma clave, emoji y nombre en la tienda."""
+    aisle = {e.key: e for e in CATALOG if e.aisle == "vacacional"}
+    assert set(aisle) == FURNITURE_KEYS
+    for item in FURNITURE:
+        assert aisle[item.key].emoji == item.emoji
+        assert aisle[item.key].name == item.name
+        assert aisle[item.key].per_user == 1

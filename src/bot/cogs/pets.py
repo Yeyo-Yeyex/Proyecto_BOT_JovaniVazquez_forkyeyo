@@ -51,6 +51,7 @@ from bot.services.achievements import (
     pet_name_stats,
     pet_switch_stats,
 )
+from bot.services.housing_furniture import FURNITURE_KEYS
 from bot.services.levels import TIMEZONE
 from bot.services.lootboxes import is_piece
 from bot.services.pets import (
@@ -794,6 +795,7 @@ class Mascotas(commands.Cog):
             and not is_title(item.catalog_key)
             and not is_skin(item.catalog_key)
             and not is_piece(item.catalog_key)
+            and item.catalog_key not in FURNITURE_KEYS  # suben la renta: no se regalan
         ]
         if not candidates:
             return None

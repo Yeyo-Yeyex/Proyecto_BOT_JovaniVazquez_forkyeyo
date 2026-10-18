@@ -1,4 +1,4 @@
-"""Casos de uso de `pisos`: comprar, vender, cambiar la renta, desahuciar y cerrar los días.
+"""Casos de uso de `pisos`: comprar, vender, la renta, el inquilino, desahuciar y cerrar los días.
 
 Junta las reglas (`bot.services.housing`), la persistencia
 (`bot.repositories.housing`) y el dinero (`EconomyService.housing`). No sabe nada de
@@ -15,17 +15,27 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from bot.repositories.housing import (
+    AuctionRun,
+    Bid,
     DayRun,
+    Decision,
+    Eviction,
     HousingError,
     HousingRepository,
     Market,
     MemberDay,
+    MemberSale,
     News,
     Purchase,
+    ReformDone,
     Sale,
+    Signing,
     TenantDeal,
+    VoteResult,
     VpoDeal,
 )
+from bot.repositories.housing_junta import Vote
+from bot.repositories.housing_trade import Auction
 from bot.services import housing as rules
 from bot.services.economy import EconomyService
 from bot.services.housing import Lease
@@ -70,6 +80,10 @@ class HousingService:
     def today(self) -> date:
         """Hoy en hora canaria."""
         return local_day(self._clock())
+
+    def now(self) -> float:
+        """Ahora (epoch), con el reloj del servicio (inyectable en pruebas)."""
+        return self._clock()
 
     async def market(self, guild_id: int) -> Market:
         """Todo el mercado del servidor."""
@@ -235,10 +249,12 @@ class HousingService:
         return deal
 
     async def buy_license(self, guild_id: int, user_id: int, key: str) -> tuple[int, int]:
-        """Pide la licencia vacacional. Devuelve `(tasa, saldo)`."""
+        """Pide la licencia vacacional. Devuelve `(tasa, saldo)`; tasa 0 si la comunidad dice no."""
         now = self._clock()
-        run = self.repository.buy_license(guild_id, user_id, key, local_day(now), now)
+        run = self.repository.buy_license(guild_id, user_id, key, local_day(now), now, self.rng)
         fee, balances = await self.economy.housing(guild_id, run)
+        if user_id not in balances:  # la comunidad dijo que no: no se ha movido dinero
+            return fee, await self.economy.balance(guild_id, user_id)
         return fee, balances[user_id]
 
     async def found_socimi(self, guild_id: int, user_id: int) -> tuple[int, int]:
@@ -265,15 +281,156 @@ class HousingService:
         """Cambia la renta que pide un inmueble (para el próximo contrato)."""
         return await self.repository.set_level(guild_id, user_id, key, level)
 
-    async def evict(self, guild_id: int, user_id: int, key: str) -> Lease:
-        """Pide el desahucio de quien no paga o de los okupas."""
+    async def evict(self, guild_id: int, user_id: int, key: str) -> tuple[Eviction, int]:
+        """Pide el desahucio de quien no paga o de los okupas. Devuelve `(desahucio, saldo)`.
+
+        Raises:
+            HousingError: Si no le toca o no hay a quién desahuciar.
+            InsufficientFundsError: Si no le llega para el abogado y el procurador.
+        """
         now = self._clock()
-        return await self.repository.evict(guild_id, user_id, key, local_day(now), now, self.rng)
+        run = self.repository.evict(guild_id, user_id, key, local_day(now), now, self.rng)
+        eviction, balances = await self.economy.housing(guild_id, run)
+        return eviction, balances.get(user_id, await self.economy.balance(guild_id, user_id))
+
+    async def set_pick(self, guild_id: int, user_id: int, key: str, pick: str) -> Lease:
+        """Cambia quién elige al próximo inquilino (`housing.PICK_AGENCY` o `PICK_SELF`)."""
+        return await self.repository.set_pick(guild_id, user_id, key, pick)
+
+    async def set_insurance(self, guild_id: int, user_id: int, key: str, on: bool) -> Lease:
+        """Contrata o da de baja el seguro de impago de un inmueble."""
+        return await self.repository.set_insurance(guild_id, user_id, key, on)
+
+    async def sign_candidate(self, guild_id: int, user_id: int, key: str, tenant: str) -> Signing:
+        """Firma con uno de los candidatos que esperan en un piso."""
+        now = self._clock()
+        return await self.repository.sign_candidate(
+            guild_id, user_id, key, tenant, local_day(now), now
+        )
+
+    async def discard_candidate(self, guild_id: int, user_id: int, key: str, tenant: str) -> None:
+        """Descarta a un candidato."""
+        await self.repository.discard_candidate(guild_id, user_id, key, tenant)
+
+    async def member_sale(
+        self,
+        guild_id: int,
+        seller: int,
+        buyer: int,
+        key: str,
+        shares: int,
+        price: int,
+        *,
+        expected: int | None = None,
+        financed: bool = False,
+        aval: bool = False,
+    ) -> tuple[MemberSale, int]:
+        """Vende participaciones a otro miembro. Devuelve `(la venta, saldo del comprador)`.
+
+        Args:
+            expected: Lo que la oferta dijo que pagaría el comprador de su bolsillo.
+            financed: Si el comprador paga con hipoteca (el banco mira sus ingresos).
+            aval: Si al comprador le avalan sus padres (`pala`).
+
+        Raises:
+            HousingError: Si no se puede.
+            PriceChanged: Si al comprador le costaría más de lo que decía la oferta.
+            InsufficientFundsError: Si al comprador no le llega.
+        """
+        now = self._clock()
+        income = await self.income(guild_id, buyer) if financed else 0
+        run = self.repository.member_sale(
+            guild_id, seller, buyer, key, shares, price, local_day(now), now,
+            expected=expected, financed=financed, income=income,
+            aval_income=rules.parents_income() if financed and aval else 0,
+        )  # fmt: skip
+        sale, balances = await self.economy.housing(guild_id, run)
+        return sale, balances.get(buyer, 0)
+
+    async def create_auction(
+        self, guild_id: int, seller: int, key: str, shares: int, min_bid: int
+    ) -> Auction:
+        """Saca a subasta unas participaciones durante un día."""
+        return await self.repository.create_auction(
+            guild_id, seller, key, shares, min_bid, self._clock()
+        )
+
+    async def bid(self, guild_id: int, user_id: int, auction_id: int, amount: int) -> Bid:
+        """Puja en una subasta (deja la puja, su ITP y su notaría en el depósito).
+
+        Raises:
+            HousingError: Si la subasta ha terminado o la puja no llega.
+            InsufficientFundsError: Si no le llega para el depósito.
+        """
+        run = self.repository.bid(guild_id, user_id, auction_id, amount, self._clock())
+        result, _balances = await self.economy.housing(guild_id, run)
+        return result
+
+    async def start_reform(
+        self, guild_id: int, user_id: int, key: str, reform: str
+    ) -> tuple[ReformDone, int]:
+        """Empieza una reforma (paga la obra, su IGIC, el ICIO y la licencia). `(obra, saldo)`.
+
+        Raises:
+            HousingError: Si no se puede.
+            InsufficientFundsError: Si no le llega.
+        """
+        now = self._clock()
+        run = self.repository.start_reform(guild_id, user_id, key, reform, local_day(now), now)
+        done, balances = await self.economy.housing(guild_id, run)
+        return done, balances[user_id]
+
+    async def choose(self, guild_id: int, user_id: int, decision_id: int, choice: str) -> Decision:
+        """Elige cómo resolver un imprevisto (se paga con el cierre de la noche)."""
+        return await self.repository.choose(guild_id, user_id, decision_id, choice)
+
+    async def close_auctions(self, guild_id: int) -> AuctionRun:
+        """Cierra las subastas que han terminado (la tarea de cada 10 minutos)."""
+        run = self.repository.close_auctions(guild_id, self._clock())
+        result, _balances = await self.economy.housing(guild_id, run)
+        return result
+
+    async def propose(
+        self, guild_id: int, user_id: int, key: str, kind: str, value: str = "", amount: int = 0
+    ) -> Vote:
+        """Propone algo a la junta del inmueble (vota sí al proponerlo).
+
+        Raises:
+            HousingError: Si no hay junta, ya se vota eso o la propuesta no vale.
+        """
+        return await self.repository.propose(
+            guild_id, user_id, key, kind, value, amount, self._clock()
+        )
+
+    async def vote(self, guild_id: int, user_id: int, vote_id: int, yes: bool) -> VoteResult:
+        """Vota en la junta; si ya han votado todos, se cierra y se hace lo aprobado.
+
+        Raises:
+            HousingError: Si la votación ya se cerró o no es dueño.
+        """
+        run = self.repository.vote(guild_id, user_id, vote_id, yes, self._clock(), self.rng)
+        result, _balances = await self.economy.housing(guild_id, run)
+        return result
+
+    async def close_votes(self, guild_id: int) -> list[VoteResult]:
+        """Cierra las votaciones de la junta que han llegado a su hora (cada 10 minutos)."""
+        run = self.repository.close_votes(guild_id, self._clock(), self.rng)
+        results, _balances = await self.economy.housing(guild_id, run)
+        return results
+
+    async def divide(self, guild_id: int, user_id: int, key: str) -> Auction:
+        """Acción de división: saca el inmueble entero a subasta un día.
+
+        Raises:
+            HousingError: Si no hay varios dueños o ya está en subasta.
+        """
+        return await self.repository.divide(guild_id, user_id, key, self._clock())
 
     async def close_days(
         self,
         guild_id: int,
         builders: Callable[[], Awaitable[tuple[int, ...]]] | None = None,
+        furniture: Callable[[int], Awaitable[frozenset[str]]] | None = None,
     ) -> list[DayRun]:
         """Cierra los días que falten hasta ayer (como mucho `CATCH_UP_DAYS`).
 
@@ -283,18 +440,30 @@ class HousingService:
         Args:
             builders: Devuelve quienes fichan en la rama Ladrillo de `pala` (la obra nueva
                 del lunes). Solo se llama si hay que cerrar un lunes.
+            furniture: Devuelve las claves de la tienda que tiene un miembro (los muebles del
+                vacacional). Se pregunta una vez por cada quien decide un vacacional o un
+                piso de nómadas.
         """
         now = self._clock()
         today = local_day(now)
         last = await self.repository.last_day(guild_id)
         first = today - timedelta(days=1) if last is None else last + timedelta(days=1)
         first = max(first, today - timedelta(days=CATCH_UP_DAYS))
+        owned: dict[int, frozenset[str]] = {}
+        if furniture is not None and first < today:
+            market = await self.repository.market(guild_id)
+            for key, lease in market.leases.items():
+                boss = market.manager(key)
+                if boss is not None and boss not in owned and lease.level in (
+                    rules.VACATION_LEVEL, rules.NOMAD_LEVEL,
+                ):  # fmt: skip
+                    owned[boss] = await furniture(boss)
         runs = []
         day = first
         while day < today:
             who = await builders() if builders is not None and day.weekday() == 0 else ()
             run, _balances = await self.economy.housing(
-                guild_id, self.repository.close_day(guild_id, day, now, self.rng, who)
+                guild_id, self.repository.close_day(guild_id, day, now, self.rng, who, owned)
             )
             if not run.done_before:
                 runs.append(run)

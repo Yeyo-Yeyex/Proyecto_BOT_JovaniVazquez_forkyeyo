@@ -91,6 +91,7 @@ from bot.services.economy import (
     InsufficientFundsError,
     format_amount,
 )
+from bot.services.housing_furniture import FURNITURE_KEYS
 from bot.services.levels import TIMEZONE, calculate_level_progress
 from bot.services.lootboxes import (
     BOX_BY_KEY,
@@ -2109,7 +2110,8 @@ class Tienda(commands.Cog):
 
         Premios: coleccionables visibles, sin uso y de existencias ilimitadas,
         para no gastar unidades numeradas de nadie. Los títulos no tocan: se
-        lucen porque se han pagado.
+        lucen porque se han pagado. Los muebles del vacacional tampoco: suben la renta
+        de los pisos, y eso no se regala.
         """
         candidates = [
             item
@@ -2121,6 +2123,7 @@ class Tienda(commands.Cog):
             and not is_title(item.catalog_key)
             and not is_skin(item.catalog_key)
             and not is_piece(item.catalog_key)
+            and item.catalog_key not in FURNITURE_KEYS
         ]
         if not candidates:
             return None

@@ -150,6 +150,12 @@ AISLES: tuple[Aisle, ...] = (
         "El trabajo: lo que te llevas a `pala` para currar mejor.",
     ),
     Aisle(
+        "vacacional",
+        "🛋️",
+        "Muebles del vacacional",
+        "Lo que pide un turista: amueblar la vivienda vacacional de `pisos`.",
+    ),
+    Aisle(
         "porra",
         "🎫",
         "Peña de la porra",
@@ -1031,6 +1037,37 @@ CATALOG: tuple[CatalogEntry, ...] = (
     _t("cana_tapa", "porra", "🍺", "Caña con tapa de ensaladilla", 250,
        "Lo que se pide mientras se espera la jugada de otro. La tapa se la puedes dar a "
        "tu mascota.", food=True),
+    # 🛋️ Muebles del vacacional (efectos en `bot.services.housing_furniture`) -----------
+    _t("mueble_smart_tv", "vacacional", "📺", "Smart TV", 45_000,
+       "Con todas las plataformas y la contraseña pegada con celo. En `pisos`: sube la nota de "
+       "las reseñas de tus viviendas vacacionales.", per_user=1),
+    _t("mueble_aire", "vacacional", "❄️", "Aire acondicionado", 60_000,
+       "Lo primero que preguntan en agosto. En `pisos`: sube bastante la nota de las reseñas "
+       "de tus vacacionales.", per_user=1),
+    _t("mueble_cafetera", "vacacional", "☕", "Cafetera de cápsulas", 9_000,
+       "Con una caja de cápsulas de bienvenida. En `pisos`: sube la nota de las reseñas de tus "
+       "vacacionales.", per_user=1),
+    _t("mueble_colchon", "vacacional", "🛏️", "Colchón viscoelástico", 50_000,
+       "Lo que más se nota en una reseña, aunque nadie lo diga. En `pisos`: sube bastante la "
+       "nota de las reseñas de tus vacacionales.", per_user=1),
+    _t("mueble_fibra", "vacacional", "📶", "Fibra de 1 Gb", 12_000,
+       "Router nuevo, contraseña sin faltas. En `pisos`: sube la nota de las reseñas y atrae "
+       "más nómadas digitales a tus pisos.", per_user=1),
+    _t("mueble_playa", "vacacional", "⛱️", "Kit de playa", 8_000,
+       "Sombrilla, nevera y dos sillas plegables. En `pisos`: sube la nota de tus "
+       "vacacionales, sobre todo en los barrios de playa.", per_user=1),
+    _t("mueble_cuna", "vacacional", "🍼", "Cuna y trona", 15_000,
+       "Para quien viaja con críos. En `pisos`: sube la nota de tus vacacionales, sobre todo "
+       "con las familias.", per_user=1),
+    _t("mueble_barbacoa", "vacacional", "🍖", "Barbacoa", 25_000,
+       "De carbón, con su saco. En `pisos`: sube la nota de tus vacacionales, sobre todo en "
+       "el campo y en los barrios de lujo.", per_user=1),
+    _t("mueble_cerradura", "vacacional", "🔐", "Cerradura inteligente", 20_000,
+       "Entran con un código y no hay que esperar con las llaves. En `pisos`: sube la nota de "
+       "las reseñas de tus vacacionales.", per_user=1),
+    _t("mueble_juegos", "vacacional", "🎲", "Juegos de mesa", 3_000,
+       "Para las tardes de calima. En `pisos`: sube un poco la nota de las reseñas de tus "
+       "vacacionales.", per_user=1),
     # 🏠 Detalles para la familia (efectos en `bot.services.work_catalog.GIFTS`) ---------
     _t("bombones_mama", "familia", "🍫", "Caja de bombones", 1_000,
        "Los de la caja con lazo, para quedar bien sin pensar mucho. En `pala`: +6 de "

@@ -225,10 +225,7 @@ def tax_line(gross: int, tax: int, rate: float) -> str:
     La usan los premios por nivel y cualquier otro cobro con retención.
     """
     if tax <= 0:
-        return (
-            "-# 🐶 Sin retención: con tu renta de la semana no llegas al mínimo. "
-            "El lunes se ajusta en la Renta."
-        )
+        return "-# 🐶 Sin retención: con tu renta de la semana no llegas al mínimo."
     return (
         f"-# 🐶 IRPF: −{format_amount(tax)} ({format_rate(rate)}, tu tipo esta semana, "
         f"de {format_amount(gross)})."

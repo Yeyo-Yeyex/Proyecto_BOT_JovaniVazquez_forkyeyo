@@ -51,13 +51,14 @@ Los P10 quedan entre 28.100 y 35.200 Y$ por turno en las ramas seguras y entre 4
 ## Lo que dice el simulador
 
 Jugador de nota media 75, 4 turnos al día, que asciende en cuanto puede y compra pisos
-con hipoteca a renta de referencia (`--solo referencia`, 450 días):
+con hipoteca a renta de referencia (`--solo referencia`, 450 días; cifras de la 8.5.0, con
+el seguro del hogar con su impuesto de primas y el IGIC de las reparaciones):
 
 | Oficio | Primer P10 | Segunda rama | Falcon con pisos | Falcon solo con sueldo |
 |---|---|---|---|---|
-| Obra | día 93 | día 160 | día 366 | no llega |
-| Oficina | día 105 | día 172 | día 359 | no llega |
-| Hostelería | día 96 | día 163 | día 388 | no llega |
+| Obra | día 93 | día 160 | día 363 | no llega |
+| Oficina | día 105 | día 172 | día 356 | no llega |
+| Hostelería | día 96 | día 163 | día 386 | no llega |
 
 Lo que se va en impuestos, a jornada completa, P1 → P5 → P10 (`--solo escala`):
 
