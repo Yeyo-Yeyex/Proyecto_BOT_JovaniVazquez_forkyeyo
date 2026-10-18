@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.13 · 2026-10-18
+
+- Logros: fuera el «¡Wepa!» y el «¡Ay, bendito!», y más frases de Jovani en los nombres
+
 ### 7.25.12 · 2026-10-18
 
 - Ruleta, blackjack y tragaperras: fuera el «¡Wepa!» y el «mi amor»; solo frases del cantante Jovani
