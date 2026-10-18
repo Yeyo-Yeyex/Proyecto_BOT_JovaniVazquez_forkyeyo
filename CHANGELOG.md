@@ -8,6 +8,45 @@ criterio.
 
 ## 8.x
 
+### 8.5.0 · 2026-10-18
+
+- Pisos: junta de copropietarios en los inmuebles con varios dueños; quien no vota cuenta a favor
+- Pisos: la junta vota renta, seguro, quién elige y quién administra, reformas, licencia y venta
+- Pisos: fondo de reserva que paga derramas e ITE, y derramas votadas para llenarlo
+- Pisos: acción de división: cualquier dueño saca el inmueble entero a subasta
+- Logros: 12 de la junta, el fondo y la división
+
+### 8.4.0 · 2026-10-18
+
+- Pisos: reseñas del vacacional; la nota mueve la ocupación y da Superanfitrión (+10 %)
+- Pisos: cada estancia paga la plataforma y la limpieza, con su IGIC
+- Pisos: licencia de 5 años (Ley 6/2025): nada nuevo en zona tensionada ni en obra nueva, y en un bloque vota la comunidad
+- Tienda: pasillo 🛋️ Muebles del vacacional, diez muebles que suben la nota de las reseñas
+- Logros: 13 del vacacional
+
+### 8.3.0 · 2026-10-18
+
+- Pisos: reformas con IGIC, ICIO y licencia de obra que suben la renta y el valor
+- Pisos: la reforma integral puede ser rehabilitación y dar la reducción del 60 %
+- Pisos: averías, humedades, cerraduras y el vecino los decides tú (o la gestora a los dos días)
+- Pisos: el humor del inquilino, que cambia lo que se queda
+- Logros: 20 de reformas, imprevistos y humor
+
+### 8.2.0 · 2026-10-18
+
+- Pisos: vender participaciones a otro miembro, con el ITP sobre el valor de referencia
+- Pisos: subastas de un día entre miembros, con depósito y la última hora que alarga
+- Pisos: las ejecuciones hipotecarias van antes a subasta judicial; sin puja que valga, el banco al 70 %
+- Logros: 24 de compraventa y subastas
+
+### 8.1.0 · 2026-10-18
+
+- Pisos: 59 inquilinos con personalidad, riesgo y ficha, y elegir tú entre los candidatos
+- Pisos: seguro de impago y seguro del hogar con el impuesto de primas
+- Pisos: noticias de barrio los lunes que mueven la demanda, los impagos y las averías
+- Pisos: el desahucio paga abogado y procurador; deducciones canarias por el seguro y por alquilar un piso vacío
+- Logros: 43 de inquilinos, seguro y noticias
+
 ### 8.0.0 · 2026-10-17
 
 - Renta: una declaración cada lunes con toda la renta, que sale a pagar o a devolver

@@ -197,6 +197,10 @@ que no se pudo confirmar). Las cifras de juego se calibran con `docs/pisos_sim.p
 
 ## Fase 5 (8.4.0): vacacional con reseñas
 
+Hecha. Cambios sobre el diseño: la reseña sale al irse el huésped (las estancias duran varios
+días); la plataforma se paga cada día de estancia y la limpieza, al irse; la licencia de antes
+de la 8.4.0 empieza a contar sus 60 días con el primer cierre.
+
 ### Reseñas y nota
 
 - Tras cada estancia, el huésped deja nota (de 1 a 5 estrellas) y una frase, 7 de cada 10
@@ -233,6 +237,11 @@ que no se pudo confirmar). Las cifras de juego se calibran con `docs/pisos_sim.p
   - Sigue habiendo una plaza por barrio.
 
 ## Fase 6 (8.5.0): junta de copropietarios
+
+Hecha. Cambios sobre el diseño: si votan todos los dueños, la votación se cierra sin esperar
+las 24 horas; el fondo de reserva es un número del inmueble (la comunidad ya desaparecía al
+pagarse) y solo se llena en los inmuebles de un bloque; en la acción de división pujan también
+los dueños, que pagan solo la parte de los demás.
 
 - **Dónde:** en cualquier inmueble con varios dueños miembros (decidido).
 - **Propuestas:** cualquier copropietario puede proponer:
