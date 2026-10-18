@@ -72,7 +72,7 @@ class Bizum(commands.Cog):
             await responder.send_error("Los Bizums solo van dentro de un servidor.")
             return False
         if receiver.bot:
-            await responder.send_error("Los bots no tienen Bizum, mi amor. Ni cuenta en el banco.")
+            await responder.send_error("Los bots no tienen Bizum. Ni cuenta en el banco.")
             return False
         balance = await self.economy.balance(guild.id, sender.id)
         try:
@@ -82,9 +82,7 @@ class Bizum(commands.Cog):
             await responder.send_error(str(error))
             return False
         except InsufficientFundsError as error:
-            await responder.send_error(
-                f"¡Ay, bendito! No te llega: tienes {format_amount(error.balance)}."
-            )
+            await responder.send_error(f"No te llega: tienes {format_amount(error.balance)}.")
             return False
         except BalanceLimitError:
             await responder.send_error("A esa persona ya no le cabe más dinero en la cuenta.")

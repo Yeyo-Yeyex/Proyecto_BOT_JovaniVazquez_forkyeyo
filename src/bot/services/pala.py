@@ -721,7 +721,7 @@ class WorkService:
         if status.sick:
             raise WorkError(
                 f"🩹 Estás de baja por accidente laboral hasta <t:{int(contract.sick_until)}:t>. "
-                "La mutua te vigila, mi amor."
+                "La mutua te vigila."
             )
         if status.off_duty:
             raise OffDuty(contract.off_duty_until)
@@ -1316,7 +1316,7 @@ class WorkService:
         async with self._lock(guild_id, user_id):
             status = await self.status(guild_id, user_id)
             if status is None or not status.contract.abroad:
-                raise WorkError("No estás fuera, mi amor.")
+                raise WorkError("No estás fuera.")
             await self._fly(guild_id, user_id, "vuelo:vuelta")
             contract = status.contract
             now = status.now
@@ -1524,7 +1524,7 @@ class WorkService:
         async with self._lock(guild_id, user_id):
             pension = await self.pension(guild_id, user_id)
             if not pension.amount:
-                raise WorkError("No tienes pensión. Para eso hay que jubilarse, mi amor.")
+                raise WorkError("No tienes pensión. Para eso hay que jubilarse.")
             today = local_day(self._clock()).isoformat()
             previous = await self.repository.claim_pension_day(guild_id, user_id, today)
             if previous is None:
@@ -1620,7 +1620,7 @@ class WorkService:
                     reserve=lambda _connection: None,
                 )
             except InsufficientFundsError as error:
-                raise WorkError("No te llega ni para un café, mi amor.") from error
+                raise WorkError("No te llega ni para un café. ¡Quiero café!") from error
             contract.battery = min(float(BATTERY_MAX), battery_now(contract, now) + coffee.battery)
             contract.battery_at = now
             contract.coffees += 1

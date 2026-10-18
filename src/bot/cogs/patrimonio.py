@@ -119,7 +119,7 @@ def wealth_embed(
         )
     who = "rico paga" if len(charges) == 1 else "ricos pagan"
     embed = discord.Embed(
-        title=f"🐶 ¡Wepa! {TAX_COLLECTOR} pasó por el Patrimonio",
+        title=f"🐶 {TAX_COLLECTOR} pasó por el Patrimonio",
         description=(
             f"Semana {week_label(week)}: {len(charges)} {who} "
             f"**{format_amount(total)}** en total.\n\n" + "\n".join(lines)
@@ -130,7 +130,7 @@ def wealth_embed(
         text=(
             f"Paga cada lunes por lo que tengas (efectivo, pisos y objetos de la tienda) por "
             f"encima de {format_amount(WEALTH_MINIMUM)}, con el límite del 60 % de tu renta. "
-            f"El ladrillo también se lo come {TAX_COLLECTOR}, mi amor."
+            f"El ladrillo también se lo come {TAX_COLLECTOR}."
         )
     )
     return embed

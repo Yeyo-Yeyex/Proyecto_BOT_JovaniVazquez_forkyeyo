@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.25 · 2026-10-18
+
+- Hacienda: las líneas de impuestos de cada cobro dicen la cifra con el 🐶, sin la frase de Perro Sanxe
+
 ### 7.25.24 · 2026-10-18
 
 - Lotería, Porras y Botes: fuera los últimos «¡Ay, bendito!» y «mi amor» del casino

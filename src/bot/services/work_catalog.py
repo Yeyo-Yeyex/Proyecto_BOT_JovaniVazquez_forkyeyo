@@ -3667,7 +3667,7 @@ DIALOGUE_PACKS.update(
                 Dialogue(
                     "Te piden viviendas protegidas en la urbanización.",
                     "Las hacemos, en la parcela que da justo a la autopista.",
-                    ("Ni una.", "Todas protegidas, ¡wepa!"),
+                    ("Ni una.", "Todas protegidas."),
                 ),
                 Dialogue(
                     "La prensa local habla de «un nuevo Marbella».",

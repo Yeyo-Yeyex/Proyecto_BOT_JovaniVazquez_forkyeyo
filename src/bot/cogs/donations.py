@@ -53,7 +53,7 @@ def catalog_embed(totals: dict[str, tuple[int, int]]) -> discord.Embed:
         title="🤝 ONGs que desgravan",
         description=(
             "Dona con `donar <ong> <cantidad>` y recupera parte en la renta del lunes: "
-            f"{deduction_rule_text()}. Así le pagas menos a {TAX_COLLECTOR}, mi amor."
+            f"{deduction_rule_text()}. Así le pagas menos a {TAX_COLLECTOR}."
         ),
         color=COLOR,
     )
@@ -113,9 +113,7 @@ class Donaciones(commands.Cog):
             await responder.send_error(str(error))
             return False
         except InsufficientFundsError as error:
-            await responder.send_error(
-                f"¡Ay, bendito! No te llega: tienes {format_amount(error.balance)}."
-            )
+            await responder.send_error(f"No te llega: tienes {format_amount(error.balance)}.")
             return False
         name = discord.utils.escape_markdown(user.display_name)
         lines = [

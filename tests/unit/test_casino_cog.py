@@ -340,7 +340,7 @@ async def test_ruleta_con_apuesta_gira_al_momento(tmp_path: Path) -> None:
     tax = gambling_day_tax(gain, 0)
     assert tax > 0
     assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE + gain - tax
-    assert "Perro Sanxe" in message.edit.await_args.kwargs["embed"].description
+    assert "🐶 IRPF: −" in message.edit.await_args.kwargs["embed"].description
 
 
 async def test_ruleta_con_mas_de_lo_que_tienes_avisa(tmp_path: Path) -> None:

@@ -198,14 +198,8 @@ def tax_line(gross: int, tax: int, rate: float) -> str:
     La usan los premios por nivel y cualquier otro cobro con retención.
     """
     if tax <= 0:
-        return (
-            f"-# 🐶 {TAX_COLLECTOR} no te retiene nada: con tu renta de los últimos "
-            "7 días no llegas al mínimo. Disfrútalo mientras dure."
-        )
-    return (
-        f"-# 🐶 {TAX_COLLECTOR} se lleva {format_amount(tax)} de IRPF "
-        f"({format_rate(rate)} de {format_amount(gross)})."
-    )
+        return "-# 🐶 Sin retención: con tu renta de los últimos 7 días no llegas al mínimo."
+    return f"-# 🐶 IRPF: −{format_amount(tax)} ({format_rate(rate)} de {format_amount(gross)})."
 
 
 def tax_tag(tax: int, rate: float) -> str:
@@ -222,13 +216,13 @@ def gambling_tax_line(settlement: BetSettlement) -> str | None:
     """Subtexto con lo que retiene o devuelve Hacienda en una jugada, si algo cambia."""
     if settlement.tax_delta > 0:
         return (
-            f"-# 🐶 {TAX_COLLECTOR} se lleva {format_amount(settlement.tax_delta)} de IRPF. "
+            f"-# 🐶 IRPF: −{format_amount(settlement.tax_delta)}. "
             f"Hoy vas {format_amount(settlement.day_net)} arriba y llevas "
             f"{format_amount(settlement.day_withheld)} retenidos."
         )
     if settlement.tax_delta < 0:
         return (
-            f"-# 🐶 {TAX_COLLECTOR} te devuelve {format_amount(-settlement.tax_delta)}: "
+            f"-# 🐶 Hacienda te devuelve {format_amount(-settlement.tax_delta)}: "
             "tus pérdidas de hoy compensan lo que habías ganado."
         )
     return None
