@@ -175,61 +175,61 @@ COLOR_LOSS = discord.Color.from_rgb(80, 84, 92)
 
 # Textos en el tono de Jovani Vázquez: alegre, exagerado y cariñoso.
 SUPER_LINES = (
-    "7️⃣7️⃣7️⃣ ¡SUPER RUSH, MI AMOR!",
+    "7️⃣7️⃣7️⃣ ¡SUPER RUSH!",
     "7️⃣7️⃣7️⃣ ¡SE ROMPIÓ LA MÁQUINA!",
     "7️⃣7️⃣7️⃣ ¡JOVANAZO JAPONÉS!",
     "7️⃣7️⃣7️⃣ ¡NI FABRA CON LA LOTERÍA!",
-    "7️⃣7️⃣7️⃣ ¡KIM ORDENA APLAUDIR!",
+    "7️⃣7️⃣7️⃣ ¡TOMA MANGÓ!",
 )
 RUSH_LINES = (
     "🔥 ¡RUSH! ¡Esto no para!",
-    "🔥 ¡RUSH, bendito!",
-    "🔥 ¡Encadenando, wepa!",
+    "🔥 ¡RUSH!",
+    "🔥 ¡Encadenando!",
     "🔥 ¡RUSH! Más rápido que un decreto ley",
-    "🔥 ¡RUSH! Milagro económico",
+    "🔥 ¡RUSH! ¡Jota Uve! ¡Pre!",
 )
 ATARI_LINES = (
     "🎉 ¡ATARI!",
-    "🎉 ¡ATARI, papi!",
     "🎉 ¡Se abrió la compuerta!",
-    "🎉 ¡ATARI! Bruselas abre el grifo",
     "🎉 ¡ATARI, toma mangó!",
+    "🎉 ¡ATARI! Lluvia de bolas",
+    "🎉 ¡ATARI! ¡Azul, azul, como el mar azul!",
 )
 WIN_LINES = (
-    "¡Wepa!",
     "¡Eso es!",
-    "¡Cobras, mi amor!",
+    "¡Cobras!",
     "¡Lluvia de bolas!",
-    "¡Lluvia de bolas y de fondos europeos!",
-    "¡Crecimiento a la japonesa!",
     "¡Bolas para dar y regalar!",
-    "¡Más bolas que interceptores en la Cúpula de Hierro!",
+    "¡Toma mangó!",
+    "¡Crecimiento a la japonesa!",
+    "¡Bandeja llena!",
+    "¡Las bolas te quieren!",
 )
 SMALL_WIN_LINES = (
     "🎯 ¡Premio!",
     "🎯 ¡Algo cae!",
     "🎯 ¡Tilín, tilín!",
-    "🎯 ¡Una paguita!",
+    "🎯 ¡Para pipas!",
     "🎯 ¡Pa'l café!",
 )
 REACH_LINES = (
     "👀 ¡REACH!… y nada. Por un pelo.",
-    "👀 ¡Ay, bendito! El del centro se pasó.",
+    "👀 El del centro se pasó.",
     "👀 Casi, casi… la próxima es la buena.",
     "👀 ¡REACH!… y se cae, como una investidura fallida.",
-    "👀 Casi. Como Hillary en 2016.",
-    "👀 ¡REACH! La bola duda más que Junts antes de votar.",
+    "👀 Tan cerca que casi lo tocas.",
+    "👀 ¡REACH! La bola duda más que tú.",
 )
 LOSS_LINES = (
     "Las bolas se fueron por el desagüe.",
-    "Ni una, mi amor. Otra tanda.",
-    "Las bolas se esconden como Puigdemont en el maletero.",
+    "Ni una. Otra tanda.",
     "Calentando la compuerta…",
     "Las bolas se fueron a Andorra.",
-    "Bolas al desagüe, como los fondos de los ERE.",
     "La máquina se ha puesto en modo ventanilla.",
-    "Bolas al sótano, con Nick Fuentes y su micro.",
-    "Las bolas se aplazan, como la sentencia de Bibi.",
+    "Estoy destruido, pero por fuera… por dentro estoy nuevo.",
+    "Ni una bola dentro.",
+    "Dolor de bolas.",
+    "Lagartijo, iguana, lagarto… y bolas al desagüe.",
 )
 
 

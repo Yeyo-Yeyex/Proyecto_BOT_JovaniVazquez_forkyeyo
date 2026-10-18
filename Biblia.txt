@@ -226,6 +226,7 @@ Partes hechas:
 - Aviso de logros: la retención de Hacienda va en la línea del premio, sin frase de Perro Sanxe (`8d65d12`).
 - Logros, primera pasada: 431 descripciones sin la broma de detrás y 492 nombres políticos de juegos, chat, voz y casino cambiados por bromas de otras fuentes (este commit; ver `git log --grep "Logros: nombres"`). - Logros, segunda pasada: los 4.089 leídos uno a uno con la regla nueva; 190 nombres sosos, repetidos o con el mismo tema una y otra vez (los rescates bancarios, el Manual de resistencia, Pegasus, los fondos europeos) cambiados y 28 descripciones neutras (ver `git log --grep "Logros: segunda pasada"`).
 
+- Frases del casino, Dados (y su mesa) y Pachinko: al 74 % de frases normales (ver `git log --grep "Dados y Pachinko"`).
 - Frases del casino, Póker, Timba y Bacará (ver `git log --grep "Póker, Timba y Bacará"`).
 - Frases del casino, 4 en raya y Backgammon: al 66 % de frases normales; lo que dice Jovani en cada uno ya no se copia del otro (ver `git log --grep "4 en raya y Backgammon"`).
 - Frases del casino, Gallos: al 63 % de frases normales; los entrenos y funerales dejan de ser un desfile de políticos (ver `git log --grep "Gallos: frases"`).
