@@ -1308,6 +1308,37 @@ async def press_pisos_bid(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def press_pisos_reform(client: BotClient, owner: MagicMock) -> Click:
+    await pisos_owned(client, "taco_bajo")
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen, panel.confirm = "taco_bajo", "reformas", "reforma:pintura"
+
+    async def click(interaction: MagicMock) -> None:
+        interaction.data = {"custom_id": "pisos:reforma:pintura:si"}
+        await panel._reform(interaction)
+
+    return click
+
+
+async def press_pisos_decide(client: BotClient, owner: MagicMock) -> Click:
+    await pisos_owned(client, "taco_bajo")
+    with sqlite3.connect(client.database_path) as connection:
+        connection.execute(
+            "INSERT INTO housing_decisions (guild_id, listing, event, cost, day, until) "
+            "VALUES (?, 'taco_bajo', 'averia', 3000, '2026-10-14', '2099-01-01')",
+            (GUILD_ID,),
+        )
+        (decision,) = connection.execute("SELECT id FROM housing_decisions").fetchone()
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen = "taco_bajo", "imprevistos"
+
+    async def click(interaction: MagicMock) -> None:
+        interaction.data = {"custom_id": f"pisos:decidir:{decision}:tecnico"}
+        await panel._decide(interaction)
+
+    return click
+
+
 async def granate_in_backpack(client: BotClient) -> None:
     tienda = client.get_cog("Tienda")
     await tienda.stock_up(GUILD_ID)
@@ -1652,6 +1683,8 @@ CASES: dict[str, Press] = {
     "pisos: contratar el seguro": press_pisos_insurance,
     "pisos: desahuciar con abogado": press_pisos_evict,
     "pisos: pujar en una subasta": press_pisos_bid,
+    "pisos: empezar una reforma": press_pisos_reform,
+    "pisos: decidir un imprevisto": press_pisos_decide,
     "tienda: lucir un título": press_wear_title,
     "tienda: abrir una caja": press_open_lootbox,
     "tienda: elegir skin": press_choose_skin,

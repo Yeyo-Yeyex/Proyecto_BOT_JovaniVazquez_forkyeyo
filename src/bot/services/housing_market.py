@@ -18,6 +18,7 @@ from bot.repositories.housing import (
     AuctionRun,
     Bid,
     DayRun,
+    Decision,
     Eviction,
     HousingError,
     HousingRepository,
@@ -26,6 +27,7 @@ from bot.repositories.housing import (
     MemberSale,
     News,
     Purchase,
+    ReformDone,
     Sale,
     Signing,
     TenantDeal,
@@ -359,6 +361,24 @@ class HousingService:
         run = self.repository.bid(guild_id, user_id, auction_id, amount, self._clock())
         result, _balances = await self.economy.housing(guild_id, run)
         return result
+
+    async def start_reform(
+        self, guild_id: int, user_id: int, key: str, reform: str
+    ) -> tuple[ReformDone, int]:
+        """Empieza una reforma (paga la obra, su IGIC, el ICIO y la licencia). `(obra, saldo)`.
+
+        Raises:
+            HousingError: Si no se puede.
+            InsufficientFundsError: Si no le llega.
+        """
+        now = self._clock()
+        run = self.repository.start_reform(guild_id, user_id, key, reform, local_day(now), now)
+        done, balances = await self.economy.housing(guild_id, run)
+        return done, balances[user_id]
+
+    async def choose(self, guild_id: int, user_id: int, decision_id: int, choice: str) -> Decision:
+        """Elige cómo resolver un imprevisto (se paga con el cierre de la noche)."""
+        return await self.repository.choose(guild_id, user_id, decision_id, choice)
 
     async def close_auctions(self, guild_id: int) -> AuctionRun:
         """Cierra las subastas que han terminado (la tarea de cada 10 minutos)."""

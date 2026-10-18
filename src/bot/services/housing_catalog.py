@@ -18,6 +18,7 @@ las usa la escena (`assets/pisos/escena.html`) para poner las chinchetas.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 
 #: Islas con barrios, en el orden en que salen en el mapa y en el desplegable.
 ISLANDS: dict[str, str] = {"gc": "Gran Canaria", "tf": "Tenerife"}
@@ -146,6 +147,12 @@ class Listing:
         blurb: Letra pequeña con sorna.
         floor: Planta («Bajo», «4.º sin ascensor»…).
         energy: Certificado energético (A a G).
+        rent_bonus: Lo que suben la renta sus reformas en este servidor (0 en el catálogo).
+        value_bonus: Lo que suben su valor (0 en el catálogo).
+        breakdowns: Lo que multiplican sus reformas las averías y las cerraduras.
+        damp: Lo que multiplican las humedades.
+        rehab_until: Último día en que un contrato nuevo tiene la reducción del 60 % por
+            vivienda rehabilitada (`None` si no se ha rehabilitado).
     """
 
     key: str
@@ -156,6 +163,11 @@ class Listing:
     blurb: str
     floor: str
     energy: str
+    rent_bonus: float = 0.0
+    value_bonus: float = 0.0
+    breakdowns: float = 1.0
+    damp: float = 1.0
+    rehab_until: date | None = None
 
 
 BARRIOS: tuple[Barrio, ...] = (
@@ -3228,3 +3240,73 @@ BARRIO_NEWS: tuple[BarrioNews, ...] = (
 )  # fmt: skip
 
 BARRIO_NEWS_BY_KEY: dict[str, BarrioNews] = {n.key: n for n in BARRIO_NEWS}
+
+
+# -- Reformas (fase 4 de la ampliación) -----------------------------------------------------
+#
+# Las hace el dueño de un inmueble entero, con él vacío (`housing.start_reform`). Mientras
+# duran, está «En obras». Al acabar suben la renta y el valor del inmueble en ese servidor (el
+# valor, menos de lo que cuestan: reformar para vender pierde dinero) y bajan las averías.
+
+#: Viviendas de un edificio entero: las reformas de precio fijo (una cocina) cuentan ocho.
+BUILDING_UNITS = 8
+
+
+@dataclass(frozen=True, slots=True)
+class Reform:
+    """Una reforma que se le puede hacer a un inmueble.
+
+    Attributes:
+        key: Clave estable.
+        name: Nombre en el botón y en la pantalla.
+        emoji: Su icono.
+        kinds: Tipos de inmueble en que se puede hacer.
+        per_m2: Coste en euros por metro cuadrado.
+        fixed: Coste fijo en euros (por vivienda: un edificio cuenta `BUILDING_UNITS`).
+        days: Días de obras (meses del juego).
+        rent_bonus: Lo que sube la renta (0,05 = 5 %).
+        breakdowns: Lo que multiplica las averías y las cerraduras.
+        damp: Lo que multiplica las humedades.
+        energy: Certificado energético que deja (vacío: no lo cambia).
+        rehab: Si puede ser rehabilitación a efectos del IRPF (art. 41.1 del Reglamento).
+        blurb: Qué incluye, en una línea.
+    """
+
+    key: str
+    name: str
+    emoji: str
+    kinds: frozenset[str]
+    per_m2: float
+    fixed: float
+    days: int
+    rent_bonus: float
+    breakdowns: float = 1.0
+    damp: float = 1.0
+    energy: str = ""
+    rehab: bool = False
+    blurb: str = ""
+
+
+_DWELLINGS = frozenset(
+    {"estudio", "bajo", "piso2", "piso3", "atico", "chalet", "edificio", "terrera", "cueva"}
+    | {"finca", "casona", "bungalow", "duplex", "loft"}
+)
+
+REFORMS: tuple[Reform, ...] = (
+    Reform("pintura", "Pintura y arreglos", "🎨", _DWELLINGS, 20, 0, 2, 0.03,
+           blurb="Paredes, puertas y enchufes: lo que se ve en la primera visita."),
+    Reform("cocina", "Cocina nueva", "🍳", _DWELLINGS, 0, 9_000, 5, 0.05, breakdowns=0.8,
+           blurb="Muebles, encimera y electrodomésticos nuevos."),
+    Reform("bano", "Baño nuevo", "🚿", _DWELLINGS, 0, 6_000, 4, 0.04, damp=0.5,
+           blurb="Plato de ducha, alicatado y fontanería nueva: adiós a las humedades."),
+    Reform("energia", "Eficiencia energética", "☀️", _DWELLINGS, 120, 0, 7, 0.04,
+           breakdowns=0.9, energy="B",
+           blurb="Ventanas, aislamiento y aerotermia: el certificado sube a la B."),
+    Reform("integral", "Reforma integral", "🏗️", _DWELLINGS, 700, 0, 20, 0.12,
+           breakdowns=0.4, damp=0.4, rehab=True,
+           blurb="Estructura, fachada, cubierta e instalaciones: el piso como nuevo."),
+    Reform("negocio", "Acondicionar el local", "🛠️", frozenset({"local", "nave"}), 150, 0, 7,
+           0.08, breakdowns=0.8, blurb="Salida de humos, baños adaptados y escaparate."),
+)  # fmt: skip
+
+REFORM_BY_KEY: dict[str, Reform] = {r.key: r for r in REFORMS}

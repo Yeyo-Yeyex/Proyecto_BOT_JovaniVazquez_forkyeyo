@@ -88,7 +88,9 @@ TAX_KINDS: tuple[TaxKind, ...] = (
             Group.INDIRECT, "art. 31 DLeg 1/2009 de Canarias"),
     TaxKind("iaj", "🎫", "Impuesto sobre Actividades de Juego (porras)", "IAJ",
             Group.INDIRECT, "art. 48 Ley 13/2011"),
-    TaxKind("tasas", "🏖️", "Tasas de licencias vacacionales", "Tasas", Group.OTHER,
+    TaxKind("icio", "🏗️", "ICIO de las obras de los pisos", "ICIO", Group.INDIRECT,
+            "art. 102 RDL 2/2004"),
+    TaxKind("tasas", "🏖️", "Tasas de licencias (vacacionales y de obra)", "Tasas", Group.OTHER,
             "Ley 6/2025 de Canarias"),
     TaxKind("multas", "🚨", "Multas de la Inspección", "Multas", Group.OTHER, "LGT"),
     TaxKind("devuelto", "📬", "Devuelto en la renta", "Devuelto", Group.REFUND,
@@ -300,6 +302,8 @@ HOUSING_TAXES: tuple[tuple[str, str, str, str], ...] = (
     ("igic_gastos", "🧾", "IGIC de notaría, agencia, reparaciones y abogados",
      "art. 32 DLeg 1/2025 de Canarias"),
     ("ips", "🛡️", "Impuesto sobre las primas de los seguros", "art. 12 Ley 13/1996"),
+    ("icio", "🏗️", "ICIO de las reformas", "art. 102 RDL 2/2004"),
+    ("licencia_obra", "📜", "Tasas de licencias de obra", "ordenanza fiscal (tasa)"),
     ("licencia", "📜", "Tasas de licencias vacacionales", "Ley 6/2025 de Canarias"),
 )  # fmt: skip
 

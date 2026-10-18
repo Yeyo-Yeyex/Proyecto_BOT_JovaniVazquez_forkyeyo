@@ -124,6 +124,7 @@ from bot.services.housing import OVERBURDEN as HOUSING_OVERBURDEN
 from bot.services.housing_catalog import BARRIO_BY_KEY
 from bot.services.housing_catalog import BARRIO_NEWS as HOUSING_NEWS
 from bot.services.housing_catalog import KINDS as HOUSING_KINDS
+from bot.services.housing_catalog import REFORMS as HOUSING_REFORMS
 from bot.services.housing_catalog import TENANTS as HOUSING_TENANTS
 from bot.services.housing_catalog import THEMES as HOUSING_THEMES
 from bot.services.interest import (
@@ -623,6 +624,9 @@ PISOS_BARRIOS_STAT = "pisos_barrios"
 PISOS_TENANT_PREFIX = "pisos_tenant_"
 PISOS_NEWS_PREFIX = "pisos_news_"
 PISOS_TENANTS_STAT = "pisos_tenants"
+#: Fase 4: un contador por reforma hecha; las distintas, en `with_derived`.
+PISOS_REFORM_PREFIX = "pisos_reform_"
+PISOS_REFORM_KINDS_STAT = "pisos_reform_kinds"
 PISOS_NEWS_STAT = "pisos_news"
 PISOS_KINDS_STAT = "pisos_kinds"
 PISOS_THEMES_STAT = "pisos_themes"
@@ -766,6 +770,16 @@ PISOS_VACANT_STORY = (
     "como mucho en cinco (art. 16 del Decreto Legislativo 1/2009). Tiene que llevar vacía "
     "el año anterior o alquilarse en los seis meses siguientes a comprarla. Aquí, una semana "
     "vacía o seis días desde la compra. Se aplica el lunes, en tu Renta."
+)
+
+#: Discurso de la primera rehabilitación (`pisos_rehab_1`).
+PISOS_REHAB_STORY = (
+    "🏗️ **Rehabilitación.** Una reforma integral que cuesta más del 25 % del valor de la "
+    "construcción (sin el suelo) es rehabilitación para Hacienda (art. 41.1 del Reglamento del "
+    "IRPF): los contratos de vivienda que firmes en los dos años siguientes (24 días del bot) "
+    "tienen una reducción del 60 % en vez del 50 % (art. 23.2.c LIRPF). La obra no se deduce "
+    "como gasto: es una mejora, suma a lo que te costó el piso y se amortiza. Y paga el ICIO, "
+    "el impuesto de las obras, hasta un 4 % (art. 102 del RDL 2/2004)."
 )
 
 #: Discurso de la primera renta de `pisos` (`pisos_rent_1`).
@@ -8211,6 +8225,71 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("pisos", f"{PISOS_NEWS_PREFIX}famoso", [
         (1, "pisos_news_famoso", "Vecino de un crack",
          "Ten un piso en el barrio donde se compra el chalet un futbolista famoso.", R, True),
+    ])  # fmt: skip
+    # Fase 4 de la ampliación (8.3.0): reformas, imprevistos que se deciden y humor
+    a += _tiers("pisos", "pisos_reforms", [
+        (1, "pisos_reforms_1", "Bricomanía", "Haz una reforma.", C),
+        (5, "pisos_reforms_5", "Manitas con presupuesto", "Haz 5 reformas.", R),
+        (20, "pisos_reforms_20", "Constructora de barrio", "Haz 20 reformas.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_reform_spent", [
+        (100_000, "pisos_reform_100k", "La obra de El Escorial",
+         "Gasta 100.000 Y$ en reformas, con impuestos.", R),
+        (1_000_000, "pisos_reform_1m", "Reformas que no acaban nunca",
+         "Gasta 1.000.000 Y$ en reformas, con impuestos.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_REFORM_PREFIX}integral", [
+        (1, "pisos_integral_1", "De la ruina al Instagram", "Haz una reforma integral.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_REFORM_PREFIX}energia", [
+        (1, "pisos_energy_1", "Certificado B de bonito",
+         "Haz la reforma de eficiencia energética.", C),
+    ])  # fmt: skip
+    a += _tiers("pisos", PISOS_REFORM_KINDS_STAT, [
+        (len(HOUSING_REFORMS), "pisos_reform_kinds", "Catálogo de Leroy Merlin",
+         f"Haz las {len(HOUSING_REFORMS)} reformas distintas.", E),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="pisos_rehab_1", name="Rehabilitado con papeles",
+        description="Haz una reforma integral que cuente como rehabilitación para el IRPF.",
+        category="pisos", rarity=R, conditions=(("pisos_rehab", 1),), story=PISOS_REHAB_STORY,
+    ))  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}obra_terminada", [
+        (1, "pisos_works_done_1", "Se fueron los albañiles", "Termina unas obras.", C),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_decisions", [
+        (1, "pisos_decisions_1", "Yo me encargo", "Decide cómo arreglar un imprevisto.", C),
+        (25, "pisos_decisions_25", "Casero de guardia", "Decide 25 imprevistos.", R),
+        (100, "pisos_decisions_100", "Comunidad de propietarios en una persona",
+         "Decide 100 imprevistos.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}decision_cunado", [
+        (1, "pisos_cunado_1", "Esto te lo apaño yo un sábado",
+         "Arregla una avería con la chapuza del cuñado.", C, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}decision_vuelve", [
+        (1, "pisos_relapse_1", "Ya te lo dije",
+         "Que una chapuza vuelva a romperse.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}decision_espera", [
+        (1, "pisos_wait_1", "Mañana vengo, que hoy no puedo",
+         "Deja que el inquilino espere por una avería.", C, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}decision_parte", [
+        (1, "pisos_claim_home_1", "Dar parte, que para eso pago",
+         "Da parte al seguro del hogar por unas humedades.", C),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}decision_mediacion", [
+        (1, "pisos_mediation_1", "Paz en la escalera",
+         "Paga una mediación con el vecino del 3.º.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_mood_max", [
+        (100, "pisos_mood_100", "El inquilino te manda flores",
+         "Ten un inquilino con el humor al máximo.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_mood_low", [
+        (1, "pisos_mood_low_1", "Te pone una reseña de una estrella al casero",
+         "Ten un inquilino harto (humor de 20 o menos).", R, True),
     ])  # fmt: skip
     # Fase 3 de la ampliación (8.2.0): compraventa entre miembros y subastas
     a += _tiers("pisos", "pisos_sold_member", [
@@ -18903,6 +18982,9 @@ def with_derived(stats: Mapping[str, int]) -> dict[str, int]:
     full[PISOS_NEWS_STAT] = sum(
         1 for n in HOUSING_NEWS if stats.get(f"{PISOS_NEWS_PREFIX}{n.key}", 0) > 0
     )
+    full[PISOS_REFORM_KINDS_STAT] = sum(
+        1 for r in HOUSING_REFORMS if stats.get(f"{PISOS_REFORM_PREFIX}{r.key}", 0) > 0
+    )
     full[PISOS_THEMES_STAT] = len(
         {
             barrio.theme
@@ -23018,6 +23100,8 @@ HOUSING_ACTIONS = {
     "subasta_desierta": "pisos_auction_deserted",
     "vende_miembro": "pisos_sold_member",
     "compra_miembro": "pisos_bought_member",
+    "reforma": "pisos_reforms",
+    "decide": "pisos_decisions",
 }
 
 
@@ -23042,6 +23126,9 @@ def housing_action_stats(
     reference: bool = False,
     moved_in: bool = False,
     overpaid: bool = False,
+    reform: str = "",
+    rehab: bool = False,
+    choice: str = "",
 ) -> StatDelta:
     """Estadísticas de una acción de las fases 2 a 4 (`HOUSING_ACTIONS`, o `hipoteca`).
 
@@ -23066,6 +23153,10 @@ def housing_action_stats(
         reference: Con `compra_miembro`, si el ITP fue sobre el valor de referencia.
         moved_in: Con `compra_miembro`, si era su piso de alquiler y ahora vive en lo suyo.
         overpaid: Con `compra_miembro`, si pagó más de un 20 % sobre el valor.
+        reform: Con `reforma`, cuál (`amount`, lo que costó con impuestos).
+        rehab: Con `reforma`, si cuenta como rehabilitación.
+        choice: Con `decide`, la forma elegida (no cuenta nada más: los logros de cada forma
+            salen al resolverse, con el cierre de la noche).
     """
     if action == "desahucio":
         return StatDelta(add={"pisos_lawyer": fee} if fee else {"pisos_lawyer_free": 1})
@@ -23105,6 +23196,12 @@ def housing_action_stats(
             delta.add[stat] = 1
     if action == "gana_subasta" and amount:
         delta.peak["pisos_auction_max"] = amount
+    if action == "reforma":
+        delta.add["pisos_reform_spent"] = amount
+        if reform:
+            delta.add[f"{PISOS_REFORM_PREFIX}{reform}"] = 1
+        if rehab:
+            delta.add["pisos_rehab"] = 1
     if action == "firma_candidato":
         if tenant:
             delta.add[f"{PISOS_TENANT_PREFIX}{tenant}"] = 1
@@ -23129,6 +23226,7 @@ def housing_day_stats(
     tenants: tuple[str, ...] = (),
     news: tuple[str, ...] = (),
     young: int = 0,
+    moods: tuple[int, ...] = (),
 ) -> StatDelta:
     """Estadísticas de un día cerrado de los pisos de un miembro.
 
@@ -23144,8 +23242,14 @@ def housing_day_stats(
         tenants: Inquilinos del catálogo que han firmado hoy en sus pisos.
         news: Noticias de barrio que salen hoy donde tiene pisos.
         young: Contratos de hoy con la reducción del 70 %.
+        moods: Humor de sus inquilinos al cerrar el día.
     """
     add: dict[str, int] = {}
+    peak: dict[str, int] = {}
+    if moods:
+        peak["pisos_mood_max"] = max(moods)
+        if min(moods) <= 20:
+            add["pisos_mood_low"] = 1
     if insurer > 0:
         add["pisos_insurer_paid"] = insurer
     if bonus > 0:
@@ -23168,7 +23272,7 @@ def housing_day_stats(
     for kind in events:
         stat = f"{PISOS_EVENT_PREFIX}{kind}"
         add[stat] = add.get(stat, 0) + 1
-    return StatDelta(add=add)
+    return StatDelta(add=add, peak=peak)
 
 
 def donation_stats(

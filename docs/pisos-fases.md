@@ -186,7 +186,7 @@ que no se pudo confirmar). Las cifras de juego se calibran con `docs/pisos_sim.p
   | Humedades | Repararlas bien; pintar encima (20 %, 60 % de que vuelvan); dar parte al seguro del hogar (franquicia de 150 €) |
   | Cerradura | Cerrajero de urgencia; mañana por la mañana (50 %, el inquilino se molesta) |
   | Vecino del 3.º | Hablar con él (gratis, se arregla la mitad de las veces); mediación (cuesta); ignorarlo |
-  | Derrama e ITE | Son obligatorias (art. 10 LPH): de golpe o en 6 cuotas |
+  | Derrama e ITE | Son obligatorias (art. 10 LPH): se pagan como siempre, de golpe |
 
 - Si la avería espera, el inquilino puede repararla él y descontarla de la renta, con un 20 %
   más (art. 21.5 LAU desde el RDL 29/2026: el casero tiene 15 días para contestar).

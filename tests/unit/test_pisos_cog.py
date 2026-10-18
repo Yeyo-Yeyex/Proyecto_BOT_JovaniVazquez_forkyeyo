@@ -532,11 +532,19 @@ async def test_todas_las_pantallas_respetan_los_limites_de_discord(tmp_path: Pat
             )
     for listing in LISTINGS[:6]:
         await cog.service.create_auction(GUILD, ana.id, listing.key, 10, 1_000)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        for event in ("averia", "humedades", "vecino"):
+            connection.execute(
+                "INSERT INTO housing_decisions (guild_id, listing, event, cost, day, until) "
+                "VALUES (?, 'vegueta_edificio', ?, 99999, '2026-10-14', '2026-10-16')",
+                (GUILD, event),
+            )
     panel = await open_panel(cog, ana, guild_with(ana))
     await panel.refresh()
     for screen, pending in ((MAPA, None), (BARRIO, None), (FICHA, None), (CARTERA, None),
                             (CAJA, (False, 10)), (CAJA, (True, 10)), (VPO, None),
-                            (GESTION, None), (CANDIDATOS, None), ("subastas", None)):  # fmt: skip
+                            (GESTION, None), (CANDIDATOS, None), ("subastas", None),
+                            ("reformas", None), ("imprevistos", None)):  # fmt: skip
         panel.screen, panel.pending, panel.done = screen, pending, None
         panel.barrio, panel.listing = "vegueta", "vegueta_edificio"
         panel.rebuild()
@@ -1003,3 +1011,42 @@ async def test_subastar_pujar_y_cerrar_desde_el_panel(tmp_path: Path) -> None:
     assert run is not None and run.results[0].winner == bea.id
     assert "Fin de la subasta" in channel.send.await_args.kwargs["embed"].title
     assert (await cog.service.market(GUILD)).shares_of("taco_bajo") == {bea.id: rules.SHARES}
+
+
+# -- Fase 4 de la ampliación (8.3.0) ------------------------------------------------------
+
+
+async def test_reformar_con_dos_clics_y_decidir_un_imprevisto(tmp_path: Path) -> None:
+    from bot.cogs.pisos import IMPREVISTOS, REFORMAS
+
+    cog, _scene, _clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(10_000_000, "prueba")])
+    await cog.service.buy(GUILD, ana.id, "taco_bajo", rules.SHARES)
+    panel = await open_panel(cog, ana, guild_with(ana))
+    panel.listing = "taco_bajo"
+    await panel._go_gestion(clicked(ana, []))
+    assert "pisos:reformas" in ids(panel)
+    await panel._go_reforms(clicked(ana, []))
+    assert panel.screen == REFORMAS and "pisos:reforma:pintura" in ids(panel)
+    await panel._arm(clicked(ana, [], custom_id="pisos:reforma:pintura"))
+    assert "pisos:reforma:pintura:si" in ids(panel)
+    await panel._reform(clicked(ana, [], custom_id="pisos:reforma:pintura:si"))
+    market = await cog.service.market(GUILD)
+    assert market.leases["taco_bajo"].status == rules.OBRAS
+    assert "pintura" in market.reforms["taco_bajo"]
+
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute(
+            "INSERT INTO housing_decisions (guild_id, listing, event, cost, day, until) "
+            "VALUES (?, 'taco_bajo', 'averia', 3000, '2026-10-14', '2026-10-16')",
+            (GUILD,),
+        )
+    await panel._back_to_listing(clicked(ana, []))
+    assert "pisos:imprevistos" in ids(panel)
+    await panel._go_decisions(clicked(ana, []))
+    assert panel.screen == IMPREVISTOS
+    (decision,) = (await cog.service.market(GUILD)).decisions["taco_bajo"]
+    await panel._decide(clicked(ana, [], custom_id=f"pisos:decidir:{decision.id}:cunado"))
+    (decision,) = (await cog.service.market(GUILD)).decisions["taco_bajo"]
+    assert decision.choice == "cunado"

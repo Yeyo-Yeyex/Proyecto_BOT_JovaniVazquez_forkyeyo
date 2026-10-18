@@ -49,6 +49,7 @@ from functools import cache
 from bot.services.housing_catalog import (
     BARRIO_BY_KEY,
     BARRIO_NEWS,
+    BUILDING_UNITS,
     BUSINESS_KINDS,
     KINDS,
     LISTING_BY_KEY,
@@ -62,6 +63,7 @@ from bot.services.housing_catalog import (
     TENANTS,
     BarrioNews,
     Listing,
+    Reform,
     RentLevel,
     Tenant,
 )
@@ -163,12 +165,17 @@ def _m2(listing: Listing) -> float:
     return kind.fixed_m2 if kind.fixed_m2 is not None else listing.m2
 
 
-def base_price(listing: Listing) -> int:
-    """Precio del inmueble entero con el índice del barrio a 1, en Y$ (a miles)."""
+def catalog_price(listing: Listing) -> int:
+    """Precio del inmueble entero, sin reformas y con el índice a 1, en Y$ (a miles)."""
     barrio = BARRIO_BY_KEY[listing.barrio]
     kind = KINDS[listing.kind]
     euros = _m2(listing) * barrio.price_m2 * kind.price_factor
     return int(round(_euros(euros), -3))
+
+
+def base_price(listing: Listing) -> int:
+    """Precio del inmueble entero con el índice del barrio a 1, con sus reformas (a miles)."""
+    return int(round(catalog_price(listing) * (1 + listing.value_bonus), -3))
 
 
 def price(listing: Listing, index: float = 1.0) -> int:
@@ -185,7 +192,7 @@ def reference_rent(listing: Listing, index: float = 1.0) -> int:
     """Renta de referencia de un mes (un día del bot), en Y$ (a decenas)."""
     barrio = BARRIO_BY_KEY[listing.barrio]
     kind = KINDS[listing.kind]
-    euros = _m2(listing) * barrio.rent_m2 * kind.rent_factor * index
+    euros = _m2(listing) * barrio.rent_m2 * kind.rent_factor * index * (1 + listing.rent_bonus)
     return int(round(_euros(euros), -1))
 
 
@@ -195,8 +202,9 @@ def asking_rent(listing: Listing, level: RentLevel, index: float = 1.0) -> int:
 
 
 def cadastral_value(listing: Listing) -> int:
-    """Valor catastral del inmueble entero (no sigue al índice)."""
-    return round(base_price(listing) * CADASTRAL_SHARE)
+    """Valor catastral del inmueble entero (no sigue al índice ni ve las reformas: el
+    catastro va siempre años por detrás)."""
+    return round(catalog_price(listing) * CADASTRAL_SHARE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -259,6 +267,7 @@ def contract_reduction(
     rent: int,
     last_rent: int,
     young: bool = False,
+    day: date | None = None,
 ) -> float:
     """Reducción del art. 23.2 LIRPF de un contrato, fijada al firmarlo (Ley 12/2023).
 
@@ -266,12 +275,14 @@ def contract_reduction(
       cuya renta baja más de un 5 % de la última del anterior (`TENSE_RENT_CUT`).
     - 70 %: vivienda en zona tensionada que se alquila por primera vez, a un inquilino de
       18 a 35 años (`young`).
+    - 60 %: vivienda rehabilitada (una reforma integral que pasa del 25 % del valor de la
+      construcción, art. 41.1 RIRPF) en los dos años (24 días) anteriores al contrato
+      (`Listing.rehab_until`, mirado el día de la firma, `day`).
     - 50 %: cualquier otro alquiler de vivienda.
     - 0: lo que no es vivienda (`is_dwelling`).
 
     «Por primera vez» se mira en el propio inmueble: sin contrato anterior apuntado
-    (`last_rent` a 0; un inmueble que vuelve al mercado empieza de cero). El 60 % (vivienda
-    rehabilitada en los dos años anteriores) llegará con las reformas. Simplificación: no
+    (`last_rent` a 0; un inmueble que vuelve al mercado empieza de cero). Simplificación: no
     se mira si el casero del contrato anterior era el mismo. La escala del RDL 29/2026, sin
     convalidar, no se aplica (decisión del proyecto).
     """
@@ -281,6 +292,8 @@ def contract_reduction(
         return TENSE_RENT_REDUCTION
     if tense(index) and last_rent == 0 and young:
         return YOUNG_RENT_REDUCTION
+    if day is not None and listing.rehab_until is not None and day <= listing.rehab_until:
+        return REHAB_REDUCTION
     return RENT_REDUCTION
 
 
@@ -525,6 +538,11 @@ class Lease:
             nómina llegaba a tres veces la renta): el seguro de impago le cubre.
         bonus: Si el contrato en vigor da la deducción canaria por alquilar una vivienda
             vacía (art. 16 del Decreto Legislativo 1/2009) y aún no se ha aplicado.
+        works_until: Último día de las obras, si está «En obras» (`OBRAS`).
+        mood: Humor del inquilino, de 0 a 100 (`MOOD_BASE` al firmar): lo que se arregla
+            bien lo sube y lo que se deja o se arregla mal lo baja (`mood_factor`).
+        home_claim_until: Hasta qué día la prima del seguro del hogar va recargada por un
+            parte (`HOME_CLAIM_SURCHARGE`).
     """
 
     status: str = VACANT
@@ -547,6 +565,9 @@ class Lease:
     claims: int = 0
     solvent: bool = False
     bonus: bool = False
+    works_until: date | None = None
+    mood: int = 70
+    home_claim_until: date | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -877,9 +898,10 @@ def sign(listing: Listing, lease: Lease, tenant: str, day: date, index: float) -
         since=day,
         unpaid=0,
         claims=0,
+        mood=MOOD_BASE,
         reduction=contract_reduction(
             listing, level.key, index=index, rent=rent, last_rent=lease.last_rent,
-            young=is_young(tenant),
+            young=is_young(tenant), day=day,
         ),
     )  # fmt: skip
 
@@ -918,6 +940,8 @@ def advance_day(
     """
     level = RENT_LEVELS.get(lease.level, RENT_LEVELS["referencia"])
     factors = tenant_factors(lease.tenant, lease.level, listing.kind)
+    # El humor del inquilino cambia lo que se queda: contento renueva más y se va menos.
+    factors = replace(factors, stay=factors.stay * mood_factor(lease.mood))
     living = lease.status in (RENTED, DEFAULTING)
     extra, rolled = roll_events(
         listing, rng, wear=factors.wear if living else 1.0,
@@ -927,6 +951,13 @@ def advance_day(
 
     rent = 0
     status = lease.status
+    if status == OBRAS:
+        # En obras no se alquila; al acabar, vuelve a estar vacío y listo para alquilar.
+        if lease.works_until is None or day >= lease.works_until:
+            lease = replace(lease, status=VACANT, since=day, works_until=None)
+            events.append(Event("obra_terminada"))
+        return DayOutcome(lease=lease, rent=0, costs=monthly_costs(listing), extra=extra,
+                          events=tuple(events))  # fmt: skip
     if status == HABITUAL or lease.member is not None:
         # Vive su dueño, o un miembro de alquiler: no hay inquilinos ficticios que entren,
         # se vayan o dejen de pagar (lo del miembro lo decide su monedero).
@@ -1011,6 +1042,10 @@ def roll_events(
             chance *= wear
         if kind.key in REPAIR_EVENTS:
             chance *= repairs
+        if kind.key == "humedades":
+            chance *= listing.damp
+        elif kind.key in REPAIR_EVENTS:
+            chance *= listing.breakdowns
         elif kind.key == "vecino":
             chance *= neighbour
         if rng.random() >= chance:
@@ -1638,3 +1673,200 @@ def judicial_ok(bid: int, value: int, owed: int, *, habitual: bool) -> bool:
     if not habitual:
         return True
     return bid >= owed and bid >= value * JUDICIAL_HOME_MIN_SHARE
+
+
+# -- Ampliación, fase 4: reformas e imprevistos que se deciden -------------------------
+
+#: Estado de un inmueble en obras: no se alquila (`Lease.works_until`).
+OBRAS = "obras"
+#: ICIO, el impuesto de las obras (art. 102 del RDL 2/2004): el 4 % del coste, el máximo; va
+#: al Estado porque en el juego no hay ayuntamientos. Más la tasa de la licencia de obra.
+ICIO_RATE = 0.04
+WORKS_LICENSE_FEE = 1_500
+#: Lo que sube el valor del inmueble por cada Y$ que cuesta una reforma (sin impuestos), y
+#: lo más que pueden subir entre todas el valor y la renta: reformar para vender pierde.
+REFORM_VALUE_SHARE = 0.6
+REFORM_MAX_BONUS = 0.25
+#: Rehabilitación (art. 41.1 del Reglamento del IRPF): una reforma integral que cuesta más del
+#: 25 % del valor de la construcción (el 60 % del precio, sin el suelo). Los contratos que se
+#: firman en los dos años siguientes (24 días) tienen la reducción del 60 % (art. 23.2.c).
+REHAB_SHARE = 0.25
+REHAB_DAYS = 24
+REHAB_REDUCTION = 0.6
+#: Humor del inquilino: el de partida y lo que se pide para sacar el logro de «contento».
+MOOD_BASE = 70
+#: El parte al seguro del hogar: la franquicia que paga el dueño y lo que se recarga la prima
+#: durante 30 días.
+HOME_CLAIM_EXCESS = 1_500
+HOME_CLAIM_SURCHARGE = 1.2
+HOME_CLAIM_DAYS = 30
+#: Días que tiene el dueño para decidir un imprevisto; si no, la gestora lo arregla.
+DECISION_DAYS = 2
+
+
+def mood_factor(mood: int) -> float:
+    """Lo que el humor multiplica irse antes y no renovar: 1 con el de partida."""
+    return min(1.6, max(0.5, 1 + (MOOD_BASE - mood) / 100))
+
+
+def reform_cost(listing: Listing, reform: Reform) -> int:
+    """Lo que cuesta una reforma (sin IGIC ni ICIO), en Y$ a la escala general (a cientos)."""
+    units = BUILDING_UNITS if listing.kind == "edificio" else 1
+    euros = reform.per_m2 * _m2(listing) + reform.fixed * units
+    return int(round(_euros(euros), -2))
+
+
+@dataclass(frozen=True, slots=True)
+class ReformQuote:
+    """Las cuentas de una reforma.
+
+    Attributes:
+        cost: La obra (desaparece).
+        igic: Su IGIC, al general (al Estado).
+        icio: El ICIO, el 4 % (al Estado).
+        license: La tasa de la licencia de obra (al Estado).
+        rehab: Si cuenta como rehabilitación para la reducción del 60 %.
+    """
+
+    cost: int
+    igic: int
+    icio: int
+    license: int
+    rehab: bool
+
+    @property
+    def total(self) -> int:
+        """Todo lo que sale del bolsillo."""
+        return self.cost + self.igic + self.icio + self.license
+
+
+def reform_quote(listing: Listing, reform: Reform, index: float = 1.0) -> ReformQuote:
+    """La cuenta de una reforma: obra, IGIC, ICIO, licencia y si es rehabilitación."""
+    cost = reform_cost(listing, reform)
+    construction = price(listing, index) * CONSTRUCTION_SHARE
+    return ReformQuote(
+        cost=cost,
+        igic=igic(cost, SERVICES_IGIC),
+        icio=round(cost * ICIO_RATE),
+        license=WORKS_LICENSE_FEE,
+        rehab=reform.rehab and cost > construction * REHAB_SHARE,
+    )
+
+
+def improved(listing: Listing, done: Iterable[tuple[Reform, int, date, bool]]) -> Listing:
+    """El inmueble con sus reformas terminadas: renta, valor, averías y certificado.
+
+    Args:
+        done: `(reforma, lo que costó, día que acabó, si fue rehabilitación)`.
+    """
+    rent = value = 0.0
+    breakdowns = damp = 1.0
+    energy = listing.energy
+    rehab_until: date | None = None
+    catalog = catalog_price(listing)
+    for reform, cost, finished, rehab in done:
+        rent += reform.rent_bonus
+        value += REFORM_VALUE_SHARE * cost / catalog if catalog else 0.0
+        breakdowns *= reform.breakdowns
+        damp *= reform.damp
+        if reform.energy and reform.energy < energy:
+            energy = reform.energy
+        if rehab:
+            until = finished + timedelta(days=REHAB_DAYS)
+            rehab_until = until if rehab_until is None else max(rehab_until, until)
+    return replace(
+        listing,
+        rent_bonus=min(REFORM_MAX_BONUS, rent),
+        value_bonus=min(REFORM_MAX_BONUS, value),
+        breakdowns=breakdowns,
+        damp=damp,
+        energy=energy,
+        rehab_until=rehab_until,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class Choice:
+    """Una forma de resolver un imprevisto.
+
+    Attributes:
+        key: Clave estable (para los logros).
+        label: El botón.
+        share: Lo que se paga del coste del imprevisto (1 = entero).
+        flat: Lo que se paga fijo, en Y$ (la mediación).
+        mood: Lo que cambia el humor del inquilino.
+        relapse: Probabilidad de que vuelva a pasar (la chapuza).
+        bad_mood: Con `relapse` a 0, probabilidad de que salga mal y baje el humor (hablar
+            con el vecino), por `mood` negativo aparte: `(probabilidad, humor)`.
+        claim: Si se da parte al seguro del hogar (paga la franquicia y recarga la prima).
+    """
+
+    key: str
+    label: str
+    share: float = 1.0
+    flat: int = 0
+    mood: int = 0
+    relapse: float = 0.0
+    bad_mood: tuple[float, int] = (0.0, 0)
+    claim: bool = False
+
+
+#: Las formas de resolver cada imprevisto que se decide; la primera es la de la gestora (la
+#: de siempre: se arregla bien). La derrama y la ITE son obligatorias (art. 10 LPH).
+DECISIONS: dict[str, tuple[Choice, ...]] = {
+    "averia": (
+        Choice("tecnico", "🧰 Técnico oficial", mood=5),
+        Choice("cunado", "🪛 La chapuza del cuñado", share=0.35, mood=-5, relapse=0.4),
+        # El inquilino la arregla y la descuenta de la renta, con un 20 % más (art. 21.5 LAU).
+        Choice("espera", "⏳ Que espere", share=1.2, mood=-20),
+    ),
+    "humedades": (
+        Choice("reparar", "🔧 Repararlas bien", mood=5),
+        Choice("pintar", "🎨 Pintar encima", share=0.2, mood=-5, relapse=0.6),
+        Choice("parte", "🛡️ Dar parte al seguro", share=0.0, claim=True),
+    ),
+    "cerradura": (
+        Choice("urgencia", "🔑 Cerrajero de urgencia"),
+        Choice("manana", "🕗 Mañana por la mañana", share=0.5, mood=-10),
+    ),
+    "vecino": (
+        Choice("hablar", "🗣️ Hablar con él", share=0.0, bad_mood=(0.5, -10)),
+        Choice("mediacion", "🤝 Mediación vecinal", share=0.0, flat=3_000, mood=5),
+        Choice("ignorar", "🤷 Ignorarlo", share=0.0, mood=-15),
+    ),
+}
+
+
+@dataclass(frozen=True, slots=True)
+class Resolution:
+    """Cómo queda un imprevisto resuelto.
+
+    Attributes:
+        pay: Lo que se paga hoy (sin IGIC).
+        mood: Lo que cambia el humor.
+        relapse: Si vuelve a pasar (nace otro imprevisto igual).
+        claim: Si se ha dado parte al seguro del hogar.
+    """
+
+    pay: int
+    mood: int
+    relapse: bool = False
+    claim: bool = False
+
+
+def resolve(event: str, choice: str | None, cost: int, rng: random.Random) -> Resolution:
+    """Resuelve un imprevisto con la forma elegida (o la de la gestora si no se eligió).
+
+    Raises:
+        ValueError: Si el imprevisto no se decide o la forma no existe.
+    """
+    options = DECISIONS[event]
+    picked = next((c for c in options if c.key == choice), options[0])
+    pay = round(cost * picked.share) + picked.flat
+    if picked.claim:
+        pay = min(cost, HOME_CLAIM_EXCESS)
+    mood = picked.mood
+    if picked.bad_mood[0] and rng.random() < picked.bad_mood[0]:
+        mood += picked.bad_mood[1]
+    relapse = bool(picked.relapse) and rng.random() < picked.relapse
+    return Resolution(pay=pay, mood=mood, relapse=relapse, claim=picked.claim)

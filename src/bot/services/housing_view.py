@@ -35,6 +35,7 @@ from bot.services.housing_catalog import (
     BARRIOS,
     ISLANDS,
     KINDS,
+    REFORMS,
     RENT_LEVELS,
     TENANT_BY_KEY,
     THEMES,
@@ -60,6 +61,7 @@ STATUS_TEXT = {
     rules.EVICTING: "Desahucio en marcha",
     rules.SQUATTED: "Okupado",
     rules.HABITUAL: "Vive su dueño",
+    rules.OBRAS: "En obras",
 }
 
 #: Qué pasa en una noticia, en una línea. `{tenant}` y `{amount}` se rellenan.
@@ -107,6 +109,8 @@ NEWS_TEXT = {
     "subasta_adjudicada": "{who} se lleva la subasta por {amount}",
     "subasta_desierta": "Subasta desierta: nadie puja (mínima {amount})",
     "ejecucion_subasta": "Remate de la subasta judicial de {who}: {amount}",
+    "obras": "{who} empieza una reforma de {amount}",
+    "obra_terminada": "Se acaban las obras: el piso está como nuevo",
 }
 
 #: Cómo se llama cada noticia de las VPO (su `listing` es `vpo:<clave>`).
@@ -536,6 +540,14 @@ def listing_state(
     state["pick"] = lease.pick if lease else rules.PICK_AGENCY
     state["waiting"] = len(market.candidates_of(key, today)) if today else 0
     state["barrio_news"] = news_box(market.news_of(listing.barrio, today)) if today else None
+    # Fase 4: el humor del inquilino, los imprevistos que esperan y las obras.
+    state["mood"] = mood_text(lease.mood) if tenant is not None and lease is not None else ""
+    state["mood_value"] = lease.mood if lease is not None else rules.MOOD_BASE
+    state["decisions"] = len(market.decisions.get(key, ()))
+    state["works_until"] = (
+        lease.works_until.strftime("%d/%m") if lease is not None and lease.works_until else ""
+    )
+    state["reformed"] = bool(market.reforms.get(key))
     state["fallback"] = [
         f"{listing.title} ({card['m2']}, {listing.floor})",
         f"{state['barrio']}: {card['price']} · {card['share_price']} la participación",
@@ -1009,4 +1021,143 @@ def auctions_state(
             for i in items
         ),
     ] if items else ["Ninguna subasta abierta ahora mismo."]  # fmt: skip
+    return state
+
+
+def mood_text(mood: int) -> str:
+    """El humor del inquilino (`Lease.mood`) en una palabra."""
+    if mood >= 85:
+        return "Encantado"
+    if mood >= 60:
+        return "Contento"
+    if mood >= 40:
+        return "Regular"
+    if mood >= 20:
+        return "Molesto"
+    return "Harto"
+
+
+def reforms_state(market: Market, key: str, user_id: int) -> State:
+    """🏗️ Reformas: las que se le pueden hacer a un inmueble, lo que cuestan y lo que dan."""
+    listing = market.listing(key)
+    if listing is None:
+        raise KeyError(key)
+    index = market.index(listing.barrio)
+    lease = market.leases.get(key, rules.Lease())
+    done = market.reforms.get(key, {})
+    items = []
+    for reform in REFORMS:
+        if listing.kind not in reform.kinds:
+            continue
+        quote = rules.reform_quote(listing, reform, index)
+        made = done.get(reform.key)
+        status = "available" if made is None else "done" if made[2] else "works"
+        items.append(
+            {
+                "key": reform.key,
+                "name": reform.name,
+                "emoji": reform.emoji,
+                "blurb": reform.blurb,
+                "cost": format_amount(quote.cost),
+                "total": format_amount(quote.total),
+                "taxes": format_amount(quote.igic + quote.icio + quote.license),
+                "days": f"{reform.days} días",
+                "rent": "+" + _pct(reform.rent_bonus, 0) + " de renta",
+                "breakdowns": reform.breakdowns < 1 or reform.damp < 1,
+                "energy": reform.energy,
+                "rehab": quote.rehab,
+                "status": status,
+                "until": made[1].strftime("%d/%m") if made else "",
+            }
+        )
+    state: State = {
+        "screen": "reformas",
+        "key": listing.key,
+        "barrio_key": listing.barrio,
+        "theme": BARRIO_BY_KEY[listing.barrio].theme,
+        "kind": listing.kind,
+        "title": listing.title,
+        "barrio": BARRIO_BY_KEY[listing.barrio].name,
+        "items": items,
+        "whole": market.shares_of(key).get(user_id, 0) == rules.SHARES,
+        "vacant": lease.status == rules.VACANT,
+        "works": lease.status == rules.OBRAS,
+        "works_until": lease.works_until.strftime("%d/%m") if lease.works_until else "",
+        "rent_bonus": "+" + _pct(listing.rent_bonus, 0),
+        "value_bonus": "+" + _pct(listing.value_bonus, 0),
+        "energy": listing.energy,
+        "rehab_until": listing.rehab_until.strftime("%d/%m") if listing.rehab_until else "",
+        "footer": "IGIC 7 % · ICIO 4 % · licencia de obra · el valor sube el 60 % del coste",
+    }
+    state["fallback"] = [
+        f"Reformas: {listing.title} ({state['barrio']})",
+        f"Renta {state['rent_bonus']} · valor {state['value_bonus']} · certificado "
+        f"{listing.energy}",
+        *(f"{i['name']}: {i['total']} con impuestos · {i['days']} · {i['rent']}" for i in items),
+    ]
+    return state
+
+
+def decisions_state(market: Market, key: str, user_id: int) -> State:
+    """⚠️ Imprevistos: los que esperan decisión en un inmueble, con sus formas de arreglarlo."""
+    listing = market.listing(key)
+    if listing is None:
+        raise KeyError(key)
+    lease = market.leases.get(key, rules.Lease())
+    tenant = TENANT_BY_KEY.get(lease.tenant or "")
+    holders = market.shares_of(key)
+    boss = rules.manager(holders)
+    items = []
+    for slot, decision in enumerate(market.decisions.get(key, ())[:3], start=1):
+        options = []
+        for choice in rules.DECISIONS[decision.event]:
+            cost = round(decision.cost * choice.share) + choice.flat
+            if choice.claim:
+                cost = min(decision.cost, rules.HOME_CLAIM_EXCESS)
+            options.append(
+                {
+                    "key": choice.key,
+                    "label": choice.label,
+                    "cost": format_amount(cost),
+                    "mood": choice.mood,
+                    "relapse": _pct(choice.relapse, 0) if choice.relapse else "",
+                    "chosen": decision.choice == choice.key,
+                }
+            )
+        items.append(
+            {
+                "slot": slot,
+                "id": decision.id,
+                "event": decision.event,
+                "title": NEWS_TEXT.get(decision.event, decision.event).format(
+                    amount=format_amount(decision.cost), who="", tenant=""
+                ),
+                "complaint": tenant.complaint if tenant else "",
+                "until": decision.until.strftime("%d/%m"),
+                "options": options,
+            }
+        )
+    state: State = {
+        "screen": "imprevistos",
+        "key": listing.key,
+        "barrio_key": listing.barrio,
+        "theme": BARRIO_BY_KEY[listing.barrio].theme,
+        "kind": listing.kind,
+        "title": listing.title,
+        "barrio": BARRIO_BY_KEY[listing.barrio].name,
+        "items": items,
+        "empty": not items,
+        "decides": user_id in holders and (boss is None or boss == user_id),
+        "tenant": tenant.name if tenant else "",
+        "mood": mood_text(lease.mood) if tenant else "",
+        "mood_value": lease.mood,
+        "footer": "Si no decides en dos días, la gestora lo arregla bien · se paga por la noche",
+    }
+    state["fallback"] = [
+        f"Imprevistos: {listing.title}",
+        *(
+            f"{i['title']} · " + " / ".join(f"{o['label']} {o['cost']}" for o in i["options"])
+            for i in items
+        ),
+    ] if items else ["No hay nada pendiente en este piso."]  # fmt: skip
     return state
