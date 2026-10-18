@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.10 · 2026-10-18
+
+- Logros: 24 nombres pasan a humor de adultos donde el logro lo pedía
+
 ### 7.25.9 · 2026-10-18
 
 - Logros: fuera las coletillas entre paréntesis y los «X, versión Y» en los nombres
