@@ -8,6 +8,10 @@ criterio.
 
 ## 7.x
 
+### 7.25.15 · 2026-10-18
+
+- Torre: frases nuevas, más normales y con Jovani; menos Juego de Tronos y política
+
 ### 7.25.14 · 2026-10-18
 
 - Interno: la auditoría de frases mide temas, frases normales y lo boricua por partes

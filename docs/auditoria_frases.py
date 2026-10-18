@@ -271,10 +271,10 @@ def report(lists: list[PhraseList], sources: Counter[str]) -> list[str]:
         for phrase in pl.phrases:
             seen[phrase.strip()].add(pl.where)
     for phrase, places in sorted(seen.items()):
-        # Las exclamaciones cortas («¡Eso es!») y las coletillas solas («¡Toma mangó!»)
-        # pueden salir en varios juegos: no son una broma repetida.
+        # Las exclamaciones cortas («¡Eso es!») y las frases de Jovani («Estoy destruido,
+        # pero por fuera…») pueden salir en varios juegos: son su voz, no una broma repetida.
         words = len(phrase.split())
-        if words <= 3 or (words <= 4 and catchphrases_in(phrase)):
+        if words <= 3 or (words <= 10 and catchphrases_in(phrase)):
             continue
         if len(places) > 1:
             print(f"  «{phrase[:70]}» en {', '.join(sorted(places))}")
