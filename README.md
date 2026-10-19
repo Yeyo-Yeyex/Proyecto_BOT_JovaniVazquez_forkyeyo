@@ -75,7 +75,7 @@ python -m bot
   | 🍻 Comunidad | `babel <texto \| @miembros #canales>` · `beernight [sonido] [archivo]` · `cumple [dd/mm] [miembro]` · `cumples` · `entrada [archivo] [volumen] [borrar]` · `hongkong` · `lista [tarea] [prioridad alta\|media\|baja]` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
   | ⚙️ General | `ayuda` · `latencia` |
-  | 🛡️ Admin | `abrir` · `admin` · `apodo` · `banear` · `bienv` · `bloquear` · `borrar` · `callar` · `cambios` · `catalogo` · `cerrar` · `decir` · `echar` · `hablar` · `indultar` · `lento` · `informe` · `niveles` · `robuso` · `rol` · `tajo` |
+  | 🛡️ Admin | `abrir` · `admin` · `apodo` · `banear` · `bienv` · `borrar` · `callar` · `cambios` · `catalogo` · `cerrar` · `decir` · `echar` · `hablar` · `indultar` · `lento` · `informe` · `niveles` · `robuso` · `rol` · `tajo` |
 
   La ayuda es un menú desplegable, como el de `perfil`: una portada con las
   categorías y una página por categoría con cada comando y lo que hace (la
@@ -1057,6 +1057,12 @@ deja una nota en `.despliegue/buzon` (carpeta montada en el contenedor) y el
 cron de `actualizar.sh --solicitud` hace el trabajo. Al acabar, el bot publica
 en el mismo canal si ha ido bien o qué ha fallado. Si en un par de minutos no
 pasa nada, falta la línea de `--solicitud` en el crontab.
+
+`bloquear <comando>` (o `/bloquear`) es su freno de emergencia, con los mismos dos IDs y
+tampoco sale en `ayuda`: mientras se arregla un fallo o un exploit, nadie puede usar ese
+comando (con `/` ni con `.`) ni los botones de su archivo, también los de las mesas ya
+abiertas. Repetirlo lo desbloquea; sin comando, enseña los bloqueados. Sigue bloqueado
+tras reiniciar (tabla `blocked_commands`).
 
 ### Novedades: el changelog en Discord
 

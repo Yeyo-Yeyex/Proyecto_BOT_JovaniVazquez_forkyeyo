@@ -10,7 +10,7 @@ criterio.
 
 ### 8.6.0 · 2026-10-19
 
-- Admin: `bloquear` apaga un comando (y los botones de sus mesas) mientras se arregla un fallo
+- Admin: `bloquear` (solo Yeyo y Dani) apaga un comando y sus botones mientras se arregla un fallo
 - Minas: retirarse en la primera casilla (siempre buena) ya no cuenta como jugada ni da logros
 - Logros: «Con uno me vale» y sus escalones cuentan los cobros tras el primer diamante con riesgo
 
