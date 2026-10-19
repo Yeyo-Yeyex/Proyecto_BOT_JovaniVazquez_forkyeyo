@@ -10,7 +10,8 @@ pisa una mina lo pierde todo.
 **La primera casilla siempre es segura**, como en el Buscaminas de Windows:
 las minas se colocan, con el azar del sistema operativo, entre las otras 24
 casillas justo después del primer clic, y a partir de ahí no se mueven.
-Como esa casilla no tiene riesgo, paga ×1 (devuelve la apuesta).
+Como esa casilla no tiene riesgo, paga ×1 (devuelve la apuesta), y retirarse ahí
+no cuenta como jugada (`MinesGame.risk_free`).
 
 **Por qué como mucho 12 minas.** Limpiar el tablero es acertar dónde están
 las `m` minas entre las 24 casillas que quedan tras la segura: una
@@ -223,6 +224,16 @@ class MinesGame:
     def net(self) -> int:
         """Ganancia o pérdida neta de la partida terminada."""
         return self.payout - self.stake
+
+    @property
+    def risk_free(self) -> bool:
+        """Si se retiró con solo la primera casilla, que no arriesga nada.
+
+        Es una devolución, no una jugada: no cuenta para logros, estadísticas, porras
+        ni cajas gratis. Si contara, ir all-in y retirarse ahí daría logros de apostar
+        sin arriesgar ni un yapdollar.
+        """
+        return self.status is Status.CASHED and self.gems == 1
 
     # -- Acciones ---------------------------------------------------------------------
 

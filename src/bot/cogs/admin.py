@@ -3,8 +3,15 @@
 Comandos (todos con `/` y con `.`, mismo nombre; `tajo` elige dónde se usa `pala`):
 `purge`, `mute`, `unmute`, `kick`, `ban`, `unban`, `lock`, `unlock`,
 `slow`, `say`, `nick`, `role`, `bienv`, `niveles`, `cambios`, `catalogo`, `tajo`,
-`informe` (descarga la telemetría interna, ver `bot.cogs.telemetry`) y `robuso` (si
-Robuso está en Hong Kong o en Madrid, para sus logros: ver `bot.cogs.robuso`).
+`informe` (descarga la telemetría interna, ver `bot.cogs.telemetry`), `robuso` (si
+Robuso está en Hong Kong o en Madrid, para sus logros: ver `bot.cogs.robuso`) y
+`bloquear`.
+
+`bloquear` es el freno de emergencia para un fallo o un exploit: un comando bloqueado
+no se ejecuta para nadie (ni con `/` ni con `.`), y los botones, menús y formularios
+que vienen de su mismo archivo (las mesas que ya estaban abiertas, el 🔁 de otra
+partida) tampoco responden. Se guarda en la base de datos, así que sigue bloqueado
+tras un reinicio o un despliegue hasta que se desbloquea con el mismo comando.
 
 Autorización: solo miembros con el permiso **Administrador** del servidor.
 Se comprueba en el servidor en cada invocación (`cog_check` para `.` e
@@ -27,22 +34,26 @@ que junta estas mismas acciones en un menú.
 
 from __future__ import annotations
 
+import functools
 import io
 import json
 import logging
 import math
 import re
 import sqlite3
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
+from typing import Any
 
 import discord
 from discord import app_commands
 from discord.ext import commands
+from discord.ui.view import BaseView, ViewStore
 
 from bot.cogs import moderation as historial
 from bot.cogs import robuso as robuso_logros
 from bot.cogs.deploy import can_post, news_channel, resolve_target
+from bot.cogs.errors import BLOCKED_ERROR
 from bot.cogs.telemetry import Telemetry, report_inputs
 from bot.repositories.news import NewsSettings
 from bot.repositories.welcome import WelcomeSettings
@@ -58,6 +69,7 @@ from bot.services.moderation import (
 from bot.services.telemetry import TelemetryService
 from bot.services.welcome import GifError, classify_gif
 from bot.utils.cogs import find_cog
+from bot.utils.interactions import notify
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
 logger = logging.getLogger(__name__)
@@ -82,6 +94,10 @@ TAJO_ALL_WORDS = {"todos", "todas", "cualquiera", "quitar"}
 ROBUSO_PLACES = {"hongkong": True, "madrid": False}
 # Palabras que en `bienv` quitan el GIF y vuelven al vídeo de Kratos.
 GIF_RESET_WORDS = {"quitar", "video", "vídeo", "ninguno"}
+# Lo que `bloquear` no bloquea: el propio desbloqueo y el despliegue del arreglo.
+UNBLOCKABLE = {"bloquear", "reinicio"}
+# Marca de los métodos de discord.py ya envueltos por `install_click_block`.
+_BLOCK_GUARD = "_blocked_command_guard"
 
 # Ventana del informe de uso (`informe`), en días. Más de 90 no aporta: los
 # usuarios por día se borran a los 90 (`bot.repositories.telemetry`).
@@ -138,11 +154,116 @@ def _audit_reason(actor: discord.abc.User, reason: str | None) -> str:
     return text[:AUDIT_REASON_LIMIT]
 
 
+def _blocks_click(module: str, interaction: discord.Interaction) -> bool:
+    """Si un botón, menú o formulario del archivo `module` es de un comando bloqueado."""
+    cog = find_cog(interaction.client, Admin)  # type: ignore[arg-type]
+    if cog is None or interaction.guild_id is None:
+        return False
+    return module in cog.blocked_modules(interaction.guild_id)
+
+
+Locate = Callable[..., tuple[str, discord.Interaction]]
+
+# Por dónde corre discord.py cada clic y formulario, y de qué archivo es cada uno: la
+# vista o el formulario, o la clase del botón dinámico (los del Rastro, `lista`…).
+_DISPATCHERS: tuple[tuple[type, str, Locate], ...] = (
+    (BaseView, "_scheduled_task", lambda view, _item, i: (type(view).__module__, i)),
+    (discord.ui.Modal, "_scheduled_task", lambda form, i, *_: (type(form).__module__, i)),
+    (ViewStore, "schedule_dynamic_item_call", lambda _store, _t, cls, i, *_: (cls.__module__, i)),
+)
+
+
+def _guarded(original: Callable[..., Awaitable[Any]], locate: Locate) -> Callable[..., Any]:
+    """Envuelve un reparto de discord.py: el clic bloqueado se contesta y no sigue."""
+
+    @functools.wraps(original)
+    async def run(self: Any, *args: Any) -> Any:
+        module, interaction = locate(self, *args)
+        if _blocks_click(module, interaction):
+            await notify(interaction, BLOCKED_ERROR)
+            return None
+        return await original(self, *args)
+
+    return run
+
+
+def install_click_block() -> None:
+    """Para los clics y formularios de los comandos bloqueados, una vez por proceso.
+
+    Los métodos de `_DISPATCHERS` son internos de discord.py y corren el callback de cada
+    botón, menú, formulario o botón dinámico (también los que rescata `bot.cogs.errors`);
+    si cambian, falla `tests/integration/test_bloquear.py`. Sin el cog `Admin`, el
+    envoltorio no hace nada.
+    shortcut: no para los clics que atiende un listener propio (los del minijuego de
+    `pala`, `claim_custom_ids`); si un fallo pasa por ahí, añadir allí la misma comprobación.
+    """
+    for owner, name, locate in _DISPATCHERS:
+        original = owner.__dict__[name]
+        if not getattr(original, _BLOCK_GUARD, False):
+            wrapped = _guarded(original, locate)
+            setattr(wrapped, _BLOCK_GUARD, True)
+            setattr(owner, name, wrapped)
+
+
 class Admin(commands.Cog):
     """Comandos de moderación reservados a administradores."""
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
+        #: Comandos bloqueados con `bloquear`, por servidor (copia en memoria de la base).
+        self.blocked: dict[int, set[str]] = {}
+        self._previous_tree_check = bot.tree.interaction_check
+
+    async def cog_load(self) -> None:
+        """Lee los comandos bloqueados y pone el control en `.`, `/` y los botones."""
+        try:
+            self.blocked = await self.bot.moderation.blocked_commands()  # type: ignore[attr-defined]
+        except sqlite3.Error:
+            logger.exception("No se pudieron leer los comandos bloqueados")
+        self.bot.add_check(self._text_allowed)
+        self.bot.tree.interaction_check = self._slash_allowed  # type: ignore[method-assign]
+        install_click_block()
+
+    async def cog_unload(self) -> None:
+        """Quita los controles de `cog_load` (los botones dejan de mirar al no haber cog)."""
+        self.bot.remove_check(self._text_allowed)
+        self.bot.tree.interaction_check = self._previous_tree_check  # type: ignore[method-assign]
+
+    def blocked_modules(self, guild_id: int) -> set[str]:
+        """Archivos de los comandos bloqueados en el servidor: sus vistas no responden."""
+        modules = set()
+        for name in self.blocked.get(guild_id, ()):
+            command = self.bot.get_command(name) or self.bot.tree.get_command(name)
+            if command is not None and command.module:
+                modules.add(command.module)
+        return modules
+
+    async def _text_allowed(self, ctx: commands.Context) -> bool:
+        """Control global de los comandos `.` (`bot.add_check`): el bloqueado no corre."""
+        if (
+            ctx.guild is not None
+            and ctx.command is not None
+            and ctx.command.qualified_name in self.blocked.get(ctx.guild.id, ())
+        ):
+            # `Errors` lo contesta con `BLOCKED_ERROR`.
+            raise commands.DisabledCommand()
+        return True
+
+    async def _slash_allowed(self, interaction: discord.Interaction) -> bool:
+        """Control global de los comandos `/` (el `interaction_check` del árbol).
+
+        Con `False` discord.py no ejecuta el comando ni pasa por el gestor de errores,
+        así que el aviso se da aquí. El autocompletado no se para: no hace nada.
+        """
+        name = (interaction.data or {}).get("name")
+        if (
+            interaction.type is discord.InteractionType.application_command
+            and interaction.guild_id is not None
+            and name in self.blocked.get(interaction.guild_id, ())
+        ):
+            await interaction.response.send_message(BLOCKED_ERROR, ephemeral=True)
+            return False
+        return True
 
     # --- Autorización -----------------------------------------------------
 
@@ -1107,6 +1228,78 @@ class Admin(commands.Cog):
         else:
             text = f"Robuso ya estaba apuntado en **{where}**."
         await responder.finish(text)
+
+    # --- bloquear ---------------------------------------------------------
+
+    @app_commands.command(
+        name="bloquear", description="Bloquea un comando con un fallo, o lo vuelve a abrir."
+    )
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        comando="Nombre del comando (sin / ni punto); sin nombre, enseña los bloqueados."
+    )
+    async def bloquear(self, interaction: discord.Interaction, comando: str = "") -> None:
+        """Bloquea un comando para todos o lo desbloquea si ya lo estaba (solo lo ves tú)."""
+        await self._bloquear_impl(InteractionResponder(interaction), comando)
+
+    @commands.command(name="bloquear")
+    async def bloquear_text(self, ctx: commands.Context, comando: str = "") -> None:
+        """Versión de texto: `.bloquear` (los bloqueados) o `.bloquear minas`."""
+        await self._bloquear_impl(ContextResponder(ctx), comando)
+
+    async def _bloquear_impl(self, responder: CommandResponder, text: str) -> None:
+        """Cambia el bloqueo de un comando (o enseña los bloqueados) y responde cómo queda."""
+        guild = responder.guild
+        if guild is None:
+            await responder.send_error("Esto solo funciona en un servidor.")
+            return
+        blocked = self.blocked.setdefault(guild.id, set())
+        word = text.strip().lower().lstrip("/.")
+        if not word:
+            await responder.send(
+                "Comandos bloqueados: " + ", ".join(f"`{n}`" for n in sorted(blocked))
+                if blocked
+                else "No hay ningún comando bloqueado.",
+                ephemeral=True,
+            )
+            return
+        command = self.bot.get_command(word) or self.bot.tree.get_command(word)
+        if command is None:
+            await responder.send_error(f"No hay ningún comando `{word}`.")
+            return
+        name = command.name  # `.bj` es `blackjack`
+        if name in UNBLOCKABLE:
+            await responder.send_error(f"`{name}` no se puede bloquear.")
+            return
+        block = name not in blocked
+        await responder.start_progress(ephemeral=True)
+        try:
+            await self.bot.moderation.set_blocked(guild.id, name, block)  # type: ignore[attr-defined]
+        except sqlite3.Error:
+            logger.exception("No se pudo guardar el bloqueo de %s en %s", name, guild.id)
+            await responder.finish("No se ha podido guardar ahora mismo. Prueba en un rato.")
+            return
+        if not block:
+            blocked.discard(name)
+            await responder.finish(f"🔓 `{name}` vuelve a funcionar.")
+            return
+        blocked.add(name)
+        # Los botones se paran por archivo: los de otros comandos del mismo también.
+        siblings = sorted(
+            c.name for c in self.bot.commands if c.module == command.module and c.name != name
+        )
+        also = (
+            "\nOjo: los botones se paran por archivo, así que tampoco responden los de "
+            + ", ".join(f"`{n}`" for n in siblings)
+            + " (sus comandos siguen funcionando)."
+            if siblings
+            else ""
+        )
+        await responder.finish(
+            f"🔒 `{name}` bloqueado: nadie puede usarlo, ni con `/` ni con `.`, ni pulsar los "
+            f"botones de lo que ya estaba abierto. Se desbloquea con `bloquear {name}`.{also}"
+        )
 
     # --- catalogo ---------------------------------------------------------
 

@@ -42,6 +42,10 @@ logger = logging.getLogger(__name__)
 GENERIC_ERROR = "Algo salió mal ejecutando el comando. Inténtalo de nuevo."
 GUILD_ONLY_ERROR = "Este comando solo está disponible dentro de un servidor."
 ADMIN_ONLY_ERROR = "Solo los administradores pueden usar este comando."
+#: Comando bloqueado por un administrador con `bloquear` (ver `bot.cogs.admin`).
+BLOCKED_ERROR = (
+    "🔒 Esto está desactivado mientras se arregla un fallo. Volverá en cuanto esté arreglado."
+)
 #: Aviso para un clic en botones que ya no atiende nadie.
 EXPIRED_CLICK = (
     "Estos botones ya caducaron. Ábrelo otra vez con su comando.",
@@ -82,6 +86,8 @@ def describe_command_error(error: commands.CommandError) -> str | None:
         return ADMIN_ONLY_ERROR
     if isinstance(error, commands.CheckFailure):
         return "No puedes usar este comando aquí."
+    if isinstance(error, commands.DisabledCommand):
+        return BLOCKED_ERROR
     return GENERIC_ERROR
 
 

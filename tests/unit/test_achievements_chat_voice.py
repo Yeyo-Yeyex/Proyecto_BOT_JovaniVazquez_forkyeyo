@@ -748,10 +748,31 @@ def test_minas_cuenta_niveles_cobrar_con_uno_y_la_avaricia() -> None:
 
     game = mines.MinesGame.new(100, 3, random.Random(1))
     game.reveal(game.random_hidden(random.Random(2)))
+    # «Con uno» es el primer diamante con riesgo: la primera casilla es segura.
+    game.reveal(next(t for t in game.hidden if t not in game.mine_tiles))
     game.cash_out()
     delta = mines_stats(game)
     assert delta.add["mines_level_3"] == 1
     assert delta.add["mines_cash_one"] == 1
+
+
+def test_minas_retirarse_en_la_casilla_segura_es_una_devolucion() -> None:
+    """All-in, la primera casilla (siempre buena) y cobrar: no arriesga nada, no es jugada."""
+    import random
+
+    from bot.services import mines
+
+    game = mines.MinesGame.new(5_000, 2, random.Random(1))
+    game.reveal(0)
+    assert game.cash_out() == 5_000
+    assert game.net == 0
+    assert game.risk_free
+
+    risked = mines.MinesGame.new(5_000, 2, random.Random(1))
+    risked.reveal(0)
+    risked.reveal(next(t for t in risked.hidden if t not in risked.mine_tiles))
+    risked.cash_out()
+    assert not risked.risk_free
 
 
 def test_crash_cobarde_y_cohete_perdido() -> None:
