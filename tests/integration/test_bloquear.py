@@ -19,10 +19,12 @@ from discord.ext import commands
 from interaction_fakes import fake_interaction
 
 from bot.app import BotClient
+from bot.cogs.deploy import DEPLOYERS
 from bot.cogs.errors import BLOCKED_ERROR, describe_command_error
 
 GUILD_ID = 10
-ADMIN_ID = 1
+#: Solo Yeyo y Dani bloquean, como con `reinicio`.
+ADMIN_ID = min(DEPLOYERS)
 
 
 async def load_bot(tmp_path: Path) -> BotClient:
@@ -34,23 +36,24 @@ async def load_bot(tmp_path: Path) -> BotClient:
     return client
 
 
-def admin_ctx(client: BotClient) -> MagicMock:
-    """Contexto de `.bloquear` escrito por un administrador."""
+def admin_ctx(client: BotClient, user_id: int = ADMIN_ID, *, admin: bool = True) -> MagicMock:
+    """Contexto de `.bloquear` escrito por `user_id`."""
     author = MagicMock(spec=discord.Member)
-    author.id = ADMIN_ID
-    author.guild_permissions = discord.Permissions(administrator=True)
+    author.id = user_id
+    author.guild_permissions = discord.Permissions(administrator=admin)
     ctx = MagicMock()
     ctx.bot = client
     ctx.guild = SimpleNamespace(id=GUILD_ID)
     ctx.author = author
+    ctx.command = client.get_command("bloquear")
     ctx.send = AsyncMock(return_value=MagicMock(edit=AsyncMock()))
     return ctx
 
 
-async def bloquear(client: BotClient, word: str) -> str:
-    """Ejecuta `.bloquear <word>` y devuelve lo que contesta."""
+async def bloquear(client: BotClient, word: str, user_id: int = ADMIN_ID) -> str:
+    """Ejecuta `.bloquear <word>` como `user_id` y devuelve lo que contesta."""
     admin = client.get_cog("Admin")
-    ctx = admin_ctx(client)
+    ctx = admin_ctx(client, user_id)
     await admin.bloquear_text.callback(admin, ctx, word)  # type: ignore[union-attr]
     progress = ctx.send.return_value
     if progress.edit.await_count:
@@ -161,5 +164,24 @@ async def test_bloquear_entiende_atajos_y_no_bloquea_lo_que_no_debe(tmp_path: Pa
         assert "no se puede bloquear" in await bloquear(client, "bloquear")
         assert "No hay ningún comando `nada`" in await bloquear(client, "nada")
         assert "`blackjack`" in await bloquear(client, "")
+    finally:
+        await client.close()
+
+
+async def test_solo_yeyo_y_dani_pueden_bloquear(tmp_path: Path) -> None:
+    """Como `reinicio`: los IDs de `DEPLOYERS`, sean o no administradores."""
+    client = await load_bot(tmp_path)
+    try:
+        admin = client.get_cog("Admin")
+        other_admin = max(DEPLOYERS) + 1
+        assert "Solo Yeyo y Dani" in await bloquear(client, "minas", other_admin)
+        assert not admin.blocked.get(GUILD_ID)  # type: ignore[union-attr]
+        # Un DEPLOYER sin Administrador pasa el control del cog (y luego el suyo).
+        assert await admin.cog_check(admin_ctx(client, admin=False))  # type: ignore[union-attr]
+        # El resto de comandos del cog siguen siendo solo de administradores.
+        ctx = admin_ctx(client, admin=False)
+        ctx.command = client.get_command("tajo")
+        with pytest.raises(commands.MissingPermissions):
+            await admin.cog_check(ctx)  # type: ignore[union-attr]
     finally:
         await client.close()
