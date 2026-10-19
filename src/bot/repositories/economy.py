@@ -29,7 +29,9 @@ Modelo de datos:
   semana con las reglas de la 8.0.0 en cada servidor, las semanas ya cerradas y la
   declaración de cada miembro cada lunes (cuota, deducciones, retenciones, lo
   cobrado, lo que quedó a deber o a devolver y el tipo, que es el suelo de la
-  retención de la semana siguiente).
+  retención de la semana siguiente). Desde la 8.7.0 la que sale a pagar guarda
+  también cómo se paga (`payment`: pendiente, fraccionada o pagada), el plazo y el
+  segundo plazo (el 40 % del jueves) con lo que se cobró de él.
 - `economy_irpf_carry`: lo que una declaración pasa a las cuatro siguientes
   (intereses y reparaciones de un inmueble que no cupieron, bases negativas).
 - `economy_irpf_extras`: lo pagado por el alquiler y la hipoteca de la vivienda
@@ -110,8 +112,9 @@ Modelo de datos:
   (concepto `pisos:renta`).
 - `economy_tax_debts` y `economy_debt_payments`: lo que se debe a Hacienda porque no
   llegó en efectivo (el Patrimonio de quien lo tiene todo en ladrillo, la declaración
-  que sale a pagar) y lo que se ha ido cobrando: del monedero cada lunes, de lo que
-  cobra por sus pisos o de lo que le salía a devolver.
+  que sale a pagar) y lo que se ha ido cobrando: del monedero cada lunes, el 30 % de
+  todo lo que cobra (`_garnish_in`), de lo que cobra por sus pisos, de lo que le salía
+  a devolver o lo que liquida él mismo con la Renta.
 - `economy_irpf_regularizations`: servidores a los que se devolvió una vez el IRPF de
   la ventana vieja de 7 días (7.x). Ya no se usa; queda por las bases antiguas.
 
@@ -146,6 +149,8 @@ from bot.services.taxes import (
     Pace,
     PropertyWeek,
     WeekIncome,
+    garnish,
+    second_installment,
     week_tax,
 )
 
@@ -269,12 +274,22 @@ class IrpfReturn:
         deductions: Deducciones de la cuota.
         withheld: Retenciones de la semana.
         result: Cuota líquida menos retenciones: positivo a pagar, negativo a devolver.
-        charged: Lo cobrado del monedero (si salía a pagar).
+        charged: Lo cobrado del monedero (si salía a pagar), en los dos plazos.
         debt: Lo que no llegó y queda como deuda con Hacienda.
         refund: Lo que queda pendiente de devolver (se presenta con la Renta).
         compensated: Devolución que se quedó Hacienda para pagar deudas.
         collected: Deuda de semanas anteriores cobrada del monedero.
         rate: Tipo de la semana (el suelo de la retención de la siguiente).
+        payment: Cómo va el pago de la que sale a pagar: `PAYMENT_PENDING` (el miembro
+            aún no ha elegido), `PAYMENT_SPLIT` (pagado el 60 %, falta el jueves) o
+            `PAYMENT_PAID`. Vacío si no sale a pagar o es de antes de la 8.7.0 (se
+            cobraba sola el lunes).
+        pay_due: Final del plazo para pagarla o fraccionarla (epoch); si no, se cobra
+            entera.
+        second: El 40 % del segundo plazo, si se fraccionó.
+        second_due: Cuándo se cobra el segundo plazo (epoch).
+        second_paid: Lo que se cobró del segundo plazo (el resto quedó como deuda).
+        second_at: Cuándo se cobró (0 si aún no).
     """
 
     user_id: int
@@ -289,6 +304,45 @@ class IrpfReturn:
     compensated: int = 0
     collected: int = 0
     rate: float = 0.0
+    payment: str = ""
+    pay_due: float = 0.0
+    second: int = 0
+    second_due: float = 0.0
+    second_paid: int = 0
+    second_at: float = 0.0
+
+
+#: Estados del pago de una declaración a pagar (`IrpfReturn.payment`).
+PAYMENT_PENDING = "pending"
+PAYMENT_SPLIT = "split"
+PAYMENT_PAID = "paid"
+
+
+@dataclass(frozen=True, slots=True)
+class IrpfPayment:
+    """Un pago de la declaración que sale a pagar: entera, el 60 % o el 40 % del jueves.
+
+    Attributes:
+        user_id: El miembro.
+        week: Lunes ISO de la semana declarada.
+        due: Lo que tocaba pagar en este plazo.
+        charged: Lo cobrado del monedero (va al Estado).
+        debt: Lo que no llegó: queda como deuda con Hacienda, sin recargo.
+        second: Lo que queda para el jueves (0 si no queda nada).
+        second_due: Cuándo se cobra eso (epoch, 0 si no queda nada).
+        balance: Saldo del miembro después.
+        automatic: Lo ha cobrado el bot solo (plazo vencido o segundo plazo), no el miembro.
+    """
+
+    user_id: int
+    week: str
+    due: int
+    charged: int
+    debt: int
+    second: int
+    second_due: float
+    balance: int
+    automatic: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -321,6 +375,12 @@ def _irpf_return_of(row: sqlite3.Row) -> IrpfReturn:
         compensated=int(row["compensated"]),
         collected=int(row["collected"]),
         rate=float(row["rate"]),
+        payment=str(row["payment"]),
+        pay_due=float(row["pay_due"]),
+        second=int(row["second"]),
+        second_due=float(row["second_due"]),
+        second_paid=int(row["second_paid"]),
+        second_at=float(row["second_at"]),
     )
 
 
@@ -1306,6 +1366,30 @@ class EconomyRepository:
             # Semana (lunes ISO) en que se cerró la declaración: el plazo para presentarla
             # cuenta desde ahí. NULL en las de antes de la 8.0.0 (ver `_sync_declarations_in`).
             self._add_columns(connection, "economy_declarations", {"filed_week": "TEXT"})
+            # 8.7.0: la que sale a pagar se paga al abrirla, entera o en dos plazos.
+            self._add_columns(
+                connection,
+                "economy_irpf_returns",
+                {
+                    "payment": "TEXT NOT NULL DEFAULT ''",
+                    "pay_due": "REAL NOT NULL DEFAULT 0",
+                    "second": "INTEGER NOT NULL DEFAULT 0",
+                    "second_due": "REAL NOT NULL DEFAULT 0",
+                    "second_paid": "INTEGER NOT NULL DEFAULT 0",
+                    "second_at": "REAL NOT NULL DEFAULT 0",
+                },
+            )
+            # 8.7.0: el aviso del embargo (`renta.hint`) mira lo cobrado desde la última
+            # vez en cada acción con dinero, y el cobro de los plazos busca cada 10 minutos
+            # las declaraciones sin pagar.
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS economy_debt_payments_member "
+                "ON economy_debt_payments (guild_id, user_id, created_at)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS economy_irpf_returns_payment "
+                "ON economy_irpf_returns (guild_id, payment)"
+            )
             # Bases de datos de antes del bote misterioso: los jackpots de
             # entonces cayeron todos por la combinación.
             columns = {
@@ -1434,6 +1518,7 @@ class EconomyRepository:
         entries: Sequence[LedgerEntry],
         *,
         required_balance: int = 0,
+        garnish_at: float | None = None,
     ) -> int:
         """Aplica varios movimientos como una sola operación atómica.
 
@@ -1447,6 +1532,9 @@ class EconomyRepository:
             entries: Movimientos a aplicar, en orden.
             required_balance: Saldo mínimo exigido antes de empezar, para
                 operaciones cuyo coste no es un movimiento directo.
+            garnish_at: Si es dinero nuevo para el miembro, el momento del cobro: lo que
+                entre de más paga el embargo de su deuda (`_garnish_in`). Sin él, no se
+                embarga nada (apuntes de prueba, el IMV, lo cobrado en negro).
 
         Returns:
             El saldo final.
@@ -1457,7 +1545,7 @@ class EconomyRepository:
             BalanceLimitError: Si el saldo superaría `MAX_BALANCE`.
         """
         return await self._run(
-            self._apply_sync, guild_id, user_id, tuple(entries), required_balance
+            self._apply_sync, guild_id, user_id, tuple(entries), required_balance, garnish_at
         )
 
     def _apply_sync(
@@ -1466,11 +1554,16 @@ class EconomyRepository:
         user_id: int,
         entries: tuple[LedgerEntry, ...],
         required_balance: int,
+        garnish_at: float | None = None,
     ) -> int:
         with self._transaction() as connection:
-            return self._apply_in_transaction(
+            balance = self._apply_in_transaction(
                 connection, guild_id, user_id, entries, required_balance
             )
+            if garnish_at is not None:
+                received = sum(entry.delta for entry in entries)
+                balance -= self._garnish_in(connection, guild_id, user_id, received, garnish_at)
+            return balance
 
     def _apply_in_transaction(
         self,
@@ -1784,6 +1877,7 @@ class EconomyRepository:
             connection, guild_id, user_id, now=now, concept=concept, kind=kind, gross=gross,
             withheld=tax,
         )  # fmt: skip
+        balance -= self._garnish_in(connection, guild_id, user_id, gross - tax, now)
         return tax, balance
 
     async def credit_income(
@@ -1959,8 +2053,14 @@ class EconomyRepository:
         adjust_tax: bool,
         day_tax: Callable[[int], int],
     ) -> BetSettlement:
-        """Cuerpo de `settle_gamble` dentro de una transacción ya abierta."""
+        """Cuerpo de `settle_gamble` dentro de una transacción ya abierta.
+
+        Si el miembro debe a Hacienda, se embarga el 30 % de lo que la jugada sube la
+        ganancia neta del día, ya sin su IRPF: la apuesta propia que vuelve (un empate,
+        una devolución) no es dinero nuevo y no se toca.
+        """
         balance = self._apply_in_transaction(connection, guild_id, user_id, entries)
+        moved = sum(entry.delta for entry in entries)
         connection.execute(
             """
             INSERT INTO economy_gambling_days (guild_id, user_id, day, net, updated_at)
@@ -1968,7 +2068,7 @@ class EconomyRepository:
             ON CONFLICT(guild_id, user_id, day) DO UPDATE SET
                 net = net + excluded.net, updated_at = excluded.updated_at
             """,
-            (guild_id, user_id, day, sum(entry.delta for entry in entries), now),
+            (guild_id, user_id, day, moved, now),
         )
         row = connection.execute(
             """
@@ -1978,7 +2078,9 @@ class EconomyRepository:
             (guild_id, user_id, day),
         ).fetchone()
         net, withheld = int(row["net"]), int(row["withheld"])
+        won = max(0, net) - max(0, net - moved)
         if not adjust_tax:
+            balance -= self._garnish_in(connection, guild_id, user_id, won, now)
             return BetSettlement(balance, 0, net, withheld)
 
         delta = max(0, day_tax(max(net, 0))) - withheld
@@ -2015,6 +2117,7 @@ class EconomyRepository:
             """,
             (withheld, guild_id, user_id, day),
         )
+        balance -= self._garnish_in(connection, guild_id, user_id, won - max(0, delta), now)
         return BetSettlement(balance, delta, net, withheld)
 
     # -- Tragaperras -----------------------------------------------------------------
@@ -3544,6 +3647,7 @@ class EconomyRepository:
         now: float,
         returns: Callable[..., WeekReturn],
         savings_tax: Callable[[int], int],
+        deadlines: tuple[float, float],
     ) -> IrpfRun:
         """Cierra el IRPF de una semana: la declaración de cada miembro con renta, una vez.
 
@@ -3555,8 +3659,9 @@ class EconomyRepository:
         2. Los arrastres: lo usado de semanas anteriores se gasta (lo más viejo primero) y
            lo que no cupo (intereses y reparaciones de cada inmueble, base negativa) pasa
            a las cuatro siguientes.
-        3. Si sale a pagar, se cobra del monedero en el acto (`irpf:declaracion`, al
-           Estado) y lo que no llegue queda como deuda con Hacienda.
+        3. Si sale a pagar, queda pendiente (`PAYMENT_PENDING`): su dueño la paga al
+           abrirla, entera o fraccionada (`pay_irpf_return`), y si no ha elegido al
+           acabar el plazo se cobra entera (`settle_irpf_payments`).
         4. Si sale a devolver, primero paga lo que debiera (compensación de oficio, art.
            73 de la Ley 58/2003) y el resto queda pendiente para presentarlo con la Renta
            (`economy_declarations`), donde caduca a las cuatro semanas.
@@ -3572,9 +3677,18 @@ class EconomyRepository:
             returns: Calcula la declaración (`taxes.week_return`, con sus argumentos).
             savings_tax: Cuota del ahorro de unos intereses semanales, para el límite
                 conjunto del Patrimonio.
+            deadlines: `(final del plazo para pagar, cobro del segundo plazo)` en epoch,
+                para la que salga a pagar (`economy.installment_deadlines`).
         """
         return await self._run(
-            self._close_irpf_sync, guild_id, week, current_week, now, returns, savings_tax
+            self._close_irpf_sync,
+            guild_id,
+            week,
+            current_week,
+            now,
+            returns,
+            savings_tax,
+            deadlines,
         )
 
     def _close_irpf_sync(
@@ -3585,6 +3699,7 @@ class EconomyRepository:
         now: float,
         returns: Callable[..., WeekReturn],
         savings_tax: Callable[[int], int],
+        deadlines: tuple[float, float],
     ) -> IrpfRun:
         with self._transaction() as connection:
             since = self._regime_in(connection, guild_id, current_week)
@@ -3634,6 +3749,7 @@ class EconomyRepository:
                     returns,
                     savings_tax,
                     filed_week=current_week,
+                    deadlines=deadlines,
                 )  # fmt: skip
                 for row in members
                 if int(row[0]) > 0
@@ -3667,12 +3783,14 @@ class EconomyRepository:
         savings_tax: Callable[[int], int],
         *,
         filed_week: str,
+        deadlines: tuple[float, float],
     ) -> IrpfReturn:
         """La declaración de un miembro (ver `close_irpf_week`), dentro de la transacción.
 
         Args:
             filed_week: Lunes ISO de la semana en que se cierra (desde ahí cuenta el plazo
                 para presentar lo que salga a devolver).
+            deadlines: `(final del plazo para pagar, cobro del segundo plazo)`.
         """
         income, _wages = self._week_income_in(connection, guild_id, user_id, week)
         withheld, credit, foreign = connection.execute(
@@ -3746,15 +3864,12 @@ class EconomyRepository:
         ).fetchone()
         owed = int(row["amount"]) if row else 0
         result = filed.result
-        charged = debt = refund = compensated = 0
+        refund = compensated = 0
+        # La que sale a pagar no se cobra ahora: la paga su dueño al abrirla (entera o en
+        # dos plazos) o se cobra entera al acabar el plazo (`_settle_irpf_payments_sync`).
+        payment, pay_due, second_due = "", 0.0, 0.0
         if result > 0:
-            charged = min(self._ensure_wallet(connection, guild_id, user_id), result)
-            if charged:
-                self._apply_in_transaction(
-                    connection, guild_id, user_id, (LedgerEntry(-charged, "irpf:declaracion"),)
-                )
-                self._credit_state_in(connection, guild_id, charged, "irpf:declaracion")
-            debt = result - charged
+            payment, (pay_due, second_due) = PAYMENT_PENDING, deadlines
         elif result < 0:
             compensated = min(-result, owed)
             refund = -result - compensated
@@ -3767,17 +3882,8 @@ class EconomyRepository:
                 "UPDATE economy_tax_debts SET amount = ? WHERE guild_id = ? AND user_id = ?",
                 (owed, guild_id, user_id),
             )
-        # Lo que debía de antes se cobra del monedero; la deuda nueva de hoy, no (si
-        # quedó deuda es porque el monedero ya está a cero).
+        # Lo que debía de antes se cobra del monedero.
         collected = self._collect_debt_in(connection, guild_id, user_id, now)
-        if debt:
-            connection.execute(
-                """
-                INSERT INTO economy_tax_debts (guild_id, user_id, amount) VALUES (?, ?, ?)
-                ON CONFLICT (guild_id, user_id) DO UPDATE SET amount = amount + excluded.amount
-                """,
-                (guild_id, user_id, debt),
-            )
         if refund:
             connection.execute(
                 """
@@ -3791,14 +3897,15 @@ class EconomyRepository:
             """
             INSERT INTO economy_irpf_returns
                 (guild_id, user_id, week_start, base, quota, deductions, withheld, result,
-                 charged, debt, refund, compensated, collected, rate, savings, savings_quota,
-                 inputs, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 refund, compensated, collected, rate, savings, savings_quota, inputs,
+                 created_at, payment, pay_due, second_due)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 guild_id, user_id, week.monday, filed.tax.base, filed.tax.quota,
-                filed.deductions, filed.withheld, result, charged, debt, refund, compensated,
-                collected, filed.tax.rate, savings, savings_tax(savings), inputs, now,
+                filed.deductions, filed.withheld, result, refund, compensated, collected,
+                filed.tax.rate, savings, savings_tax(savings), inputs, now, payment,
+                pay_due, second_due,
             ),
         )  # fmt: skip
         return IrpfReturn(
@@ -3808,21 +3915,30 @@ class EconomyRepository:
             deductions=filed.deductions,
             withheld=filed.withheld,
             result=result,
-            charged=charged,
-            debt=debt,
             refund=refund,
             compensated=compensated,
             collected=collected,
             rate=filed.tax.rate,
+            payment=payment,
+            pay_due=pay_due,
+            second_due=second_due,
         )
 
     def _collect_debt_in(
-        self, connection: sqlite3.Connection, guild_id: int, user_id: int, now: float
+        self,
+        connection: sqlite3.Connection,
+        guild_id: int,
+        user_id: int,
+        now: float,
+        concept: str = "embargo:deuda",
     ) -> int:
         """Cobra del monedero lo que un miembro debe a Hacienda, hasta donde llegue.
 
         El dinero es lo primero que se embarga (art. 169.2.a de la Ley 58/2003). Va al
         Estado y queda en `economy_debt_payments`.
+
+        Args:
+            concept: Motivo del libro (`deuda:pago` si la liquida él mismo).
 
         Returns:
             Lo cobrado.
@@ -3835,10 +3951,8 @@ class EconomyRepository:
         paid = min(owed, self._ensure_wallet(connection, guild_id, user_id)) if owed else 0
         if paid <= 0:
             return 0
-        self._apply_in_transaction(
-            connection, guild_id, user_id, (LedgerEntry(-paid, "embargo:deuda"),)
-        )
-        self._credit_state_in(connection, guild_id, paid, "embargo:deuda")
+        self._apply_in_transaction(connection, guild_id, user_id, (LedgerEntry(-paid, concept),))
+        self._credit_state_in(connection, guild_id, paid, concept)
         connection.execute(
             "UPDATE economy_tax_debts SET amount = amount - ? WHERE guild_id = ? AND user_id = ?",
             (paid, guild_id, user_id),
@@ -3849,6 +3963,261 @@ class EconomyRepository:
             (guild_id, user_id, paid, now),
         )
         return paid
+
+    # -- Pago de la Renta a pagar (8.7.0) ---------------------------------------------
+
+    def _charge_installment_in(
+        self, connection: sqlite3.Connection, guild_id: int, user_id: int, amount: int
+    ) -> tuple[int, int, int]:
+        """Cobra un plazo de la Renta del monedero; lo que no llegue pasa a deuda.
+
+        Lo cobrado va al Estado (`irpf:declaracion`); la deuda, sin recargo, a
+        `economy_tax_debts`, donde la cobran el embargo y el barrido de los lunes.
+
+        Returns:
+            `(cobrado, deuda, saldo_final)`.
+        """
+        balance = self._ensure_wallet(connection, guild_id, user_id)
+        charged = min(balance, amount)
+        if charged:
+            balance = self._apply_in_transaction(
+                connection, guild_id, user_id, (LedgerEntry(-charged, "irpf:declaracion"),)
+            )
+            self._credit_state_in(connection, guild_id, charged, "irpf:declaracion")
+        debt = amount - charged
+        if debt:
+            connection.execute(
+                """
+                INSERT INTO economy_tax_debts (guild_id, user_id, amount) VALUES (?, ?, ?)
+                ON CONFLICT (guild_id, user_id) DO UPDATE SET amount = amount + excluded.amount
+                """,
+                (guild_id, user_id, debt),
+            )
+        return charged, debt, balance
+
+    def _pay_return_in(
+        self,
+        connection: sqlite3.Connection,
+        row: sqlite3.Row,
+        *,
+        split: bool,
+        automatic: bool,
+    ) -> IrpfPayment:
+        """Paga una declaración pendiente: entera, o el 60 % y deja el 40 % para el jueves."""
+        guild_id, user_id, week = int(row["guild_id"]), int(row["user_id"]), str(row["week_start"])
+        result = int(row["result"])
+        second = second_installment(result) if split else 0
+        due = result - second
+        charged, debt, balance = self._charge_installment_in(connection, guild_id, user_id, due)
+        connection.execute(
+            """
+            UPDATE economy_irpf_returns
+            SET payment = ?, charged = charged + ?, debt = debt + ?, second = ?
+            WHERE guild_id = ? AND user_id = ? AND week_start = ?
+            """,
+            (
+                PAYMENT_SPLIT if split else PAYMENT_PAID, charged, debt, second,
+                guild_id, user_id, week,
+            ),
+        )  # fmt: skip
+        return IrpfPayment(
+            user_id=user_id,
+            week=week,
+            due=due,
+            charged=charged,
+            debt=debt,
+            second=second,
+            second_due=float(row["second_due"]) if split else 0.0,
+            balance=balance,
+            automatic=automatic,
+        )
+
+    async def pay_irpf_return(
+        self, guild_id: int, user_id: int, week: str, *, split: bool
+    ) -> IrpfPayment | None:
+        """Paga la declaración pendiente de una semana: entera o fraccionada.
+
+        Tratamiento fiscal: el ingreso de la autoliquidación del IRPF (art. 97 LIRPF), al
+        Estado. Fraccionada, el 60 % ahora y el 40 % lo cobra `settle_irpf_payments` al
+        final del jueves, sin intereses ni recargo (art. 62.2 del Reglamento del IRPF).
+        Lo que no llegue del monedero queda como deuda con Hacienda.
+
+        Returns:
+            Lo pagado, o `None` si ya no estaba pendiente (pagada o cobrada sola).
+        """
+        return await self._run(self._pay_irpf_return_sync, guild_id, user_id, week, split)
+
+    def _pay_irpf_return_sync(
+        self, guild_id: int, user_id: int, week: str, split: bool
+    ) -> IrpfPayment | None:
+        with self._transaction() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM economy_irpf_returns
+                WHERE guild_id = ? AND user_id = ? AND week_start = ? AND payment = ?
+                """,
+                (guild_id, user_id, week, PAYMENT_PENDING),
+            ).fetchone()
+            if row is None:
+                return None
+            return self._pay_return_in(connection, row, split=split, automatic=False)
+
+    async def settle_irpf_payments(self, guild_id: int, now: float) -> tuple[IrpfPayment, ...]:
+        """Cobra los plazos de la Renta que han vencido en un servidor.
+
+        Las declaraciones que nadie ha pagado al acabar su plazo se cobran enteras, como
+        una domiciliación; las fraccionadas cobran su 40 % al final del jueves. En los
+        dos casos lo que no llegue queda como deuda con Hacienda, sin recargo. Es
+        idempotente: cada plazo se cobra una vez.
+
+        Returns:
+            Un pago por plazo cobrado ahora.
+        """
+        return await self._run(self._settle_irpf_payments_sync, guild_id, now)
+
+    def _settle_irpf_payments_sync(self, guild_id: int, now: float) -> tuple[IrpfPayment, ...]:
+        with self._transaction() as connection:
+            payments = [
+                self._pay_return_in(connection, row, split=False, automatic=True)
+                for row in connection.execute(
+                    """
+                    SELECT * FROM economy_irpf_returns
+                    WHERE guild_id = ? AND payment = ? AND pay_due <= ?
+                    ORDER BY week_start, user_id
+                    """,
+                    (guild_id, PAYMENT_PENDING, now),
+                ).fetchall()
+            ]
+            due = connection.execute(
+                """
+                SELECT * FROM economy_irpf_returns
+                WHERE guild_id = ? AND payment = ? AND second_due <= ?
+                ORDER BY week_start, user_id
+                """,
+                (guild_id, PAYMENT_SPLIT, now),
+            ).fetchall()
+            for row in due:
+                user_id, second = int(row["user_id"]), int(row["second"])
+                charged, debt, balance = self._charge_installment_in(
+                    connection, guild_id, user_id, second
+                )
+                connection.execute(
+                    """
+                    UPDATE economy_irpf_returns
+                    SET payment = ?, charged = charged + ?, debt = debt + ?, second_paid = ?,
+                        second_at = ?
+                    WHERE guild_id = ? AND user_id = ? AND week_start = ?
+                    """,
+                    (
+                        PAYMENT_PAID, charged, debt, charged, now, guild_id, user_id,
+                        row["week_start"],
+                    ),
+                )  # fmt: skip
+                payments.append(
+                    IrpfPayment(
+                        user_id=user_id,
+                        week=str(row["week_start"]),
+                        due=second,
+                        charged=charged,
+                        debt=debt,
+                        second=0,
+                        second_due=0.0,
+                        balance=balance,
+                        automatic=True,
+                    )
+                )
+            return tuple(payments)
+
+    async def pay_tax_debt(self, guild_id: int, user_id: int, now: float) -> tuple[int, int, int]:
+        """Liquida la deuda con Hacienda del monedero, hasta donde llegue (botón de la Renta).
+
+        Tratamiento fiscal: el pago voluntario de una deuda tributaria (art. 62 de la Ley
+        58/2003), al Estado. Sin recargo, como la deuda.
+
+        Returns:
+            `(pagado, deuda que queda, saldo_final)`.
+        """
+        return await self._run(self._pay_tax_debt_sync, guild_id, user_id, now)
+
+    def _pay_tax_debt_sync(self, guild_id: int, user_id: int, now: float) -> tuple[int, int, int]:
+        with self._transaction() as connection:
+            paid = self._collect_debt_in(connection, guild_id, user_id, now, "deuda:pago")
+            row = connection.execute(
+                "SELECT amount FROM economy_tax_debts WHERE guild_id = ? AND user_id = ?",
+                (guild_id, user_id),
+            ).fetchone()
+            left = int(row["amount"]) if row else 0
+            return paid, left, self._ensure_wallet(connection, guild_id, user_id)
+
+    def _garnish_in(
+        self,
+        connection: sqlite3.Connection,
+        guild_id: int,
+        user_id: int,
+        received: int,
+        now: float,
+        *,
+        concept: str = "embargo:deuda",
+    ) -> int:
+        """Embarga el 30 % de lo que acaba de cobrar quien debe a Hacienda (`taxes.garnish`).
+
+        Va en la misma transacción que el cobro, después de sus impuestos (`received` es
+        lo que le ha llegado limpio), y nunca pasa de la deuda ni del saldo. Va al Estado
+        y queda en `economy_debt_payments`, de donde sale el aviso (`irpf_notices`). Lo
+        llaman todos los cobros salvo los exentos de embargo (ver `taxes.GARNISH_SHARE`).
+
+        Returns:
+            Lo embargado (0 si no debe nada).
+        """
+        if user_id <= 0 or received <= 0:
+            return 0
+        row = connection.execute(
+            "SELECT amount FROM economy_tax_debts WHERE guild_id = ? AND user_id = ?",
+            (guild_id, user_id),
+        ).fetchone()
+        if row is None or int(row["amount"]) <= 0:
+            return 0
+        most = min(garnish(received), self._ensure_wallet(connection, guild_id, user_id))
+        return self._collect_tax_debt_in(connection, guild_id, user_id, most, now, concept)
+
+    async def irpf_notices(
+        self, guild_id: int, user_id: int, since: float, until: float
+    ) -> tuple[int, int, int, int]:
+        """Lo que ha cobrado Hacienda sola entre `since` y `until`, para avisar (`renta.hint`).
+
+        Returns:
+            `(embargado, segundo plazo cobrado, segundo plazo que quedó a deber, deuda que
+            queda)`.
+        """
+        return await self._run(self._irpf_notices_sync, guild_id, user_id, since, until)
+
+    def _irpf_notices_sync(
+        self, guild_id: int, user_id: int, since: float, until: float
+    ) -> tuple[int, int, int, int]:
+        connection = self._connect()
+        try:
+            (embargoed,) = connection.execute(
+                """
+                SELECT COALESCE(SUM(amount), 0) FROM economy_debt_payments
+                WHERE guild_id = ? AND user_id = ? AND created_at > ? AND created_at <= ?
+                """,
+                (guild_id, user_id, since, until),
+            ).fetchone()
+            paid, unpaid = connection.execute(
+                """
+                SELECT COALESCE(SUM(second_paid), 0), COALESCE(SUM(second - second_paid), 0)
+                FROM economy_irpf_returns
+                WHERE guild_id = ? AND user_id = ? AND second_at > ? AND second_at <= ?
+                """,
+                (guild_id, user_id, since, until),
+            ).fetchone()
+            row = connection.execute(
+                "SELECT amount FROM economy_tax_debts WHERE guild_id = ? AND user_id = ?",
+                (guild_id, user_id),
+            ).fetchone()
+            return int(embargoed), int(paid), int(unpaid), int(row["amount"]) if row else 0
+        finally:
+            connection.close()
 
     @staticmethod
     def _apply_carries_in(
@@ -4167,6 +4536,8 @@ class EconomyRepository:
                     if payment.tax:
                         entries.append(LedgerEntry(-payment.tax, "irpf:intereses"))
                     self._apply_in_transaction(connection, guild_id, user_id, entries)
+                    received = payment.gross - payment.tax
+                    self._garnish_in(connection, guild_id, user_id, received, now)
                     if payment.tax:
                         self._credit_state_in(connection, guild_id, payment.tax, "irpf:intereses")
                     connection.execute(
@@ -4488,6 +4859,7 @@ class EconomyRepository:
             receiver_balance = self._apply_in_transaction(
                 connection, guild_id, receiver_id, (LedgerEntry(amount, "bizum:recibido"),)
             )
+            receiver_balance -= self._garnish_in(connection, guild_id, receiver_id, amount, now)
             connection.execute(
                 """
                 INSERT INTO economy_bizums (guild_id, sender_id, receiver_id, amount, created_at)
@@ -4703,6 +5075,10 @@ class EconomyRepository:
                 if pay.gain_tax:
                     entries.append(LedgerEntry(-pay.gain_tax, "rastro:plusvalia"))
                 charge(pay.seller_id, entries)
+                if entries and (paid := self._garnish_in(
+                    connection, guild_id, pay.seller_id, pay.price - pay.gain_tax, now
+                )):  # fmt: skip
+                    balances[pay.seller_id] -= paid
                 for member, kind, base, tax in (
                     (pay.buyer_id, "itp", pay.itp_base, pay.itp),
                     (pay.seller_id, "plusvalia", pay.gain, pay.gain_tax),
@@ -4777,8 +5153,8 @@ class EconomyRepository:
             self._housing_move_in(connection, guild_id, now, week, withhold, move, balances, before)
             for member in sorted(before):
                 gained = balances.get(member, before[member]) - before[member]
-                if gained > 0 and (paid := self._collect_tax_debt_in(
-                    connection, guild_id, member, gained, now
+                if gained > 0 and (paid := self._garnish_in(
+                    connection, guild_id, member, gained, now, concept="embargo:patrimonio"
                 )):  # fmt: skip
                     balances[member] = balances.get(member, before[member]) - paid
             return result, balances
@@ -4965,13 +5341,24 @@ class EconomyRepository:
             )
 
     def _collect_tax_debt_in(
-        self, connection: sqlite3.Connection, guild_id: int, user_id: int, most: int, now: float
+        self,
+        connection: sqlite3.Connection,
+        guild_id: int,
+        user_id: int,
+        most: int,
+        now: float,
+        concept: str = "embargo:patrimonio",
     ) -> int:
-        """Embarga de lo que acaba de cobrar un miembro su deuda con Hacienda.
+        """Embarga hasta `most` de lo que acaba de cobrar un miembro para su deuda con Hacienda.
 
-        Embargo de créditos y rentas (art. 169 de la Ley 58/2003): lo que cobra por sus
-        pisos paga primero lo que debe (el Patrimonio o la declaración que no le llegó en
-        efectivo). Va al Estado y `hacienda` lo cuenta como deudas cobradas.
+        Embargo de créditos y rentas (art. 169 de la Ley 58/2003): la deuda (el Patrimonio
+        o la declaración que no le llegó en efectivo) se cobra de lo que entra. Lo usa
+        `_garnish_in`, que decide cuánto. Va al Estado y `hacienda` lo cuenta como deudas
+        cobradas.
+
+        Args:
+            concept: Motivo del libro (`embargo:patrimonio` en las rentas de `pisos`, que
+                llegan solas cada noche; `embargo:deuda` en lo demás).
 
         Returns:
             Lo embargado (0 si no debe nada).
@@ -4984,10 +5371,8 @@ class EconomyRepository:
         paid = min(owed, most)
         if paid <= 0:
             return 0
-        self._apply_in_transaction(
-            connection, guild_id, user_id, (LedgerEntry(-paid, "embargo:patrimonio"),)
-        )
-        self._credit_state_in(connection, guild_id, paid, "embargo:patrimonio")
+        self._apply_in_transaction(connection, guild_id, user_id, (LedgerEntry(-paid, concept),))
+        self._credit_state_in(connection, guild_id, paid, concept)
         connection.execute(
             "UPDATE economy_tax_debts SET amount = amount - ? WHERE guild_id = ? AND user_id = ?",
             (paid, guild_id, user_id),
@@ -5099,6 +5484,9 @@ class EconomyRepository:
                     entries.append(LedgerEntry(-payout.tax, "gravamen:loteria"))
                 balances[payout.user_id] = self._apply_in_transaction(
                     connection, guild_id, payout.user_id, entries
+                )
+                balances[payout.user_id] -= self._garnish_in(
+                    connection, guild_id, payout.user_id, payout.gross - payout.tax, now
                 )
                 if payout.tax:
                     self._credit_state_in(connection, guild_id, payout.tax, "gravamen:loteria")
@@ -5302,6 +5690,7 @@ class EconomyRepository:
                     now,
                 ),
             )
+            balance -= self._garnish_in(connection, guild_id, user_id, slip.net, now)
             return slip, balance
 
     async def charge_contribution(
@@ -5625,6 +6014,7 @@ class EconomyRepository:
                     now,
                 ),
             )
+            balance -= self._garnish_in(connection, guild_id, user_id, slip.net, now)
             return slip, balance
 
     async def foreign_taxes(self, guild_id: int, user_id: int, country: str) -> int:

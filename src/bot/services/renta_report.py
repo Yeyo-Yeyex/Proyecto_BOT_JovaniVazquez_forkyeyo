@@ -16,6 +16,7 @@ Hay dos modos, para no saturar a nadie:
 
 from __future__ import annotations
 
+from bot.repositories.economy import PAYMENT_PENDING, PAYMENT_SPLIT
 from bot.services.economy import IrpfStatement, format_amount, week_label
 from bot.services.taxes import (
     INCOME_BECKHAM,
@@ -31,6 +32,7 @@ from bot.services.taxes import (
     WORK_REDUCTION_OTHER_INCOME_EUR,
     annual_eur,
     format_rate,
+    second_installment,
 )
 
 #: Cómo se llama cada fuente de lo retenido.
@@ -58,6 +60,11 @@ def _minus(amount: int) -> str:
     return f"−{format_amount(amount)}"
 
 
+def _when(epoch: float) -> str:
+    """Un momento como fecha de Discord relativa (`<t:…:R>`): cada uno la ve en su hora."""
+    return f"<t:{int(epoch)}:R>"
+
+
 def _euros(weekly: int) -> str:
     """Una cifra semanal en euros de un año con la vara del IRPF (`9.999 €`)."""
     return f"{round(annual_eur(weekly)):,} €".replace(",", ".")
@@ -68,7 +75,9 @@ def envelope_text(statement: IrpfStatement) -> str:
     return (
         f"📑 **{TAX_COLLECTOR} ya ha hecho tus cuentas de la semana "
         f"{week_label(statement.week)}.**\n"
-        "¿Te toca pagar o te devuelve? Solo hay una forma de saberlo."
+        "¿Te toca pagar o te devuelve? Solo hay una forma de saberlo.\n"
+        "-# Si sale a pagar, tienes hasta el final del lunes para pagarla entera o en dos "
+        "plazos (el 60 % ahora y el 40 % el jueves)."
     )
 
 
@@ -77,11 +86,30 @@ def result_line(statement: IrpfStatement) -> str:
     filed = statement.filed
     if filed.result > 0:
         line = f"💸 **Te sale a pagar {_money(filed.result)}.**"
-        if filed.debt:
-            return (
-                line + f" Se cobraron {_money(filed.charged)} y debes {_money(filed.debt)}: "
-                "se cobran el lunes que viene o de lo que rentes en `pisos`."
+        if filed.payment == PAYMENT_PENDING:
+            second = second_installment(filed.result)
+            return line + (
+                f" Tienes hasta el final del lunes ({_when(filed.pay_due)}) para pagarla "
+                f"entera o fraccionarla: {_money(filed.result - second)} ahora y "
+                f"{_money(second)} el jueves, sin intereses ni recargo. Si no eliges, se "
+                "cobra entera."
             )
+        if filed.payment == PAYMENT_SPLIT:
+            line += f" La has fraccionado: se cobraron {_money(filed.charged)}"
+            if filed.debt:
+                line += f" y {_money(filed.debt)} quedaron como deuda"
+            return line + (
+                f". El jueves se cobran los {_money(filed.second)} que faltan "
+                f"({_when(filed.second_due)})."
+            )
+        if filed.debt:
+            return line + (
+                f" Se cobraron {_money(filed.charged)} y {_money(filed.debt)} quedaron como "
+                f"deuda: {TAX_COLLECTOR} se queda el 30 % de lo que cobres hasta saldarla, o "
+                "la liquidas aquí."
+            )
+        if filed.second:
+            return line + f" Pagada en dos plazos: {TAX_COLLECTOR} ya lo tiene todo."
         return line + f" {TAX_COLLECTOR} ya se lo ha cobrado."
     if filed.result < 0:
         line = f"🎉 **Te sale a devolver {_money(-filed.result)}.**"

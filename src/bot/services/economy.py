@@ -40,6 +40,7 @@ from bot.repositories.economy import (
     InsufficientFundsError,
     InterestNotice,
     InterestRun,
+    IrpfPayment,
     IrpfReturn,
     IrpfRun,
     JackpotRecord,
@@ -86,7 +87,9 @@ from bot.services.taxes import (
     INCOME_PROPERTY,
     INCOME_WORK,
     LOTTERY_EXEMPT,
+    PAY_DAYS,
     PROJECTION_WINDOW_SECONDS,
+    SECOND_INSTALLMENT_DAYS,
     TAX_COLLECTOR,
     WAGE_YAPDOLLARS_PER_EURO,
     WEALTH_MINIMUM,
@@ -139,6 +142,7 @@ __all__ = [
     "InterestPayment",
     "InterestPreview",
     "InterestRun",
+    "IrpfPayment",
     "IrpfReturn",
     "IrpfRun",
     "IrpfStatement",
@@ -292,7 +296,8 @@ def treasury_embed(treasury: Treasury, *, year: int, names: dict[int, str]) -> d
             "IRPF con una sola vara para toda la renta: retención con tu tipo de la semana "
             "en nóminas, premios y alquileres, el 19 % de lo ganado cada día en el casino "
             f"(si pasa de {format_amount(GAMBLING_EXEMPT)}) y "
-            "declaración cada lunes (a pagar se cobra sola; a devolver, con la Renta) · "
+            "declaración cada lunes con la Renta (a pagar, entera o en dos plazos; a "
+            "devolver, al presentarla) · Quien debe a Hacienda paga el 30 % de lo que cobra · "
             "Patrimonio cada lunes por lo que pase "
             f"de {format_amount(WEALTH_MINIMUM)} entre efectivo y pisos · ITP (6,5%), IBI e "
             "IRPF de los alquileres en `pisos` · IGIC en las compras de la `tienda` "
@@ -532,6 +537,20 @@ def fiscal_week(day: date) -> FiscalWeek:
     )
 
 
+def installment_deadlines(week: FiscalWeek) -> tuple[float, float]:
+    """`(final del plazo para pagar, cobro del segundo plazo)` de la declaración de `week`.
+
+    La declaración sale el lunes en que acaba la semana: se paga (o se fracciona) hasta
+    el final de ese lunes y el 40 % se cobra al final del jueves (`taxes.PAY_DAYS`), en
+    hora canaria.
+    """
+    monday = datetime.fromtimestamp(week.end, TIMEZONE)
+    return (
+        (monday + timedelta(days=PAY_DAYS)).timestamp(),
+        (monday + timedelta(days=SECOND_INSTALLMENT_DAYS)).timestamp(),
+    )
+
+
 def irpf_totals(income: WeekIncome, savings: int) -> tuple[int, int]:
     """`(suma de bases, suma de cuotas)` del IRPF de una semana, general y del ahorro.
 
@@ -627,6 +646,10 @@ class EconomyService:
     ) -> None:
         self.repository = repository
         self._clock = clock
+
+    def now(self) -> float:
+        """La hora del servicio en epoch (la del reloj inyectado, en las pruebas)."""
+        return self._clock()
 
     async def balance(self, guild_id: int, user_id: int) -> int:
         """Saldo actual; abre el monedero con `STARTING_BALANCE` si no existía."""
@@ -989,7 +1012,10 @@ class EconomyService:
         """
         if amount <= 0:
             raise ValueError("La cantidad debe ser positiva.")
-        return await self.repository.apply(guild_id, user_id, [LedgerEntry(amount, reason)])
+        # Exento de IRPF no es inembargable: si debe a Hacienda, paga el 30 %.
+        return await self.repository.apply(
+            guild_id, user_id, [LedgerEntry(amount, reason)], garnish_at=self._clock()
+        )
 
     def _week(self, now: float | None = None) -> FiscalWeek:
         """La semana fiscal en curso (o la de `now`)."""
@@ -1054,8 +1080,9 @@ class EconomyService:
 
         Tratamiento fiscal: autoliquidación del IRPF (arts. 96 y 97 LIRPF) de cada
         semana, que es el año fiscal del bot. La cuota sale de `taxes.week_return` con
-        toda la renta de la semana; si sale a pagar se cobra del monedero en el acto (al
-        Estado) y lo que no llegue queda como deuda con Hacienda; si sale a devolver,
+        toda la renta de la semana; si sale a pagar queda pendiente hasta el final del
+        lunes, para pagarla entera o fraccionada (`pay_irpf_return`), y si no se elige se
+        cobra entera (`settle_irpf_payments`); si sale a devolver,
         primero paga deudas (compensación, art. 73 de la Ley 58/2003) y el resto se
         presenta con la Renta (`claim_declarations`, desde la cuenta del Estado). Detalle
         en `EconomyRepository.close_irpf_week`.
@@ -1085,6 +1112,7 @@ class EconomyService:
                 now=now,
                 returns=week_return,
                 savings_tax=savings_tax,
+                deadlines=installment_deadlines(fiscal_week(monday)),
             )
             if not (run.done_before or run.legacy):
                 closed.append((monday, run))
@@ -1128,6 +1156,46 @@ class EconomyService:
     async def open_irpf_return(self, guild_id: int, user_id: int, week: date) -> None:
         """Marca como abierta una declaración: su dueño ya ha visto el resultado."""
         await self.repository.open_irpf_return(guild_id, user_id, week.isoformat())
+
+    async def pay_irpf_return(
+        self, guild_id: int, user_id: int, week: date, *, split: bool
+    ) -> IrpfPayment | None:
+        """Paga la declaración a pagar de `week`: entera o el 60 % (el 40 %, el jueves).
+
+        Tratamiento fiscal: ingreso de la autoliquidación (art. 97 LIRPF) y, fraccionada,
+        el pago en dos plazos sin intereses ni recargo del art. 62.2 del Reglamento del
+        IRPF. Va al Estado; lo que no llegue queda como deuda con Hacienda. Detalle en
+        `EconomyRepository.pay_irpf_return`.
+
+        Returns:
+            Lo pagado, o `None` si ya no estaba pendiente.
+        """
+        return await self.repository.pay_irpf_return(
+            guild_id, user_id, week.isoformat(), split=split
+        )
+
+    async def settle_irpf_payments(self, guild_id: int) -> tuple[IrpfPayment, ...]:
+        """Cobra los plazos vencidos: las que nadie pagó, enteras, y los 40 % del jueves."""
+        return await self.repository.settle_irpf_payments(guild_id, self._clock())
+
+    async def pay_tax_debt(self, guild_id: int, user_id: int) -> tuple[int, int, int]:
+        """Liquida la deuda con Hacienda del monedero: `(pagado, lo que queda, saldo)`.
+
+        Tratamiento fiscal: pago voluntario de una deuda tributaria (art. 62 de la Ley
+        58/2003), al Estado y sin recargo.
+        """
+        return await self.repository.pay_tax_debt(guild_id, user_id, self._clock())
+
+    async def irpf_notices(
+        self, guild_id: int, user_id: int, since: float, until: float
+    ) -> tuple[int, int, int, int]:
+        """Lo cobrado por Hacienda sola entre `since` y `until` (`renta.hint`).
+
+        Returns:
+            `(embargado, segundo plazo pagado, segundo plazo que quedó a deber, deuda que
+            queda)`.
+        """
+        return await self.repository.irpf_notices(guild_id, user_id, since, until)
 
     async def irpf_rate(self, guild_id: int, user_id: int) -> float:
         """El tipo con el que retiene ahora mismo un cobro (el estable de la semana)."""
@@ -1614,7 +1682,8 @@ class EconomyService:
     async def tax_debt(self, guild_id: int, user_id: int) -> int:
         """Lo que un miembro aún debe a Hacienda (Patrimonio o la declaración del IRPF).
 
-        Se cobra del monedero el lunes y se embarga de lo que cobre por sus pisos.
+        Se cobra del monedero el lunes, se embarga el 30 % de todo lo que cobra
+        (`taxes.GARNISH_SHARE`) y se puede liquidar con la Renta (`pay_tax_debt`).
         """
         return await self.repository.tax_debt(guild_id, user_id)
 
