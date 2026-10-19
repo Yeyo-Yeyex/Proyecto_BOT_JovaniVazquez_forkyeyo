@@ -7,7 +7,9 @@ Comandos (todos con `/` y con `.`, mismo nombre; `tajo` elige dónde se usa `pal
 Robuso está en Hong Kong o en Madrid, para sus logros: ver `bot.cogs.robuso`) y
 `bloquear`.
 
-`bloquear` es el freno de emergencia para un fallo o un exploit: un comando bloqueado
+`bloquear` es el freno de emergencia para un fallo o un exploit. Como `reinicio`, solo
+lo usan los IDs de `DEPLOYERS` (Yeyo y Dani), sean o no administradores, y no sale en
+`ayuda`. Un comando bloqueado
 no se ejecuta para nadie (ni con `/` ni con `.`), y los botones, menús y formularios
 que vienen de su mismo archivo (las mesas que ya estaban abiertas, el 🔁 de otra
 partida) tampoco responden. Se guarda en la base de datos, así que sigue bloqueado
@@ -52,7 +54,7 @@ from discord.ui.view import BaseView, ViewStore
 
 from bot.cogs import moderation as historial
 from bot.cogs import robuso as robuso_logros
-from bot.cogs.deploy import can_post, news_channel, resolve_target
+from bot.cogs.deploy import DEPLOYERS, can_post, news_channel, resolve_target
 from bot.cogs.errors import BLOCKED_ERROR
 from bot.cogs.telemetry import Telemetry, report_inputs
 from bot.repositories.news import NewsSettings
@@ -271,6 +273,8 @@ class Admin(commands.Cog):
         """Solo administradores y solo dentro de un servidor (comandos `.`)."""
         if ctx.guild is None:
             raise commands.NoPrivateMessage()
+        if ctx.command is not None and ctx.command.name == "bloquear":
+            return True  # Lo filtra `_bloquear_impl` por `DEPLOYERS`, como `reinicio`.
         if not isinstance(ctx.author, discord.Member) or (
             not ctx.author.guild_permissions.administrator
         ):
@@ -283,6 +287,8 @@ class Admin(commands.Cog):
             raise app_commands.NoPrivateMessage(
                 interaction.command.name if interaction.command else ""
             )
+        if interaction.command is not None and interaction.command.name == "bloquear":
+            return True  # Lo filtra `_bloquear_impl` por `DEPLOYERS`, como `reinicio`.
         user = interaction.user
         if not isinstance(user, discord.Member) or not user.guild_permissions.administrator:
             raise app_commands.MissingPermissions(["administrator"])
@@ -1240,10 +1246,14 @@ class Admin(commands.Cog):
         comando="Nombre del comando (sin / ni punto); sin nombre, enseña los bloqueados."
     )
     async def bloquear(self, interaction: discord.Interaction, comando: str = "") -> None:
-        """Bloquea un comando para todos o lo desbloquea si ya lo estaba (solo lo ves tú)."""
+        """Bloquea un comando para todos o lo desbloquea si ya lo estaba (solo lo ves tú).
+
+        Solo para los IDs de `DEPLOYERS`; que Discord oculte el `/` a quien no es
+        administrador es solo estética.
+        """
         await self._bloquear_impl(InteractionResponder(interaction), comando)
 
-    @commands.command(name="bloquear")
+    @commands.command(name="bloquear", hidden=True)
     async def bloquear_text(self, ctx: commands.Context, comando: str = "") -> None:
         """Versión de texto: `.bloquear` (los bloqueados) o `.bloquear minas`."""
         await self._bloquear_impl(ContextResponder(ctx), comando)
@@ -1253,6 +1263,9 @@ class Admin(commands.Cog):
         guild = responder.guild
         if guild is None:
             await responder.send_error("Esto solo funciona en un servidor.")
+            return
+        if responder.member is None or responder.member.id not in DEPLOYERS:
+            await responder.send_error("Solo Yeyo y Dani pueden bloquear comandos.")
             return
         blocked = self.blocked.setdefault(guild.id, set())
         word = text.strip().lower().lstrip("/.")

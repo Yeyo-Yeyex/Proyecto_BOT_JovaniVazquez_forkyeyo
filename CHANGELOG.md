@@ -8,6 +8,10 @@ criterio.
 
 ## 8.x
 
+### 8.6.1 · 2026-10-19
+
+- Admin: `bloquear` solo para Yeyo y Dani, como `reinicio`
+
 ### 8.6.0 · 2026-10-19
 
 - Admin: `bloquear` apaga un comando (y los botones de sus mesas) mientras se arregla un fallo
