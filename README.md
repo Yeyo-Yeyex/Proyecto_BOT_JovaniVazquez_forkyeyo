@@ -150,8 +150,12 @@ python -m bot
   renta de la semana anterior: trabajo, pisos (inmueble a inmueble), juego
   (los días con pérdidas compensan a los que ganan), premios y autónomos,
   con las deducciones de donativos, las canarias de vivienda y alquiler y la
-  de Hong Kong. Si sale a pagar, se cobra sola (lo que no llegue queda como
-  deuda con Hacienda); si sale a devolver, primero compensa deudas y el resto
+  de Hong Kong. Si sale a pagar, al abrirla se paga entera o fraccionada (el
+  60 % al momento y el 40 % el jueves, sin recargo); hay hasta el final del
+  lunes y, si no se elige, se cobra entera. Lo que no llegue queda como deuda
+  con Hacienda: se embarga el 30 % de lo que se cobre hasta saldarla y se
+  puede liquidar con el botón de `renta`. Si sale a devolver, primero compensa
+  deudas y el resto
   se presenta con el botón de `renta` o con el aviso (solo lo ves tú) que
   sale la primera vez que juegas en la semana, durante 4 semanas (los «4
   años» de la ley). `renta` enseña un sobre cerrado con «📑 Abrir»: dentro,

@@ -8767,6 +8767,26 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (100_000, "renta_moroso_100k", "En la lista de morosos, entre futbolistas y folclóricas",
          "Acumula 100.000 Y$ de deuda con Hacienda en tus declaraciones.", E, True),
     ], unit="money")  # fmt: skip
+    # Pago fraccionado, deuda liquidada y embargo (8.7.0, cogs/renta.py: pay, settle_debt
+    # y _collected_lines).
+    a += _tiers("economy", "renta_split", [
+        (1, "renta_fracciona", "Pago fraccionado, susto fraccionado",
+         "Fracciona el pago de una declaración que sale a pagar.", R),
+        (8, "renta_fracciona_8", "Experto en plazos fijos",
+         "Fracciona el pago de 8 declaraciones que salen a pagar.", E),
+    ])  # fmt: skip
+    a += _tiers("economy", "debt_paid", [
+        (1, "deuda_liquidada", "Ni una perra pendiente",
+         "Liquida tu deuda con Hacienda con el botón de la Renta.", R),
+        (100_000, "deuda_liquidada_100k", "Armisticio con Hacienda",
+         "Liquida 100.000 Y$ de deuda con Hacienda con el botón de la Renta.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("economy", "debt_garnished", [
+        (1, "embargo_cobro", "Socio a la fuerza",
+         "Que Hacienda te embargue parte de lo que cobras por una deuda.", R, True),
+        (100_000, "embargo_cobro_100k", "El 30 % más caro de tu vida",
+         "Que Hacienda te embargue 100.000 Y$ de lo que cobras.", E, True),
+    ], unit="money")  # fmt: skip
 
     a += _tiers("economy", "tax_paid", [
         (2_000_000, "tax_paid_2000000", "Benefactor de Hacienda", "Paga 2.000.000 Y$ de IRPF.", L),

@@ -74,6 +74,8 @@ AUTOMATIC_REASONS = frozenset(
         "pisos:ibi",
         "pisos:comunidad",
         "embargo:patrimonio",
+        # El barrido de la deuda de los lunes; el embargo de un cobro va con el cobro.
+        "embargo:deuda",
     }
 )
 #: Sufijos de los movimientos del casino (`{juego}:apuesta`, `{juego}:premio`…).

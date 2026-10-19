@@ -6,9 +6,13 @@ El año fiscal del bot es la semana. Durante la semana cada cobro retiene a cuen
 servidor (`EconomyService.close_irpf_weeks`): sale la declaración de cada miembro con
 toda su renta, sus deducciones y lo retenido.
 
-- **Si sale a pagar**, se cobra sola del monedero en ese momento; lo que no llegue
-  queda como deuda con Hacienda y se cobra el lunes siguiente o de lo que rente en
-  `pisos`.
+- **Si sale a pagar**, al abrirla se paga entera o fraccionada: el 60 % al momento y
+  el 40 % al final del jueves, sin intereses ni recargo (art. 62.2 del Reglamento del
+  IRPF). Hay hasta el final del lunes para elegir; si no, se cobra entera. Lo que no
+  llegue queda como deuda con Hacienda, sin recargo: se embarga el 30 % de todo lo que
+  se cobra (`taxes.GARNISH_SHARE`), se barre el monedero los lunes y se puede liquidar
+  con el botón **Liquidar deuda**. Los cobros que hace Hacienda sola (el embargo, el
+  segundo plazo) se avisan con una línea pequeña en la siguiente acción con dinero.
 - **Si sale a devolver**, primero paga lo que debiera y el resto hay que presentarlo,
   desde el casino (la primera vez en la campaña que alguien juega con la renta
   pendiente le sale un mensaje que solo ve él con el botón **Presentar**; luego solo
@@ -47,10 +51,12 @@ from discord.ext import commands, tasks
 from bot.cogs import achievements as logros
 from bot.cogs import intereses
 from bot.cogs import pets as mascotas
+from bot.repositories.economy import PAYMENT_PENDING
 from bot.services.achievements import StatDelta
 from bot.services.economy import (
     Declaration,
     EconomyService,
+    IrpfPayment,
     IrpfRun,
     IrpfStatement,
     format_amount,
@@ -127,7 +133,7 @@ def notice_text(week: date) -> str:
     """Aviso de que ya está una declaración, sin decir qué sale (para `hint`)."""
     phrase = NOTICE_LINES[week.toordinal() // 7 % len(NOTICE_LINES)]
     text = phrase.format(week=week_label(week), collector=TAX_COLLECTOR)
-    return f"-# 📑 {text} Ábrela con `/renta`."
+    return f"-# 📑 {text} Ábrela con `/renta` (si sale a pagar, hay hasta el final del lunes)."
 
 
 def announcement_text(week: date, run: IrpfRun) -> str:
@@ -146,7 +152,8 @@ def announcement_text(week: date, run: IrpfRun) -> str:
             f"{len(run.returns)} declaraciones, {len(pay)} a pagar y {len(back)} a devolver.",
             f"Entre todos: {format_amount(total_pay)} para el Estado y "
             f"{format_amount(total_back)} de vuelta.",
-            f"-# {pool[week.toordinal() // 7 % len(pool)]} Cada uno abre la suya con `/renta`.",
+            f"-# {pool[week.toordinal() // 7 % len(pool)]} Cada uno abre la suya con `/renta`; "
+            "quien tenga que pagar, hasta el final del lunes.",
         )
     )
 
@@ -156,6 +163,61 @@ def pending_hint() -> str:
     return "-# 📬 Tienes la renta sin presentar: `/renta`"
 
 
+def debt_text(debt: int) -> str:
+    """Lo que se debe a Hacienda, con cómo se cobra (en `renta`, junto al botón)."""
+    return (
+        f"⚖️ **Debes {format_amount(debt)} a Hacienda.** {TAX_COLLECTOR} se queda el 30 % de "
+        "todo lo que cobras hasta saldarla. Puedes liquidarla ya con el botón."
+    )
+
+
+def embargo_hint(embargoed: int, left: int) -> str:
+    """Línea pequeña de lo embargado desde la última acción (`hint`)."""
+    rest = f"; aún debes {format_amount(left)}" if left else ": deuda saldada"
+    return f"-# ⚖️ {TAX_COLLECTOR} te ha embargado {format_amount(embargoed)}{rest}."
+
+
+def second_installment_hint(paid: int, unpaid: int) -> str:
+    """Línea pequeña del segundo plazo de la Renta, cobrado solo el jueves (`hint`)."""
+    text = f"-# 🐶 Se ha cobrado el segundo plazo de tu Renta: {format_amount(paid)}."
+    if unpaid:
+        text += f" {format_amount(unpaid)} no llegaron y quedan como deuda."
+    return text
+
+
+def payment_text(payment: IrpfPayment | None) -> str:
+    """Lo que ha pasado al pulsar **Pagar todo** o **Fraccionar**."""
+    if payment is None:
+        return "Esta declaración ya no estaba pendiente de pago."
+    if payment.second:
+        text = (
+            f"✂️ **Fraccionada.** Pagas {format_amount(payment.charged)} ahora y "
+            f"{format_amount(payment.second)} el jueves."
+        )
+    else:
+        text = f"✅ **Pagada:** {format_amount(payment.charged)}."
+    if payment.debt:
+        text += f" {format_amount(payment.debt)} no llegaron y quedan como deuda, sin recargo."
+    return text + f" Saldo: **{format_amount(payment.balance)}**."
+
+
+def debt_payment_text(paid: int, left: int, balance: int) -> str:
+    """Lo que ha pasado al pulsar **Liquidar deuda**."""
+    if not paid:
+        if not left:
+            return "Ya no debes nada a Hacienda."
+        return "No tienes saldo para pagar nada de la deuda."
+    if left:
+        return (
+            f"⚖️ Pagados {format_amount(paid)}; aún debes {format_amount(left)}. "
+            f"Saldo: **{format_amount(balance)}**."
+        )
+    return (
+        f"✅ **Deuda liquidada:** {format_amount(paid)}. Ya no debes nada a Hacienda. "
+        f"Saldo: **{format_amount(balance)}**."
+    )
+
+
 def renta_embed(
     mode: str,
     statement: IrpfStatement | None,
@@ -163,14 +225,19 @@ def renta_embed(
     *,
     rate: float | None = None,
     extra: str = "",
+    debt: int = 0,
 ) -> discord.Embed:
-    """El embed de `renta` en un modo: el sobre, el resumen o el detalle."""
+    """El embed de `renta` en un modo: el sobre, el resumen o el detalle.
+
+    Args:
+        debt: Lo que debe a Hacienda; sale fuera del sobre, con el botón para liquidarla.
+    """
     parts: list[str] = []
     if statement is None:
         parts.append(
             f"📑 Aún no tienes ninguna declaración. El lunes {TAX_COLLECTOR} hará las cuentas "
-            "de esta semana: si te retuvo de menos te lo cobra, y si te retuvo de más te lo "
-            "devuelve si la presentas aquí."
+            "de esta semana: si te retuvo de menos la pagas aquí (entera o en dos plazos), y "
+            "si te retuvo de más te lo devuelve si la presentas aquí."
         )
     elif mode == SEALED:
         parts.append(envelope_text(statement))
@@ -180,6 +247,8 @@ def renta_embed(
         parts.append(summary_text(statement))
     if pending and mode != SEALED:
         parts.append(draft_text(pending))
+    if debt and mode != SEALED:
+        parts.append(debt_text(debt))
     if extra:
         parts.append(extra)
     text = "\n\n".join(parts)
@@ -230,10 +299,11 @@ async def hint(
 
 
 class RentaView(discord.ui.View):
-    """La declaración en `renta`: abrir el sobre, resumen o detalle, y presentar.
+    """La declaración en `renta`: abrir el sobre, resumen o detalle, pagar y presentar.
 
     Pasar del resumen al detalle solo cambia lo que se enseña (la declaración ya está
-    cargada): contesta en el acto. Abrir el sobre y presentar tocan la base de datos.
+    cargada): contesta en el acto. Abrir el sobre, pagar (entera o fraccionada),
+    liquidar la deuda y presentar tocan la base de datos.
     """
 
     def __init__(
@@ -246,6 +316,7 @@ class RentaView(discord.ui.View):
         mode: str,
         rate: float | None = None,
         extra: str = "",
+        debt: int = 0,
     ) -> None:
         super().__init__(timeout=VIEW_TIMEOUT)
         self.cog = cog
@@ -255,12 +326,18 @@ class RentaView(discord.ui.View):
         self.mode = mode
         self.rate = rate
         self.extra = extra
+        self.debt = debt
         self._rebuild()
 
     def embed(self) -> discord.Embed:
         """El embed del modo en que está."""
         return renta_embed(
-            self.mode, self.statement, self.pending, rate=self.rate, extra=self.extra
+            self.mode,
+            self.statement,
+            self.pending,
+            rate=self.rate,
+            extra=self.extra,
+            debt=self.debt,
         )
 
     def _rebuild(self) -> None:
@@ -278,10 +355,24 @@ class RentaView(discord.ui.View):
                     "Ver el resumen", "📄", discord.ButtonStyle.secondary, "renta:resumen",
                     self._summary,
                 )  # fmt: skip
+        statement = self.statement if self.mode != SEALED else None
+        if statement is not None and statement.filed.payment == PAYMENT_PENDING:
+            self._button(
+                "Pagar todo", "💳", discord.ButtonStyle.success, "renta:pagar", self._pay_full
+            )
+            self._button(
+                "Fraccionar", "✂️", discord.ButtonStyle.primary, "renta:fraccionar",
+                self._pay_split,
+            )  # fmt: skip
         if self.pending and self.mode != SEALED:
             self._button(
                 "Presentar", "📬", discord.ButtonStyle.success, "renta:presentar", self._present
             )
+        if self.debt and self.mode != SEALED:
+            self._button(
+                "Liquidar deuda", "⚖️", discord.ButtonStyle.danger, "renta:liquidar",
+                self._settle_debt,
+            )  # fmt: skip
 
     def _button(
         self, label: str, emoji: str, style: discord.ButtonStyle, custom_id: str, callback
@@ -328,6 +419,15 @@ class RentaView(discord.ui.View):
 
     async def _present(self, interaction: discord.Interaction) -> None:
         await self.cog.present(interaction)
+
+    async def _pay_full(self, interaction: discord.Interaction) -> None:
+        await self.cog.pay(interaction, self, split=False)
+
+    async def _pay_split(self, interaction: discord.Interaction) -> None:
+        await self.cog.pay(interaction, self, split=True)
+
+    async def _settle_debt(self, interaction: discord.Interaction) -> None:
+        await self.cog.settle_debt(interaction, self)
         self.stop()
 
 
@@ -361,6 +461,12 @@ class Renta(commands.Cog):
         #: el efímero; en esta campaña solo verán la línea pequeña.
         self._reminded: set[tuple[int, int, date]] = set()
         self._events_forbidden: set[int] = set()
+        #: `(servidor, usuario)` → hasta cuándo se le ha avisado de lo que Hacienda cobra
+        #: sola (el embargo, el segundo plazo). Lo de antes de arrancar no se avisa.
+        # shortcut: en memoria, un reinicio se salta el aviso de lo cobrado mientras estaba
+        # apagado; pasarlo a la base si se echa en falta.
+        self._seen: dict[tuple[int, int], float] = {}
+        self._started = economy.now()
 
     async def cog_load(self) -> None:
         self._campaign_events.start()
@@ -376,7 +482,8 @@ class Renta(commands.Cog):
         return statement is not None and not statement.opened
 
     async def hint_for(self, guild_id: int, user_id: int) -> str | None:
-        """Líneas pequeñas de la renta: declaración nueva (sin cifra) y la que falta presentar."""
+        """Líneas pequeñas de la renta: declaración nueva (sin cifra), la que falta presentar
+        y lo que Hacienda ha cobrado sola desde la última vez (embargo y segundo plazo)."""
         lines = []
         try:
             for week in await self.economy.take_irpf_notices(guild_id, user_id):
@@ -384,9 +491,26 @@ class Renta(commands.Cog):
             if not lines and not await self._sealed(guild_id, user_id):
                 if await self.economy.pending_declarations(guild_id, user_id):
                     lines.append(pending_hint())
+            lines += await self._collected_lines(guild_id, user_id)
         except Exception:
             logger.exception("No se pudo consultar la renta")
         return "\n".join(lines) if lines else None
+
+    async def _collected_lines(self, guild_id: int, user_id: int) -> list[str]:
+        """Avisos de lo que Hacienda ha cobrado sola desde el último aviso, una vez cada uno."""
+        key = (guild_id, user_id)
+        since, until = self._seen.get(key, self._started), self.economy.now()
+        self._seen[key] = until
+        embargoed, paid, unpaid, left = await self.economy.irpf_notices(
+            guild_id, user_id, since, until
+        )
+        lines = []
+        if embargoed:
+            lines.append(embargo_hint(embargoed, left))
+            logros.note(self.bot, guild_id, user_id, StatDelta(add={"debt_garnished": embargoed}))
+        if paid or unpaid:
+            lines.append(second_installment_hint(paid, unpaid))
+        return lines
 
     async def remind(self, interaction: discord.Interaction) -> None:
         """Tras una jugada con botón o slash: avisa en efímero, una vez por campaña.
@@ -486,17 +610,88 @@ class Renta(commands.Cog):
             ),
         )
 
+    # -- Pagar ---------------------------------------------------------------------------
+
+    async def pay(self, interaction: discord.Interaction, view: RentaView, *, split: bool) -> None:
+        """Paga la declaración abierta, entera o fraccionada, y rehace la vista."""
+        guild = interaction.guild
+        if guild is None or view.statement is None:
+            return
+        # Pagar va a la base de datos: se acepta el clic antes.
+        await ack(interaction)
+        payment = await self.economy.pay_irpf_return(
+            guild.id, interaction.user.id, view.statement.week, split=split
+        )
+        fresh = await self._view(
+            guild, interaction.user, mode=view.mode, notice=payment_text(payment)
+        )
+        await edit(interaction, embed=fresh.embed(), view=fresh)
+        if payment is not None:
+            self._note_payment(guild.id, payment, interaction.channel_id, split=split)
+
+    async def settle_debt(self, interaction: discord.Interaction, view: RentaView) -> None:
+        """Liquida la deuda con Hacienda con lo que haya en el monedero."""
+        guild = interaction.guild
+        if guild is None:
+            return
+        await ack(interaction)
+        paid, left, balance = await self.economy.pay_tax_debt(guild.id, interaction.user.id)
+        # Lo pagado a mano no es un embargo: que `hint` no lo avise como tal.
+        self._seen[(guild.id, interaction.user.id)] = self.economy.now()
+        fresh = await self._view(
+            guild, interaction.user, mode=view.mode, notice=debt_payment_text(paid, left, balance)
+        )
+        await edit(interaction, embed=fresh.embed(), view=fresh)
+        if paid:
+            logros.note(
+                self.bot,
+                guild.id,
+                interaction.user.id,
+                StatDelta(add={"debt_paid": paid}, peak={"balance_max": balance}),
+                interaction.channel_id,
+            )
+
+    def _note_payment(
+        self, guild_id: int, payment: IrpfPayment, channel_id: int | None, *, split: bool = False
+    ) -> None:
+        """Apunta a los logros un plazo de la Renta: lo pagado, la deuda y si se fraccionó."""
+        add = {"renta_paid": payment.charged, "renta_debt": payment.debt, "renta_split": int(split)}
+        logros.note(
+            self.bot,
+            guild_id,
+            payment.user_id,
+            StatDelta(add={k: v for k, v in add.items() if v}),
+            channel_id,
+        )
+
     # -- Comando -----------------------------------------------------------------------
 
-    async def _view(self, guild: discord.Guild, member: discord.abc.User) -> RentaView:
-        """La vista de `renta` de un miembro: su última declaración y lo pendiente."""
+    async def _view(
+        self,
+        guild: discord.Guild,
+        member: discord.abc.User,
+        *,
+        mode: str | None = None,
+        notice: str = "",
+    ) -> RentaView:
+        """La vista de `renta` de un miembro: su última declaración, lo pendiente y la deuda.
+
+        Args:
+            mode: El modo en que se enseña (sin él, el sobre si está sin abrir).
+            notice: Lo que acaba de pasar (un pago), arriba del resto de avisos.
+        """
         statement = await self.economy.irpf_statement(guild.id, member.id)
         pending = await self.economy.pending_declarations(guild.id, member.id)
         rate = await self.economy.irpf_rate(guild.id, member.id)
+        debt = await self.economy.tax_debt(guild.id, member.id)
         # La base del ahorro (intereses) se liquida sola cada lunes; aquí solo se enseña.
         savings = await intereses.savings_line(self.bot, guild.id, member.id) or ""
-        mode = SEALED if statement is not None and not statement.opened else SUMMARY
-        return RentaView(self, member.id, statement, pending, mode=mode, rate=rate, extra=savings)
+        if mode is None:
+            mode = SEALED if statement is not None and not statement.opened else SUMMARY
+        extra = "\n\n".join(part for part in (notice, savings) if part)
+        return RentaView(
+            self, member.id, statement, pending, mode=mode, rate=rate, extra=extra, debt=debt
+        )
 
     @app_commands.command(name="renta", description="Mira y presenta tu declaración de la renta.")
     @app_commands.guild_only()
@@ -532,6 +727,7 @@ class Renta(commands.Cog):
         end = datetime.combine(monday + timedelta(days=7), datetime.min.time(), TIMEZONE)
         for guild in self.bot.guilds:
             await self._close_weeks(guild)
+            await self._settle_payments(guild)
             if guild.id in self._events_forbidden:
                 continue
             try:
@@ -576,15 +772,25 @@ class Renta(commands.Cog):
                     guild.id,
                     filed.user_id,
                     StatDelta(
-                        add={
-                            "renta_closed": 1,
-                            "renta_paid": filed.charged,
-                            "renta_debt": filed.debt,
-                        },
+                        add={"renta_closed": 1},
                         peak={"renta_rate_max": round(filed.rate * 100)},
                     ),
                     channel.id if channel is not None else None,
                 )
+
+    async def _settle_payments(self, guild: discord.Guild) -> None:
+        """Cobra los plazos vencidos de la Renta y los apunta a los logros. Nunca lanza.
+
+        Las que nadie pagó al acabar el lunes se cobran enteras, y las fraccionadas, su 40 %
+        al acabar el jueves. Cada miembro se entera con `hint` en su siguiente acción.
+        """
+        try:
+            payments = await self.economy.settle_irpf_payments(guild.id)
+        except Exception:
+            logger.exception("No se pudieron cobrar los plazos de la Renta en %s", guild.id)
+            return
+        for payment in payments:
+            self._note_payment(guild.id, payment, None)
 
     @_campaign_events.before_loop
     async def _before_campaign_events(self) -> None:

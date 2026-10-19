@@ -8,6 +8,12 @@ criterio.
 
 ## 8.x
 
+### 8.7.0 · 2026-10-19
+
+- Renta: la que sale a pagar se paga al abrirla, entera o fraccionada (60 % y 40 % el jueves)
+- Renta: quien debe a Hacienda paga el 30 % de lo que cobra, y botón para liquidar la deuda
+- Logros: 6 del pago fraccionado, la deuda liquidada y el embargo
+
 ### 8.6.1 · 2026-10-19
 
 - Admin: `bloquear` solo para Yeyo y Dani, como `reinicio`
