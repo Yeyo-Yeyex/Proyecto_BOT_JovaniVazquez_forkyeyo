@@ -4444,11 +4444,14 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (500, "mines_dice_500", "Que decida el dado", "Destapa 500 casillas con 🎲.", E),
     ])  # fmt: skip
     a += _tiers("mines", "mines_cash_one", [
-        (25, "cash_one_25", "Con uno me vale", "Cobra 25 veces tras un solo diamante.", C),
-        (50, "mines_cash_one_50", "Diamante en mano", "Cobra 50 veces tras un solo diamante.", C),
+        (25, "cash_one_25", "Con uno me vale",
+         "Cobra 25 veces tras el primer diamante con riesgo.", C),
+        (50, "mines_cash_one_50", "Diamante en mano",
+         "Cobra 50 veces tras el primer diamante con riesgo.", C),
         (150, "mines_cash_one_150", "Más vale diamante en mano",
-         "Cobra 150 veces tras un solo diamante.", R),
-        (250, "cash_one_250", "Diamante y a casa", "Cobra 250 veces tras un solo diamante.", R),
+         "Cobra 150 veces tras el primer diamante con riesgo.", R),
+        (250, "cash_one_250", "Diamante y a casa",
+         "Cobra 250 veces tras el primer diamante con riesgo.", R),
     ])  # fmt: skip
     a += _tiers("mines", "mines_greedy", [
         (1, "mines_greedy", "El que mucho abarca",
@@ -21420,7 +21423,8 @@ def mines_stats(game: MinesGame) -> StatDelta:
         bump("mines_24", game.mines == MINES_MAX)
         bump("mines_clear", game.cleared)
         bump("mines_clear_hard", game.cleared and game.mines >= 5)
-        bump("mines_cash_one", game.gems == 1)
+        # La primera es segura y retirarse ahí no cuenta: «con uno» es el primero con riesgo.
+        bump("mines_cash_one", game.gems == 2)
     elif game.status is MinesStatus.BUSTED:
         bump("mines_booms")
         # La primera casilla es segura: "a la primera" es la que va justo después.

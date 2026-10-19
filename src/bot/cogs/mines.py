@@ -2,7 +2,8 @@
 
 Cada jugador abre su propio tablero, que solo él puede pulsar. `minas 500 5`
 cobra 500 Y$ y juega con 5 minas. La primera casilla siempre es segura y
-devuelve la apuesta; cada casilla segura después sube el multiplicador.
+devuelve la apuesta (retirarse ahí no cuenta como jugada: ni logros, ni porras, ni
+cajas gratis); cada casilla segura después sube el multiplicador.
 💰 **Cobrar** se lleva apuesta × multiplicador, y pisar una 💣 lo pierde
 todo. 🎲 **Al azar** destapa una casilla cualquiera.
 
@@ -191,11 +192,18 @@ class MinesBoard(ui.LayoutView):
                 )
         elif game.status is Status.CASHED:
             sign = "+" if game.net >= 0 else "-"
-            lines.append(
-                f"# {GEM} {random.choice(CASH_LINES)} {sign}{format_amount(abs(game.net))}\n"
-                f"Cobras **{format_amount(game.payout)}** en {format_multiplier(game.cents)} "
-                f"con {GEM} {game.gems}/{game.safe_total}"
-            )
+            if game.risk_free:
+                lines.append(
+                    "# ↩️ Te retiras sin arriesgar\nRecuperas tu apuesta "
+                    f"(**{format_amount(game.payout)}**). Como la primera casilla siempre es "
+                    "buena, no cuenta como jugada."
+                )
+            else:
+                lines.append(
+                    f"# {GEM} {random.choice(CASH_LINES)} {sign}{format_amount(abs(game.net))}\n"
+                    f"Cobras **{format_amount(game.payout)}** en {format_multiplier(game.cents)} "
+                    f"con {GEM} {game.gems}/{game.safe_total}"
+                )
             if cheer := milestone(game.gems, game.safe_total):
                 lines.append(cheer)
             if self.record_before and game.gems > self.record_before:
@@ -429,6 +437,9 @@ class MinesBoard(ui.LayoutView):
     ) -> None:
         """Lo que va después de enseñar el final: renta, récord, logros y anuncio."""
         await renta.remind(self.cog.bot, interaction)
+        if game.risk_free:
+            # Retirarse en la casilla segura es una devolución: ni logros, ni porras, ni cajas.
+            return
         self.cog.note_record(self.guild_id, self.owner.id, game.gems)
         delta = mines_stats(game)
         delta.merge(
