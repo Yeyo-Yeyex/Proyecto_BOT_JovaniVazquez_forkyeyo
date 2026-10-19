@@ -32,8 +32,10 @@ Cómo funciona, imitando el sistema real:
 4. **Declaración de los lunes** (`week_return`). Cada lunes se calcula la cuota
    exacta de la semana cerrada, se le restan las deducciones (donativos, la
    canaria por inversión en vivienda habitual y la doble imposición del art. 80)
-   y lo retenido. Si sale a pagar, se cobra sola; si sale a devolver, se presenta
-   con el botón de la Renta.
+   y lo retenido. Si sale a pagar, se paga con la Renta, entera o en dos plazos
+   (`FIRST_INSTALLMENT`), y lo que no llegue queda como deuda, que se embarga de lo
+   que se cobre (`GARNISH_SHARE`); si sale a devolver, se presenta con el botón de
+   la Renta.
 
 La base del ahorro (los intereses) va aparte, con su escala y la misma vara
 (`savings_tax`). La lotería y el Patrimonio usan la escala de los precios
@@ -564,6 +566,42 @@ def property_withholding(item: PropertyWeek, pace: Pace) -> Withholding:
 #: una semana se puede presentar las cuatro siguientes; después caduca y el dinero se
 #: queda en el Estado.
 CLAIM_WEEKS = 4
+
+# Pago fraccionado de la que sale a pagar (art. 62.2 del Reglamento del IRPF): sin
+# intereses ni recargo, el 60 % al presentarla y el 40 % en noviembre. Aquí la
+# declaración sale el lunes y el miembro elige al abrirla: pagarla entera o el 60 %, hasta
+# el final del lunes (el 30 de junio de la campaña), y el 40 % se cobra solo al final del
+# jueves (el 5 de noviembre). Si no elige, se cobra entera. Lo que no llegue en cada plazo
+# queda como deuda con Hacienda, sin recargo (decisión del proyecto).
+
+#: Parte del primer plazo; el redondeo va a este, así el segundo es el 40 % justo.
+FIRST_INSTALLMENT = 0.60
+#: Días desde el lunes a las 00:00 hasta el final de cada plazo: el lunes y el jueves.
+PAY_DAYS = 1
+SECOND_INSTALLMENT_DAYS = 4
+
+
+def second_installment(amount: int) -> int:
+    """El 40 % que se cobra el jueves de una declaración de `amount` a pagar."""
+    return amount - round(amount * FIRST_INSTALLMENT)
+
+
+# Embargo de lo que cobra quien debe a Hacienda. El dinero es lo primero que se embarga
+# (art. 169.2 de la Ley 58/2003) y la escala de los sueldos del art. 607 de la Ley de
+# Enjuiciamiento Civil empieza en el 30 %: aquí se embarga el 30 % de todo lo que entra,
+# nómina incluida y sin mínimo, hasta saldar la deuda (decisión del proyecto, para que
+# sea llevadero). No se embarga el IMV (inembargable, art. 3 de la Ley 19/2021), el dinero
+# propio que vuelve (apuestas devueltas, pujas superadas, devoluciones), el Bizum de
+# mamá (un préstamo que se devuelve entero) ni lo cobrado en negro (Hacienda no lo ve).
+
+#: Parte de lo que entra que se queda Hacienda mientras se le deba algo.
+GARNISH_SHARE = 0.30
+
+
+def garnish(amount: int) -> int:
+    """Lo que se embarga de `amount` recién cobrado (redondeo a favor del miembro)."""
+    return int(max(0, amount) * GARNISH_SHARE)
+
 
 # Deducción por donativos: art. 19.1 de la Ley 49/2002 (redacción del Real
 # Decreto-ley 6/2023). Se deduce de la cuota el 80 % de los primeros 250 € donados y el

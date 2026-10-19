@@ -205,7 +205,7 @@ PRODUCED_STATS = {
     "balance_max",
     # La declaración semanal (cogs/renta.py: track_opened, _detail y _close_weeks)
     "renta_opened", "renta_opened_pay", "renta_opened_refund", "renta_detail", "renta_closed",
-    "renta_paid", "renta_debt", "renta_rate_max",
+    "renta_paid", "renta_debt", "renta_rate_max", "renta_split", "debt_paid", "debt_garnished",
     # Bienvenida (botón 👋 de cogs/welcome.py)
     "welcomes_given", "welcomes_fast",
     # Lista de tareas (cogs/todo.py)

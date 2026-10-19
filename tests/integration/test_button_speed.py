@@ -1516,6 +1516,40 @@ async def press_renta_open(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def _renta_button(client: BotClient, owner: MagicMock, custom_id: str) -> Click:
+    """Un botón de la vista de `renta` con una declaración abierta que sale a pagar."""
+    with client.economy.repository._transaction() as connection:  # noqa: SLF001
+        connection.execute(
+            "INSERT INTO economy_irpf_returns (guild_id, user_id, week_start, base, quota, "
+            "deductions, withheld, result, created_at, opened, payment, pay_due, second_due) "
+            "VALUES (?, ?, '2026-10-05', 0, 0, 0, 0, 500, 0, 1, 'pending', 9e9, 9e9)",
+            (GUILD_ID, OWNER_ID),
+        )
+        connection.execute(
+            "INSERT INTO economy_tax_debts (guild_id, user_id, amount) VALUES (?, ?, 300)",
+            (GUILD_ID, OWNER_ID),
+        )
+    view = await client.get_cog("Renta")._view(owner.guild, owner)  # noqa: SLF001
+    (button,) = [c for c in view.children if getattr(c, "custom_id", "") == custom_id]
+
+    async def click(interaction: MagicMock) -> None:
+        await button.callback(interaction)
+
+    return click
+
+
+async def press_renta_pay(client: BotClient, owner: MagicMock) -> Click:
+    return await _renta_button(client, owner, "renta:pagar")
+
+
+async def press_renta_split(client: BotClient, owner: MagicMock) -> Click:
+    return await _renta_button(client, owner, "renta:fraccionar")
+
+
+async def press_renta_debt(client: BotClient, owner: MagicMock) -> Click:
+    return await _renta_button(client, owner, "renta:liquidar")
+
+
 async def press_todo(client: BotClient, owner: MagicMock) -> Click:
     task = await client.todo.add_task(GUILD_ID, OWNER_ID, "probar los botones", Priority.ALTA)
 
@@ -1750,6 +1784,9 @@ CASES: dict[str, Press] = {
     "perfil: abrir la mochila": press_perfil_backpack,
     "renta: presentar": press_renta,
     "renta: abrir el sobre": press_renta_open,
+    "renta: pagar todo": press_renta_pay,
+    "renta: fraccionar": press_renta_split,
+    "renta: liquidar deuda": press_renta_debt,
     "lista: tachar": press_todo,
     "lista: pasar página": press_todo_page,
     "lista: elegir prioridad": press_todo_priority,

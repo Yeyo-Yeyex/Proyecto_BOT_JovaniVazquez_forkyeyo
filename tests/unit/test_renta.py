@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from interaction_fakes import fake_interaction
 
 from bot.cogs.renta import (
     DETAIL,
@@ -21,6 +22,9 @@ from bot.cogs.renta import (
 )
 from bot.repositories.economy import (
     CARRY_FINANCE,
+    PAYMENT_PAID,
+    PAYMENT_PENDING,
+    PAYMENT_SPLIT,
     STATE_ACCOUNT_ID,
     EconomyRepository,
     IrpfReturn,
@@ -35,6 +39,8 @@ from bot.services.taxes import (
     INCOME_PROPERTY,
     WeekIncome,
     gambling_day_tax,
+    garnish,
+    second_installment,
     week_tax,
 )
 
@@ -123,32 +129,109 @@ async def test_las_perdidas_de_otro_dia_compensan_y_se_devuelve_todo(tmp_path: P
     assert filed.refund == win.tax_delta
 
 
-async def test_si_te_retuvieron_de_menos_el_lunes_se_cobra_solo(tmp_path: Path) -> None:
-    clock = Clock(day(5))
-    service = await make_service(tmp_path, clock)
+async def payable(service: EconomyService, clock: Clock) -> IrpfReturn:
+    """Cierra una semana que sale a pagar (la del 5 de octubre) y devuelve la declaración."""
     # Un premio pequeño retiene poco; uno grande después sube el tipo de la semana.
     await service.pay_income(GUILD, USER, gross=20_000, concept="nivel:5")
     await service.pay_income(GUILD, USER, gross=900_000, concept="nivel:50")
+    filed = await close(service, clock, 12)
+    assert filed.result > 0
+    return filed
+
+
+WEEK = date(2026, 10, 5)
+
+
+async def test_si_te_retuvieron_de_menos_queda_pendiente_y_se_paga_entera(
+    tmp_path: Path,
+) -> None:
+    clock = Clock(day(5))
+    service = await make_service(tmp_path, clock)
+    filed = await payable(service, clock)
     before = await service.balance(GUILD, USER)
     state_before = (await service.treasury(GUILD, since=0)).balance
+    # El lunes no se cobra nada: se elige cómo pagarla al abrirla.
+    assert filed.payment == PAYMENT_PENDING and filed.charged == 0 and filed.debt == 0
+    assert filed.pay_due == day(13, hour=0).timestamp()
 
-    filed = await close(service, clock, 12)
+    clock.at(day(12, hour=10))
+    payment = await service.pay_irpf_return(GUILD, USER, WEEK, split=False)
 
-    assert filed.result > 0 and filed.charged == filed.result and filed.debt == 0
-    assert await service.balance(GUILD, USER) == before - filed.result
+    assert payment is not None and not payment.automatic
+    assert (payment.charged, payment.debt, payment.second) == (filed.result, 0, 0)
+    assert await service.balance(GUILD, USER) == payment.balance == before - filed.result
     assert (await service.treasury(GUILD, since=0)).balance == state_before + filed.result
+    assert await service.pay_irpf_return(GUILD, USER, WEEK, split=True) is None
+    statement = await service.irpf_statement(GUILD, USER)
+    assert statement is not None
+    assert statement.filed.payment == PAYMENT_PAID and statement.filed.charged == filed.result
+    assert (await service.tax_breakdown(GUILD))[USER]["irpf_renta"] == filed.result
+
+
+async def test_fraccionada_paga_el_60_y_el_40_al_acabar_el_jueves(tmp_path: Path) -> None:
+    clock = Clock(day(5))
+    service = await make_service(tmp_path, clock)
+    filed = await payable(service, clock)
+    before = await service.balance(GUILD, USER)
+    second = second_installment(filed.result)
+    assert second == filed.result - round(filed.result * 0.6)
+
+    clock.at(day(12, hour=10))
+    cog = Renta(MagicMock(), service)
+    payment = await service.pay_irpf_return(GUILD, USER, WEEK, split=True)
+    assert payment is not None
+    assert (payment.charged, payment.second) == (filed.result - second, second)
+    assert payment.second_due == day(16, hour=0).timestamp()
+    statement = await service.irpf_statement(GUILD, USER)
+    assert statement is not None and statement.filed.payment == PAYMENT_SPLIT
+    assert "El jueves se cobran" in summary_text(statement)
+
+    clock.at(day(15, hour=23))  # el jueves por la noche aún no toca
+    assert await service.settle_irpf_payments(GUILD) == ()
+    clock.at(day(16, hour=0))
+    (paid,) = await service.settle_irpf_payments(GUILD)
+
+    assert paid.automatic and (paid.charged, paid.debt) == (second, 0)
+    assert await service.balance(GUILD, USER) == before - filed.result
+    assert await service.settle_irpf_payments(GUILD) == ()
+    statement = await service.irpf_statement(GUILD, USER)
+    assert statement is not None and statement.filed.payment == PAYMENT_PAID
+    assert statement.filed.charged == filed.result and statement.filed.second_paid == second
+    assert "dos plazos" in summary_text(statement)
+    # Se avisa una vez, en la siguiente acción con dinero.
+    text = await cog.hint_for(GUILD, USER)
+    assert text is not None and "segundo plazo" in text
+    assert "segundo plazo" not in (await cog.hint_for(GUILD, USER) or "")
+
+
+async def test_si_no_eliges_se_cobra_entera_al_acabar_el_lunes(tmp_path: Path) -> None:
+    clock = Clock(day(5))
+    service = await make_service(tmp_path, clock)
+    filed = await payable(service, clock)
+    before = await service.balance(GUILD, USER)
+
+    clock.at(day(12, hour=23))
+    assert await service.settle_irpf_payments(GUILD) == ()
+    clock.at(day(13, hour=0))
+    (payment,) = await service.settle_irpf_payments(GUILD)
+
+    assert payment.automatic and (payment.charged, payment.second) == (filed.result, 0)
+    assert await service.balance(GUILD, USER) == before - filed.result
+    assert await service.pay_irpf_return(GUILD, USER, WEEK, split=True) is None
 
 
 async def test_sin_saldo_queda_como_deuda_y_se_cobra_el_lunes_siguiente(tmp_path: Path) -> None:
     clock = Clock(day(5))
     service = await make_service(tmp_path, clock)
-    await service.pay_income(GUILD, USER, gross=20_000, concept="nivel:5")
-    await service.pay_income(GUILD, USER, gross=900_000, concept="nivel:50")
+    filed = await payable(service, clock)
     await put(service, USER, -(await service.balance(GUILD, USER)), "prueba:gasto")
 
-    filed = await close(service, clock, 12)
-    assert filed.charged == 0 and filed.debt == filed.result > 0
-    assert await service.tax_debt(GUILD, USER) == filed.debt
+    payment = await service.pay_irpf_return(GUILD, USER, WEEK, split=False)
+    assert payment is not None and (payment.charged, payment.debt) == (0, filed.result)
+    assert await service.tax_debt(GUILD, USER) == filed.result
+    statement = await service.irpf_statement(GUILD, USER)
+    assert statement is not None and statement.filed.debt == filed.result
+    filed = statement.filed
 
     clock.at(day(15))
     await put(service, USER, filed.debt * 2)
@@ -159,12 +242,30 @@ async def test_sin_saldo_queda_como_deuda_y_se_cobra_el_lunes_siguiente(tmp_path
     assert await service.balance(GUILD, USER) == filed.debt
 
 
+async def test_sin_saldo_el_jueves_el_40_queda_como_deuda(tmp_path: Path) -> None:
+    clock = Clock(day(5))
+    service = await make_service(tmp_path, clock)
+    filed = await payable(service, clock)
+    await service.pay_irpf_return(GUILD, USER, WEEK, split=True)
+    await put(service, USER, -(await service.balance(GUILD, USER)), "prueba:gasto")
+
+    clock.at(day(16, hour=0))
+    (second,) = await service.settle_irpf_payments(GUILD)
+
+    assert (second.charged, second.debt) == (0, second_installment(filed.result))
+    assert await service.tax_debt(GUILD, USER) == second.debt
+    statement = await service.irpf_statement(GUILD, USER)
+    assert statement is not None and statement.filed.debt == second.debt
+    assert "quedaron como deuda" in summary_text(statement)
+
+
 async def test_una_devolucion_paga_primero_lo_que_se_debe(tmp_path: Path) -> None:
     clock = Clock(day(5))
     service = await make_service(tmp_path, clock)
     await put(service, STATE_ACCOUNT_ID, 10_000_000)
-    add_debt(service, 1_000)
     await service.settle_bet(GUILD, USER, game="ruleta", stake=1_000, payout=36_000)
+    # La deuda llega después de ganar: si no, el embargo del premio ya la habría pagado.
+    add_debt(service, 1_000)
     await put(service, USER, -(await service.balance(GUILD, USER)))
 
     filed = await close(service, clock, 12)
@@ -504,3 +605,201 @@ def test_la_vista_sin_declaracion_explica_lo_que_pasara() -> None:
     view = RentaView(MagicMock(), USER, None, [], mode=SUMMARY)
     assert "Aún no tienes ninguna declaración" in (view.embed().description or "")
     assert view.children == []
+
+
+# -- Embargo del 30 % y deuda (8.7.0) ----------------------------------------------------
+
+DEBT = 1_000_000
+OTHER = 20
+
+
+def debt_payments(service: EconomyService) -> int:
+    """Todo lo cobrado de deudas con Hacienda (lo que `hacienda` cuenta como «deudas»)."""
+    with service.repository._transaction() as connection:  # noqa: SLF001
+        (total,) = connection.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM economy_debt_payments WHERE user_id = ?",
+            (USER,),
+        ).fetchone()
+    return int(total)
+
+
+async def test_quien_debe_paga_el_30_de_lo_que_cobra(tmp_path: Path) -> None:
+    clock = Clock(day(5))
+    service = await make_service(tmp_path, clock)
+    before = await service.balance(GUILD, USER)
+    add_debt(service, DEBT)
+    state_before = (await service.treasury(GUILD, since=0)).balance
+
+    income = await service.pay_income(GUILD, USER, gross=50_000, concept="logro:prueba")
+    salary = await service.pay_salary(GUILD, USER, gross=8_000, concept="pala:obra")
+
+    net = (50_000 - income.tax) + salary.payslip.net
+    taken = garnish(50_000 - income.tax) + garnish(salary.payslip.net)
+    assert taken > 0
+    assert await service.tax_debt(GUILD, USER) == DEBT - taken
+    assert await service.balance(GUILD, USER) == salary.balance == before + net - taken
+    state = (await service.treasury(GUILD, since=0)).balance
+    assert (
+        state - state_before
+        == income.tax
+        + salary.payslip.irpf
+        + salary.payslip.ss_worker
+        + (salary.payslip.ss_employer)
+        + taken
+    )
+    assert debt_payments(service) == taken
+
+
+async def test_sin_deuda_no_se_embarga_nada(tmp_path: Path) -> None:
+    clock = Clock(day(5))
+    service = await make_service(tmp_path, clock)
+    before = await service.balance(GUILD, USER)
+
+    income = await service.pay_income(GUILD, USER, gross=50_000, concept="logro:prueba")
+
+    assert income.balance == before + 50_000 - income.tax
+    assert debt_payments(service) == 0
+
+
+async def test_en_el_casino_solo_se_embarga_la_ganancia(tmp_path: Path) -> None:
+    clock = Clock(day(5))
+    service = await make_service(tmp_path, clock)
+    await put(service, USER, 100_000)
+    add_debt(service, DEBT)
+    before = await service.balance(GUILD, USER)
+
+    await service.place_bet(GUILD, USER, game="blackjack", stake=10_000)
+    push = await service.pay_winnings(GUILD, USER, game="blackjack", amount=10_000)
+    # La apuesta que vuelve no es dinero nuevo.
+    assert push.balance == before and await service.tax_debt(GUILD, USER) == DEBT
+
+    win = await service.settle_bet(GUILD, USER, game="ruleta", stake=1_000, payout=36_000)
+
+    gained = 35_000 - win.tax_delta
+    assert await service.tax_debt(GUILD, USER) == DEBT - garnish(gained)
+    assert win.balance == await service.balance(GUILD, USER) == before + gained - garnish(gained)
+
+
+async def test_el_embargo_no_pasa_de_la_deuda(tmp_path: Path) -> None:
+    clock = Clock(day(5))
+    service = await make_service(tmp_path, clock)
+    add_debt(service, 100)
+    before = await service.balance(GUILD, USER)
+
+    income = await service.pay_income(GUILD, USER, gross=50_000, concept="logro:prueba")
+
+    assert await service.tax_debt(GUILD, USER) == 0
+    assert income.balance == before + 50_000 - income.tax - 100
+
+
+async def test_el_bizum_de_otro_se_embarga_y_el_de_mama_no(tmp_path: Path) -> None:
+    clock = Clock(day(5))
+    service = await make_service(tmp_path, clock)
+    await put(service, OTHER, 10_000)
+    add_debt(service, DEBT)
+
+    receipt = await service.bizum(GUILD, OTHER, USER, amount=1_000)
+    assert await service.tax_debt(GUILD, USER) == DEBT - garnish(1_000)
+    assert receipt.receiver_balance == await service.balance(GUILD, USER)
+
+    await service.mom_bizum(GUILD, USER, amount=1_000)
+    assert await service.tax_debt(GUILD, USER) == DEBT - garnish(1_000)
+
+
+async def test_liquidar_la_deuda_paga_lo_que_llega(tmp_path: Path) -> None:
+    clock = Clock(day(5))
+    service = await make_service(tmp_path, clock)
+    add_debt(service, 5_000)
+    await put(service, USER, 3_000 - await service.balance(GUILD, USER))
+
+    assert await service.pay_tax_debt(GUILD, USER) == (3_000, 2_000, 0)
+    await put(service, USER, 10_000)
+    assert await service.pay_tax_debt(GUILD, USER) == (2_000, 0, 8_000)
+    assert await service.pay_tax_debt(GUILD, USER) == (0, 0, 8_000)
+    assert (await service.tax_breakdown(GUILD))[USER]["deudas"] == 5_000
+
+
+async def test_el_embargo_se_avisa_una_vez(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    note = MagicMock()
+    monkeypatch.setattr("bot.cogs.renta.logros.note", note)
+    clock = Clock(day(5))
+    service = await make_service(tmp_path, clock)
+    cog = Renta(MagicMock(), service)
+    add_debt(service, DEBT)
+    clock.now += 60
+
+    income = await service.pay_income(GUILD, USER, gross=50_000, concept="logro:prueba")
+    text = await cog.hint_for(GUILD, USER)
+
+    taken = garnish(50_000 - income.tax)
+    assert text is not None and "embargado" in text and "aún debes" in text
+    assert note.call_args.args[3].add == {"debt_garnished": taken}
+    assert await cog.hint_for(GUILD, USER) is None
+
+
+def members() -> tuple[SimpleNamespace, SimpleNamespace]:
+    return SimpleNamespace(id=GUILD), SimpleNamespace(id=USER)
+
+
+def ids(view: RentaView) -> list[str]:
+    return [item.custom_id for item in view.children]  # type: ignore[attr-defined]
+
+
+async def test_al_abrirla_se_paga_entera_o_fraccionada(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    note = MagicMock()
+    monkeypatch.setattr("bot.cogs.renta.logros.note", note)
+    clock = Clock(day(5))
+    service = await make_service(tmp_path, clock)
+    filed = await payable(service, clock)
+    cog = Renta(MagicMock(), service)
+    guild, member = members()
+
+    view = await cog._view(guild, member)  # type: ignore[arg-type]  # noqa: SLF001
+    assert ids(view) == ["renta:abrir"]  # el sobre no delata que sale a pagar
+    assert "hasta el final del lunes" in (view.embed().description or "")
+    interaction = fake_interaction(member)
+    interaction.guild, interaction.channel_id = guild, 5
+    await view._open(interaction)  # type: ignore[arg-type]  # noqa: SLF001
+    assert ids(view) == ["renta:detalle", "renta:pagar", "renta:fraccionar"]
+    assert "fraccionarla" in (view.embed().description or "")
+
+    interaction = fake_interaction(member)
+    interaction.guild, interaction.channel_id = guild, 5
+    await view._pay_split(interaction)  # type: ignore[arg-type]  # noqa: SLF001
+
+    interaction.response.defer.assert_awaited_once()
+    fresh = interaction.edit_original_response.await_args.kwargs["view"]
+    assert ids(fresh) == ["renta:detalle"]
+    assert "Fraccionada" in (fresh.embed().description or "")
+    added = note.call_args.args[3].add
+    assert added == {
+        "renta_paid": filed.result - second_installment(filed.result),
+        "renta_split": 1,
+    }
+
+
+async def test_liquidar_la_deuda_desde_la_renta(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("bot.cogs.renta.logros.note", MagicMock())
+    clock = Clock(day(5))
+    service = await make_service(tmp_path, clock)
+    cog = Renta(MagicMock(), service)
+    guild, member = members()
+    add_debt(service, 500)
+    clock.now += 60
+
+    view = await cog._view(guild, member)  # type: ignore[arg-type]  # noqa: SLF001
+    assert ids(view) == ["renta:liquidar"]
+    assert "Debes 500 Y$ a Hacienda" in (view.embed().description or "")
+    interaction = fake_interaction(member)
+    interaction.guild, interaction.channel_id = guild, 5
+    await view._settle_debt(interaction)  # type: ignore[arg-type]  # noqa: SLF001
+
+    assert await service.tax_debt(GUILD, USER) == 0
+    fresh = interaction.edit_original_response.await_args.kwargs["view"]
+    assert ids(fresh) == [] and "Deuda liquidada" in (fresh.embed().description or "")
+    # Lo pagado a mano no se avisa como un embargo.
+    assert await cog.hint_for(GUILD, USER) is None
