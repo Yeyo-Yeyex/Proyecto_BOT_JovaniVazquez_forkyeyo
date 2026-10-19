@@ -8,6 +8,9 @@ Tablas (en el mismo archivo SQLite que el resto del bot):
   Discord no pasa por aquí.
 - `mod_notes`: notas privadas de los administradores sobre un miembro. Solo se
   enseñan en el panel `admin`, que solo abren administradores.
+- `blocked_commands`: los comandos que un administrador ha bloqueado con `bloquear`
+  (un fallo o un exploit por arreglar). Sobreviven a los reinicios hasta que se
+  desbloquean.
 """
 
 from __future__ import annotations
@@ -96,6 +99,12 @@ class ModerationRepository:
                     created_at REAL NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS mod_notes_member ON mod_notes (guild_id, user_id);
+
+                CREATE TABLE IF NOT EXISTS blocked_commands (
+                    guild_id INTEGER NOT NULL,
+                    command TEXT NOT NULL,
+                    PRIMARY KEY (guild_id, command)
+                );
                 """
             )
 
@@ -197,3 +206,27 @@ class ModerationRepository:
                 "DELETE FROM mod_notes WHERE guild_id = ? AND id = ?", (guild_id, note_id)
             )
             return cursor.rowcount > 0
+
+    async def blocked_commands(self) -> dict[int, set[str]]:
+        """Los comandos bloqueados de cada servidor (se leen una vez, al arrancar)."""
+        return await self._run(self._blocked_commands_sync)
+
+    def _blocked_commands_sync(self) -> dict[int, set[str]]:
+        blocked: dict[int, set[str]] = {}
+        with self._connect() as connection:
+            for row in connection.execute("SELECT guild_id, command FROM blocked_commands"):
+                blocked.setdefault(int(row["guild_id"]), set()).add(str(row["command"]))
+        return blocked
+
+    async def set_blocked(self, guild_id: int, command: str, blocked: bool) -> None:
+        """Bloquea (`blocked=True`) o desbloquea un comando en el servidor."""
+        await self._run(self._set_blocked_sync, guild_id, command, blocked)
+
+    def _set_blocked_sync(self, guild_id: int, command: str, blocked: bool) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT OR IGNORE INTO blocked_commands (guild_id, command) VALUES (?, ?)"
+                if blocked
+                else "DELETE FROM blocked_commands WHERE guild_id = ? AND command = ?",
+                (guild_id, command),
+            )

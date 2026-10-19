@@ -96,6 +96,7 @@ ADMIN_COMMANDS = {
     "tajo",
     "robuso",
     "informe",
+    "bloquear",
 }
 
 # Comandos de imagen: solo de texto, para reservar los slash commands al resto.

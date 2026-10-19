@@ -75,7 +75,7 @@ python -m bot
   | 🍻 Comunidad | `babel <texto \| @miembros #canales>` · `beernight [sonido] [archivo]` · `cumple [dd/mm] [miembro]` · `cumples` · `entrada [archivo] [volumen] [borrar]` · `hongkong` · `lista [tarea] [prioridad alta\|media\|baja]` |
   | 🎨 Imagen (solo `.`) | `magik [miembro]` · `memes [efecto]` · 108 efectos (`.memes`) |
   | ⚙️ General | `ayuda` · `latencia` |
-  | 🛡️ Admin | `abrir` · `admin` · `apodo` · `banear` · `bienv` · `borrar` · `callar` · `cambios` · `catalogo` · `cerrar` · `decir` · `echar` · `hablar` · `indultar` · `lento` · `informe` · `niveles` · `robuso` · `rol` · `tajo` |
+  | 🛡️ Admin | `abrir` · `admin` · `apodo` · `banear` · `bienv` · `bloquear` · `borrar` · `callar` · `cambios` · `catalogo` · `cerrar` · `decir` · `echar` · `hablar` · `indultar` · `lento` · `informe` · `niveles` · `robuso` · `rol` · `tajo` |
 
   La ayuda es un menú desplegable, como el de `perfil`: una portada con las
   categorías y una página por categoría con cada comando y lo que hace (la

@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
+import pytest
 from discord import ui
 from interaction_fakes import fake_interaction
 
@@ -300,6 +301,35 @@ async def test_la_primera_casilla_es_segura_y_devuelve_la_apuesta(tmp_path: Path
         assert board.game.cashout_value == 1
         await board._cash_out(make_interaction())
         cog.boards.clear()
+
+
+async def test_all_in_y_retirarse_en_la_casilla_segura_no_cuenta_como_jugada(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """El exploit: all-in, la primera casilla (siempre buena) y cobrar daba logros gratis."""
+    from bot.cogs import mines as mines_cog
+
+    casino_play, record = AsyncMock(), AsyncMock()
+    monkeypatch.setattr(mines_cog.logros, "casino_play", casino_play)
+    monkeypatch.setattr(mines_cog.apuestas, "record", record)
+    cog = await make_cog(tmp_path)
+    board = await open_board(cog, amount=str(STARTING_BALANCE))
+    place(board, {0, 1, 2})
+    await board._reveal(make_interaction(), 10)
+    await board._cash_out(make_interaction())
+    assert await cog.economy.balance(GUILD_ID, OWNER_ID) == STARTING_BALANCE
+    assert "no cuenta como jugada" in board.header()
+    casino_play.assert_not_awaited()
+    record.assert_not_awaited()
+
+    # Con una casilla de riesgo ya es una jugada normal.
+    await board._again(make_interaction())
+    place(board, {0, 1, 2})
+    await board._reveal(make_interaction(), 10)
+    await board._reveal(make_interaction(), 11)
+    await board._cash_out(make_interaction())
+    casino_play.assert_awaited_once()
+    record.assert_awaited_once()
 
 
 async def test_el_texto_cuenta_casillas_y_lo_que_suma_la_siguiente(tmp_path: Path) -> None:
