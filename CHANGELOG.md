@@ -8,6 +8,11 @@ criterio.
 
 ## 8.x
 
+### 8.14.0 · 2026-10-20
+
+- Negocios: monta tu cafetería, tienda o taller dentro de `pala`
+- Pala: un inicio con tus 8 franjas del día, reducción de jornada y excedencia (como mucho 4 horas extra al día)
+
 ### 8.13.0 · 2026-10-20
 
 - Deportes: `deportes`, apuestas con cuotas fijas a LaLiga y la Champions

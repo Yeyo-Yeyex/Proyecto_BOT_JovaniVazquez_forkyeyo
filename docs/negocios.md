@@ -262,12 +262,34 @@ Salen de las estadísticas de `business_stats` y de las de la jornada. Familias:
 
 ### Equilibrio
 
-Se calibra con `docs/economia_sim.py --negocio` y se apunta en `docs/economia-trabajo.md`.
+Se calibra con `docs/negocio_sim.py`, que juega días enteros con los minijuegos y las reglas
+reales. Cifras del 20/10/2026, con 28 días y la media desde el día 15, ya con las estrellas
+asentadas. Neto al día, tras IRPF y cuota:
 
-- **Referencias:** un turno de la `pala` en P1 deja 1,05-1,15 veces el IMV, y el Falcon tiene que llegar entre
-  los días 350 y 390 con pisos.
-- **El negocio de la fase 1 a jornada completa** (4 franjas libres) deja de neto lo que un P3-P4 de la `pala`.
-- **Con excedencia** (8 franjas), lo que un P5. Es más que un sueldo, pero con gastos fijos, varianza y
-  un techo que suben las fases siguientes.
-- **Montarlo cuesta** lo que ahorra en una o dos semanas alguien con un P3.
-- **Un negocio tiene que dejar más que alquilar su local en `pisos`**, o nadie lo montaría.
+| | 4 turnos al día | 8 turnos al día |
+|---|---|---|
+| `pala` en obra (4 turnos de jornada) | P1 6.700 · P3 14.300 · P5 29.800 | — |
+| Buen jugador (falla 1 de cada 8) | 7.500-18.000 | 18.000-38.000 |
+| Jugador perfecto | 12.000-22.000 | 29.000-46.000 |
+| Jugador flojo (falla 1 de cada 3) | pierde en la cafetería y el taller; 5.500-9.600 en la tienda | casi nada |
+
+- **Montarlo** cuesta de 129.000 a 195.000 Y$ y se recupera entre el día 4 y el 28: lo que
+  ahorra en una o dos semanas alguien con un P3.
+- **Las 5 estrellas** llegan en dos a cuatro semanas a 4 turnos al día.
+  - `REPUTATION` y `REPUTATION_CLIENTS` de `business.py` igualan el ritmo de los sectores:
+    el taller, con 4 clientes por turno, sube por turno lo mismo que la cafetería.
+  - Un error pesa como unos cinco aciertos.
+- **La tienda** es el sector fácil y de poco margen: el flojo no se hunde (se queda en 3★).
+- **Barrio y alquiler:** un barrio caro solo compensa con su demanda o subiendo precios.
+  La cafetería de Santa Cruz (centro) gana más que la de Puerto de Mogán (lujo), que paga
+  casi el doble de local.
+- **Lo que no mira el simulador:**
+  - la batería (con curro, cada turno del negocio la gasta como un turno de la `pala`);
+  - la competencia en el barrio;
+  - los niveles de precio distintos del normal;
+  - el Falcon. En la fase 1 el negocio da lo de un P3-P5; los puestos altos de la `pala`
+    siguen mandando al final.
+- **El cupo de franjas** cambia la `pala` sola: quien no tiene negocio puede hacer como
+  mucho 4 horas extra al día (8 turnos en total). Antes solo lo frenaban la batería y la
+  familia, y quien ficha todo lo que puede sacaba unos 5 turnos al día (`docs/familia_pala.py`),
+  así que el tope casi nunca se nota.
