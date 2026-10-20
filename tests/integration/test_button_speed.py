@@ -79,6 +79,7 @@ async def load_bot(tmp_path: Path) -> BotClient:
     await client.backgammon.initialize()
     await client.poker.initialize()
     await client.porras.initialize()
+    await client.sports.initialize()
     await client.todo.initialize()
     await client.slots_repository.initialize()
     for extension in INITIAL_EXTENSIONS:
@@ -774,6 +775,42 @@ async def press_dice_table_modal(client: BotClient, owner: MagicMock) -> Click:
 
     async def click(interaction: MagicMock) -> None:
         await modal.on_submit(interaction)
+
+    return click
+
+
+def sports_panel(client: BotClient, owner: MagicMock):  # noqa: ANN201
+    """El panel de `deportes` con un partido de mañana en memoria."""
+    import time
+
+    from bot.services.sports import SPORTS, Match, Pick
+
+    cog = client.get_cog("Deportes")
+    odds = {Pick.HOME: 185, Pick.DRAW: 360, Pick.AWAY: 410}
+    match = Match("e1", SPORTS[0].key, "Real Madrid", "Barcelona", time.time() + 86_400, odds)
+    cog.matches[SPORTS[0].key] = [match]
+    view = module_of(client, "Deportes").SportsView(cog, owner_id=OWNER_ID, sport=SPORTS[0].key)
+    return view, match
+
+
+async def press_sports_stake(client: BotClient, owner: MagicMock) -> Click:
+    view, match = sports_panel(client, owner)
+    modal = module_of(client, "Deportes").StakeModal(view, match, next(iter(match.odds)))
+    modal.amount._value = "50"  # lo que Discord rellena al enviar
+
+    async def click(interaction: MagicMock) -> None:
+        interaction.channel_id = 77
+        await modal.on_submit(interaction)
+
+    return click
+
+
+async def press_sports_slip(client: BotClient, owner: MagicMock) -> Click:
+    view, _ = sports_panel(client, owner)
+    button = next(c for c in view.children if c.custom_id == "deportes:mis")
+
+    async def click(interaction: MagicMock) -> None:
+        await button.callback(interaction)
 
     return click
 
@@ -1822,6 +1859,8 @@ CASES: dict[str, Press] = {
     "dados mesa: ×2": press_dice_table_double,
     "dados mesa: odds": press_dice_table_odds,
     "dados mesa: ficha": press_dice_table_modal,
+    "deportes: apostar en el formulario": press_sports_stake,
+    "deportes: mis apuestas": press_sports_slip,
     "ruleta: apostar": press_roulette,
     "blackjack: repartir": press_blackjack,
     "blackjack: seguro": press_blackjack_insurance,
