@@ -45,6 +45,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from bot.cogs import achievements as logros
+from bot.cogs import pisos
 from bot.cogs import shop as tienda
 from bot.repositories.housing import assets_in as housing_assets_in
 from bot.repositories.shop import wealth_goods_in
@@ -332,6 +333,11 @@ class Patrimonio(commands.Cog):
             ),
             color=COLOR,
         )
+        if await pisos.asnef(self.bot, guild.id, target.id):
+            lines.append(
+                "📛 En el fichero de morosos (ASNEF): ni préstamos ni hipotecas hasta "
+                "pagar lo que debe al banco"
+            )
         embed.add_field(name="Activos", value="\n".join(lines), inline=False)
         if worth.goods:
             shown = [holding_line(item) for item in worth.goods[:15]]

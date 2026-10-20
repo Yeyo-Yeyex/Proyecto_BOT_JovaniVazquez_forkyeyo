@@ -48,6 +48,7 @@ from bot.repositories.economy import (
     LotteryPayout,
     MarketMove,
     MarketPayment,
+    MonteMove,
     PokerSettlement,
     PorraBetReceipt,
     PorraCapError,
@@ -58,6 +59,7 @@ from bot.repositories.economy import (
     SlotsSettlement,
     SportsBet,
     SportsBetTakenError,
+    TillEmptyError,
     Treasury,
     WealthCharge,
     WealthRun,
@@ -154,6 +156,7 @@ __all__ = [
     "MARKET_ACCOUNT_ID",
     "MarketMove",
     "MarketPayment",
+    "MonteMove",
     "PorraBetReceipt",
     "PorraCapError",
     "PorraClosedError",
@@ -166,6 +169,7 @@ __all__ = [
     "STARTING_BALANCE",
     "SHOP_ACCOUNT_ID",
     "STATE_ACCOUNT_ID",
+    "TillEmptyError",
     "Treasury",
     "fiscal_week",
     "format_amount",
@@ -1519,6 +1523,41 @@ class EconomyService:
         """
         return await self.repository.market(guild_id, now=self._clock(), prepare=prepare)
 
+    async def monte(
+        self,
+        guild_id: int,
+        prepare: Callable[[sqlite3.Connection], tuple[T, MonteMove]],
+    ) -> tuple[T, int]:
+        """Mueve el dinero de una operación del Monte de Piedad (`bot.services.monte`).
+
+        El Monte compra y presta con la caja de la tienda (`SHOP_ACCOUNT_ID`): lo que se
+        gastó en la tienda vuelve a circular y lo que se le devuelve vuelve a la caja. No
+        se crea ni se destruye nada.
+
+        Tratamiento fiscal:
+
+        - **Vender al Monte:** quien vende es un particular, así que no repercute IGIC
+          (art. 4 de la Ley 20/1991). El ITP de la compra lo pagaría el Monte (art. 8.a del
+          RDL 1/1993), que no es un miembro: no se cobra. Para quien vende es una
+          transmisión (art. 33.1 LIRPF), pero siempre por menos de lo que le costó (el
+          Monte paga una parte de lo pagado en la tienda), así que no hay ganancia (art.
+          34.1.a LIRPF); la pérdida no se computa, por decisión del proyecto, como en el
+          Rastro. Es un cobro: paga el embargo de la deuda con Hacienda (`garnish`).
+        - **Empeñar:** un préstamo con prenda (arts. 1857 y 1863 del Código Civil). Lo
+          prestado no es renta, porque se devuelve. Exento de ITP y AJD (art. 45.I.B.15 del
+          RDL 1/1993; la prenda tributa como el préstamo, art. 15.1). No se embarga, igual
+          que el Bizum de mamá: es dinero que se devuelve.
+        - **Desempeñar:** el interés es el precio del préstamo, exento de IGIC como
+          operación financiera (art. 18 del Decreto Legislativo 1/2025 de Canarias). No se
+          deduce en el IRPF: un préstamo para consumo no da derecho a nada.
+
+        Raises:
+            TillEmptyError: Si la caja de la tienda no llega para pagar.
+            InsufficientFundsError: Si al miembro no le llega para desempeñar.
+            BalanceLimitError: Si al miembro no le cabe lo que cobra.
+        """
+        return await self.repository.monte(guild_id, now=self._clock(), prepare=prepare)
+
     async def housing(
         self,
         guild_id: int,
@@ -1562,6 +1601,17 @@ class EconomyService:
           5/2019 la limita). Los intereses del mes se restan de la renta de ese
           inmueble (art. 23.1.a LIRPF). En la ejecución, la subasta al 70 % (art. 671
           LEC) cancela lo que llegue y el resto queda como deuda con el banco.
+        - **Los préstamos personales** (`banco`, reglas en `bot.services.loans`): el mismo
+          banco que no existe, así que lo prestado se crea de la nada y las cuotas y la
+          comisión de apertura desaparecen. No es renta (se devuelve). Exento de ITP y AJD
+          (art. 45.I.B.15 del RDL 1/1993); intereses y comisiones, exentos de IGIC como
+          operaciones financieras (art. 18 del Decreto Legislativo 1/2025 de Canarias), y sin
+          deducción en el IRPF (son para consumo). La prima del seguro de protección de
+          pagos desaparece (la aseguradora no existe) y lleva el IPS del 8 % (art. 12 de la
+          Ley 13/1996), al Estado; lo que paga el seguro no mueve dinero (paga al banco). Al
+          desistir (art. 28 de la Ley 16/2011) la comisión vuelve, y amortizar antes paga la
+          compensación del art. 30. La deuda de un préstamo vencido se suma a la deuda con
+          el banco y se embarga de las nóminas (`EconomyRepository.credit_salary`).
         - **La VPO** se compra a la promoción pública con IGIC al tipo cero
           (primera entrega de vivienda protegida, art. 52 de la Ley 4/2012) y solo
           paga notaría; el precio va a la cuenta del Estado, que la recompra al
@@ -1771,6 +1821,26 @@ class EconomyService:
         lo convierte en cifras por juego). Ver `EconomyRepository.casino_ledger`.
         """
         return await self.repository.casino_ledger(guild_id, user_id)
+
+    async def ledger_summary(
+        self,
+        guild_id: int,
+        *,
+        account: int | None,
+        reasons: Sequence[str],
+        since: float | None = None,
+    ) -> dict[str, tuple[int, int]]:
+        """`{motivo: (movimientos, suma)}` del libro de una cuenta o de los miembros (solo lee).
+
+        Ver `EconomyRepository.ledger_summary`.
+        """
+        return await self.repository.ledger_summary(
+            guild_id, account=account, reasons=reasons, since=since
+        )
+
+    async def system_balances(self, guild_id: int, accounts: Sequence[int]) -> dict[int, int]:
+        """Saldo de cuentas de la casa (la caja de la tienda, los botes), sin abrirlas."""
+        return await self.repository.system_balances(guild_id, accounts)
 
     async def member_balances(self, guild_id: int) -> dict[int, int]:
         """Saldo de cada miembro del servidor (para `fortunas`). Solo lee."""

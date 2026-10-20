@@ -98,6 +98,7 @@ from bot.services.achievements import (
     housing_purchase_stats,
     housing_sale_stats,
     housing_tax_stats,
+    loan_night_stats,
 )
 from bot.services.economy import EconomyService, format_amount
 from bot.services.housing_catalog import (
@@ -2706,6 +2707,22 @@ class Pisos(commands.Cog):
                 for member in owners:
                     news.setdefault(member, []).append(key)
                     events.setdefault(member, []).append("noticia")
+            loan_members = (
+                set(run.loan_installments)
+                | set(run.loan_unpaid)
+                | set(run.loan_covered)
+                | set(run.loans_finished)
+                | {member for member, _ in run.loan_defaults}
+            )
+            for member in loan_members:
+                delta = loan_night_stats(
+                    finished=run.loans_finished.count(member),
+                    covered=run.loan_covered.count(member),
+                    unpaid=run.loan_unpaid.count(member),
+                    defaulted=sum(1 for who, _ in run.loan_defaults if who == member),
+                )
+                if delta.add:
+                    logros.note(self.bot, guild_id, member, delta)
             for member in set(run.mortgage_unpaid):
                 events.setdefault(member, []).append("cuota_impagada")
             for member in run.aval_executions:
@@ -3155,6 +3172,20 @@ async def pending(bot: commands.Bot, guild_id: int, user_id: int) -> list[Pendin
         return []
     cog.market_cache[guild_id] = market
     return view.pending_items(market, user_id, deposits, cog.service.today())
+
+
+async def asnef(bot: commands.Bot, guild_id: int, user_id: int) -> bool:
+    """Si alguien está en el fichero de morosos del banco (para `perfil`). Nunca lanza."""
+    cog = find_cog(bot, Pisos)
+    if cog is None:
+        return False
+    try:
+        market = await cog.service.market(guild_id)
+    except (OSError, sqlite3.Error):
+        logger.exception("No se pudo mirar el fichero de morosos de %s", user_id)
+        return False
+    cog.market_cache[guild_id] = market
+    return market.in_asnef(user_id)
 
 
 async def setup(bot: BotClient) -> None:  # type: ignore[override]

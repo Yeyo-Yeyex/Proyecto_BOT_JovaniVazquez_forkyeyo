@@ -73,7 +73,7 @@ python -m bot
   |---|---|
   | 👤 Perfil | `pala` · `perfil [miembro]` · `ranking [pagina]` |
   | 🎰 Casino | `4enraya [miembro] [cantidad]` · `allatu [cantidad] [tabla]` · `apuestas [miembro]` · `backgammon [miembro] [cantidad]` · `bacara [cantidad] [lado]` · `blackjack [cantidad]` (atajo `.bj`) · `caballo [cantidad] [caballos] [tipo]` · `cohete [cantidad] [auto]` · `dados [cantidad] [apuesta] [mesa]` · `deportes` · `gallos [cantidad] [miembro]` · `guagua [cantidad]` · `guerra [cantidad]` · `loteria` · `minas [cantidad] [minas]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `poker [modo] [cantidad]` · `pollo [cantidad] [dificultad] [autocobro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `ruleta [cantidad] [apuesta]` · `torre [cantidad] [nivel]` · `tragas [cantidad] [máquina]` |
-  | 🏦 Dinero | `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `hacienda [miembro]` · `imv` · `renta` · `saldo [miembro]` |
+  | 🏦 Dinero | `banco [mostrador]` · `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `hacienda [miembro]` · `imv` · `renta` · `saldo [miembro]` |
   | 🛍️ Tienda | `mascota [miembro]` · `pieles [miembro] [imagen]` · `rastro` · `tienda` · `trueque <objeto> <miembro> <a cambio> [dinero]` · `vender <objeto> <precio> [comprador]` |
   | 🎵 Música | `cola` · `parar` · `pausar` · `poner <consulta>` · `quitar <posicion>` · `saltar` · `seguir` · `vaciar` · `volumen <1-200>` |
   | 🍻 Comunidad | `babel <texto \| @miembros #canales>` · `beernight [sonido] [archivo]` · `cumple [dd/mm] [miembro]` · `cumples` · `entrada [archivo] [volumen] [borrar]` · `hongkong` · `lista [tarea] [prioridad alta\|media\|baja]` |
@@ -433,6 +433,19 @@ python -m bot
   paga el 19 % de la plusvalía. Con `trueque <tu objeto> <miembro> <su objeto>
   [dinero]` le propones cambiar un objeto por otro, con dinero encima si
   quieres: cada uno paga el ITP de lo que recibe y la plusvalía de lo que da.
+- **Banco** (`banco`): un panel con tres mostradores. **Préstamos** personales para
+  lo que quieras (también la entrada de un piso): todas tus cuotas juntas,
+  hipotecas incluidas, no pasan del 35 % de lo que ingresas; el tipo es el Euríbor
+  más un diferencial que depende de tu perfil (préstamos devueltos, inmuebles,
+  impagos…) y la oferta enseña TIN, TAE, comisión y total, con el seguro de
+  protección de pagos opcional. Se puede desistir hasta la primera cuota y
+  amortizar antes con la compensación legal (1 % o 0,5 %). Quien no paga entra en
+  el fichero de morosos (ni préstamos ni hipotecas) y la deuda se embarga de la
+  nómina por tramos del salario mínimo. El **Monte de Piedad** compra lo que
+  compraste en la tienda al 85 % de lo que pagaste o te presta el 55 % por
+  empeñarlo (lo recuperas devolviendo un 5 % más en 3 días); paga con la caja de
+  la tienda y no acepta lo regalado ni lo numerado. **Cuentas**: lo que ha cobrado
+  la tienda, lo que ha prestado y cobrado el banco y lo que ha ganado el casino.
 - **Donativos** (`donar`): cuatro ONGs de broma que hacen lo contrario de lo
   que dicen. Donar es gastar (el dinero se queda en la ONG), pero desgrava en
   la renta del lunes: 80 % de los primeros 250 € al año (unos 1.202 Y$ a la
@@ -1263,6 +1276,7 @@ src/bot/
 │   ├── bizum.py         # bizum: transferencias entre miembros, exentas
 │   ├── shop.py          # tienda y mochila: compras y carrito con IGIC, deseos, alquileres
 │   ├── rastro.py        # vender y rastro: ofertas, puestos y subastas de segunda mano
+│   ├── banco.py         # banco: préstamos, Monte de Piedad y cuentas del servidor
 │   ├── pieles.py        # pieles: panel de skins e imágenes del tapete propio
 │   ├── shop_admin.py    # Trastienda de `catalogo`: panel y formularios
 │   ├── shop_front.py    # escaparate compacto, ficha, carrito y lista de deseos
@@ -1312,6 +1326,8 @@ src/bot/
 │   ├── shop_catalog.py  # Surtido de serie de la tienda y sus pasillos
 │   ├── shop_uses.py     # Lo que hacen los objetos al usarlos desde la mochila
 │   ├── rastro.py        # Reglas del Rastro: qué se vende, ITP, plusvalía y pujas
+│   ├── monte.py         # Reglas del Monte de Piedad: qué acepta, venta y empeño
+│   ├── loans.py         # Préstamos: tipo por perfil, TAE, seguro, ASNEF y embargo
 │   ├── skins.py         # Skins de las mesas del casino: juegos que las admiten y catálogo
 │   ├── skin_images.py   # Imágenes propias de las skins: comprobar y limpiar lo que se sube
 │   ├── pets.py          # Reglas de las mascotas: vínculo, cuidados, momentos y cameos

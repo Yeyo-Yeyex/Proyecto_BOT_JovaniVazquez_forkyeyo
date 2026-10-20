@@ -1294,6 +1294,185 @@ async def press_rastro_withdraw(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def bought_in_shop(client: BotClient, user_id: int) -> int:
+    """Compra en la tienda un coleccionable para `user_id` (lo acepta el Monte) y da su entrada."""
+    from bot.repositories.economy import LedgerEntry
+    from bot.services.shop import Kind, quote
+
+    now = client.get_cog("Banco").clock()
+    item = await client.shop.create_item(
+        GUILD_ID, kind=Kind.TROPHY, name="Guitarra", emoji="🎸", description="", price=10_000,
+        igic="general", now=now,
+    )  # fmt: skip
+    price = quote(item, now)
+    await client.economy.repository.apply(GUILD_ID, user_id, [LedgerEntry(price.total, "test")])
+    await client.economy.purchase(
+        GUILD_ID, user_id, base=price.base, tax=price.tax, concept="objeto",
+        reserve=client.shop.reserve(GUILD_ID, user_id, item.id, expected=price, level=99, now=now),
+    )  # fmt: skip
+    found = await client.shop.inventory(GUILD_ID, user_id, now)
+    return next(e.id for e in found if e.item_id == item.id)
+
+
+async def banco_panel(client: BotClient, owner: MagicMock, tab: str):  # noqa: ANN201
+    """El panel de `banco` ya pintado (leer la base al prepararlo no cuenta)."""
+    panel = module_of(client, "Banco").BankPanel(client.get_cog("Banco"), GUILD_ID, owner, tab)
+    await panel.screen()
+    return panel
+
+
+def banco_payroll(client: BotClient) -> None:
+    """Nóminas de los últimos días, para que el banco vea ingresos."""
+    connection = client.housing._connect()  # noqa: SLF001
+    try:
+        connection.execute(
+            "INSERT INTO economy_payroll (guild_id, user_id, concept, gross, ss_worker, "
+            "ss_employer, irpf, net, created_at) VALUES (?, ?, 'pala:obra', 180000, 0, 0, 0, "
+            "180000, ?)",
+            (GUILD_ID, OWNER_ID, client.get_cog("Banco").clock() - 86_400),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def child(panel, kind: type, custom_id: str | None = None):  # noqa: ANN001, ANN201
+    return next(
+        c for c in panel.children
+        if isinstance(c, kind) and (custom_id is None or c.custom_id == custom_id)
+    )  # fmt: skip
+
+
+async def press_banco_tab(client: BotClient, owner: MagicMock) -> Click:
+    panel = await banco_panel(client, owner, "loans")
+    button = child(panel, discord.ui.Button, "banco:tab:books")
+
+    async def click(interaction: MagicMock) -> None:
+        await button.callback(interaction)
+
+    return click
+
+
+async def press_banco_term(client: BotClient, owner: MagicMock) -> Click:
+    panel = await banco_panel(client, owner, "loans")
+    select = child(panel, discord.ui.Select, "banco:plazo")
+
+    async def click(interaction: MagicMock) -> None:
+        select._values = ["12"]  # lo que Discord rellena al elegir
+        await select.callback(interaction)
+
+    return click
+
+
+async def press_banco_insurance(client: BotClient, owner: MagicMock) -> Click:
+    panel = await banco_panel(client, owner, "loans")
+    button = child(panel, discord.ui.Button, "banco:seguro")
+
+    async def click(interaction: MagicMock) -> None:
+        await button.callback(interaction)
+
+    return click
+
+
+async def press_banco_amount(client: BotClient, owner: MagicMock) -> Click:
+    banco_payroll(client)
+    panel = await banco_panel(client, owner, "loans")
+    form = module_of(client, "Banco").AmountForm(panel, panel.most)
+
+    async def click(interaction: MagicMock) -> None:
+        form.amount._value = "5000"  # lo que Discord rellena al escribir
+        await form.on_submit(interaction)
+
+    return click
+
+
+async def press_banco_sign(client: BotClient, owner: MagicMock) -> Click:
+    from bot.services import loans as lending
+
+    banco_payroll(client)
+    panel = await banco_panel(client, owner, "loans")
+    desk, _income = await panel.cog.housing.loan_desk(GUILD_ID, OWNER_ID)
+    rate = lending.loan_rate(desk.euribor, lending.profile_factors(desk.profile, insured=False))
+    panel.quote = lending.quote(5_000, 12, rate, insured=False)
+    await panel.screen()
+    button = child(panel, discord.ui.Button, "banco:firmar")
+
+    async def click(interaction: MagicMock) -> None:
+        await button.callback(interaction)
+
+    return click
+
+
+async def press_banco_repay(client: BotClient, owner: MagicMock) -> Click:
+    from bot.services import loans as lending
+
+    banco_payroll(client)
+    service = client.get_cog("Banco").housing
+    desk, _income = await service.loan_desk(GUILD_ID, OWNER_ID)
+    rate = lending.loan_rate(desk.euribor, lending.profile_factors(desk.profile, insured=False))
+    signed, _ = await service.take_loan(
+        GUILD_ID, OWNER_ID, principal=5_000, months=12, insured=False, rate=rate
+    )
+    panel = await banco_panel(client, owner, "loans")
+    panel.selected_loan = signed.loan.id
+    await panel.screen()
+    button = child(panel, discord.ui.Button, "banco:amortizar")
+
+    async def click(interaction: MagicMock) -> None:
+        await button.callback(interaction)
+
+    return click
+
+
+async def press_banco_item(client: BotClient, owner: MagicMock) -> Click:
+    entry = await bought_in_shop(client, OWNER_ID)
+    panel = await banco_panel(client, owner, "monte")
+    select = child(panel, discord.ui.Select, "banco:objeto")
+
+    async def click(interaction: MagicMock) -> None:
+        select._values = [str(entry)]
+        await select.callback(interaction)
+
+    return click
+
+
+async def press_banco_monte(client: BotClient, owner: MagicMock, custom_id: str) -> Click:
+    entry = await bought_in_shop(client, OWNER_ID)
+    panel = await banco_panel(client, owner, "monte")
+    panel.selected_entry = entry
+    await panel.screen()
+    button = child(panel, discord.ui.Button, custom_id)
+
+    async def click(interaction: MagicMock) -> None:
+        await button.callback(interaction)
+
+    return click
+
+
+async def press_banco_sell(client: BotClient, owner: MagicMock) -> Click:
+    return await press_banco_monte(client, owner, "banco:vender")
+
+
+async def press_banco_pawn(client: BotClient, owner: MagicMock) -> Click:
+    return await press_banco_monte(client, owner, "banco:empenar")
+
+
+async def press_banco_redeem(client: BotClient, owner: MagicMock) -> Click:
+    cog = client.get_cog("Banco")
+    entry = await bought_in_shop(client, OWNER_ID)
+    ticket, _ = await client.economy.monte(
+        GUILD_ID, client.monte.pawn(GUILD_ID, OWNER_ID, entry, cog.clock())
+    )
+    cog.tickets[ticket.id] = ticket
+    panel = await banco_panel(client, owner, "monte")
+    button = child(panel, discord.ui.Button, f"banco:desempenar:{ticket.id}")
+
+    async def click(interaction: MagicMock) -> None:
+        await button.callback(interaction)
+
+    return click
+
+
 def pisos_panel(client: BotClient, owner: MagicMock):  # noqa: ANN201
     cog = client.get_cog("Pisos")
     painter = MagicMock()
@@ -1895,6 +2074,16 @@ CASES: dict[str, Press] = {
     "rastro: aceptar un trueque": press_rastro_swap,
     "rastro: pujar": press_rastro_bid,
     "rastro: retirar un puesto": press_rastro_withdraw,
+    "banco: cambiar de mostrador": press_banco_tab,
+    "banco: elegir plazo": press_banco_term,
+    "banco: seguro": press_banco_insurance,
+    "banco: pedir importe": press_banco_amount,
+    "banco: firmar": press_banco_sign,
+    "banco: amortizar": press_banco_repay,
+    "banco: elegir objeto del Monte": press_banco_item,
+    "banco: vender al Monte": press_banco_sell,
+    "banco: empeñar": press_banco_pawn,
+    "banco: desempeñar": press_banco_redeem,
     "pisos: elegir barrio": press_pisos_barrio,
     "pisos: pagar en la caja": press_pisos_pay,
     "pisos: cambiar la renta": press_pisos_level,

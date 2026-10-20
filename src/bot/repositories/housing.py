@@ -78,10 +78,11 @@ from bot.repositories.economy import (
     HousingTax,
     LedgerEntry,
 )
-from bot.repositories.housing_finance import Mortgage, Promotion, VpoOwner
+from bot.repositories.housing_finance import Loan, Mortgage, Promotion, VpoOwner
 from bot.repositories.housing_junta import Vote
 from bot.repositories.housing_trade import Auction
 from bot.services import housing as rules
+from bot.services import loans as lending
 from bot.services.economy import format_amount
 from bot.services.housing_catalog import (
     BARRIO_BY_KEY,
@@ -203,6 +204,7 @@ class Market:
         votes: Las votaciones abiertas de las juntas.
         admins: Quién administra cada inmueble por acuerdo de su junta.
         reserves: El fondo de reserva de cada inmueble que tiene algo.
+        loans: Préstamos personales activos (`banco`).
     """
 
     indexes: dict[str, float] = field(default_factory=dict)
@@ -228,6 +230,7 @@ class Market:
     votes: tuple[Vote, ...] = ()
     admins: dict[str, int] = field(default_factory=dict)
     reserves: dict[str, int] = field(default_factory=dict)
+    loans: tuple[Loan, ...] = ()
 
     def manager(self, key: str) -> int | None:
         """Quién decide en un inmueble: a quien eligió la junta o la mayoría (art. 398 CC).
@@ -334,6 +337,22 @@ class Market:
             for m in self.mortgages
             if m.user_id == user_id and (listing is None or m.listing == listing)
         ]
+
+    def loans_of(self, user_id: int) -> list[Loan]:
+        """Préstamos personales activos de un miembro."""
+        return [loan for loan in self.loans if loan.user_id == user_id]
+
+    def installments_of(self, user_id: int) -> int:
+        """Lo que paga cada mes al banco: hipotecas y préstamos con su seguro (el 35 %)."""
+        return sum(m.payment for m in self.mortgages_of(user_id)) + sum(
+            loan.monthly for loan in self.loans_of(user_id)
+        )
+
+    def in_asnef(self, user_id: int) -> bool:
+        """Si está en el fichero de morosos: cuotas sin pagar o deuda con el banco."""
+        counts = [m.unpaid_count for m in self.mortgages_of(user_id)]
+        counts += [loan.unpaid_count for loan in self.loans_of(user_id)]
+        return lending.in_asnef(counts, self.bank_debts.get(user_id, 0))
 
     def whole_homes(self, user_id: int) -> int:
         """Viviendas que tiene enteras (para gran tenedor, fondo buitre y SOCIMI)."""
@@ -678,6 +697,11 @@ class DayRun:
         reviews: `(dueños, inmueble, estrellas)` de cada reseña de hoy.
         superhosts: `(dueños, inmueble)` de los vacacionales que hoy llegan a Superanfitrión.
         cleanings: `(dueños, inmueble)` de cada limpieza de hoy (un huésped que se va).
+        loan_installments: Cuotas de préstamos pagadas enteras por cada miembro.
+        loan_unpaid: Miembros que no pudieron pagar entera la cuota de un préstamo.
+        loan_covered: Miembros a los que el seguro les ha pagado hoy una cuota.
+        loans_finished: Miembros que hoy han terminado de pagar un préstamo.
+        loan_defaults: `(miembro, deuda)` de cada préstamo vencido hoy.
     """
 
     day: date
@@ -707,6 +731,11 @@ class DayRun:
     reviews: list[tuple[tuple[int, ...], str, int]] = field(default_factory=list)
     superhosts: list[tuple[tuple[int, ...], str]] = field(default_factory=list)
     cleanings: list[tuple[tuple[int, ...], str]] = field(default_factory=list)
+    loan_installments: dict[int, int] = field(default_factory=dict)
+    loan_unpaid: list[int] = field(default_factory=list)
+    loan_covered: list[int] = field(default_factory=list)
+    loans_finished: list[int] = field(default_factory=list)
+    loan_defaults: list[tuple[int, int]] = field(default_factory=list)
 
 
 def _date(text: str | None) -> date | None:
@@ -794,6 +823,42 @@ def _save_lease_in(
     )  # fmt: skip
 
 
+def _desk_in(
+    connection: sqlite3.Connection, guild_id: int, user_id: int, market: Market, payroll: bool
+) -> LoanDesk:
+    """Lo que ve el banco de un miembro, leído dentro de una conexión abierta."""
+    paid_loans, defaults = finance.loan_history_in(connection, guild_id, user_id)
+    mortgages = market.mortgages_of(user_id)
+    loans = market.loans_of(user_id)
+    asnef = market.in_asnef(user_id)
+    profile = lending.Profile(
+        paid_loans=paid_loans,
+        defaults=defaults,
+        owns_property=bool(market.of_member(user_id)) or market.vpo_of(user_id) is not None,
+        mortgage_current=bool(mortgages) and not any(m.unpaid_count for m in mortgages),
+        late=not asnef and any(x.unpaid_count for x in (*mortgages, *loans)),
+        payroll=payroll,
+    )
+    return LoanDesk(
+        euribor=market.euribor,
+        installments=market.installments_of(user_id),
+        loans=tuple(loans),
+        asnef=asnef,
+        bank_debt=market.bank_debts.get(user_id, 0),
+        profile=profile,
+    )
+
+
+def _own_loan_in(connection: sqlite3.Connection, guild_id: int, user_id: int, loan_id: int) -> Loan:
+    """Un préstamo activo de `user_id`, o `HousingError`."""
+    loan = finance.loan_in(connection, guild_id, loan_id)
+    if loan is None or loan.user_id != user_id:
+        raise HousingError("Ese préstamo no es tuyo.")
+    if loan.status != "activo":
+        raise HousingError("Ese préstamo ya está cerrado.")
+    return loan
+
+
 def _market_in(connection: sqlite3.Connection, guild_id: int) -> Market:
     indexes = {
         str(r["barrio"]): float(r["value"])
@@ -871,6 +936,7 @@ def _market_in(connection: sqlite3.Connection, guild_id: int) -> Market:
         holdings=holdings,
         leases=leases,
         mortgages=tuple(finance.mortgages_in(connection, guild_id)),
+        loans=tuple(finance.loans_in(connection, guild_id)),
         vpo=finance.vpo_in(connection, guild_id),
         signups=tuple(finance.vpo_signups_in(connection, guild_id)),
         reservations=finance.vpo_reservations_in(connection, guild_id),
@@ -975,8 +1041,9 @@ def assets_in(connection: sqlite3.Connection, guild_id: int) -> dict[int, int]:
     - Cada inmueble a su valor fiscal (`housing.fiscal_value`, art. 10 de la Ley 19/1991).
     - La vivienda habitual está exenta hasta 3.000.000 Y$ (art. 4.Nueve): el piso en el
       que vive su dueño y la VPO (que nunca llega a ese valor: no cuenta).
-    - Las deudas restan (art. 25): las hipotecas y lo que se debe al banco, salvo las
-      de la vivienda habitual, que no son deducibles porque el bien está exento (art. 25.2).
+    - Las deudas restan (art. 25): las hipotecas, los préstamos personales y lo que se debe
+      al banco, salvo las hipotecas de la vivienda habitual, que no son deducibles porque el
+      bien está exento (art. 25.2).
     """
     homes = finance.homes_in(connection, guild_id)
     market = Market(promotions=finance.promotions_in(connection, guild_id))
@@ -1002,6 +1069,8 @@ def assets_in(connection: sqlite3.Connection, guild_id: int) -> dict[int, int]:
             out[mortgage.user_id] = out.get(mortgage.user_id, 0) - mortgage.owed
     for member, debt in finance.bank_debts_in(connection, guild_id).items():
         out[member] = out.get(member, 0) - debt
+    for loan in finance.loans_in(connection, guild_id):
+        out[loan.user_id] = out.get(loan.user_id, 0) - loan.owed
     return out
 
 
@@ -1315,6 +1384,85 @@ def _vpo_eligible(market: Market, user_id: int) -> bool:
     """Si alguien puede optar a una VPO: sin vivienda propia ni VPO (vivir de alquiler vale)."""
     home = market.homes.get(user_id)
     return not market.owns_home(user_id) and (home is None or home[0] == finance.HOME_RENTED)
+
+
+@dataclass(frozen=True, slots=True)
+class LoanDesk:
+    """Lo que ve el banco de un miembro al pedir un préstamo (`banco`).
+
+    Attributes:
+        euribor: El Euríbor de esta semana.
+        installments: Lo que ya paga cada mes al banco (hipotecas y préstamos).
+        loans: Sus préstamos activos.
+        asnef: Si está en el fichero de morosos.
+        bank_debt: Lo que debe al banco tras un vencimiento o una ejecución.
+        profile: Su perfil, para el tipo (`loans.profile_factors`).
+    """
+
+    euribor: float
+    installments: int
+    loans: tuple[Loan, ...]
+    asnef: bool
+    bank_debt: int
+    profile: lending.Profile
+
+
+@dataclass(frozen=True, slots=True)
+class SignedLoan:
+    """Un préstamo recién firmado, con la oferta y lo que movió el tipo."""
+
+    loan: Loan
+    quote: lending.Quote
+    factors: tuple[lending.Factor, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class LoanClosed:
+    """Un préstamo cerrado a mano: amortizado (`pagado`) o desistido.
+
+    Attributes:
+        paid: Lo que salió del monedero (en un desistimiento, lo prestado menos la comisión
+            que vuelve).
+        fee: La compensación por amortizar antes (0 al desistir).
+    """
+
+    loan: Loan
+    status: str
+    paid: int
+    fee: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class BankBook:
+    """Las cuentas del banco en un servidor, para `banco`.
+
+    Attributes:
+        mortgages: Hipotecas activas.
+        mortgage_balance: Capital que queda de ellas.
+        loans: Préstamos activos.
+        loan_balance: Capital que queda de ellos.
+        lent: Todo lo prestado en préstamos personales desde el primer día.
+        loan_interest: Intereses cobrados en los préstamos.
+        loan_fees: Comisiones de apertura que se han quedado (sin las de los desistidos).
+        premiums: Primas de seguros cobradas con las cuotas (sin su IPS).
+        unpaid: Cuotas de hipotecas y préstamos que se deben.
+        bank_debts: Deuda con el banco tras vencimientos y ejecuciones.
+        defaults: Préstamos vencidos e hipotecas ejecutadas desde el primer día.
+        asnef: Miembros en el fichero de morosos ahora.
+    """
+
+    mortgages: int = 0
+    mortgage_balance: int = 0
+    loans: int = 0
+    loan_balance: int = 0
+    lent: int = 0
+    loan_interest: int = 0
+    loan_fees: int = 0
+    premiums: int = 0
+    unpaid: int = 0
+    bank_debts: int = 0
+    defaults: int = 0
+    asnef: int = 0
 
 
 class HousingRepository:
@@ -1638,6 +1786,191 @@ class HousingRepository:
         finally:
             connection.close()
 
+    # -- Préstamos personales (`banco`) ----------------------------------------------
+
+    async def loan_desk(self, guild_id: int, user_id: int, *, payroll: bool) -> LoanDesk:
+        """Lo que ve el banco de un miembro para ofrecerle un préstamo.
+
+        Args:
+            payroll: Si cobra nómina o pensión (lo dice la economía).
+        """
+        return await self._run(self._loan_desk_sync, guild_id, user_id, payroll)
+
+    def _loan_desk_sync(self, guild_id: int, user_id: int, payroll: bool) -> LoanDesk:
+        connection = self._connect()
+        try:
+            return _desk_in(
+                connection, guild_id, user_id, _market_in(connection, guild_id), payroll
+            )
+        finally:
+            connection.close()
+
+    def take_loan(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        principal: int,
+        months: int,
+        insured: bool,
+        rate: float,
+        income: int,
+        payroll: bool,
+        day: date,
+        now: float,
+    ) -> Callable[[sqlite3.Connection], tuple[SignedLoan, HousingMove]]:
+        """Firma un préstamo personal: lo prestado entra y la comisión de apertura sale.
+
+        Args:
+            rate: El tipo que enseñaba la oferta; si el perfil o el Euríbor han cambiado
+                entretanto, no se firma.
+            income: Ingresos diarios que mira el banco (`housing.daily_income`).
+
+        Raises (dentro de la transacción):
+            HousingError: Fichero de morosos, demasiados préstamos, cifras fuera de los
+                topes, otro tipo que el de la oferta o una cuota que no cabe en el 35 %.
+        """
+
+        def run(connection: sqlite3.Connection) -> tuple[SignedLoan, HousingMove]:
+            desk = _desk_in(
+                connection, guild_id, user_id, _market_in(connection, guild_id), payroll
+            )
+            if desk.asnef:
+                raise HousingError(lending.ASNEF_REFUSAL)
+            if len(desk.loans) >= lending.MAX_LOANS:
+                raise HousingError(
+                    f"Ya tienes {lending.MAX_LOANS} préstamos abiertos: devuelve alguno antes."
+                )
+            if months not in lending.TERMS:
+                raise HousingError("Ese plazo no lo ofrece el banco.")
+            if not lending.MIN_PRINCIPAL <= principal <= lending.MAX_PRINCIPAL:
+                raise HousingError(
+                    f"El banco presta de {format_amount(lending.MIN_PRINCIPAL)} a "
+                    f"{format_amount(lending.MAX_PRINCIPAL)}."
+                )
+            factors = lending.profile_factors(desk.profile, insured=insured)
+            if lending.loan_rate(desk.euribor, factors) != rate:
+                raise HousingError("El tipo ha cambiado desde la oferta: vuelve a mirarla.")
+            offer = lending.quote(principal, months, rate, insured=insured)
+            if not rules.affordable(income, desk.installments + offer.monthly):
+                raise HousingError(
+                    f"El banco te dice que no: lo de cada mes ({format_amount(offer.monthly)}) "
+                    f"más lo que ya pagas ({format_amount(desk.installments)}) pasa del 35 % "
+                    f"de lo que ingresas ({format_amount(income)} al día, nóminas y el 70 % "
+                    "de tus alquileres)."
+                )
+            loan_id = finance.add_loan_in(
+                connection, guild_id, user_id, principal=principal, rate=rate,
+                payment=offer.payment, months=months, fee=offer.fee, premium=offer.premium,
+                premium_tax=offer.premium_tax,
+                covers=lending.INSURANCE_COVERS if insured else 0,
+                # La primera cuota, la noche siguiente a la de hoy: hasta entonces se desiste.
+                first_day=(day + timedelta(days=1)).isoformat(), now=now,
+            )  # fmt: skip
+            loan = finance.loan_in(connection, guild_id, loan_id)
+            assert loan is not None
+            entries = [(user_id, LedgerEntry(principal, "banco:prestamo"))]
+            if offer.fee:
+                entries.append((user_id, LedgerEntry(-offer.fee, "banco:apertura")))
+            signed = SignedLoan(loan, offer, tuple(factors))
+            return signed, HousingMove(entries=tuple(entries))
+
+        return run
+
+    def repay_loan(
+        self, guild_id: int, user_id: int, loan_id: int, now: float
+    ) -> Callable[[sqlite3.Connection], tuple[LoanClosed, HousingMove]]:
+        """Amortiza un préstamo entero: lo que queda, lo que se debe y la compensación.
+
+        Raises (dentro de la transacción):
+            HousingError: Si no es suyo o ya está cerrado.
+        """
+
+        def run(connection: sqlite3.Connection) -> tuple[LoanClosed, HousingMove]:
+            loan = _own_loan_in(connection, guild_id, user_id, loan_id)
+            fee = lending.early_fee(loan.balance, loan.months_left)
+            finance.close_loan_in(connection, loan.id, "pagado", now, paid=loan.owed + fee)
+            entries = [(user_id, LedgerEntry(-loan.owed, "banco:amortizacion"))]
+            if fee:
+                entries.append((user_id, LedgerEntry(-fee, "banco:compensacion")))
+            closed = LoanClosed(loan, "pagado", loan.owed + fee, fee)
+            return closed, HousingMove(entries=tuple(entries))
+
+        return run
+
+    def desist_loan(
+        self, guild_id: int, user_id: int, loan_id: int, now: float
+    ) -> Callable[[sqlite3.Connection], tuple[LoanClosed, HousingMove]]:
+        """Desiste de un préstamo antes de la primera cuota: devuelve lo prestado y la
+        comisión de apertura vuelve (art. 28 de la Ley 16/2011).
+
+        Raises (dentro de la transacción):
+            HousingError: Si no es suyo, ya está cerrado o ya se ha cobrado alguna cuota.
+        """
+
+        def run(connection: sqlite3.Connection) -> tuple[LoanClosed, HousingMove]:
+            loan = _own_loan_in(connection, guild_id, user_id, loan_id)
+            if loan.months_left < loan.months or loan.paid or loan.unpaid_count:
+                raise HousingError(
+                    "Ya se ha cobrado la primera cuota: no puedes echarte atrás, pero sí "
+                    "amortizarlo."
+                )
+            finance.close_loan_in(connection, loan.id, "desistido", now)
+            # La comisión vuelve antes de pedir lo prestado: así basta con tener lo recibido.
+            entries = [(user_id, LedgerEntry(-loan.principal, "banco:desistimiento"))]
+            if loan.fee:
+                entries.insert(0, (user_id, LedgerEntry(loan.fee, "banco:apertura_devuelta")))
+            closed = LoanClosed(loan, "desistido", loan.principal - loan.fee)
+            return closed, HousingMove(entries=tuple(entries))
+
+        return run
+
+    async def bank_book(self, guild_id: int) -> BankBook:
+        """Las cuentas del banco de un servidor: lo prestado, lo cobrado y lo que se debe."""
+        return await self._run(self._bank_book_sync, guild_id)
+
+    def _bank_book_sync(self, guild_id: int) -> BankBook:
+        connection = self._connect()
+        try:
+            market = _market_in(connection, guild_id)
+            lent, interest, fees, premiums = connection.execute(
+                """
+                SELECT COALESCE(SUM(principal), 0), COALESCE(SUM(interest_paid), 0),
+                    COALESCE(SUM(CASE WHEN status = 'desistido' THEN 0 ELSE fee END), 0),
+                    COALESCE(SUM(premium * (months - months_left)), 0)
+                FROM housing_loans WHERE guild_id = ? AND status != 'desistido'
+                """,
+                (guild_id,),
+            ).fetchone()
+            (defaults,) = connection.execute(
+                """
+                SELECT (SELECT COUNT(*) FROM housing_loans WHERE guild_id = :g
+                        AND status = 'vencido')
+                     + (SELECT COUNT(*) FROM housing_mortgages WHERE guild_id = :g
+                        AND status = 'ejecutada')
+                """,
+                {"g": guild_id},
+            ).fetchone()
+        finally:
+            connection.close()
+        members = {m.user_id for m in market.mortgages} | {loan.user_id for loan in market.loans}
+        members |= set(market.bank_debts)
+        return BankBook(
+            mortgages=len(market.mortgages),
+            mortgage_balance=sum(m.balance for m in market.mortgages),
+            loans=len(market.loans),
+            loan_balance=sum(loan.balance for loan in market.loans),
+            lent=int(lent),
+            loan_interest=int(interest),
+            loan_fees=int(fees),
+            premiums=int(premiums),
+            unpaid=sum(m.unpaid_amount for m in market.mortgages)
+            + sum(loan.unpaid_amount for loan in market.loans),
+            bank_debts=sum(market.bank_debts.values()),
+            defaults=int(defaults),
+            asnef=sum(1 for member in members if market.in_asnef(member)),
+        )
+
     async def last_day(self, guild_id: int) -> date | None:
         """Último día cerrado en el servidor, o `None` si nunca se cerró ninguno."""
         return await self._run(self._last_day_sync, guild_id)
@@ -1705,7 +2038,9 @@ class HousingRepository:
                 loan = round(quote.price * rules.MORTGAGE_LTV)
                 rate = market.euribor + rules.MORTGAGE_SPREAD
                 payment = rules.installment(loan, rate)
-                current = sum(m.payment for m in market.mortgages_of(user_id))
+                if market.in_asnef(user_id):
+                    raise HousingError(lending.ASNEF_REFUSAL)
+                current = market.installments_of(user_id)
                 if not rules.affordable(income, current + payment):
                     aval = aval_income > 0 and rules.affordable(
                         income + aval_income, current + payment
@@ -2339,6 +2674,23 @@ class HousingRepository:
                 )
                 debits.append(HousingDebit(mortgage.user_id, f"hipoteca:{mortgage.id}", 0, due,
                                            "pisos:hipoteca", home=home))  # fmt: skip
+        # Préstamos personales: la cuota del mes (de hoy) desde la noche siguiente a firmar,
+        # con la prima del seguro y su IPS. Lo que no llegó se vuelve a pedir.
+        loan_plan: dict[int, tuple[int, int, int]] = {}
+        for loan in market.loans:
+            if day.isoformat() < loan.first_day:
+                continue
+            pay = loan.payment if loan.months_left > 0 else 0
+            owed_interest, principal = rules.mortgage_month(loan.balance, loan.rate, pay)
+            loan_plan[loan.id] = (loan.balance - principal, pay, owed_interest)
+            premium, ips = (loan.premium, loan.premium_tax) if pay else (0, 0)
+            if pay + premium + ips + loan.unpaid_amount:
+                debits.append(
+                    HousingDebit(
+                        loan.user_id, f"prestamo:{loan.id}", 0, pay + premium + loan.unpaid_amount,
+                        "banco:cuota", taxes=(("ips", ips),) if ips else (),
+                    )
+                )  # fmt: skip
         for member, amount in market.bank_debts.items():
             debits.append(HousingDebit(member, f"banco:{member}", 0, amount, "pisos:deuda_banco"))
         for unit, owner in market.vpo.items():
@@ -2367,6 +2719,7 @@ class HousingRepository:
             "DELETE FROM housing_income WHERE guild_id = ? AND day < ?", (guild_id, horizon)
         )
         mortgages = {m.id: m for m in market.mortgages}
+        loans = {loan.id: loan for loan in market.loans}
 
         def settle(conn: sqlite3.Connection, unpaid: dict[str, tuple[int, int]]) -> None:
             for mortgage_id, (balance, pay) in schedule.items():
@@ -2387,7 +2740,7 @@ class HousingRepository:
                     unpaid_amount=left,
                 )  # fmt: skip
             for tag, (ibi, other) in unpaid.items():
-                if tag.startswith("hipoteca:"):
+                if tag.startswith(("hipoteca:", "prestamo:")):
                     continue
                 if tag.startswith("banco:"):
                     member = int(tag.removeprefix("banco:"))
@@ -2420,6 +2773,9 @@ class HousingRepository:
                         """,
                         (ibi + other, ibi, guild_id, tag),
                     )
+            # Después de poner al día las deudas con el banco: un préstamo que vence hoy suma.
+            for loan_id, plan in loan_plan.items():
+                self._settle_loan_in(conn, guild_id, now, loans[loan_id], plan, unpaid, result)
 
         return HousingMove(
             rents=tuple(rents),
@@ -2430,6 +2786,54 @@ class HousingRepository:
             settle=settle,
             imputations=tuple(imputations),
         )
+
+    @staticmethod
+    def _settle_loan_in(
+        connection: sqlite3.Connection,
+        guild_id: int,
+        now: float,
+        loan: Loan,
+        plan: tuple[int, int, int],
+        unpaid: dict[str, tuple[int, int]],
+        result: DayRun,
+    ) -> None:
+        """Guarda cómo queda un préstamo tras cobrar la cuota de la noche.
+
+        Lo que no llegó lo paga el seguro si le quedan coberturas; si no, se debe y cuenta
+        una cuota seguida sin pagar. Con `DEFAULT_INSTALLMENTS`, vencimiento anticipado: lo
+        que queda pasa a deuda con el banco.
+        """
+        balance, pay, owed_interest = plan
+        member = loan.user_id
+        premium = loan.premium + loan.premium_tax if pay else 0
+        missing = sum(unpaid.get(f"prestamo:{loan.id}", (0, 0)))
+        paid_now = pay + premium + loan.unpaid_amount - missing
+        covers = loan.covers_left
+        if missing and covers:
+            # El seguro paga lo que no llegó: al banco, que tampoco existe, así que no se
+            # mueve dinero.
+            covers -= 1
+            missing = 0
+            result.loan_covered.append(member)
+        if missing:
+            result.loan_unpaid.append(member)
+        elif pay:
+            result.loan_installments[member] = result.loan_installments.get(member, 0) + 1
+        unpaid_count = loan.unpaid_count + 1 if missing else 0
+        finance.save_loan_in(
+            connection, loan, balance=balance, months_left=max(0, loan.months_left - bool(pay)),
+            covers_left=covers, unpaid_count=unpaid_count, unpaid_amount=missing,
+            paid=loan.paid + paid_now,
+            interest_paid=loan.interest_paid + (owed_interest if not missing else 0),
+        )  # fmt: skip
+        if not balance and not missing:
+            finance.close_loan_in(connection, loan.id, "pagado", now)
+            result.loans_finished.append(member)
+        elif unpaid_count >= lending.DEFAULT_INSTALLMENTS:
+            owed = balance + missing
+            finance.add_bank_debt_in(connection, guild_id, member, owed)
+            finance.close_loan_in(connection, loan.id, "vencido", now)
+            result.loan_defaults.append((member, owed))
 
     def _close_listing_in(
         self,
@@ -2969,7 +3373,9 @@ class HousingRepository:
             rate = market.euribor + rules.MORTGAGE_SPREAD
             loan = round(spec.price * rules.VPO_LTV)
             payment = rules.installment(loan, rate)
-            current = sum(m.payment for m in market.mortgages_of(user_id))
+            if market.in_asnef(user_id):
+                raise HousingError(lending.ASNEF_REFUSAL)
+            current = market.installments_of(user_id)
             if not rules.affordable(income, current + payment):
                 raise HousingError(
                     f"Ni con el aval del Estado: la cuota ({format_amount(payment)} al mes) pasa "
@@ -3613,7 +4019,9 @@ class HousingRepository:
                 loan = round(min(price, quote.value) * rules.MORTGAGE_LTV)
                 rate = market.euribor + rules.MORTGAGE_SPREAD
                 payment = rules.installment(loan, rate)
-                current = sum(m.payment for m in market.mortgages_of(buyer))
+                if market.in_asnef(buyer):
+                    raise HousingError(lending.ASNEF_REFUSAL)
+                current = market.installments_of(buyer)
                 if not rules.affordable(income, current + payment):
                     aval = aval_income > 0 and rules.affordable(
                         income + aval_income, current + payment

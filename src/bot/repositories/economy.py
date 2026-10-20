@@ -135,11 +135,13 @@ import sqlite3
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
 
 from bot.repositories import sqlite
+from bot.services.levels import TIMEZONE, local_day
+from bot.services.loans import wage_garnish
 from bot.services.taxes import (
     INCOME_BECKHAM,
     INCOME_BUSINESS,
@@ -208,6 +210,11 @@ HOUSING_AUCTION_ACCOUNT_ID = -800
 #: `user_id` del depósito de las apuestas deportivas: lo apostado a un partido espera aquí
 #: hasta que se sabe el resultado (o se anula), así no desaparece del libro mientras tanto.
 SPORTS_ACCOUNT_ID = -900
+
+#: `user_id` del Monte de Piedad de `banco` en la mochila: lo que se le vende o se empeña
+#: queda a su nombre (no se usa, no se luce y no cuenta en el patrimonio de nadie). No
+#: tiene monedero: compra y presta con la caja de la tienda (`SHOP_ACCOUNT_ID`).
+PAWN_ACCOUNT_ID = -1000
 
 #: Motivo del libro de las rentas de `pisos` (y concepto en `economy_tax_records`).
 HOUSING_RENT_CONCEPT = "pisos:renta"
@@ -406,6 +413,10 @@ class InsufficientFundsError(Exception):
 
 class BalanceLimitError(Exception):
     """El movimiento superaría `MAX_BALANCE`."""
+
+
+class TillEmptyError(Exception):
+    """La caja de la tienda no llega para lo que tiene que pagar el Monte de Piedad."""
 
 
 class PorraClosedError(Exception):
@@ -813,6 +824,27 @@ class MarketMove:
     refunds: tuple[tuple[int, int], ...] = ()
     payment: MarketPayment | None = None
     payments: tuple[MarketPayment, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class MonteMove:
+    """El dinero de una operación del Monte de Piedad, entre un miembro y la caja de la tienda.
+
+    Attributes:
+        user_id: El miembro.
+        amount: Lo que le entra (positivo: la caja paga una venta o un préstamo) o lo que
+            paga (negativo: desempeña y vuelve a la caja).
+        reason: Motivo del libro del miembro.
+        till_reason: Motivo del libro de la caja de la tienda.
+        garnish: Si lo que cobra es renta que paga el embargo de su deuda con Hacienda
+            (la venta sí; el préstamo no, porque se devuelve).
+    """
+
+    user_id: int
+    amount: int
+    reason: str
+    till_reason: str
+    garnish: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -3515,6 +3547,70 @@ class EconomyRepository:
             float(first_at) if first_at is not None else None,
         )
 
+    async def ledger_summary(
+        self,
+        guild_id: int,
+        *,
+        account: int | None,
+        reasons: Sequence[str],
+        since: float | None = None,
+    ) -> dict[str, tuple[int, int]]:
+        """`{motivo: (movimientos, suma)}` del libro, para las cuentas de `banco`. Solo lee.
+
+        Args:
+            account: Una cuenta (`SHOP_ACCOUNT_ID`…) o `None` para todos los miembros.
+            reasons: Los motivos que interesan (los que no tengan movimientos no salen).
+            since: Desde cuándo (epoch); `None`, desde el primer día.
+        """
+        return await self._run(self._ledger_summary_sync, guild_id, account, tuple(reasons), since)
+
+    def _ledger_summary_sync(
+        self,
+        guild_id: int,
+        account: int | None,
+        reasons: tuple[str, ...],
+        since: float | None,
+    ) -> dict[str, tuple[int, int]]:
+        if not reasons:
+            return {}
+        where = "guild_id = ? AND " + ("user_id = ?" if account is not None else "user_id > 0")
+        args: list[object] = [guild_id] if account is None else [guild_id, account]
+        if since is not None:
+            where += " AND created_at >= ?"
+            args.append(since)
+        marks = ", ".join("?" for _ in reasons)
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                f"SELECT reason, COUNT(*), SUM(delta) FROM economy_ledger WHERE {where} "
+                f"AND reason IN ({marks}) GROUP BY reason",  # solo marcadores `?`
+                (*args, *reasons),
+            ).fetchall()
+        finally:
+            connection.close()
+        return {str(reason): (int(count), int(total or 0)) for reason, count, total in rows}
+
+    async def system_balances(self, guild_id: int, accounts: Sequence[int]) -> dict[int, int]:
+        """Saldo de unas cuentas que no son de miembros, sin abrir las que no existen (0)."""
+        return await self._run(self._system_balances_sync, guild_id, tuple(accounts))
+
+    def _system_balances_sync(self, guild_id: int, accounts: tuple[int, ...]) -> dict[int, int]:
+        out = dict.fromkeys(accounts, 0)
+        if not accounts:
+            return out
+        marks = ", ".join("?" for _ in accounts)
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                f"SELECT user_id, balance FROM economy_wallets WHERE guild_id = ? "
+                f"AND user_id IN ({marks})",  # solo marcadores `?`
+                (guild_id, *accounts),
+            ).fetchall()
+        finally:
+            connection.close()
+        out.update({int(user_id): int(balance) for user_id, balance in rows})
+        return out
+
     async def member_balances(self, guild_id: int) -> dict[int, int]:
         """Saldo de cada miembro con monedero (sin el Estado ni las cuentas de la casa)."""
         return await self._run(self._member_balances_sync, guild_id)
@@ -5462,6 +5558,62 @@ class EconomyRepository:
                         balances[member] = self._ensure_wallet(connection, guild_id, member)
             return result, balances
 
+    # -- Monte de Piedad ---------------------------------------------------------------
+
+    async def monte(
+        self,
+        guild_id: int,
+        *,
+        now: float,
+        prepare: Callable[[sqlite3.Connection], tuple[T, MonteMove]],
+    ) -> tuple[T, int]:
+        """Mueve el dinero de una operación del Monte de Piedad (vender, empeñar, desempeñar).
+
+        `prepare` lo pone `bot.repositories.monte` y corre dentro de la misma transacción,
+        antes que el dinero: comprueba el objeto o la papeleta, lo mueve en la mochila y
+        dice qué dinero se mueve. Si lanza, o si no llega el dinero, no se guarda nada.
+
+        El dinero va entre el miembro y la caja de la tienda (`SHOP_ACCOUNT_ID`): el Monte
+        paga con lo que se gastó en la tienda y lo que se le devuelve vuelve a la caja. Una
+        venta paga además el embargo de la deuda con Hacienda (`MonteMove.garnish`).
+
+        Returns:
+            `(lo que devuelva prepare, saldo final del miembro)`.
+
+        Raises:
+            TillEmptyError: Si la caja de la tienda no llega para pagar.
+            InsufficientFundsError: Si al miembro no le llega para desempeñar.
+            BalanceLimitError: Si al miembro no le cabe lo que cobra.
+        """
+        return await self._run(self._monte_sync, guild_id, now, prepare)
+
+    def _monte_sync(
+        self,
+        guild_id: int,
+        now: float,
+        prepare: Callable[[sqlite3.Connection], tuple[T, MonteMove]],
+    ) -> tuple[T, int]:
+        with self._transaction() as connection:
+            result, move = prepare(connection)
+            self._open_empty_wallet(connection, guild_id, SHOP_ACCOUNT_ID)
+            amount = move.amount
+            if amount > 0:
+                if self._ensure_wallet(connection, guild_id, SHOP_ACCOUNT_ID) < amount:
+                    raise TillEmptyError
+                self._apply_in_transaction(
+                    connection, guild_id, SHOP_ACCOUNT_ID, (LedgerEntry(-amount, move.till_reason),)
+                )
+            balance = self._apply_in_transaction(
+                connection, guild_id, move.user_id, (LedgerEntry(amount, move.reason),)
+            )
+            if amount < 0:
+                self._apply_in_transaction(
+                    connection, guild_id, SHOP_ACCOUNT_ID, (LedgerEntry(-amount, move.till_reason),)
+                )
+            elif move.garnish:
+                balance -= self._garnish_in(connection, guild_id, move.user_id, amount, now)
+            return result, balance
+
     # -- Pisos ------------------------------------------------------------------------
 
     async def housing(
@@ -6054,7 +6206,56 @@ class EconomyRepository:
                 ),
             )
             balance -= self._garnish_in(connection, guild_id, user_id, slip.net, now)
+            balance -= self._bank_garnish_in(connection, guild_id, user_id, slip.net, now)
             return slip, balance
+
+    def _bank_garnish_in(
+        self, connection: sqlite3.Connection, guild_id: int, user_id: int, net: int, now: float
+    ) -> int:
+        """Embarga de una nómina (o pensión) la deuda con el banco, por tramos del SMI.
+
+        La deuda con el banco es la que deja un préstamo vencido o una ejecución
+        hipotecaria (`housing_bank_debts`). El juzgado embarga el sueldo con la escala del
+        art. 607 LEC sobre todo lo cobrado en el día (`loans.wage_garnish`), después del
+        embargo de Hacienda, que va primero (art. 77 de la Ley 58/2003). El banco no
+        existe: lo embargado desaparece y baja la deuda.
+
+        Returns:
+            Lo embargado (0 si no debe nada al banco).
+        """
+        try:
+            row = connection.execute(
+                "SELECT amount FROM housing_bank_debts WHERE guild_id = ? AND user_id = ?",
+                (guild_id, user_id),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            # Sin las tablas de `pisos` (una base solo con la economía) no hay deudas.
+            return 0
+        owed = int(row["amount"]) if row else 0
+        if owed <= 0 or net <= 0:
+            return 0
+        start = datetime.combine(local_day(now), time.min, TIMEZONE).timestamp()
+        (today,) = connection.execute(
+            "SELECT COALESCE(SUM(net), 0) FROM economy_payroll "
+            "WHERE guild_id = ? AND user_id = ? AND created_at >= ? AND net > 0",
+            (guild_id, user_id, start),
+        ).fetchone()
+        # La nómina de ahora ya está apuntada en `economy_payroll`.
+        taken = min(
+            wage_garnish(int(today) - net, net),
+            owed,
+            self._ensure_wallet(connection, guild_id, user_id),
+        )
+        if taken <= 0:
+            return 0
+        self._apply_in_transaction(
+            connection, guild_id, user_id, (LedgerEntry(-taken, "embargo:banco"),)
+        )
+        connection.execute(
+            "UPDATE housing_bank_debts SET amount = amount - ? WHERE guild_id = ? AND user_id = ?",
+            (taken, guild_id, user_id),
+        )
+        return taken
 
     async def charge_contribution(
         self, guild_id: int, user_id: int, *, amount: int, concept: str, now: float

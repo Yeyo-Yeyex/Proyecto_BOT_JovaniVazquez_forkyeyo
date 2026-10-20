@@ -134,11 +134,15 @@ from bot.services.interest import (
     RESIST_BALANCE,
 )
 from bot.services.levels import TIMEZONE
+from bot.services.loans import MAX_LOANS as LOAN_MAX_LOANS
+from bot.services.loans import MAX_PRINCIPAL as LOAN_MAX_PRINCIPAL
+from bot.services.loans import TERMS as LOAN_TERMS
 from bot.services.lootboxes import COLLECTIONS as LOOTBOX_COLLECTIONS
 from bot.services.lottery import MAX_PER_DRAW as MAX_LOTTERY_PER_DRAW
 from bot.services.mines import MAX_MINES as MINES_MAX
 from bot.services.mines import MinesGame, multiplier_cents
 from bot.services.mines import Status as MinesStatus
+from bot.services.monte import MAX_TICKETS as MONTE_MAX_TICKETS
 from bot.services.pachinko import BOARDS as PACHINKO_BOARDS
 from bot.services.pachinko import Kind as PachinkoKind
 from bot.services.pachinko import Volley as PachinkoVolley
@@ -342,7 +346,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("rastro", "🧺 Rastro"),
     Category("pisos", "🏠 Pisos"),
     Category("pets", "🐾 Mascotas"),
-    Category("bizum", "🏦 Banco: saldo, Bizum y cuenta"),
+    Category("bizum", "🏦 Banco: saldo, Bizum, cuenta y préstamos"),
     Category("economy", "🏛️ Economía y Hacienda"),
     # 🪏 Trabajo: una entrada del menú con una sección por oficio, como el casino.
     Category("work", "🪏 General", group=_WG),
@@ -709,6 +713,12 @@ BEERNIGHT_STORY = (
     "mandamientos cambian solos. Nadie está obligado a nada y cada uno bebe lo que tenga. "
     f"{TAX_COLLECTOR} todavía no ha encontrado la forma de cobrar por sorbo. Todavía."
 )
+
+
+#: Lo que tiene que bajar el tipo de un préstamo del de un cliente nuevo para
+#: «Alfombra roja en la sucursal» (tres préstamos devueltos, inmuebles y la hipoteca al día
+#: dan 2,5 puntos; con el seguro, 3,5).
+LOAN_PREFERRED = 0.015
 
 
 def _thousands(value: int) -> str:
@@ -7569,6 +7579,48 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "trueque_titulos", "Cambio de cromos",
          "Cambia un título por otro en un trueque.", R),
     ])  # fmt: skip
+    # El Monte de Piedad de `banco` (cogs/banco.py: monte_*_stats).
+    a += _tiers("rastro", "monte_sold", [
+        (1, "monte_sold_1", "Compro oro", "Vende algo al Monte de Piedad.", C),
+        (10, "monte_sold_10", "Vaciando el trastero", "Vende 10 cosas al Monte de Piedad.", R),
+        (50, "monte_sold_50", "Ventanilla de confianza", "Vende 50 cosas al Monte de Piedad.", E),
+    ])  # fmt: skip
+    a += _tiers("rastro", "monte_sold_y", [
+        (100_000, "monte_soldy_100k", "Liquidación por cierre",
+         "Cobra 100.000 Y$ vendiendo al Monte de Piedad.", R),
+        (1_000_000, "monte_soldy_1m", "Desamortización de Mendizábal",
+         "Cobra 1.000.000 Y$ vendiendo al Monte de Piedad.", E),
+    ])  # fmt: skip
+    a += _tiers("rastro", "monte_title_sold", [
+        (1, "monte_title_sold", "Nobleza venida a menos", "Vende un título al Monte de Piedad.", R),
+    ])  # fmt: skip
+    a += _tiers("rastro", "monte_pawned", [
+        (1, "monte_pawn_1", "La papeleta", "Empeña algo en el Monte de Piedad.", C),
+        (10, "monte_pawn_10", "Hasta final de mes", "Empeña 10 cosas en el Monte de Piedad.", R),
+        (50, "monte_pawn_50", "Socio de la casa de empeños",
+         "Empeña 50 cosas en el Monte de Piedad.", E),
+    ])  # fmt: skip
+    a += _tiers("rastro", "monte_loan_max", [
+        (100_000, "monte_loan_100k", "Las joyas de la familia",
+         "Empeña algo por 100.000 Y$ o más.", E),
+    ])  # fmt: skip
+    a += _tiers("rastro", "monte_tickets_max", [
+        (MONTE_MAX_TICKETS, "monte_tickets_full", "Coleccionista de resguardos",
+         f"Ten {MONTE_MAX_TICKETS} papeletas del Monte abiertas a la vez.", R),
+    ])  # fmt: skip
+    a += _tiers("rastro", "monte_redeemed", [
+        (1, "monte_redeem_1", "Vuelve a casa por Navidad", "Desempeña una papeleta del Monte.", C),
+        (10, "monte_redeem_10", "Ida y vuelta a la ventanilla",
+         "Desempeña 10 papeletas del Monte.", R),
+    ])  # fmt: skip
+    a += _tiers("rastro", "monte_redeem_late", [
+        (1, "monte_redeem_late", "Al filo del plazo",
+         "Desempeña una papeleta del Monte en su última hora.", R, True),
+    ])  # fmt: skip
+    a += _tiers("rastro", "monte_forfeited", [
+        (1, "monte_lost_1", "Se lo quedó el Monte", "Pierde una papeleta del Monte de Piedad.", C),
+        (5, "monte_lost_5", "Donante involuntario", "Pierde 5 papeletas del Monte de Piedad.", R),
+    ])  # fmt: skip
 
     # 🏠 Pisos (cogs/pisos.py: housing_*_stats) -------------------------------------------
     a += _tiers("pisos", "pisos_opened", [
@@ -9011,6 +9063,66 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("bizum", "interest_still_streak", [
         (30, "interest_still_30", "Momia financiera",
          "Cobra intereses 30 días seguidos sin mover ni un Y$.", L, True),
+    ])  # fmt: skip
+    # Préstamos y cuentas de `banco` (cogs/banco.py y el cierre de `pisos`: loan_*_stats).
+    a += _tiers("bizum", "loans_signed", [
+        (1, "loan_1", "Con la nómina domiciliada", "Pide un préstamo al banco.", C),
+        (5, "loan_5", "Cliente de la sucursal", "Pide 5 préstamos al banco.", R),
+        (20, "loan_20", "Vivir a plazos", "Pide 20 préstamos al banco.", E),
+    ])  # fmt: skip
+    a += _tiers("bizum", "loan_principal_max", [
+        (100_000, "loan_100k", "Para la entrada del piso",
+         "Pide un préstamo de 100.000 Y$ o más.", R),
+        (LOAN_MAX_PRINCIPAL, "loan_max", "Hasta donde da la firma",
+         f"Pide un préstamo de {_thousands(LOAN_MAX_PRINCIPAL)} Y$, lo más que da el banco.", E),
+    ])  # fmt: skip
+    a += _tiers("bizum", "loans_open_max", [
+        (LOAN_MAX_LOANS, "loan_three", "Bola de nieve",
+         f"Ten {LOAN_MAX_LOANS} préstamos abiertos a la vez.", R),
+    ])  # fmt: skip
+    a += _tiers("bizum", "loan_longest", [
+        (1, "loan_96", "Hipotecado sin hipoteca", "Pide un préstamo al plazo más largo.", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "loan_insured", [
+        (1, "loan_insured", "Me lo vendieron con el préstamo",
+         "Firma un préstamo con el seguro de protección de pagos.", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "loan_preferred", [
+        (1, "loan_preferred", "Alfombra roja en la sucursal",
+         "Firma un préstamo con un tipo 1,5 puntos o más por debajo del de un cliente nuevo.", E),
+    ])  # fmt: skip
+    a += _tiers("bizum", "loans_finished", [
+        (1, "loan_paid_1", "Ni un recibo devuelto",
+         "Termina de pagar un préstamo cuota a cuota.", R),
+        (5, "loan_paid_5", "Historial de matrícula",
+         "Termina de pagar 5 préstamos cuota a cuota.", E),
+    ])  # fmt: skip
+    a += _tiers("bizum", "loans_repaid_early", [
+        (1, "loan_early", "Me lo quito de encima", "Amortiza un préstamo antes de tiempo.", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "loans_desisted", [
+        (1, "loan_desist", "Donde dije digo", "Desiste de un préstamo antes de la primera cuota.",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "loan_covered", [
+        (1, "loan_covered", "Para algo lo pagaba",
+         "Que el seguro te pague una cuota que no podías pagar.", R),
+    ])  # fmt: skip
+    a += _tiers("bizum", "loan_unpaid", [
+        (1, "loan_unpaid", "Recibo devuelto", "Deja sin pagar una cuota de un préstamo.", C, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "loan_defaults", [
+        (1, "loan_default", "La carta certificada", "Que el banco dé por vencido un préstamo tuyo.",
+         R, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "asnef_seen", [
+        (1, "asnef_seen", "En la lista negra", "Abre el banco estando en el fichero de morosos.",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "bank_books", [
+        (1, "bank_books_1", "Auditor por un día",
+         "Mira las cuentas de la tienda, el banco y el casino.", C),
+        (25, "bank_books_25", "El que lleva los libros", "Mira las cuentas 25 veces.", R),
     ])  # fmt: skip
 
     # 🎟️ Loterías -------------------------------------------------------------------------
@@ -23744,6 +23856,92 @@ def saldo_peek_stats(*, own_balance: int, their_balance: int) -> StatDelta:
 
 
 # -- Rastro ----------------------------------------------------------------------------
+
+
+def monte_sale_stats(*, amount: int, title: bool) -> StatDelta:
+    """Estadísticas de quien vende algo al Monte de Piedad (`banco`).
+
+    Args:
+        amount: Lo que ha pagado el Monte.
+        title: Si era un título.
+    """
+    delta = StatDelta(add={"monte_sold": 1, "monte_sold_y": amount})
+    if title:
+        delta.add["monte_title_sold"] = 1
+    return delta
+
+
+def monte_pawn_stats(*, loan: int, open_tickets: int) -> StatDelta:
+    """Estadísticas de quien empeña algo, con las papeletas que tiene abiertas después."""
+    return StatDelta(
+        add={"monte_pawned": 1},
+        peak={"monte_loan_max": loan, "monte_tickets_max": open_tickets},
+    )
+
+
+def monte_redeem_stats(*, seconds_left: float) -> StatDelta:
+    """Estadísticas de quien desempeña, con lo que le quedaba de plazo."""
+    delta = StatDelta(add={"monte_redeemed": 1})
+    if seconds_left < 3_600:
+        delta.add["monte_redeem_late"] = 1
+    return delta
+
+
+def monte_forfeit_stats() -> StatDelta:
+    """Estadísticas de quien pierde una papeleta vencida."""
+    return StatDelta(add={"monte_forfeited": 1})
+
+
+def loan_signed_stats(
+    *, principal: int, months: int, insured: bool, discount: float, open_loans: int
+) -> StatDelta:
+    """Estadísticas de quien firma un préstamo.
+
+    Args:
+        discount: Lo que su tipo baja del de un cliente nuevo (Euríbor + diferencial).
+        open_loans: Préstamos abiertos que tiene contando este.
+    """
+    delta = StatDelta(
+        add={"loans_signed": 1},
+        peak={"loan_principal_max": principal, "loans_open_max": open_loans},
+    )
+    for stat, hit in (
+        ("loan_longest", months == max(LOAN_TERMS)),
+        ("loan_insured", insured),
+        ("loan_preferred", discount >= LOAN_PREFERRED - 1e-9),
+    ):
+        if hit:
+            delta.add[stat] = 1
+    return delta
+
+
+def loan_closed_stats(*, status: str) -> StatDelta:
+    """Estadísticas de quien cierra un préstamo a mano: amortizado (`pagado`) o desistido."""
+    return StatDelta(add={"loans_repaid_early" if status == "pagado" else "loans_desisted": 1})
+
+
+def loan_night_stats(*, finished: int, covered: int, unpaid: int, defaulted: int) -> StatDelta:
+    """Estadísticas de los préstamos de un miembro en el cierre de una noche de `pisos`."""
+    delta = StatDelta()
+    for stat, count in (
+        ("loans_finished", finished),
+        ("loan_covered", covered),
+        ("loan_unpaid", unpaid),
+        ("loan_defaults", defaulted),
+    ):
+        if count:
+            delta.add[stat] = count
+    return delta
+
+
+def bank_panel_stats(*, asnef: bool = False, books: bool = False) -> StatDelta:
+    """Estadísticas de quien abre `banco` (en el fichero de morosos) o mira las cuentas."""
+    delta = StatDelta()
+    if asnef:
+        delta.add["asnef_seen"] = 1
+    if books:
+        delta.add["bank_books"] = 1
+    return delta
 
 
 def _sunday(when: datetime) -> dict[str, int]:

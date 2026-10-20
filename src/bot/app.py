@@ -38,6 +38,7 @@ from bot.repositories.housing import HousingRepository
 from bot.repositories.lottery import LotteryRepository
 from bot.repositories.message_stats import MessageStatsRepository
 from bot.repositories.moderation import ModerationRepository
+from bot.repositories.monte import MonteRepository
 from bot.repositories.news import NewsRepository
 from bot.repositories.pets import PetRepository
 from bot.repositories.poker import PokerRepository
@@ -109,6 +110,7 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.shop",
     "bot.cogs.rastro",
     "bot.cogs.pisos",
+    "bot.cogs.banco",
     "bot.cogs.pieles",
     "bot.cogs.pets",
     "bot.cogs.work",
@@ -184,6 +186,9 @@ class BotClient(commands.Bot):
         # Puestos, pujas y ventas de segunda mano del Rastro (`vender`, `rastro`); el
         # dinero pasa por `economy` y el objeto, por la mochila de la tienda.
         self.rastro = MarketRepository(database_path)
+        # Papeletas y ventas del Monte de Piedad de `banco`; el dinero pasa por `economy`
+        # (con la caja de la tienda) y el objeto, por la mochila de la tienda.
+        self.monte = MonteRepository(database_path)
         # Inmuebles, participaciones e inquilinos de `pisos`; el dinero pasa por `economy`.
         self.housing = HousingRepository(database_path)
         # Estado de las mascotas (`mascota`); quién tiene cada una lo dice la tienda.

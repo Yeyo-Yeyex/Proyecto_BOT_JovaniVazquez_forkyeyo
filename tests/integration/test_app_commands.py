@@ -62,6 +62,7 @@ EXPECTED_COMMANDS = {
     "trueque",
     "rastro",
     "pisos",
+    "banco",
     "blackjack",
     "cumple",
     "cumples",

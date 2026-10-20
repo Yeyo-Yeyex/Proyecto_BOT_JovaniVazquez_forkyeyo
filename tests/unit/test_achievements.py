@@ -304,6 +304,14 @@ PRODUCED_STATS = {
     "market_gift_received", "market_auction_won", "market_serial_bought",
     "market_title_bought", "market_tapete_bought", "market_listings", "market_withdrawn",
     "market_expired", "market_bids", "market_bid_max", "market_outbid",
+    # cogs/banco.py: el Monte de Piedad (monte_*_stats)
+    "monte_sold", "monte_sold_y", "monte_title_sold", "monte_pawned", "monte_loan_max",
+    "monte_tickets_max", "monte_redeemed", "monte_redeem_late", "monte_forfeited",
+    # cogs/banco.py y el cierre de cogs/pisos.py: préstamos y cuentas (loan_*_stats,
+    # bank_panel_stats)
+    "loans_signed", "loan_principal_max", "loans_open_max", "loan_longest", "loan_insured",
+    "loan_preferred", "loans_finished", "loans_repaid_early", "loans_desisted", "loan_covered",
+    "loan_unpaid", "loan_defaults", "asnef_seen", "bank_books",
     # cogs/pisos.py: housing_panel_stats, housing_purchase_stats, housing_sale_stats y
     # housing_day_stats (los eventos salen de housing.EVENTS y de advance_day)
     "pisos_opened", "pisos_exit", "pisos_mortgages", "pisos_loan_max",

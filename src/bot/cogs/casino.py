@@ -1320,6 +1320,7 @@ class Casino(commands.Cog):
         tarde lo que la lectura más lenta y no la suma de todas.
         """
         # Imports tardíos: `lottery` y `sports` importan este módulo.
+        from bot.cogs import banco
         from bot.cogs import lottery as loterias
         from bot.cogs import sports as deportes
 
@@ -1338,6 +1339,7 @@ class Casino(commands.Cog):
         items = [item for found in await asyncio.gather(*reads) for item in found]
         if own:
             items += rastro.pending(self.bot, guild_id, user_id)
+            items += banco.pending(self.bot, guild_id, user_id)
         return items
 
     async def _wealth_pending(self, guild_id: int, user_id: int, balance: int) -> list[Pending]:
