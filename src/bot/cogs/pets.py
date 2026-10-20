@@ -2,7 +2,8 @@
 
 - `mascota [miembro]` abre el panel de mascotas de alguien. Su dueño elige
   cuál ver, la acaricia, juega con ella, le da de comer lo que tenga en la
-  mochila, le pone nombre y elige cuál le acompaña (la **activa**). Los
+  mochila (nunca lo de edición limitada, que no se puede volver a comprar),
+  le pone nombre y elige cuál le acompaña (la **activa**). Los
   demás solo miran. Dos atajos abren la tienda en privado: 🐾 Adoptar (la
   pestaña de mascotas) y 🥣 Comida (la Tienda de animales). Reglas en
   `bot.services.pets`; especies en `bot.services.pets_catalog`.
@@ -179,7 +180,9 @@ def pet_card(
     if species.diet == "nada":
         lines.append("-# No come: lo suyo es la compañía.")
     elif species.diet == "todo":
-        lines.append("-# Come cualquier objeto de la mochila, no solo comida.")
+        lines.append(
+            "-# Come cualquier objeto de la mochila, no solo comida, salvo los de edición limitada."
+        )
     if note:
         lines += ["", note]
     return "\n".join(lines)
@@ -816,10 +819,18 @@ class Mascotas(commands.Cog):
             await self.care(interaction, panel, Care.FEED)
             return
         entries = await self.shop.inventory(panel.guild.id, panel.member.id, self.clock())
+        # Lo de edición limitada no se vuelve a comprar: comérselo sin querer lo pierde
+        # para siempre (así se fue una patata con forma de España). Cuenta el artículo,
+        # no solo el número de serie, porque lo que da `crear` llega sin número.
+        items = await self.shop.items(panel.guild.id, include_hidden=True)
+        limited = {i.id for i in items if i.stock is not None}
         foods = [
             e
             for e in entries
-            if e.kind is Kind.TROPHY and (species.diet == "todo" or food_of(e.catalog_key))
+            if e.kind is Kind.TROPHY
+            and e.serial is None
+            and e.item_id not in limited
+            and (species.diet == "todo" or food_of(e.catalog_key))
         ]
         if not foods:
             await notify(

@@ -4,8 +4,8 @@ Comandos (todos con `/` y con `.`, mismo nombre; `tajo` elige dónde se usa `pal
 `purge`, `mute`, `unmute`, `kick`, `ban`, `unban`, `lock`, `unlock`,
 `slow`, `say`, `nick`, `role`, `bienv`, `niveles`, `cambios`, `catalogo`, `tajo`,
 `informe` (descarga la telemetría interna, ver `bot.cogs.telemetry`), `robuso` (si
-Robuso está en Hong Kong o en Madrid, para sus logros: ver `bot.cogs.robuso`) y
-`bloquear`.
+Robuso está en Hong Kong o en Madrid, para sus logros: ver `bot.cogs.robuso`),
+`bloquear` y `crear`.
 
 `bloquear` es el freno de emergencia para un fallo o un exploit. Como `reinicio`, solo
 lo usan los IDs de `DEPLOYERS` (Yeyo y Dani), sean o no administradores, y no sale en
@@ -14,6 +14,11 @@ no se ejecuta para nadie (ni con `/` ni con `.`), y los botones, menús y formul
 que vienen de su mismo archivo (las mesas que ya estaban abiertas, el 🔁 de otra
 partida) tampoco responden. Se guarda en la base de datos, así que sigue bloqueado
 tras un reinicio o un despliegue hasta que se desbloquea con el mismo comando.
+
+`crear` mete en la mochila de un miembro un objeto de la tienda (para devolver uno
+perdido por un fallo), con los mismos dos IDs y sin salir en `ayuda`. Solo objetos:
+un rol no se daría en Discord, un potenciador no caducaría y una mascota se adopta.
+No cobra nada ni gasta existencias, y lo que da llega sin número de serie.
 
 Autorización: solo miembros con el permiso **Administrador** del servidor.
 Se comprueba en el servidor en cada invocación (`cog_check` para `.` e
@@ -43,6 +48,7 @@ import logging
 import math
 import re
 import sqlite3
+import time
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import Any
@@ -68,6 +74,7 @@ from bot.services.moderation import (
     parse_duration,
     parse_user_id,
 )
+from bot.services.shop import Kind, ShopItem
 from bot.services.telemetry import TelemetryService
 from bot.services.welcome import GifError, classify_gif
 from bot.utils.cogs import find_cog
@@ -98,6 +105,8 @@ ROBUSO_PLACES = {"hongkong": True, "madrid": False}
 GIF_RESET_WORDS = {"quitar", "video", "vídeo", "ninguno"}
 # Lo que `bloquear` no bloquea: el propio desbloqueo y el despliegue del arreglo.
 UNBLOCKABLE = {"bloquear", "reinicio"}
+# Comandos del cog que filtran por `DEPLOYERS` en vez de por Administrador.
+DEPLOYER_COMMANDS = {"bloquear", "crear"}
 # Marca de los métodos de discord.py ya envueltos por `install_click_block`.
 _BLOCK_GUARD = "_blocked_command_guard"
 
@@ -154,6 +163,35 @@ def _audit_reason(actor: discord.abc.User, reason: str | None) -> str:
     """Motivo para el registro de auditoría, con quién ejecutó el comando."""
     text = f"{reason.strip() if reason else 'Sin motivo'} (por {actor})"
     return text[:AUDIT_REASON_LIMIT]
+
+
+def pick_object(items: list[ShopItem], text: str) -> ShopItem | str:
+    """El objeto que se pide en `crear`: por id (el autocompletado), nombre o clave.
+
+    Un trozo del nombre vale si solo lo tiene un objeto: si lo tienen varios, no se
+    adivina cuál era.
+
+    Returns:
+        El objeto, o un mensaje de error para enseñarlo tal cual.
+    """
+    text = text.strip()
+    needle = text.casefold()
+    if text.isdigit():
+        # Un número es el id del autocompletado; si no es de un objeto, no se busca
+        # en los nombres («1» daría el Modelo 100).
+        found = [i for i in items if i.id == int(text)]
+    else:
+        found = [i for i in items if needle in (i.name.casefold(), i.catalog_key)]
+        found = found or [i for i in items if needle and needle in i.name.casefold()]
+    if len(found) == 1:
+        return found[0]
+    if found:
+        names = ", ".join(f"{i.emoji} {i.name}" for i in found[:8])
+        return (
+            f"Hay varios objetos con ese nombre: {names}. Escribe el nombre entero o "
+            "elígelo en la lista de `/crear`."
+        )
+    return f"No hay ningún objeto «{discord.utils.escape_markdown(text)}» en la tienda."
 
 
 def _blocks_click(module: str, interaction: discord.Interaction) -> bool:
@@ -273,8 +311,8 @@ class Admin(commands.Cog):
         """Solo administradores y solo dentro de un servidor (comandos `.`)."""
         if ctx.guild is None:
             raise commands.NoPrivateMessage()
-        if ctx.command is not None and ctx.command.name == "bloquear":
-            return True  # Lo filtra `_bloquear_impl` por `DEPLOYERS`, como `reinicio`.
+        if ctx.command is not None and ctx.command.name in DEPLOYER_COMMANDS:
+            return True  # Lo filtra su `_impl` por `DEPLOYERS`, como `reinicio`.
         if not isinstance(ctx.author, discord.Member) or (
             not ctx.author.guild_permissions.administrator
         ):
@@ -287,8 +325,8 @@ class Admin(commands.Cog):
             raise app_commands.NoPrivateMessage(
                 interaction.command.name if interaction.command else ""
             )
-        if interaction.command is not None and interaction.command.name == "bloquear":
-            return True  # Lo filtra `_bloquear_impl` por `DEPLOYERS`, como `reinicio`.
+        if interaction.command is not None and interaction.command.name in DEPLOYER_COMMANDS:
+            return True  # Lo filtra su `_impl` por `DEPLOYERS`, como `reinicio`.
         user = interaction.user
         if not isinstance(user, discord.Member) or not user.guild_permissions.administrator:
             raise app_commands.MissingPermissions(["administrator"])
@@ -1312,6 +1350,87 @@ class Admin(commands.Cog):
         await responder.finish(
             f"🔒 `{name}` bloqueado: nadie puede usarlo, ni con `/` ni con `.`, ni pulsar los "
             f"botones de lo que ya estaba abierto. Se desbloquea con `bloquear {name}`.{also}"
+        )
+
+    # --- crear ------------------------------------------------------------
+
+    @app_commands.command(
+        name="crear", description="Mete un objeto de la tienda en la mochila de un miembro."
+    )
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        miembro="A quién se le da.", objeto="El objeto (nombre o parte del nombre)."
+    )
+    async def crear(
+        self, interaction: discord.Interaction, miembro: discord.Member, objeto: str
+    ) -> None:
+        """Da un objeto sin cobrarlo ni gastar existencias (solo lo ves tú).
+
+        Solo para los IDs de `DEPLOYERS`; que Discord oculte el `/` a quien no es
+        administrador es solo estética.
+        """
+        await self._crear_impl(InteractionResponder(interaction), miembro, objeto)
+
+    @crear.autocomplete("objeto")
+    async def _crear_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        if interaction.guild is None or interaction.user.id not in DEPLOYERS:
+            return []
+        needle = current.casefold()
+        return [
+            app_commands.Choice(name=f"{item.emoji} {item.name}"[:100], value=str(item.id))
+            for item in await self._objects(interaction.guild.id)
+            if needle in item.name.casefold()
+        ][:25]
+
+    @commands.command(name="crear", hidden=True)
+    async def crear_text(
+        self, ctx: commands.Context, miembro: discord.Member, *, objeto: str
+    ) -> None:
+        """Versión de texto: `.crear @miembro Patata con forma de España`."""
+        await self._crear_impl(ContextResponder(ctx), miembro, objeto)
+
+    async def _objects(self, guild_id: int) -> list[ShopItem]:
+        """Los objetos del catálogo del servidor, ocultos y retirados de la venta incluidos."""
+        items = await self.bot.shop.items(guild_id, include_hidden=True)  # type: ignore[attr-defined]
+        return [item for item in items if item.kind is Kind.TROPHY]
+
+    async def _crear_impl(
+        self, responder: CommandResponder, member: discord.Member, text: str
+    ) -> None:
+        """Busca el objeto, lo mete en la mochila de `member` y responde cómo queda."""
+        guild = responder.guild
+        if guild is None:
+            await responder.send_error("Esto solo funciona en un servidor.")
+            return
+        if responder.member is None or responder.member.id not in DEPLOYERS:
+            await responder.send_error("Solo Yeyo y Dani pueden crear objetos.")
+            return
+        if member.bot:
+            await responder.send_error("Los bots no tienen mochila.")
+            return
+        await responder.start_progress(ephemeral=True)
+        try:
+            item = pick_object(await self._objects(guild.id), text)
+            if isinstance(item, str):
+                await responder.finish(item)
+                return
+            _entry, dupe = await self.bot.shop.grant(  # type: ignore[attr-defined]
+                guild.id, member.id, item, time.time()
+            )
+        except sqlite3.Error:
+            logger.exception("No se pudo crear un objeto en %s", guild.id)
+            await responder.finish("No se ha podido guardar ahora mismo. Prueba en un rato.")
+            return
+        logger.info(
+            "%s crea el objeto %s para %s en %s", responder.member.id, item.id, member.id, guild.id
+        )
+        also = " Ya tenía otro igual." if dupe else ""
+        await responder.finish(
+            f"🎁 {item.emoji} **{item.name}** ya está en la mochila de {member.mention}.{also}",
+            allowed_mentions=discord.AllowedMentions.none(),
         )
 
     # --- catalogo ---------------------------------------------------------
