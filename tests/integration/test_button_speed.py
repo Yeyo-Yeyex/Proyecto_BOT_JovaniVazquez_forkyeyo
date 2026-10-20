@@ -33,6 +33,7 @@ from render_fakes import use_fake_drawings
 import bot.repositories.sqlite as sqlite_module
 from bot.app import INITIAL_EXTENSIONS, BotClient
 from bot.cogs.craps_mesa import FichaModal
+from bot.cogs.shop_front import WISH_TAB, CartPanel, ItemSheet
 from bot.services.blackjack import BlackjackGame, Card
 from bot.services.coin import Outcome, Side
 from bot.services.craps import Bet
@@ -1031,6 +1032,99 @@ async def press_checkout(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def _shop_item(client: BotClient) -> object:
+    tienda = client.get_cog("Tienda")
+    await tienda.stock_up(GUILD_ID)
+    (item, *_rest) = await client.shop.items(GUILD_ID)
+    return item
+
+
+async def press_shop_sheet(client: BotClient, owner: MagicMock) -> Click:
+    """Elegir un artículo en el escaparate: la ficha lee la base de datos tras aceptar."""
+    tienda = client.get_cog("Tienda")
+    view = await tienda.storefront(owner.guild, owner)
+    select = next(
+        c for c in view.walk_children()
+        if isinstance(c, discord.ui.Select) and c.custom_id == "tienda:elegir"
+    )  # fmt: skip
+
+    async def click(interaction: MagicMock) -> None:
+        select._values = [select.options[0].value]  # lo que Discord rellena al elegir
+        await select.callback(interaction)
+
+    return click
+
+
+async def press_shop_sheet_pay(client: BotClient, owner: MagicMock) -> Click:
+    tienda = client.get_cog("Tienda")
+    item = await _shop_item(client)
+    sheet = await ItemSheet.build(tienda, owner.guild, owner, item.id)  # type: ignore[attr-defined]
+    assert sheet is not None
+
+    async def click(interaction: MagicMock) -> None:
+        await sheet.pay(interaction)
+
+    return click
+
+
+async def press_shop_wish(client: BotClient, owner: MagicMock) -> Click:
+    tienda = client.get_cog("Tienda")
+    item = await _shop_item(client)
+    sheet = await ItemSheet.build(tienda, owner.guild, owner, item.id)  # type: ignore[attr-defined]
+    assert sheet is not None
+
+    async def click(interaction: MagicMock) -> None:
+        await sheet.wish(interaction)
+
+    return click
+
+
+async def press_shop_cart(client: BotClient, owner: MagicMock) -> Click:
+    tienda = client.get_cog("Tienda")
+    view = await tienda.storefront(owner.guild, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await view.cart_button(interaction)
+
+    return click
+
+
+async def press_shop_cart_pay(client: BotClient, owner: MagicMock) -> Click:
+    tienda = client.get_cog("Tienda")
+    item = await _shop_item(client)
+    tienda.put_in_cart(GUILD_ID, OWNER_ID, item.id, 1)  # type: ignore[attr-defined]
+    panel = CartPanel(tienda, owner.guild, owner)
+    await panel.load()
+
+    async def click(interaction: MagicMock) -> None:
+        await panel.pay(interaction)
+
+    return click
+
+
+async def press_shop_mute(client: BotClient, owner: MagicMock) -> Click:
+    tienda = client.get_cog("Tienda")
+    view = await tienda.storefront(owner.guild, owner)
+    view.prefs.tab = WISH_TAB
+
+    async def click(interaction: MagicMock) -> None:
+        await view.toggle_mute(interaction)
+
+    return click
+
+
+async def press_shop_wishes_to_cart(client: BotClient, owner: MagicMock) -> Click:
+    tienda = client.get_cog("Tienda")
+    item = await _shop_item(client)
+    await tienda.toggle_wish(GUILD_ID, owner, item, None)
+    view = await tienda.storefront(owner.guild, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await view.wishes_to_cart(interaction)
+
+    return click
+
+
 async def press_open_lootbox(client: BotClient, owner: MagicMock) -> Click:
     """Abrir una caja desde la mochila: el clic se acepta antes de gastarla y sortearla."""
     tienda = client.get_cog("Tienda")
@@ -1751,6 +1845,13 @@ CASES: dict[str, Press] = {
     "pala: comprar y dar un regalo": press_pala_pay_gift,
     "pala: excusa familiar": press_pala_dodge,
     "tienda: comprar": press_checkout,
+    "tienda: ver la ficha": press_shop_sheet,
+    "tienda: pagar en la ficha": press_shop_sheet_pay,
+    "tienda: apuntar en la lista de deseos": press_shop_wish,
+    "tienda: abrir el carrito": press_shop_cart,
+    "tienda: pagar el carrito": press_shop_cart_pay,
+    "tienda: silenciar los avisos de la lista": press_shop_mute,
+    "tienda: lista de deseos al carrito": press_shop_wishes_to_cart,
     "rastro: aceptar una oferta": press_rastro_accept,
     "rastro: aceptar un trueque": press_rastro_swap,
     "rastro: pujar": press_rastro_bid,

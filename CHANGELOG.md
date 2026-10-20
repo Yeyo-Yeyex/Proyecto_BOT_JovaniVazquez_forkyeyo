@@ -8,6 +8,14 @@ criterio.
 
 ## 8.x
 
+### 8.12.0 · 2026-10-20
+
+- Tienda: escaparate en lista compacta (15 por página) con buscador, filtros y orden
+- Tienda: ficha de cada artículo con cantidad, y carrito que se paga todo junto o nada
+- Tienda: lista de deseos pública (también en `perfil`) con avisos por privado
+- Tienda: la caja avisa antes de pagar si ya compraste el máximo por persona
+- Logros: 35 del carrito, la ficha y la lista de deseos en 🛍️ Tienda
+
 ### 8.11.0 · 2026-10-20
 
 - Saldo: `saldo` enseña lo que tienes pendiente de pagar, de cobrar y retenido, con su fecha

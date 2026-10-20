@@ -26,6 +26,10 @@ tarea mira cada `CLOSE_EVERY` segundos los que han llegado a su hora, los adjudi
 o devuelve el objeto, y lo anuncia en el canal donde se montó el puesto. Los botones
 🔨 y ↩️ son `DynamicItem`: siguen valiendo tras reiniciar el bot.
 
+Al montar un puesto, la tienda avisa por privado a quien tenga ese artículo en su
+lista de deseos (`shop.wish_listed`, aparte para no hacer esperar), y la ficha de la
+tienda enseña la puja más baja de cada artículo en venta (`floor`).
+
 Logros: categoría 🧺 Rastro. Pujar y comprar son acciones con dinero: llaman a
 `renta.remind` y su resultado lleva `renta.hint` con la mascota (`Event.TRADE`).
 Las pujas y los puestos con pujas salen en `saldo` (`pending`).
@@ -395,6 +399,8 @@ class Rastro(commands.Cog):
         await logros.track(
             self.bot, guild.id, seller, channel, market_listing_stats(when=self._when(now))
         )
+        # Quien lo tenga en su lista de deseos se entera por privado (va aparte).
+        tienda.wish_listed(self.bot, guild.id, listing)
         return None, embed, view
 
     # -- trueque -----------------------------------------------------------------------
@@ -1431,6 +1437,26 @@ def pending(bot: commands.Bot, guild_id: int, user_id: int) -> list[Pending]:
                 )
             )  # fmt: skip
     return items
+
+
+def floor(bot: commands.Bot, guild_id: int, item_id: int) -> tuple[int, float] | None:
+    """La puja más baja que se puede hacer ahora por un artículo en el Rastro, y cuándo
+    cierra ese puesto; `None` si nadie lo vende. Para la ficha de la tienda.
+
+    Sale de los puestos que el cog tiene en memoria: no toca la base de datos.
+    """
+    cog = find_cog(bot, Rastro)
+    if cog is None:
+        return None
+    stalls = [
+        listing
+        for listing in cog.listings.values()
+        if listing.guild_id == guild_id and listing.item_id == item_id
+    ]
+    if not stalls:
+        return None
+    best = min(stalls, key=lambda listing: listing.next_bid)
+    return best.next_bid, best.deadline
 
 
 async def setup(bot: BotClient) -> None:  # type: ignore[override]

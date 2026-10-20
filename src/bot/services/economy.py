@@ -1586,14 +1586,29 @@ class EconomyService:
         Raises:
             InsufficientFundsError: Si no le llega. No se mueve nada.
         """
-        return await self.repository.purchase(
-            guild_id,
-            user_id,
-            base=base,
-            tax=tax,
-            concept=concept,
-            now=self._clock(),
-            reserve=reserve,
+        return await self.purchase_lines(
+            guild_id, user_id, lines=[(base, tax, concept)], reserve=reserve
+        )
+
+    async def purchase_lines(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        lines: Sequence[tuple[int, int, str]],
+        reserve: Callable[[sqlite3.Connection], T],
+    ) -> tuple[T, int]:
+        """Cobra un carrito de la tienda: varias líneas `(base, IGIC, concepto)` de una vez.
+
+        Mismo tratamiento fiscal que `purchase`, línea a línea (cada una con su
+        tipo de IGIC). Todo o nada: si `reserve` lanza o no le llega para el
+        total, no se cobra ninguna.
+
+        Raises:
+            InsufficientFundsError: Si no le llega para el total. No se mueve nada.
+        """
+        return await self.repository.purchase_lines(
+            guild_id, user_id, lines=lines, now=self._clock(), reserve=reserve
         )
 
     async def refund_purchase(

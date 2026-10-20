@@ -17,10 +17,14 @@ Tablas (en el mismo archivo SQLite que el resto del bot):
 - `shop_skin_images`: la imagen que ha subido cada miembro para sus skins
   propias (`Skin.custom`, una por persona y skin), ya limpia y en JPEG
   (`bot.services.skin_images`), con quién la subió (el dueño o un admin).
+- `shop_wishlist`: la lista de deseos de cada miembro, con lo que ya se sabía de
+  cada artículo (`seen`) para avisar solo de lo nuevo (`bot.services.shop_wishlist`).
+- `shop_wish_muted`: quién no quiere los avisos de su lista por mensaje privado.
 
-El dinero no se toca aquí: la venta se apunta con `reserve`, que corre dentro
-de la transacción de `EconomyRepository.purchase`, así que el cobro, el IGIC,
-la unidad vendida y la factura se guardan juntos o no se guarda nada.
+El dinero no se toca aquí: la venta se apunta con `reserve` (o `reserve_cart`, un
+carrito entero), que corre dentro de la transacción de
+`EconomyRepository.purchase_lines`, así que el cobro, el IGIC, las unidades
+vendidas y las facturas se guardan juntos o no se guarda nada.
 
 Solo se guardan IDs, nombres de artículos, marcas de tiempo y las imágenes de
 las skins propias (que su dueño o un admin pueden borrar cuando quieran). Todo
@@ -31,6 +35,7 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+from collections import Counter
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -50,6 +55,7 @@ from bot.services.shop import (
     rental_end,
 )
 from bot.services.shop_catalog import is_skin, use_of
+from bot.services.shop_wishlist import Wish, dump_seen, parse_seen
 
 if TYPE_CHECKING:
     from bot.services.shop_catalog import CatalogEntry
@@ -206,6 +212,24 @@ def _collection_count(connection: sqlite3.Connection, guild_id: int, user_id: in
         for _, key in rows
         if not is_skin(key) and not ((use := use_of(key)) is not None and use.consumes)
     )
+
+
+def _wish(row: sqlite3.Row) -> Wish:
+    return Wish(
+        guild_id=int(row["guild_id"]),
+        user_id=int(row["user_id"]),
+        item_id=int(row["item_id"]),
+        created_at=float(row["created_at"]),
+        seen=parse_seen(row["seen"]),
+    )
+
+
+def _line_name(connection: sqlite3.Connection, item_id: int) -> str:
+    """`🍌 Plátano` para poner delante del error de una línea del carrito."""
+    row = connection.execute(
+        "SELECT emoji, name FROM shop_items WHERE id = ?", (item_id,)
+    ).fetchone()
+    return f"{row[0]} {row[1]}" if row else "Un artículo"
 
 
 def _entry(row: sqlite3.Row) -> InventoryEntry:
@@ -401,6 +425,27 @@ class ShopRepository:
                 )
                 """
             )
+            connection.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS shop_wishlist (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    item_id INTEGER NOT NULL,
+                    created_at REAL NOT NULL,
+                    -- Marcas de lo que ya se sabía del artículo (`shop_wishlist.wish_state`).
+                    seen TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY (guild_id, user_id, item_id)
+                );
+
+                CREATE INDEX IF NOT EXISTS shop_wishlist_item ON shop_wishlist (guild_id, item_id);
+
+                CREATE TABLE IF NOT EXISTS shop_wish_muted (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    PRIMARY KEY (guild_id, user_id)
+                );
+                """
+            )
             connection.commit()
             _allow_pets(connection)
         finally:
@@ -582,6 +627,10 @@ class ShopRepository:
                 cursor = connection.execute(
                     "DELETE FROM shop_items WHERE guild_id = ? AND id = ?", (guild_id, item_id)
                 )
+                connection.execute(
+                    "DELETE FROM shop_wishlist WHERE guild_id = ? AND item_id = ?",
+                    (guild_id, item_id),
+                )
         finally:
             connection.close()
         return cursor.rowcount > 0
@@ -652,6 +701,46 @@ class ShopRepository:
 
         def run(connection: sqlite3.Connection) -> tuple[ShopItem, Sale]:
             return self._reserve_in(connection, guild_id, user_id, item_id, expected, level, now)
+
+        return run
+
+    def reserve_cart(
+        self,
+        guild_id: int,
+        user_id: int,
+        lines: Sequence[tuple[int, int, Quote]],
+        *,
+        level: int,
+        now: float,
+    ) -> Callable[[sqlite3.Connection], list[tuple[ShopItem, list[Sale]]]]:
+        """Como `reserve`, pero para un carrito: `(artículo, unidades, precio visto)` por línea.
+
+        Cada unidad es una venta con su factura y, si es limitada, su número de serie
+        (seguidos). Los límites se miran unidad a unidad dentro de la transacción, así que
+        la segunda unidad ya cuenta la primera. Si una línea falla, `ShopError` con el
+        nombre del artículo delante y no se apunta ninguna.
+
+        Returns:
+            Una función para `EconomyRepository.purchase_lines` que devuelve, por línea,
+            `(artículo, ventas)`.
+        """
+
+        def run(connection: sqlite3.Connection) -> list[tuple[ShopItem, list[Sale]]]:
+            out = []
+            for item_id, qty, expected in lines:
+                sales: list[Sale] = []
+                item: ShopItem | None = None
+                for _ in range(qty):
+                    try:
+                        item, sale = self._reserve_in(
+                            connection, guild_id, user_id, item_id, expected, level, now
+                        )
+                    except ShopError as error:
+                        raise ShopError(f"{_line_name(connection, item_id)}: {error}") from error
+                    sales.append(sale)
+                if item is not None:
+                    out.append((item, sales))
+            return out
 
         return run
 
@@ -838,6 +927,193 @@ class ShopRepository:
                 )
 
         return run
+
+    async def purchase_counts(self, guild_id: int, user_id: int) -> Counter[int]:
+        """Compras de cada artículo (`id`) de un miembro, sin las devueltas.
+
+        Es lo que cuenta para el límite por persona (`ineligibility`): lo comprado,
+        aunque ya se haya gastado o vendido en el Rastro.
+        """
+        return await self._run(self._purchase_counts_sync, guild_id, user_id)
+
+    def _purchase_counts_sync(self, guild_id: int, user_id: int) -> Counter[int]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                SELECT item_id, COUNT(*) FROM shop_purchases
+                WHERE guild_id = ? AND user_id = ? AND refunded = 0
+                GROUP BY item_id
+                """,
+                (guild_id, user_id),
+            ).fetchall()
+        finally:
+            connection.close()
+        return Counter({int(item_id): int(count) for item_id, count in rows})
+
+    async def owners(self, guild_id: int, item_id: int) -> int:
+        """Miembros distintos que tienen ahora un artículo (sin contar los puestos del Rastro)."""
+        return await self._run(self._owners_sync, guild_id, item_id)
+
+    def _owners_sync(self, guild_id: int, item_id: int) -> int:
+        connection = self._connect()
+        try:
+            (count,) = connection.execute(
+                """
+                SELECT COUNT(DISTINCT user_id) FROM shop_inventory
+                WHERE guild_id = ? AND item_id = ? AND status = 'active' AND user_id > 0
+                """,
+                (guild_id, item_id),
+            ).fetchone()
+        finally:
+            connection.close()
+        return int(count)
+
+    # -- Lista de deseos -------------------------------------------------------------
+
+    async def wishlist(self, guild_id: int, user_id: int) -> list[Wish]:
+        """La lista de deseos de un miembro, por orden de llegada."""
+        return await self._run(self._wishlist_sync, guild_id, user_id)
+
+    def _wishlist_sync(self, guild_id: int, user_id: int) -> list[Wish]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                "SELECT * FROM shop_wishlist WHERE guild_id = ? AND user_id = ? "
+                "ORDER BY created_at, item_id",
+                (guild_id, user_id),
+            ).fetchall()
+        finally:
+            connection.close()
+        return [_wish(row) for row in rows]
+
+    async def add_wish(
+        self, guild_id: int, user_id: int, item_id: int, now: float, seen: Collection[str]
+    ) -> bool:
+        """Apunta un deseo con lo que ya se sabe de él. `False` si ya estaba."""
+        return await self._run(self._add_wish_sync, guild_id, user_id, item_id, now, seen)
+
+    def _add_wish_sync(
+        self, guild_id: int, user_id: int, item_id: int, now: float, seen: Collection[str]
+    ) -> bool:
+        connection = self._connect()
+        try:
+            with connection:
+                cursor = connection.execute(
+                    """
+                    INSERT OR IGNORE INTO shop_wishlist
+                        (guild_id, user_id, item_id, created_at, seen)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (guild_id, user_id, item_id, now, dump_seen(seen)),
+                )
+        finally:
+            connection.close()
+        return cursor.rowcount > 0
+
+    async def remove_wishes(self, guild_id: int, user_id: int, item_ids: Collection[int]) -> int:
+        """Quita deseos (al comprarlos o a mano). Devuelve cuántos había."""
+        if not item_ids:
+            return 0
+        return await self._run(self._remove_wishes_sync, guild_id, user_id, tuple(item_ids))
+
+    def _remove_wishes_sync(self, guild_id: int, user_id: int, item_ids: tuple[int, ...]) -> int:
+        marks = ", ".join("?" for _ in item_ids)
+        connection = self._connect()
+        try:
+            with connection:
+                # `marks` son solo interrogaciones: los ids van como parámetros.
+                cursor = connection.execute(
+                    f"DELETE FROM shop_wishlist WHERE guild_id = ? AND user_id = ? "
+                    f"AND item_id IN ({marks})",
+                    (guild_id, user_id, *item_ids),
+                )
+        finally:
+            connection.close()
+        return cursor.rowcount
+
+    async def wishers(self, guild_id: int, item_id: int) -> list[int]:
+        """Quién tiene un artículo en su lista de deseos."""
+        return await self._run(self._wishers_sync, guild_id, item_id)
+
+    def _wishers_sync(self, guild_id: int, item_id: int) -> list[int]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                "SELECT user_id FROM shop_wishlist WHERE guild_id = ? AND item_id = ? "
+                "ORDER BY user_id",
+                (guild_id, item_id),
+            ).fetchall()
+        finally:
+            connection.close()
+        return [int(user_id) for (user_id,) in rows]
+
+    async def all_wishes(self) -> list[Wish]:
+        """Todos los deseos de todos los servidores (para mirar si hay que avisar)."""
+        return await self._run(self._all_wishes_sync)
+
+    def _all_wishes_sync(self) -> list[Wish]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                "SELECT * FROM shop_wishlist ORDER BY guild_id, user_id, created_at"
+            ).fetchall()
+        finally:
+            connection.close()
+        return [_wish(row) for row in rows]
+
+    async def set_wish_seen(self, changes: Sequence[tuple[Wish, Collection[str]]]) -> None:
+        """Guarda lo visto de varios deseos de una vez."""
+        if changes:
+            await self._run(self._set_wish_seen_sync, tuple(changes))
+
+    def _set_wish_seen_sync(self, changes: tuple[tuple[Wish, Collection[str]], ...]) -> None:
+        connection = self._connect()
+        try:
+            with connection:
+                connection.executemany(
+                    "UPDATE shop_wishlist SET seen = ? "
+                    "WHERE guild_id = ? AND user_id = ? AND item_id = ?",
+                    [
+                        (dump_seen(seen), wish.guild_id, wish.user_id, wish.item_id)
+                        for wish, seen in changes
+                    ],
+                )
+        finally:
+            connection.close()
+
+    async def muted(self) -> set[tuple[int, int]]:
+        """`(servidor, miembro)` que no quieren avisos de su lista."""
+        return await self._run(self._muted_sync)
+
+    def _muted_sync(self) -> set[tuple[int, int]]:
+        connection = self._connect()
+        try:
+            rows = connection.execute("SELECT guild_id, user_id FROM shop_wish_muted").fetchall()
+        finally:
+            connection.close()
+        return {(int(guild_id), int(user_id)) for guild_id, user_id in rows}
+
+    async def set_muted(self, guild_id: int, user_id: int, muted: bool) -> None:
+        """Silencia o vuelve a activar los avisos de la lista de un miembro."""
+        await self._run(self._set_muted_sync, guild_id, user_id, muted)
+
+    def _set_muted_sync(self, guild_id: int, user_id: int, muted: bool) -> None:
+        connection = self._connect()
+        try:
+            with connection:
+                if muted:
+                    connection.execute(
+                        "INSERT OR IGNORE INTO shop_wish_muted (guild_id, user_id) VALUES (?, ?)",
+                        (guild_id, user_id),
+                    )
+                else:
+                    connection.execute(
+                        "DELETE FROM shop_wish_muted WHERE guild_id = ? AND user_id = ?",
+                        (guild_id, user_id),
+                    )
+        finally:
+            connection.close()
 
     # -- Inventario ------------------------------------------------------------------
 
@@ -1467,6 +1743,8 @@ class ShopRepository:
                     "shop_seeded",
                     "shop_skin_worn",
                     "shop_skin_images",
+                    "shop_wishlist",
+                    "shop_wish_muted",
                 ):
                     # `table` sale de una tupla fija, nunca de entrada del usuario.
                     connection.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))

@@ -106,7 +106,7 @@ async def test_los_atajos_abren_la_tienda_en_las_cosas_de_mascotas(tmp_path: Pat
             interaction.guild = owner.guild
             await button.callback(interaction)
             shop = interaction.edit_original_response.await_args.kwargs["view"]
-            assert (shop.tab, shop.aisle) == (tab, aisle)
+            assert (shop.prefs.tab, shop.prefs.aisle) == (tab, aisle)
             assert interaction.response.defer.await_args.kwargs == {
                 "ephemeral": True,
                 "thinking": True,

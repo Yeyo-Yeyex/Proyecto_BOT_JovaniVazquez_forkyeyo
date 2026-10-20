@@ -4910,42 +4910,62 @@ class EconomyRepository:
         Raises:
             InsufficientFundsError: Si no le llega el saldo.
         """
-        return await self._run(
-            self._purchase_sync, guild_id, user_id, base, tax, concept, now, reserve
+        return await self.purchase_lines(
+            guild_id, user_id, lines=[(base, tax, concept)], now=now, reserve=reserve
         )
+
+    async def purchase_lines(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        lines: Sequence[tuple[int, int, str]],
+        now: float,
+        reserve: Callable[[sqlite3.Connection], T],
+    ) -> tuple[T, int]:
+        """Cobra un carrito de la tienda: varias líneas `(base, IGIC, concepto)` de una vez.
+
+        Todo o nada, como `purchase`: si `reserve` lanza o no le llega para el
+        total, no se mueve nada. Cada línea va al libro con su concepto.
+
+        Raises:
+            InsufficientFundsError: Si no le llega para el total.
+        """
+        return await self._run(self._purchase_sync, guild_id, user_id, tuple(lines), now, reserve)
 
     def _purchase_sync(
         self,
         guild_id: int,
         user_id: int,
-        base: int,
-        tax: int,
-        concept: str,
+        lines: tuple[tuple[int, int, str], ...],
         now: float,
         reserve: Callable[[sqlite3.Connection], T],
     ) -> tuple[T, int]:
-        if base <= 0 or tax < 0:
+        if not lines or any(base <= 0 or tax < 0 for base, tax, _concept in lines):
             raise ValueError("Una compra necesita base positiva e IGIC no negativo.")
         with self._transaction() as connection:
             result = reserve(connection)
-            entries = [LedgerEntry(-base, f"tienda:{concept}")]
-            if tax:
-                entries.append(LedgerEntry(-tax, "tienda:igic"))
+            entries = []
+            for base, tax, concept in lines:
+                entries.append(LedgerEntry(-base, f"tienda:{concept}"))
+                if tax:
+                    entries.append(LedgerEntry(-tax, "tienda:igic"))
             balance = self._apply_in_transaction(connection, guild_id, user_id, entries)
             self._open_empty_wallet(connection, guild_id, SHOP_ACCOUNT_ID)
-            self._apply_in_transaction(
-                connection, guild_id, SHOP_ACCOUNT_ID, (LedgerEntry(base, "tienda:venta"),)
-            )
-            if tax:
-                self._credit_state_in(connection, guild_id, tax, "igic:tienda")
-            connection.execute(
-                """
-                INSERT INTO economy_consumption_tax
-                    (guild_id, user_id, concept, base, tax, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (guild_id, user_id, concept, base, tax, now),
-            )
+            for base, tax, concept in lines:
+                self._apply_in_transaction(
+                    connection, guild_id, SHOP_ACCOUNT_ID, (LedgerEntry(base, "tienda:venta"),)
+                )
+                if tax:
+                    self._credit_state_in(connection, guild_id, tax, "igic:tienda")
+                connection.execute(
+                    """
+                    INSERT INTO economy_consumption_tax
+                        (guild_id, user_id, concept, base, tax, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (guild_id, user_id, concept, base, tax, now),
+                )
             return result, balance
 
     async def refund_purchase(
