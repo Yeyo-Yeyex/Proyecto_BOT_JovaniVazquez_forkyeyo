@@ -8,6 +8,10 @@ criterio.
 
 ## 8.x
 
+### 8.10.0 · 2026-10-20
+
+- Reinicio: mientras el bot espera a reiniciarse no se abren partidas ni paneles nuevos, y quien tiene uno abierto recibe un aviso para terminarlo
+
 ### 8.9.0 · 2026-10-20
 
 - Admin: `crear`, para que Yeyo y Dani devuelvan un objeto perdido
