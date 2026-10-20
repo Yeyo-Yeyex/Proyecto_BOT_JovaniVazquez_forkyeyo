@@ -22,8 +22,9 @@ from discord import ui
 from interaction_fakes import fake_interaction
 from lootbox_fakes import Scripted
 
-from bot.cogs.shop import TABS, Backpack, Storefront, TargetPicker, Tienda, UseTextForm, in_tab
+from bot.cogs.shop import TABS, Backpack, TargetPicker, Tienda, UseTextForm, in_tab
 from bot.cogs.shop_admin import AdminPanel
+from bot.cogs.shop_front import Storefront
 from bot.repositories.economy import EconomyRepository
 from bot.repositories.shop import ShopRepository
 from bot.services.achievements import (
@@ -628,16 +629,16 @@ async def test_escaparate_se_llena_solo_y_cabe_en_cada_pestana_y_pasillo(tmp_pat
     assert len(view.items_all) == sum(1 for e in CATALOG if e.visible)
     for tab, _label in TABS:
         for aisle in (None, *(a.key for a in AISLES)):
-            view.tab, view.aisle, view.page = tab, aisle, 0
+            view.prefs.tab, view.prefs.aisle, view.page = tab, aisle, 0
             view.rebuild()
             assert view.total_children_count <= 40, (tab, aisle)
             assert len(texts(view)) <= 4000, (tab, aisle)
             assert all(in_tab(i, tab) for i in view.shown)
             if aisle:
                 assert all(aisle_of(i.catalog_key).key == aisle for i in view.shown)
-    view.tab, view.aisle = "uso", None
+    view.prefs.tab, view.prefs.aisle = "uso", None
     assert {use_of(i.catalog_key) is not None for i in view.shown} == {True}
-    view.tab = "mascota"
+    view.prefs.tab = "mascota"
     assert view.shown and {i.kind for i in view.shown} == {Kind.PET}
 
 
@@ -646,18 +647,27 @@ async def test_pasillo_desde_el_desplegable(tmp_path: Path) -> None:
     guild = make_guild()
     owner = make_member(guild)
     view = await cog.storefront(guild, owner)
-    select = next(c for c in view.walk_children() if isinstance(c, ui.Select))
+    select = aisle_select(view)
     select._values = ["hongkong"]  # type: ignore[attr-defined]
     click = make_interaction(owner)
     await select.callback(click)
-    assert view.aisle == "hongkong" and view.shown
+    assert view.prefs.aisle == "hongkong" and view.shown
     assert "Hong Kong" in texts(view)
     stranger = make_interaction(make_member(guild, OTHER))
-    select = next(c for c in view.walk_children() if isinstance(c, ui.Select))
+    select = aisle_select(view)
     select._values = ["lujo"]  # type: ignore[attr-defined]
     await select.callback(stranger)
     own = stranger.edit_original_response.await_args.kwargs["view"]
-    assert isinstance(own, Storefront) and own.aisle == "lujo" and view.aisle == "hongkong"
+    assert isinstance(own, Storefront) and own.prefs.aisle == "lujo"
+    assert view.prefs.aisle == "hongkong"
+
+
+def aisle_select(view: ui.LayoutView) -> ui.Select:
+    return next(
+        c
+        for c in view.walk_children()
+        if isinstance(c, ui.Select) and c.custom_id == "tienda:pasillo"
+    )
 
 
 async def give(cog: Tienda, key: str, *, times: int = 1) -> int:

@@ -17,6 +17,8 @@ desplegable cambia de sección en el mismo mensaje:
   las rachas que cuentan los logros.
 - 🎒 **Objetos**: la mochila en texto; el botón 🎒 la abre en un mensaje
   aparte para usar objetos y ponerse roles (`Tienda.backpack_view`).
+- ⭐ **Deseos**: la lista de deseos de la tienda, que es pública
+  (`Tienda.wishlist_embed`). Se edita desde la ficha de cada artículo.
 - 🐓 **Gallo**: la ficha del gallo de pelea (`Gallos.gallo_embed`).
 - 🔴 **4 en raya**: la ficha, la racha y los retos de hoy (`Enraya.enraya_embed`).
 - ♟️ **Backgammon**: la ficha, los gammons, la racha y los retos de hoy
@@ -87,6 +89,7 @@ SECTIONS: tuple[tuple[str, str, str, str], ...] = (
     ("logros", "🏆", "Logros", "Puntos, categorías y los últimos"),
     ("rachas", "🔥", "Rachas", "Tus mejores rachas de todo"),
     ("objetos", "🎒", "Objetos", "Lo que llevas en la mochila"),
+    ("deseos", "⭐", "Deseos", "Tu lista de deseos de la tienda"),
     ("gallo", "🐓", "Gallo", "Tu gallo de pelea y su historial"),
     ("enraya", "🔴", "4 en raya", "Tu ficha, tu racha y los retos de hoy"),
     ("backgammon", "♟️", "Backgammon", "Tu ficha, tus gammons y los retos de hoy"),
@@ -330,6 +333,11 @@ class Perfil(commands.Cog):
             if shop is None:
                 return missing_embed("🎒 Objetos")
             return await shop.backpack_embed(guild, target)
+        if key == "deseos":
+            shop = find_cog(self.bot, Tienda)
+            if shop is None:
+                return missing_embed("⭐ Deseos")
+            return await shop.wishlist_embed(guild, target)
         if key == "gallo":
             gallos = find_cog(self.bot, Gallos)
             if gallos is None:

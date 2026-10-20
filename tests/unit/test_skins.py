@@ -152,9 +152,9 @@ async def test_la_skin_sale_en_su_pestaña_y_en_la_mochila(tmp_path: Path) -> No
     guild = make_guild()
     member = make_member(guild)
     view = await cog.storefront(guild, member)
-    view.tab = "skin"
+    view.prefs.tab = "skin"
     assert [i.catalog_key for i in view.shown] == [GRANATE.catalog_key]
-    view.tab = "objeto"
+    view.prefs.tab = "objeto"
     assert view.shown == [], "las skins no se mezclan con la vitrina"
     await pay_for(cog, guild, member, GRANATE.catalog_key)
     backpack = await cog.backpack_view(guild, member, member)

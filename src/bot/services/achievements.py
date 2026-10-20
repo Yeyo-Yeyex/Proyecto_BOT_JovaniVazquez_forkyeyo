@@ -447,6 +447,7 @@ PERFIL_SECTIONS = (
     "logros",
     "rachas",
     "objetos",
+    "deseos",
     "gallo",
     "enraya",
     "backgammon",
@@ -9280,6 +9281,98 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("shop", "shop_broke_buy", [
         (1, "broke_buy", "Lo quiero, lo tengo", "Gástate todo tu saldo en una compra.", L, True),
+    ])  # fmt: skip
+    # Carrito, ficha y lista de deseos (8.12.0). Casi todo se puede forzar a propósito
+    # (llenar el carrito, apuntar deseos): Común o Raro. Lo que depende de otros (una
+    # rebaja de los admins, un puesto del Rastro) o del calendario sube.
+    a += _tiers("shop", "shop_carts", [
+        (1, "cart_1", "Sobre ruedas", "Paga una compra con al menos dos artículos distintos.", C),
+        (10, "cart_10", "Carritos de choque",
+         "Paga 10 compras con al menos dos artículos distintos.", C),
+        (50, "cart_50", "París-Dakar por los pasillos",
+         "Paga 50 compras con al menos dos artículos distintos.", R),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_cart_lines_max", [
+        (5, "cart_lines_5", "Cesta de Navidad", "Paga una compra con 5 artículos distintos.", C),
+        (10, "cart_lines_10", "Bodegón", "Paga una compra con 10 artículos distintos.", C),
+        (20, "cart_lines_20", "Cuerno de la abundancia",
+         "Paga una compra con 20 artículos distintos, el carrito lleno.", R),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_cart_units_max", [
+        (10, "cart_units_10", "Pack ahorro", "Compra 10 unidades en una sola compra.", C),
+        (50, "cart_units_50", "Al por mayor", "Compra 50 unidades en una sola compra.", C),
+        (100, "cart_units_100", "Acaparador de papel higiénico",
+         "Compra 100 unidades en una sola compra.", R),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_ticket_rates_max", [
+        (3, "ticket_rates_3", "Ticket a tres bandas",
+         "Paga una factura con 3 tipos de impuesto distintos.", C),
+        (5, "ticket_rates_5", "Manita fiscal",
+         "Paga una factura con 5 tipos de impuesto distintos.", R),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_same_max", [
+        (10, "same_10", "Más de lo mismo", "Compra 10 unidades del mismo artículo de una vez.", C),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_wishes", [
+        (1, "wish_1", "Pedir por esa boquita", "Apunta algo en tu lista de deseos.", C),
+        (25, "wish_25", "Lista de bodas", "Apunta 25 deseos.", C),
+        (100, "wish_100", "El genio de la lámpara", "Apunta 100 deseos.", R),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_wishlist_max", [
+        (25, "wishlist_full", "Ojos más grandes que la barriga",
+         "Ten 25 cosas a la vez en tu lista de deseos.", C),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_wish_buys", [
+        (1, "wish_buy_1", "Tachado de la lista", "Compra algo de tu lista de deseos.", C),
+        (10, "wish_buy_10", "Me lo merezco", "Compra 10 cosas de tu lista de deseos.", C),
+        (50, "wish_buy_50", "Aladino con tarjeta", "Compra 50 cosas de tu lista de deseos.", R),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_wish_sale_buys", [
+        (1, "wish_sale_1", "Quien la sigue la consigue",
+         "Compra rebajado algo de tu lista de deseos.", R),
+        (5, "wish_sale_5", "Paciencia de santo",
+         "Compra rebajadas 5 cosas de tu lista de deseos.", E),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_wish_alerts", [
+        (1, "wish_alert_1", "Me lo dijo un pajarito",
+         "Recibe un aviso de tu lista de deseos por privado.", C),
+        (25, "wish_alert_25", "Radio macuto", "Recibe 25 avisos de tu lista de deseos.", R),
+        (100, "wish_alert_100", "Con la oreja puesta",
+         "Recibe 100 avisos de tu lista de deseos.", E),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_wish_stalls", [
+        (1, "wish_stall_1", "Chivatazo del Rastro",
+         "Recibe el aviso de que alguien vende en el Rastro algo de tu lista.", R),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_searches", [
+        (1, "search_1", "¿Dónde está Wally?", "Busca algo en la tienda.", C),
+        (50, "search_50", "Google con delantal", "Haz 50 búsquedas en la tienda.", R),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_sheets", [
+        (1, "sheet_1", "Solo estoy mirando", "Abre la ficha de un artículo.", C),
+        (100, "sheet_100", "Mirar no cuesta dinero", "Abre 100 fichas de artículos.", C),
+        (500, "sheet_500", "Inspector de Consumo", "Abre 500 fichas de artículos.", R),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_cart_black_friday", [
+        (1, "cart_black_friday", "Hacer el agosto en noviembre",
+         "Paga una compra de varios artículos en Black Friday.", C),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_cart_rebajas", [
+        (1, "cart_rebajas", "Cuesta de enero",
+         "Paga una compra de varios artículos el 7 de enero, el primer día de rebajas.", C),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_cart_42", [
+        (1, "cart_42", "Guía del consumista galáctico",
+         "Compra exactamente 42 unidades de una vez.", C, True),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_cart_emptied", [
+        (1, "cart_emptied", "Me lo he pensado mejor",
+         "Vacía sin pagar un carrito con 10 artículos o más.", C, True),
+    ])  # fmt: skip
+    a += _tiers("shop", "shop_cart_failed", [
+        (1, "cart_failed", "Me lo quitan de las manos",
+         "Intenta pagar algo que se acaba de agotar, ha cambiado de precio o ya no puedes "
+         "comprar.", C, True),
     ])  # fmt: skip
 
     a += _tiers("shop", "shop_purchases", [
@@ -23098,6 +23191,110 @@ def shop_title_stats(*, worn: bool) -> StatDelta:
     delta = StatDelta(add={"shop_title_swaps": 1})
     if not worn:
         delta.add["shop_title_off"] = 1
+    return delta
+
+
+def _black_friday(when: datetime) -> bool:
+    """El viernes después del cuarto jueves de noviembre (cae del 23 al 29)."""
+    return when.month == 11 and when.weekday() == 4 and 23 <= when.day <= 29
+
+
+def shop_cart_stats(
+    *,
+    lines: int,
+    units: int,
+    rates: int,
+    same_max: int,
+    total: int,
+    wished: int,
+    wished_on_sale: int,
+    when: datetime,
+) -> StatDelta:
+    """Estadísticas de una compra entera (una ficha o un carrito), además de las de cada
+    unidad (`shop_stats`).
+
+    Args:
+        lines: Artículos distintos.
+        units: Unidades en total.
+        rates: Tipos de impuesto distintos en la factura.
+        same_max: Unidades de un mismo artículo (la línea más larga).
+        total: Lo pagado, impuestos incluidos: «de una sola vez» es la compra entera.
+        wished: Artículos comprados que estaban en su lista de deseos.
+        wished_on_sale: De esos, los que estaban rebajados.
+        when: Hora de Canarias de la compra.
+    """
+    delta = StatDelta(
+        peak={
+            "shop_cart_lines_max": lines,
+            "shop_cart_units_max": units,
+            "shop_ticket_rates_max": rates,
+            "shop_same_max": same_max,
+            "shop_big_buy_max": total,
+        }
+    )
+    if lines >= 2:
+        delta.add["shop_carts"] = 1
+        if _black_friday(when):
+            delta.add["shop_cart_black_friday"] = 1
+        if (when.month, when.day) == (1, 7):
+            delta.add["shop_cart_rebajas"] = 1
+    if wished:
+        delta.add["shop_wish_buys"] = wished
+    if wished_on_sale:
+        delta.add["shop_wish_sale_buys"] = wished_on_sale
+    if units == 42:
+        delta.add["shop_cart_42"] = 1
+    return delta
+
+
+def shop_wish_stats(*, added: int = 0, size: int = 0) -> StatDelta:
+    """Estadísticas de quien apunta cosas en su lista de deseos.
+
+    Args:
+        added: Deseos nuevos.
+        size: Cuántos tiene en la lista después.
+    """
+    delta = StatDelta(add={"shop_wishes": added} if added else {})
+    if size:
+        delta.peak["shop_wishlist_max"] = size
+    return delta
+
+
+def shop_wish_alert_stats(*, alerts: int = 0, stalls: int = 0) -> StatDelta:
+    """Estadísticas de quien recibe avisos de su lista por privado.
+
+    Args:
+        alerts: Avisos de rebaja, temporada, reposición o dinero.
+        stalls: Avisos de un puesto del Rastro con algo de su lista.
+    """
+    delta = StatDelta()
+    if alerts:
+        delta.add["shop_wish_alerts"] = alerts
+    if stalls:
+        delta.add["shop_wish_stalls"] = stalls
+    return delta
+
+
+def shop_browse_stats(
+    *, searches: int = 0, sheets: int = 0, failed: bool = False, emptied: int = 0
+) -> StatDelta:
+    """Estadísticas de quien mira el escaparate y llena (o vacía) el carrito.
+
+    Args:
+        searches: Búsquedas.
+        sheets: Fichas de artículo abiertas.
+        failed: Si al pagar algo había cambiado (agotado, precio, límite) y no se cobró.
+        emptied: Líneas del carrito que acaba de vaciar sin pagar.
+    """
+    delta = StatDelta()
+    if searches:
+        delta.add["shop_searches"] = searches
+    if sheets:
+        delta.add["shop_sheets"] = sheets
+    if failed:
+        delta.add["shop_cart_failed"] = 1
+    if emptied >= 10:
+        delta.add["shop_cart_emptied"] = 1
     return delta
 
 

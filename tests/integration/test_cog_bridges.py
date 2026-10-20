@@ -9,6 +9,7 @@ con `INITIAL_EXTENSIONS`, en el mismo orden que en producción.
 
 from __future__ import annotations
 
+import asyncio
 import random
 import sys
 from datetime import date
@@ -1094,6 +1095,50 @@ async def test_vender_en_el_rastro_quita_el_titulo_y_apunta_logros_con_el_bot_re
         assert mine.stats["market_sold"] == 1
         assert theirs.stats["market_bought"] == 1
         assert "rastro_itp_1" in theirs.unlocked
+    finally:
+        await client.close()
+
+
+async def test_un_puesto_del_rastro_avisa_a_quien_lo_desea_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """El Rastro avisa a la tienda al montar un puesto (`shop.wish_listed`) y la ficha de
+    la tienda ve el puesto (`rastro.floor`): los dos puentes llegan al cog de verdad."""
+    from bot.cogs.shop_front import ItemSheet
+
+    client = await load_bot(tmp_path)
+    try:
+        tienda = client.get_cog("Tienda")
+        rastro = client.get_cog("Rastro")
+        await tienda.stock_up(GUILD_ID)
+        item = await client.shop.item_by_key(GUILD_ID, "verificado")
+        assert item is not None
+        entry, _dupe = await client.shop.grant(GUILD_ID, OTHER_ID, item, 0.0)
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = GUILD_ID
+        guild.name = "Servidor"
+        seller = MagicMock(spec=discord.Member)
+        seller.id, seller.bot, seller.display_name = OTHER_ID, False, "Ana"
+        fan = MagicMock(spec=discord.Member)
+        fan.id, fan.bot, fan.display_name, fan.roles = OWNER_ID, False, "Diego", []
+        fan.guild = guild
+        fan.send = AsyncMock()
+        guild.get_member = MagicMock(side_effect={OWNER_ID: fan, OTHER_ID: seller}.get)
+        guild.get_role = MagicMock(return_value=None)
+        client.get_guild = MagicMock(return_value=guild)  # type: ignore[method-assign]
+        await tienda.toggle_wish(GUILD_ID, fan, item, None)
+        entries = await client.shop.inventory(GUILD_ID, OTHER_ID, rastro.clock())
+        stall = next(e for e in entries if e.id == entry.id)
+
+        _text, embed, _view = await rastro._open_stall(guild, None, seller, stall, 300)
+        # El aviso va aparte para no hacer esperar a quien vende.
+        await asyncio.gather(*list(tienda._tasks))
+
+        assert embed is not None
+        fan.send.assert_awaited_once()
+        assert "Ana" in fan.send.await_args.args[0]
+        sheet = await ItemSheet.build(tienda, guild, fan, item.id)
+        assert sheet is not None and sheet.stall is not None and sheet.stall[0] == 300
     finally:
         await client.close()
 

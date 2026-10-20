@@ -1,14 +1,27 @@
 """Tienda: `tienda` y la mochila, la caja con IGIC y la caducidad de los alquileres.
 
-- `tienda` abre el escaparate de El Colmado de Jovani: pestañas por sección
-  (roles, potenciadores, coleccionables), cada artículo con su botón
-  **Comprar**, rebajas tachadas, existencias que quedan y etiquetas de
-  "nuevo" y "lo más vendido". Cualquiera puede comprar desde el escaparate de
-  otro: la caja se abre solo para quien pulsa.
-- La caja enseña el ticket antes de pagar (precio, rebaja, base, IGIC y
-  total) y pide confirmar. Al pagar sale la factura simplificada, que solo ve
-  el comprador, y un aviso público en el canal para presumir. Desde
-  `BIG_PURCHASE` (100.000 Y$) el aviso lleva un pregón delante.
+- `tienda [buscar]` abre el escaparate de El Colmado de Jovani, una lista compacta
+  (las vistas viven en `bot.cogs.shop_front`): secciones, pasillos con lo que ya
+  tienes de cada uno, orden, filtros y buscador. Cada artículo abre su ficha privada,
+  con la cantidad, el ticket y **Pagar**; varios a la vez van al carrito. Cualquiera
+  puede comprar desde el escaparate de otro: la ficha y el carrito se abren solo
+  para quien pulsa.
+- **Carrito** (`carts`, en memoria y con caducidad `CART_TTL`): hasta
+  `MAX_CART_LINES` artículos distintos y `MAX_QUANTITY` unidades de cada uno. Se paga
+  todo o nada en una sola transacción (`complete_cart`); la única excepción es un rol
+  que Discord no deja dar después de cobrar, que se devuelve solo. La factura desglosa
+  el impuesto por tipo.
+- La caja de un solo artículo (el 🎨 de las mesas, `pieles` y los regalos de `pala`)
+  enseña el ticket antes de pagar y pide confirmar. Al pagar, por cualquier camino,
+  sale la factura simplificada, que solo ve el comprador, y un aviso público en el
+  canal para presumir. Desde `BIG_PURCHASE` (100.000 Y$) el aviso lleva un pregón
+  delante.
+- **Lista de deseos** (`bot.services.shop_wishlist`): pública (se ve en el escaparate
+  de su dueño y en la sección ⭐ Deseos de `perfil`), hasta `MAX_WISHES` cosas.
+  Comprar algo lo quita de la lista. Cada `WISH_MINUTES` se mira si algo ha cambiado
+  (rebaja, temporada, reposición, que ya te llegue el dinero) y se avisa por mensaje
+  privado (`whisper`); el Rastro avisa al montar un puesto con algo deseado
+  (`wish_listed`). Son los únicos mensajes privados del bot y se silencian con 🔕.
 - La mochila (botón 🎒 del escaparate, o sección 🎒 Objetos de `perfil`)
   enseña lo que tiene alguien. Su dueño puede ponerse y
   quitarse los roles que compró para siempre (útil para los de color) y usar
@@ -38,8 +51,10 @@ artículo, ver `bot.services.taxes.IGIC_RATES`), que va al Estado. Pagar llama
 a `renta.remind` y la factura lleva la línea de la renta pendiente. Si el rol
 comprado no se puede dar, se devuelve todo con `refund_purchase`.
 
-Logros: categoría Tienda, con `achievements.track` al pagar (`shop_stats`),
-al usar un objeto (`shop_use_stats`) y para quien lo recibe (`shop_hit_stats`).
+Logros: categoría Tienda, con `achievements.track` al pagar (`shop_stats` por
+unidad y `shop_cart_stats` por compra), al usar un objeto (`shop_use_stats`), para
+quien lo recibe (`shop_hit_stats`), al apuntar deseos (`shop_wish_stats`), al recibir
+sus avisos (`shop_wish_alert_stats`) y al mirar fichas o buscar (`shop_browse_stats`).
 Usar un objeto no mueve dinero, así que no lleva impuestos ni gancho de la
 Renta: lo que tributa es la compra.
 
@@ -62,8 +77,10 @@ import asyncio
 import logging
 import random
 import time
-from collections import Counter, defaultdict
+import unicodedata
+from collections import defaultdict
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -77,13 +94,18 @@ from bot.cogs import renta
 from bot.repositories.shop import InventoryEntry, ShopRepository
 from bot.services import skins as skins_registry
 from bot.services.achievements import (
+    StatDelta,
     lootbox_free_stats,
     lootbox_stats,
+    shop_browse_stats,
+    shop_cart_stats,
     shop_hit_stats,
     shop_skin_stats,
     shop_stats,
     shop_title_stats,
     shop_use_stats,
+    shop_wish_alert_stats,
+    shop_wish_stats,
 )
 from bot.services.economy import (
     CURRENCY_EMOJI,
@@ -111,25 +133,27 @@ from bot.services.pets import Event, Moment
 from bot.services.pets_catalog import species_of
 from bot.services.shop import (
     DANGEROUS_PERMISSIONS,
-    SHOP_NAME,
+    MAX_CART_LINES,
+    MAX_QUANTITY,
     Kind,
     Quote,
     Sale,
     ShopError,
     ShopItem,
+    TicketLine,
     active_multiplier,
+    cart_receipt,
     format_multiplier,
     format_span,
+    ineligibility,
+    max_quantity,
     money,
     quote,
     rate_label,
     receipt,
 )
 from bot.services.shop_catalog import (
-    AISLE_BY_KEY,
-    AISLES,
     CATALOG,
-    HOUSE_AISLE,
     RETIRED_ITEMS,
     REVISED_PRICES,
     REVISED_TAXES,
@@ -153,6 +177,15 @@ from bot.services.shop_uses import (
     pick_mystery,
     resolve,
 )
+from bot.services.shop_wishlist import (
+    MAX_WISHES,
+    news_line,
+    news_message,
+    stall_message,
+    stored_seen,
+    wish_news,
+    wish_state,
+)
 from bot.services.skin_images import SkinImage
 from bot.services.skins import (
     GAMES,
@@ -174,8 +207,12 @@ from bot.utils.cogs import find_cog
 from bot.utils.interactions import ack, edit, notify
 
 if TYPE_CHECKING:
+    import sqlite3
+
     from bot.app import BotClient
+    from bot.cogs.shop_front import Prefs, Storefront
     from bot.repositories.message_stats import MessageStatsRepository
+    from bot.repositories.rastro import Listing
 
 logger = logging.getLogger(__name__)
 
@@ -183,12 +220,13 @@ logger = logging.getLogger(__name__)
 COLOR = discord.Color.from_rgb(255, 176, 59)
 COLOR_PAID = discord.Color.from_rgb(87, 242, 135)
 COLOR_ERROR = discord.Color.from_rgb(237, 66, 69)
-#: Artículos por página del escaparate. Cada uno usa 3 componentes y Discord
-#: admite 40 por mensaje, así que 5 deja sitio a las pestañas y la navegación.
-PAGE_SIZE = 5
 VIEW_TIMEOUT = 600
 #: Cada cuánto se quitan los roles alquilados que han vencido.
 EXPIRY_MINUTES = 5
+#: Cada cuánto se mira si algo de las listas de deseos merece un aviso por privado.
+WISH_MINUTES = 5
+#: Un carrito que nadie toca en un día se olvida (vive en memoria).
+CART_TTL = 86400
 
 ANNOUNCE_LINES: dict[Kind, tuple[str, ...]] = {
     Kind.ROLE: (
@@ -234,6 +272,13 @@ ANNOUNCE_TITLE: tuple[str, ...] = (
     "{who} se compra {item} y ya no saluda igual.",
     "{who} estrena {item}. Que conste en el BOE.",
 )
+#: Aviso de una compra de varias cosas a la vez (un carrito).
+ANNOUNCE_CART: tuple[str, ...] = (
+    "{who} pasa por caja con {count} cosas: {items}.",
+    "{who} sale del colmado con el carro lleno: {items}.",
+    "{who} se lleva {items}. Jovani le ayuda a cargar el maletero.",
+    "{who} vacía medio colmado: {items}.",
+)
 #: Desde cuánto (IGIC incluido) una compra se anuncia a bombo y platillo.
 BIG_PURCHASE = 100_000
 #: Aviso de una compra de las gordas, delante del aviso normal.
@@ -255,8 +300,6 @@ TABS: tuple[tuple[str, str], ...] = (
 )
 #: Valor del desplegable de títulos para quitárselo.
 NO_TITLE = "-"
-#: Botones por fila de pestañas (Discord admite 5 por fila).
-TABS_PER_ROW = 5
 
 
 def _name(user: discord.abc.User) -> str:
@@ -395,6 +438,77 @@ def item_card(item: ShopItem, now: float, *, best_seller: bool = False, owned: i
     return "\n".join(lines)
 
 
+def short_detail(item: ShopItem) -> str:
+    """Qué es el artículo, para un desplegable (sin menciones, que ahí no se ven)."""
+    if item.kind is Kind.ROLE:
+        if item.duration is None:
+            return "Rol para siempre"
+        return f"Rol durante {format_span(item.duration)}"
+    return kind_detail(item)
+
+
+def compact_line(
+    item: ShopItem,
+    now: float,
+    *,
+    owned: int = 0,
+    maxed: bool = False,
+    wished: bool = False,
+    in_cart: int = 0,
+    best_seller: bool = False,
+) -> str:
+    """Una línea del escaparate: nombre, precio sin IGIC y etiquetas cortas (`LEGEND`).
+
+    Args:
+        owned: Cuántos tiene en vigor quien mira.
+        maxed: Si ya compró el máximo por persona.
+        wished: Si está en su lista de deseos.
+        in_cart: Unidades en su carrito.
+    """
+    price = quote(item, now)
+    cost = (
+        f"~~{format_amount(price.price)}~~ **{format_amount(price.base)}** "
+        f"🏷️ -{price.discount_pct} %"
+        if price.discount
+        else format_amount(price.base)
+    )
+    tags = []
+    if maxed:
+        tags.append("✅ máx.")
+    elif owned:
+        tags.append("✅" if owned == 1 else f"✅×{owned}")
+    if in_cart:
+        tags.append(f"🛒×{in_cart}")
+    if wished:
+        tags.append("⭐")
+    if item.sold_out:
+        tags.append("❌ agotado")
+    elif item.remaining is not None:
+        tags.append(f"📦 {item.remaining}")
+    if item.min_level:
+        tags.append(f"🔒 nv. {item.min_level}")
+    if best_seller:
+        tags.append("🔥")
+    if item.is_new(now):
+        tags.append("🆕")
+    if not on_sale(item, local_now(now)):
+        tags.append(f"🗓️ {season_name(item) or 'fuera de temporada'}")
+    return f"{item.emoji} **{item.name}** · {cost}" + (f" · {' '.join(tags)}" if tags else "")
+
+
+#: Qué quiere decir cada etiqueta de `compact_line`, para el pie del escaparate.
+LEGEND = (
+    "✅ lo tienes · ⭐ en tu lista · 🛒 en el carrito · 📦 quedan · 🔒 nivel · "
+    "🔥 lo más vendido · 🆕 nuevo"
+)
+
+
+def fold(text: str) -> str:
+    """Minúsculas y sin tildes, para buscar: `Plátano` → `platano`."""
+    decomposed = unicodedata.normalize("NFKD", text.casefold())
+    return "".join(c for c in decomposed if not unicodedata.combining(c)).strip()
+
+
 def ticket_preview(price: Quote) -> str:
     """El desglose de la caja, antes de pagar."""
     width = 26
@@ -519,266 +633,6 @@ def _select_emoji(emoji: str) -> discord.PartialEmoji | str | None:
         return None
 
 
-# -- Escaparate -----------------------------------------------------------------------
-
-
-class Storefront(ui.LayoutView):
-    """El escaparate: pestañas, pasillos, artículos con su botón Comprar y páginas.
-
-    Las pestañas, el pasillo y las páginas son del dueño; si otro los toca, se
-    le abre su propio escaparate. **Comprar** lo puede pulsar cualquiera.
-    """
-
-    def __init__(self, cog: Tienda, guild: discord.Guild, owner: discord.abc.User) -> None:
-        super().__init__(timeout=VIEW_TIMEOUT)
-        self.cog = cog
-        self.guild = guild
-        self.owner = owner
-        self.tab = "todo"
-        #: Pasillo elegido (`None`: todos).
-        self.aisle: str | None = None
-        self.page = 0
-        self.items_all: list[ShopItem] = []
-        self.best_seller: int | None = None
-        self.balance = 0
-        #: Cuántos tiene el dueño de cada artículo (por id), para marcarlos.
-        self.owned: Counter[int] = Counter()
-        self.message: discord.Message | None = None
-        self.interaction: discord.Interaction | None = None
-
-    async def load(self) -> None:
-        """Lee el catálogo, el más vendido, el saldo del dueño y lo que ya tiene."""
-        self.items_all = await self.cog.repository.items(self.guild.id)
-        self.best_seller = await self.cog.repository.best_seller(self.guild.id)
-        self.balance = await self.cog.economy.balance(self.guild.id, self.owner.id)
-        entries = await self.cog.repository.inventory(
-            self.guild.id, self.owner.id, self.cog.clock()
-        )
-        self.owned = Counter(entry.item_id for entry in entries)
-        self.rebuild()
-
-    @property
-    def shown(self) -> list[ShopItem]:
-        """Artículos de la pestaña y el pasillo elegidos."""
-        when = local_now(self.cog.clock())
-        return [
-            i
-            for i in self.items_all
-            if in_tab(i, self.tab)
-            and (self.aisle is None or aisle_of(i.catalog_key).key == self.aisle)
-            and on_sale(i, when)
-        ]
-
-    @property
-    def pages(self) -> int:
-        return max(1, -(-len(self.shown) // PAGE_SIZE))
-
-    def rebuild(self) -> None:
-        """Monta los componentes con el estado actual."""
-        self.clear_items()
-        now = self.cog.clock()
-        self.page = min(self.page, self.pages - 1)
-        container = ui.Container(accent_colour=COLOR)
-        where = f" · {AISLE_BY_KEY[self.aisle].label}" if self.aisle else ""
-        container.add_item(
-            ui.TextDisplay(
-                f"# 🛒 {SHOP_NAME}{where}\n"
-                f"¡Bienvenido, {_name(self.owner)}! Aquí se gasta lo que te dan el casino "
-                f"y el IMV. "
-                f"Los precios van sin IGIC: {TAX_COLLECTOR} cobra en caja.\n"
-                f"-# {CURRENCY_EMOJI} Saldo de {_name(self.owner)}: {format_amount(self.balance)}"
-            )
-        )
-        # Solo las pestañas con algo (los roles no vienen de serie); si no caben
-        # en una fila, siguen en la de abajo.
-        shown_tabs = []
-        for key, label in TABS:
-            count = sum(1 for i in self.items_all if in_tab(i, key))
-            if count or key in ("todo", self.tab):
-                shown_tabs.append((key, label, count))
-        for start in range(0, len(shown_tabs), TABS_PER_ROW):
-            tabs: ui.ActionRow = ui.ActionRow()
-            for key, label, count in shown_tabs[start : start + TABS_PER_ROW]:
-                style = (
-                    discord.ButtonStyle.primary
-                    if key == self.tab
-                    else discord.ButtonStyle.secondary
-                )
-                tabs.add_item(
-                    _button(
-                        f"{label} · {count}",
-                        self._tab(key),
-                        custom_id=f"tienda:tab:{key}",
-                        style=style,
-                    )
-                )
-            container.add_item(tabs)
-        if (aisles := self._aisle_select()) is not None:
-            row: ui.ActionRow = ui.ActionRow()
-            row.add_item(aisles)
-            container.add_item(row)
-        container.add_item(ui.Separator())
-
-        page_items = self.shown[self.page * PAGE_SIZE : (self.page + 1) * PAGE_SIZE]
-        if not page_items:
-            container.add_item(
-                ui.TextDisplay(
-                    "El colmado está vacío. Un admin tiene que llenarlo con `catalogo`."
-                    if not self.items_all
-                    else "No hay nada por aquí. Prueba otro pasillo u otra pestaña."
-                )
-            )
-        for item in page_items:
-            if item.sold_out:
-                buy = _button(
-                    "Agotado", self._noop, custom_id=f"tienda:agotado:{item.id}", disabled=True
-                )
-            else:
-                buy = _button(
-                    f"Comprar · {money(quote(item, now).base)}",
-                    self._buy(item.id),
-                    custom_id=f"tienda:comprar:{item.id}",
-                    style=discord.ButtonStyle.success,
-                )
-            card = item_card(
-                item, now, best_seller=item.id == self.best_seller, owned=self.owned[item.id]
-            )
-            container.add_item(ui.Section(ui.TextDisplay(card), accessory=buy))
-        self.add_item(container)
-
-        nav: ui.ActionRow = ui.ActionRow()
-        nav.add_item(
-            _button(
-                "◀",
-                self._move(-1),
-                custom_id="tienda:pagina:anterior",
-                disabled=self.page == 0,
-            )
-        )
-        nav.add_item(
-            _button(
-                f"Página {self.page + 1}/{self.pages}",
-                self._noop,
-                custom_id="tienda:pagina",
-                disabled=True,
-            )
-        )
-        nav.add_item(
-            _button(
-                "▶",
-                self._move(1),
-                custom_id="tienda:pagina:siguiente",
-                disabled=self.page >= self.pages - 1,
-            )
-        )
-        nav.add_item(
-            _button(
-                "🎒 Mi mochila",
-                self._backpack,
-                custom_id="tienda:mochila",
-                style=discord.ButtonStyle.primary,
-            )
-        )
-        self.add_item(nav)
-
-    def _aisle_select(self) -> ui.Select | None:
-        """Desplegable de pasillos, con los que tienen algo en la pestaña elegida."""
-        counts: dict[str, int] = defaultdict(int)
-        for item in self.items_all:
-            if in_tab(item, self.tab):
-                counts[aisle_of(item.catalog_key).key] += 1
-        present = [a for a in (*AISLES, HOUSE_AISLE) if counts.get(a.key)]
-        if len(present) < 2 and self.aisle is None:
-            return None
-        options = [
-            discord.SelectOption(
-                label="Todos los pasillos",
-                value="*",
-                emoji="🧭",
-                default=self.aisle is None,
-            )
-        ]
-        options += [
-            discord.SelectOption(
-                label=f"{a.name} · {counts[a.key]}",
-                value=a.key,
-                emoji=a.emoji,
-                default=a.key == self.aisle,
-            )
-            for a in present[:24]
-        ]
-        select: ui.Select = ui.Select(
-            placeholder="🧭 Elige pasillo", options=options, custom_id="tienda:pasillo"
-        )
-
-        async def callback(interaction: discord.Interaction) -> None:
-            value = select.values[0]
-            aisle = None if value == "*" else value
-            if await self._redirect(interaction, self.tab, aisle):
-                return
-            self.aisle, self.page = aisle, 0
-            self.rebuild()
-            await interaction.response.edit_message(view=self)
-
-        select.callback = callback  # type: ignore[method-assign]
-        return select
-
-    async def _noop(self, interaction: discord.Interaction) -> None:
-        await ack(interaction)
-
-    async def _redirect(
-        self, interaction: discord.Interaction, tab: str, aisle: str | None
-    ) -> bool:
-        """Si no es el dueño, le abre su propio escaparate. Devuelve si lo hizo."""
-        if interaction.user.id == self.owner.id:
-            return False
-        own = Storefront(self.cog, self.guild, interaction.user)
-        own.tab, own.aisle = tab, aisle
-        # Cargar el escaparate va a la base de datos: se acepta el clic antes.
-        await ack(interaction, new_message=True)
-        await own.load()
-        await edit(interaction, view=own)
-        own.interaction = interaction
-        return True
-
-    def _tab(self, tab: str) -> Callable[[discord.Interaction], Awaitable[None]]:
-        async def callback(interaction: discord.Interaction) -> None:
-            if await self._redirect(interaction, tab, self.aisle):
-                return
-            await ack(interaction)
-            self.tab, self.page = tab, 0
-            await self.load()
-            await edit(interaction, view=self)
-
-        return callback
-
-    def _move(self, step: int) -> Callable[[discord.Interaction], Awaitable[None]]:
-        async def callback(interaction: discord.Interaction) -> None:
-            if await self._redirect(interaction, self.tab, self.aisle):
-                return
-            self.page = max(0, min(self.pages - 1, self.page + step))
-            self.rebuild()
-            await interaction.response.edit_message(view=self)
-
-        return callback
-
-    def _buy(self, item_id: int) -> Callable[[discord.Interaction], Awaitable[None]]:
-        async def callback(interaction: discord.Interaction) -> None:
-            await self.cog.open_checkout(interaction, item_id)
-
-        return callback
-
-    async def _backpack(self, interaction: discord.Interaction) -> None:
-        await ack(interaction, new_message=True)
-        view = await self.cog.backpack_view(self.guild, interaction.user, interaction.user)
-        await edit(interaction, view=view, allowed_mentions=discord.AllowedMentions.none())
-        view.interaction = interaction
-
-    async def on_timeout(self) -> None:
-        """Apaga los botones al caducar."""
-        await _close_view(self, self.message, self.interaction)
-
-
 async def _close_view(
     view: ui.LayoutView, message: discord.Message | None, interaction: discord.Interaction | None
 ) -> None:
@@ -796,6 +650,26 @@ async def _close_view(
 
 
 # -- Caja -----------------------------------------------------------------------------
+
+
+@dataclass
+class Bought:
+    """Una línea pagada: lo comprado (con el precio cobrado), sus ventas y si se devolvió.
+
+    Attributes:
+        refund: Por qué se devolvió (un rol que Discord no dejó dar), o `None`.
+        refund_failed: Si además no se pudo devolver el dinero.
+    """
+
+    line: TicketLine
+    sales: list[Sale]
+    refund: str | None = None
+    refund_failed: bool = False
+
+    @property
+    def item(self) -> ShopItem:
+        """El artículo, tal y como quedó al venderlo."""
+        return self.line.item
 
 
 class Checkout(ui.LayoutView):
@@ -1280,6 +1154,16 @@ class Tienda(commands.Cog):
         #: Avisos de cajas ganadas jugando que aún no ha visto su dueño: salen en el
         #: siguiente resultado con dinero (`notices_for`, que llama `renta.hint`).
         self.notices: dict[tuple[int, int], list[str]] = defaultdict(list)
+        #: Carrito de cada `(servidor, miembro)`: artículo → unidades, en el orden en
+        #: que se añadieron. En memoria: se pierde al reiniciar y caduca en `CART_TTL`.
+        self.carts: dict[tuple[int, int], dict[int, int]] = {}
+        self.cart_touched: dict[tuple[int, int], float] = {}
+        #: Sección, pasillo y orden que eligió cada miembro la última vez en el
+        #: escaparate. Uno por miembro: no crece más que el servidor.
+        self.shop_prefs: dict[tuple[int, int], Prefs] = {}
+        #: Avisos por privado que van aparte de quien los provoca (un puesto del
+        #: Rastro): se guardan para cancelarlos al descargar el cog.
+        self._tasks: set[asyncio.Task[None]] = set()
 
     async def cog_load(self) -> None:
         """Carga potenciadores, títulos y skins puestos, y arranca la caducidad."""
@@ -1296,10 +1180,14 @@ class Tienda(commands.Cog):
         for guild_id, user_id, skin_key, data in await self.repository.skin_images():
             self.skin_images[(guild_id, user_id, skin_key)] = SkinImage.of(data)
         self._expire.start()
+        self._watch_wishes.start()
 
     async def cog_unload(self) -> None:
-        """Para la tarea de caducidad."""
+        """Para la caducidad, la vigilancia de las listas de deseos y los avisos en marcha."""
         self._expire.cancel()
+        self._watch_wishes.cancel()
+        for task in self._tasks:
+            task.cancel()
 
     # -- Potenciadores ---------------------------------------------------------------
 
@@ -1691,10 +1579,18 @@ class Tienda(commands.Cog):
         self._stocked.add(guild_id)
         return added
 
-    async def storefront(self, guild: discord.Guild, owner: discord.abc.User) -> Storefront:
-        """Escaparate listo para enviar."""
+    async def storefront(
+        self, guild: discord.Guild, owner: discord.abc.User, *, search: str | None = None
+    ) -> Storefront:
+        """Escaparate listo para enviar (`bot.cogs.shop_front.Storefront`).
+
+        Args:
+            search: Lo que se busca, si se abre buscando.
+        """
+        from bot.cogs.shop_front import Storefront  # evita el import circular
+
         await self.stock_up(guild.id)
-        view = Storefront(self, guild, owner)
+        view = Storefront(self, guild, owner, search=search)
         await view.load()
         return view
 
@@ -2206,6 +2102,50 @@ class Tienda(commands.Cog):
         view.skin_game = skin_game
         await edit(interaction, view=view, allowed_mentions=discord.AllowedMentions.none())
 
+    def check_line(
+        self,
+        guild: discord.Guild,
+        buyer: discord.Member,
+        item: ShopItem,
+        qty: int,
+        *,
+        bought: int,
+        entries: Sequence[InventoryEntry],
+        level: int,
+        now: float,
+    ) -> str | None:
+        """Por qué `buyer` no puede llevarse `qty` unidades de `item`, o `None` si puede.
+
+        Lo mismo que se vuelve a mirar al pagar (`ineligibility`, dentro de la
+        transacción), más la temporada, el rol y la cantidad. Sin base de datos: los
+        datos los trae quien llama.
+
+        Args:
+            bought: Compras suyas de este artículo (`ShopRepository.purchase_counts`).
+            entries: Su mochila (para los roles).
+            level: Su nivel (0 si el artículo no pide nivel).
+        """
+        if not on_sale(item, local_now(now)):
+            season = season_name(item) or "su temporada"
+            return f"Eso solo se vende en {season}. Vuelve entonces."
+        if item.kind is Kind.ROLE:
+            role = guild.get_role(item.role_id or 0)
+            if (problem := self.role_problem(guild, role)) is not None:
+                return problem
+            mine = [e for e in entries if e.role_id == item.role_id]
+            if role in buyer.roles and not mine:
+                return "Ya llevas ese rol, y no te lo vendió el colmado."
+        owns_role = item.permanent_role and any(
+            e.role_id == item.role_id and e.expires_at is None for e in entries
+        )
+        reason = ineligibility(item, now=now, level=level, bought=bought, owns_role=owns_role)
+        if reason is not None:
+            return reason
+        cap = max_quantity(item, bought)
+        if qty > cap:
+            return f"De este puedes llevarte {cap} como mucho."
+        return None
+
     async def _precheck(
         self, guild: discord.Guild, buyer: discord.Member, item: ShopItem, now: float
     ) -> tuple[str | None, str | None]:
@@ -2214,19 +2154,28 @@ class Tienda(commands.Cog):
         Las reglas de existencias y límites se vuelven a mirar al pagar,
         dentro de la transacción (`ShopRepository.reserve`).
         """
+        entries = (
+            await self.repository.inventory(guild.id, buyer.id, now)
+            if item.kind is Kind.ROLE
+            else []
+        )
+        bought = (
+            (await self.repository.purchase_counts(guild.id, buyer.id))[item.id]
+            if item.per_user is not None
+            else 0
+        )
+        level = await self.member_level(guild.id, buyer.id) if item.min_level else 0
+        error = self.check_line(
+            guild, buyer, item, 1, bought=bought, entries=entries, level=level, now=now
+        )
+        if error is not None:
+            return error, None
         note = None
-        if not on_sale(item, local_now(now)):
-            season = season_name(item) or "su temporada"
-            return f"Eso solo se vende en {season}. Vuelve entonces.", None
         if item.kind is Kind.ROLE:
-            role = guild.get_role(item.role_id or 0)
-            if (problem := self.role_problem(guild, role)) is not None:
-                return problem, None
-            entries = await self.repository.inventory(guild.id, buyer.id, now)
-            mine = [e for e in entries if e.role_id == item.role_id]
-            rental = next((e for e in mine if e.expires_at is not None), None)
-            if role in buyer.roles and not mine:
-                return "Ya llevas ese rol, y no te lo vendió el colmado.", None
+            rental = next(
+                (e for e in entries if e.role_id == item.role_id and e.expires_at is not None),
+                None,
+            )
             if item.duration is not None and rental is not None:
                 note = (
                     f"🔁 Ya lo tienes alquilado hasta <t:{int(rental.expires_at or now)}:f>: "
@@ -2239,12 +2188,103 @@ class Tienda(commands.Cog):
                     f"⏳ Ya tienes {len(queue)} potenciador{'es' if len(queue) > 1 else ''}: "
                     f"este se pone a la cola y empieza <t:{int(queue[-1][1])}:R>."
                 )
-        level = await self.member_level(guild.id, buyer.id) if item.min_level else 0
-        if item.min_level and level < item.min_level:
-            return f"Hace falta nivel {item.min_level} y vas por el {level}. ¡A yapear!", None
-        if item.sold_out:
-            return "Agotado. Llegaste tarde.", None
         return None, note
+
+    async def complete_cart(
+        self, guild: discord.Guild, buyer: discord.Member, lines: Sequence[TicketLine]
+    ) -> tuple[list[Bought], int]:
+        """Cobra varias líneas de una vez y entrega lo comprado. Todo o nada.
+
+        Existencias, límites, nivel y precios se vuelven a mirar dentro de la
+        transacción del cobro (`ShopRepository.reserve_cart`), unidad a unidad. Después
+        se dan los roles: si Discord no deja dar uno, esa línea se devuelve entera
+        (`Bought.refund`) y el resto se queda, porque ya se ha cobrado y entregado.
+
+        Returns:
+            `(líneas pagadas, saldo final)`.
+
+        Raises:
+            ShopError: Si alguna línea no se puede comprar. No se cobra nada.
+            InsufficientFundsError: Si no le llega para el total. No se cobra nada.
+        """
+        now = self.clock()
+        when = local_now(now)
+        for line in lines:
+            if not on_sale(line.item, when):
+                raise ShopError(f"{line.item.emoji} {line.item.name}: se acabó su temporada.")
+        needs_level = any(line.item.min_level for line in lines)
+        level = await self.member_level(guild.id, buyer.id) if needs_level else 0
+        reserved, balance = await self.economy.purchase_lines(
+            guild.id,
+            buyer.id,
+            lines=[(line.base, line.tax, line.item.kind.value) for line in lines],
+            reserve=self.repository.reserve_cart(
+                guild.id,
+                buyer.id,
+                [(line.item.id, line.qty, line.price) for line in lines],
+                level=level,
+                now=now,
+            ),
+        )
+        bought = [
+            Bought(TicketLine(item, len(sales), line.price), sales)
+            for line, (item, sales) in zip(lines, reserved, strict=True)
+        ]
+        for entry in bought:
+            item = entry.item
+            if item.kind is Kind.BOOST:
+                for sale in entry.sales:
+                    if sale.expires_at is not None:
+                        self.boosts[(guild.id, buyer.id)].append(
+                            (sale.starts_at, sale.expires_at, item.multiplier or 100)
+                        )
+            if item.kind is not Kind.ROLE:
+                continue
+            problem = await self._give_role(guild, buyer, item, entry.sales[0].invoice)
+            if problem is None:
+                continue
+            entry.refund = problem
+            try:
+                balance = await self.economy.refund_purchase(
+                    guild.id,
+                    buyer.id,
+                    base=entry.line.base,
+                    tax=entry.line.tax,
+                    concept=item.kind.value,
+                    release=self._release(entry.sales),
+                )
+            except (InsufficientFundsError, ShopError):
+                # Solo pasa si el Estado ya se ha gastado ese IGIC en devoluciones.
+                logger.exception("No se pudo devolver la compra %s", entry.sales[0].purchase_id)
+                entry.refund_failed = True
+        return bought, balance
+
+    async def _give_role(
+        self, guild: discord.Guild, buyer: discord.Member, item: ShopItem, invoice: int
+    ) -> str | None:
+        """Le pone al comprador el rol que ha pagado; el motivo si no se puede."""
+        role = guild.get_role(item.role_id or 0)
+        problem = self.role_problem(guild, role)
+        if problem is None and role is not None:
+            try:
+                await buyer.add_roles(role, reason=f"Compra en la tienda (ticket {invoice})")
+            except discord.HTTPException:
+                logger.warning("No se pudo dar el rol %s comprado por %s", item.role_id, buyer.id)
+                problem = "Discord no me dejó darte el rol."
+        return problem
+
+    def _release(self, sales: Sequence[Sale]) -> Callable[[sqlite3.Connection], None]:
+        """Anula varias ventas en una transacción, de la última a la primera.
+
+        Al revés para que un alquiler renovado unidad a unidad vuelva a como estaba.
+        """
+        releases = [self.repository.release(sale.purchase_id) for sale in reversed(sales)]
+
+        def run(connection: sqlite3.Connection) -> None:
+            for release in releases:
+                release(connection)
+
+        return run
 
     async def complete_purchase(
         self, view: Checkout, interaction: discord.Interaction
@@ -2263,17 +2303,9 @@ class Tienda(commands.Cog):
             # La caja se abrió en temporada y se ha pagado fuera: no se cobra.
             view.failed, view.result = True, "❌ Se acabó la temporada de ese artículo."
             return None
-        level = await self.member_level(guild.id, buyer.id) if view.item.min_level else 0
         try:
-            (item, sale), balance = await self.economy.purchase(
-                guild.id,
-                buyer.id,
-                base=view.price.base,
-                tax=view.price.tax,
-                concept=view.item.kind.value,
-                reserve=self.repository.reserve(
-                    guild.id, buyer.id, view.item.id, expected=view.price, level=level, now=now
-                ),
+            (entry,), balance = await self.complete_cart(
+                guild, buyer, [TicketLine(view.item, 1, view.price)]
             )
         except ShopError as error:
             view.failed, view.result = True, f"❌ {error}"
@@ -2285,51 +2317,70 @@ class Tienda(commands.Cog):
                 f"y son {format_amount(view.price.total)}."
             )
             return None
-
-        if item.kind is Kind.ROLE:
-            role = guild.get_role(item.role_id or 0)
-            problem = self.role_problem(guild, role)
-            try:
-                if problem is None and role is not None:
-                    await buyer.add_roles(
-                        role, reason=f"Compra en la tienda (ticket {sale.invoice})"
-                    )
-            except discord.HTTPException:
-                logger.warning("No se pudo dar el rol %s comprado por %s", item.role_id, buyer.id)
-                problem = "Discord no me dejó darte el rol."
-            if problem is not None:
-                try:
-                    balance = await self.economy.refund_purchase(
-                        guild.id,
-                        buyer.id,
-                        base=view.price.base,
-                        tax=view.price.tax,
-                        concept=item.kind.value,
-                        release=self.repository.release(sale.purchase_id),
-                    )
-                except (InsufficientFundsError, ShopError):
-                    # Solo pasa si el Estado ya se ha gastado ese IGIC en devoluciones.
-                    logger.exception("No se pudo devolver la compra %s", sale.purchase_id)
-                    view.failed = True
-                    view.result = (
-                        f"❌ {problem} Y encima no he podido devolverte el dinero: avisa a un "
-                        f"admin con el ticket nº {sale.invoice}."
-                    )
-                    return None
-                view.failed = True
+        if entry.refund is not None:
+            view.failed = True
+            if entry.refund_failed:
                 view.result = (
-                    f"❌ {problem} Te he devuelto los {format_amount(view.price.total)} "
+                    f"❌ {entry.refund} Y encima no he podido devolverte el dinero: avisa a un "
+                    f"admin con el ticket nº {entry.sales[0].invoice}."
+                )
+            else:
+                view.result = (
+                    f"❌ {entry.refund} Te he devuelto los {format_amount(view.price.total)} "
                     f"(IGIC incluido). Saldo: {format_amount(balance)}"
                 )
-                return None
-        elif item.kind is Kind.BOOST and sale.expires_at is not None:
-            self.boosts[(guild.id, buyer.id)].append(
-                (sale.starts_at, sale.expires_at, item.multiplier or 100)
-            )
-
+            return None
+        item, sale = entry.item, entry.sales[0]
         view.done = True
         view.result = await self._paid_text(item, view.price, sale, buyer, balance, now)
         return item, sale, balance
+
+    @staticmethod
+    def _got_text(item: ShopItem, sales: Sequence[Sale], now: float) -> str:
+        """Lo que ha conseguido el comprador con `sales`, las unidades de un artículo."""
+        sale = sales[-1]
+        if item.kind is Kind.ROLE:
+            return (
+                f"Ya llevas <@&{item.role_id}>"
+                + ("" if sale.expires_at is None else f" hasta <t:{int(sale.expires_at)}:f>")
+                + ("; se ha sumado a tu alquiler." if sale.renewed else ".")
+            )
+        if item.kind is Kind.BOOST:
+            boost = format_multiplier(item.multiplier or 100)
+            if len(sales) > 1:
+                end = int(sale.expires_at or now)
+                return f"{len(sales)} × XP {boost} en cola: el último acaba <t:{end}:R>."
+            return (
+                f"XP {boost} activo hasta <t:{int(sale.expires_at or now)}:t>."
+                if sale.starts_at <= now
+                else f"XP {boost} en cola: empieza <t:{int(sale.starts_at)}:R>."
+            )
+        if item.kind is Kind.PET:
+            return (
+                f"{item.emoji} {item.name} ya vive contigo. Ponle nombre, cuídala y elige "
+                "si te acompaña con `mascota`."
+            )
+        many = f" ×{len(sales)}" if len(sales) > 1 else ""
+        got = f"{item.emoji} {item.name}{many} ya está en tu mochila."
+        serials = [str(s.serial) for s in sales if s.serial is not None]
+        if serials:
+            noun = "Unidad" if len(serials) == 1 else "Unidades"
+            got += f" {noun} nº {', '.join(serials)} de {sale.edition}."
+        if (use := use_of(item.catalog_key)) is not None:
+            got += f" Úsalo desde la mochila ({use.verb.lower()})."
+        if is_title(item.catalog_key):
+            got += " Ya lo luces junto a tu nombre; lo cambias en la mochila."
+        if (skin := skin_of_item(item.catalog_key)) is not None:
+            game = GAMES[skin.game]
+            got += (
+                f" Ya la llevas puesta en {game.label}; la cambias en la mochila o con "
+                "el botón 🎨 de la mesa."
+                if game.wearable
+                else f" Vale en todas las {game.name.lower()}: te la pongo en la mesa desde "
+                "la que la compras o en las que llevaban el de serie, y cada mesa la "
+                "cambias con su botón 🎨 o en la mochila."
+            )
+        return got
 
     async def _paid_text(
         self,
@@ -2341,45 +2392,9 @@ class Tienda(commands.Cog):
         now: float,
     ) -> str:
         """Lo que ve el comprador tras pagar: la factura y qué ha conseguido."""
-        if item.kind is Kind.ROLE:
-            got = (
-                f"Ya llevas <@&{item.role_id}>"
-                + ("" if sale.expires_at is None else f" hasta <t:{int(sale.expires_at)}:f>")
-                + ("; se ha sumado a tu alquiler." if sale.renewed else ".")
-            )
-        elif item.kind is Kind.BOOST:
-            boost = format_multiplier(item.multiplier or 100)
-            got = (
-                f"XP {boost} activo hasta <t:{int(sale.expires_at or now)}:t>."
-                if sale.starts_at <= now
-                else f"XP {boost} en cola: empieza <t:{int(sale.starts_at)}:R>."
-            )
-        elif item.kind is Kind.PET:
-            got = (
-                f"{item.emoji} {item.name} ya vive contigo. Ponle nombre, cuídala y elige "
-                "si te acompaña con `mascota`."
-            )
-        else:
-            got = f"{item.emoji} {item.name} ya está en tu mochila."
-            if sale.serial is not None:
-                got += f" Unidad nº {sale.serial} de {sale.edition}."
-            if (use := use_of(item.catalog_key)) is not None:
-                got += f" Úsalo desde la mochila ({use.verb.lower()})."
-            if is_title(item.catalog_key):
-                got += " Ya lo luces junto a tu nombre; lo cambias en la mochila."
-            if (skin := skin_of_item(item.catalog_key)) is not None:
-                game = GAMES[skin.game]
-                got += (
-                    f" Ya la llevas puesta en {game.label}; la cambias en la mochila o con "
-                    "el botón 🎨 de la mesa."
-                    if game.wearable
-                    else f" Vale en todas las {game.name.lower()}: te la pongo en la mesa desde "
-                    "la que la compras o en las que llevaban el de serie, y cada mesa la "
-                    "cambias con su botón 🎨 o en la mochila."
-                )
         lines = [
             "### ✅ ¡Es tuyo!",
-            got,
+            self._got_text(item, [sale], now),
             receipt(
                 item,
                 price,
@@ -2396,6 +2411,63 @@ class Tienda(commands.Cog):
             lines.append(hint)
         return "\n".join(lines)
 
+    async def cart_paid_text(
+        self, bought: Sequence[Bought], balance: int, buyer: discord.Member, now: float
+    ) -> str:
+        """Lo que ve el comprador tras pagar una ficha o un carrito: lo conseguido, la
+        factura con el impuesto desglosado y el saldo."""
+        delivered = [b for b in bought if b.refund is None]
+        units = sum(len(b.sales) for b in delivered)
+        title = "### ✅ ¡Es tuyo!" if units == 1 else "### ✅ ¡Todo tuyo!"
+        lines = [title if delivered else "### ❌ No se ha podido entregar"]
+        notes = [f"- {self._got_text(b.item, b.sales, now)}" for b in delivered]
+        for b in bought:
+            if b.refund is None:
+                continue
+            what = f"{b.item.emoji} {b.item.name}"
+            if b.refund_failed:
+                notes.append(
+                    f"- ⚠️ {what}: {b.refund} Y encima no he podido devolverte el dinero: "
+                    f"avisa a un admin con el ticket nº {b.sales[0].invoice}."
+                )
+            else:
+                notes.append(
+                    f"- ⚠️ {what}: {b.refund} Te he devuelto los {format_amount(b.line.total)} "
+                    "(IGIC incluido)."
+                )
+        # Con muchas líneas no cabría con la factura en un mensaje (4.000 caracteres).
+        lines.append(_clip("\n".join(notes), 1200))
+        if delivered:
+            lines.append(
+                cart_receipt(
+                    [b.line for b in delivered],
+                    invoices=[s.invoice for b in delivered for s in b.sales],
+                    when=now,
+                    buyer=buyer.display_name,
+                    serials={
+                        b.item.id: [s.serial for s in b.sales if s.serial is not None]
+                        for b in delivered
+                    },
+                    editions={
+                        b.item.id: edition
+                        for b in delivered
+                        if (edition := b.sales[0].edition) is not None
+                    },
+                )
+            )
+            if units == 1:
+                lines.append(igic_line(delivered[0].line.price))
+            else:
+                tax = sum(b.line.tax for b in delivered)
+                lines.append(
+                    f"-# 🐶 {TAX_COLLECTOR} se lleva {format_amount(tax)} en impuestos: el "
+                    "desglose por tipo va en la factura."
+                )
+        lines.append(f"{CURRENCY_EMOJI} Saldo: **{format_amount(balance)}**")
+        if hint := await renta.hint(self.bot, buyer.guild.id, buyer.id, Moment(Event.BUY)):
+            lines.append(hint)
+        return "\n".join(lines)
+
     async def after_purchase(
         self,
         interaction: discord.Interaction,
@@ -2404,73 +2476,365 @@ class Tienda(commands.Cog):
         *,
         announce: bool = True,
     ) -> None:
-        """Aviso público, aviso de la Renta y logros, después de enseñar la factura.
-
-        `announce=False` se salta el aviso público (compras desde otro panel).
-        """
+        """Lo de `after_cart` para la compra de una caja de un solo artículo."""
         item, sale, balance = paid
-        title = is_title(item.catalog_key)
-        skin = skin_of_item(item.catalog_key)
-        if skin is not None:
-            for game in self.wear_on_purchase(view.guild.id, view.buyer.id, skin, view.skin_game):
-                await self.wear_skin(view.guild.id, view.buyer.id, game, skin)
-        if title:
-            # Comprar un título te lo pone, antes de anunciarlo.
-            await self.wear_title(view.guild.id, view.buyer.id, item.catalog_key)
-            lines = ANNOUNCE_TITLE
-        elif use_of(item.catalog_key):
-            lines = ANNOUNCE_USABLE
-        else:
-            lines = ANNOUNCE_LINES[item.kind]
+        await self.after_cart(
+            interaction,
+            view.guild,
+            view.buyer,
+            [Bought(TicketLine(item, 1, view.price), [sale])],
+            balance,
+            announce=announce,
+            skin_game=view.skin_game,
+        )
+
+    async def after_cart(
+        self,
+        interaction: discord.Interaction,
+        guild: discord.Guild,
+        buyer: discord.Member,
+        bought: Sequence[Bought],
+        balance: int,
+        *,
+        announce: bool = True,
+        skin_game: str | None = None,
+    ) -> None:
+        """Después de enseñar la factura: skins y título puestos, aviso público, Renta,
+        mascotas, lista de deseos y logros.
+
+        Args:
+            announce: `False` se salta el aviso público (compras desde otro panel).
+            skin_game: La mesa desde cuyo 🎨 se compró una skin, para ponérsela ahí.
+        """
+        delivered = [b for b in bought if b.refund is None]
+        if not delivered:
+            return
+        for entry in delivered:
+            if (skin := skin_of_item(entry.item.catalog_key)) is not None:
+                for game in self.wear_on_purchase(guild.id, buyer.id, skin, skin_game):
+                    await self.wear_skin(guild.id, buyer.id, game, skin)
+        titles = [b.item for b in delivered if is_title(b.item.catalog_key)]
+        if titles:
+            # Comprar un título te lo pone, antes de anunciarlo; con varios, el último.
+            await self.wear_title(guild.id, buyer.id, titles[-1].catalog_key)
         if announce:
-            line = self.rng.choice(lines).format(
-                who=f"**{_name(view.buyer)}**", item=f"{item.emoji} **{item.name}**"
-            )
-            extra = f" (nº {sale.serial} de {sale.edition})" if sale.serial is not None else ""
-            big = view.price.total >= BIG_PURCHASE
-            header = f"{self.rng.choice(ANNOUNCE_BIG)}\n" if big else ""
             try:
                 await interaction.followup.send(
-                    f"{header}🛍️ {line}{extra}\n-# Pagó {format_amount(view.price.total)}, "
-                    f"de los que {format_amount(view.price.tax)} son IGIC para {TAX_COLLECTOR}.",
+                    self._announcement(buyer, delivered),
                     allowed_mentions=discord.AllowedMentions.none(),
                 )
             except discord.HTTPException:
                 logger.debug("No se pudo anunciar una compra", exc_info=True)
         # Comprar gasta dinero: gancho de la Renta (ver Biblia.txt, sección 4).
         await renta.remind(self.bot, interaction)
-        if item.kind is Kind.PET:
-            await mascotas.adopted(self.bot, view.guild.id, view.buyer, interaction.channel, item)
-        now = self.clock()
+        for entry in delivered:
+            if entry.item.kind is Kind.PET:
+                await mascotas.adopted(self.bot, guild.id, buyer, interaction.channel, entry.item)
+        wished = {w.item_id for w in await self.repository.wishlist(guild.id, buyer.id)}
+        got_wished = [b for b in delivered if b.item.id in wished]
+        await self.repository.remove_wishes(guild.id, buyer.id, {b.item.id for b in got_wished})
         await logros.track(
             self.bot,
-            view.guild.id,
-            view.buyer,
+            guild.id,
+            buyer,
             interaction.channel,
-            shop_stats(
-                kind=item.kind.value,
-                total=view.price.total,
-                tax=view.price.tax,
-                discount_pct=view.price.discount_pct,
-                luxury=view.price.rate.key == "lujo",
-                serial=sale.serial,
-                last_unit=sale.last_unit,
-                renewed=sale.renewed,
-                collection=sale.collection,
-                queued_boosts=len(self.queued_boosts(view.guild.id, view.buyer.id, now)),
-                balance_after=balance,
-                catalog_key=item.catalog_key,
-                aisle=aisle_of(item.catalog_key).key,
-                title=title,
-                skin=skin is not None,
-            ),
+            self._purchase_delta(guild.id, buyer.id, delivered, balance, got_wished),
         )
+
+    def _announcement(self, buyer: discord.abc.User, delivered: Sequence[Bought]) -> str:
+        """El aviso público de una compra; el de siempre si es una sola unidad."""
+        total = sum(b.line.total for b in delivered)
+        tax = sum(b.line.tax for b in delivered)
+        who = f"**{_name(buyer)}**"
+        if len(delivered) == 1 and len(delivered[0].sales) == 1:
+            item, sale = delivered[0].item, delivered[0].sales[0]
+            if is_title(item.catalog_key):
+                pool = ANNOUNCE_TITLE
+            elif use_of(item.catalog_key):
+                pool = ANNOUNCE_USABLE
+            else:
+                pool = ANNOUNCE_LINES[item.kind]
+            line = self.rng.choice(pool).format(who=who, item=f"{item.emoji} **{item.name}**")
+            extra = f" (nº {sale.serial} de {sale.edition})" if sale.serial is not None else ""
+            header = f"{self.rng.choice(ANNOUNCE_BIG)}\n" if total >= BIG_PURCHASE else ""
+            return (
+                f"{header}🛍️ {line}{extra}\n-# Pagó {format_amount(total)}, "
+                f"de los que {format_amount(tax)} son IGIC para {TAX_COLLECTOR}."
+            )
+        names = [
+            f"{b.item.emoji} **{b.item.name}**" + (f" ×{len(b.sales)}" if len(b.sales) > 1 else "")
+            for b in delivered
+        ]
+        shown = ", ".join(names[:8]) + (f" y {len(names) - 8} más" if len(names) > 8 else "")
+        count = sum(len(b.sales) for b in delivered)
+        line = self.rng.choice(ANNOUNCE_CART).format(who=who, items=shown, count=count)
+        header = f"{self.rng.choice(ANNOUNCE_BIG)}\n" if total >= BIG_PURCHASE else ""
+        return (
+            f"{header}🛒 {line}\n-# Pagó {format_amount(total)}, de los que "
+            f"{format_amount(tax)} son impuestos para {TAX_COLLECTOR}."
+        )
+
+    def _purchase_delta(
+        self,
+        guild_id: int,
+        user_id: int,
+        delivered: Sequence[Bought],
+        balance: int,
+        got_wished: Sequence[Bought],
+    ) -> StatDelta:
+        """Los logros de una compra: los de siempre por unidad y los del carrito entero."""
+        now = self.clock()
+        queued = len(self.queued_boosts(guild_id, user_id, now))
+        delta = StatDelta()
+        for entry in delivered:
+            item, price = entry.item, entry.line.price
+            for sale in entry.sales:
+                delta.merge(
+                    shop_stats(
+                        kind=item.kind.value,
+                        total=price.total,
+                        tax=price.tax,
+                        discount_pct=price.discount_pct,
+                        luxury=price.rate.key == "lujo",
+                        serial=sale.serial,
+                        last_unit=sale.last_unit,
+                        renewed=sale.renewed,
+                        collection=sale.collection,
+                        queued_boosts=queued,
+                        balance_after=balance,
+                        catalog_key=item.catalog_key,
+                        aisle=aisle_of(item.catalog_key).key,
+                        title=is_title(item.catalog_key),
+                        skin=skin_of_item(item.catalog_key) is not None,
+                    )
+                )
+        if "shop_broke_buy" in delta.add:
+            # Quedarse a cero cuenta una vez por compra, no una por unidad.
+            delta.add["shop_broke_buy"] = 1
+        delta.merge(
+            shop_cart_stats(
+                lines=len(delivered),
+                units=sum(len(b.sales) for b in delivered),
+                rates=len({b.line.price.rate.key for b in delivered}),
+                same_max=max(len(b.sales) for b in delivered),
+                total=sum(b.line.total for b in delivered),
+                wished=len(got_wished),
+                wished_on_sale=sum(1 for b in got_wished if b.line.price.discount_pct),
+                when=local_now(now),
+            )
+        )
+        return delta
+
+    # -- Carrito ---------------------------------------------------------------------
+
+    def cart(self, guild_id: int, user_id: int) -> dict[int, int]:
+        """Lo que lleva un miembro en el carrito: artículo → unidades (una copia)."""
+        return dict(self.carts.get((guild_id, user_id), {}))
+
+    def set_cart(self, guild_id: int, user_id: int, lines: Mapping[int, int]) -> None:
+        """Cambia el carrito entero (sin líneas, lo vacía)."""
+        key = (guild_id, user_id)
+        kept = {item_id: qty for item_id, qty in lines.items() if qty > 0}
+        if kept:
+            self.carts[key] = kept
+            self.cart_touched[key] = self.clock()
+        else:
+            self.carts.pop(key, None)
+            self.cart_touched.pop(key, None)
+
+    def put_in_cart(
+        self, guild_id: int, user_id: int, item_id: int, qty: int, *, add: bool = False
+    ) -> str | None:
+        """Deja `qty` unidades de un artículo en el carrito (o las suma con `add`).
+
+        Returns:
+            Por qué no cabe, o `None`.
+        """
+        cart = self.cart(guild_id, user_id)
+        if item_id not in cart and len(cart) >= MAX_CART_LINES:
+            return (
+                f"En el carrito caben {MAX_CART_LINES} artículos distintos. "
+                "Paga o quita alguno antes."
+            )
+        cart[item_id] = min(MAX_QUANTITY, (cart.get(item_id, 0) if add else 0) + qty)
+        self.set_cart(guild_id, user_id, cart)
+        return None
+
+    def prune_carts(self, now: float) -> None:
+        """Olvida los carritos que nadie toca desde hace `CART_TTL`."""
+        for key, touched in list(self.cart_touched.items()):
+            if now - touched > CART_TTL:
+                self.carts.pop(key, None)
+                self.cart_touched.pop(key, None)
+
+    # -- Lista de deseos -------------------------------------------------------------
+
+    def wish_marks(self, item: ShopItem, now: float, balance: int) -> frozenset[str]:
+        """Lo que se sabe ahora de un artículo deseado (`shop_wishlist.wish_state`)."""
+        return wish_state(
+            item,
+            now=now,
+            balance=balance,
+            seasonal=season_name(item) is not None,
+            selling=on_sale(item, local_now(now)),
+        )
+
+    async def toggle_wish(
+        self, guild_id: int, member: discord.abc.User, item: ShopItem, channel: object
+    ) -> tuple[bool, str | None]:
+        """Apunta un artículo en la lista de deseos, o lo quita si ya estaba.
+
+        Returns:
+            `(si está ahora en la lista, por qué no se pudo apuntar)`.
+        """
+        wishes = await self.repository.wishlist(guild_id, member.id)
+        if any(w.item_id == item.id for w in wishes):
+            await self.repository.remove_wishes(guild_id, member.id, [item.id])
+            return False, None
+        if len(wishes) >= MAX_WISHES:
+            return False, f"Tu lista ya tiene {MAX_WISHES} cosas. Quita alguna antes."
+        now = self.clock()
+        balance = await self.economy.balance(guild_id, member.id)
+        await self.repository.add_wish(
+            guild_id, member.id, item.id, now, self.wish_marks(item, now, balance)
+        )
+        await logros.track(
+            self.bot, guild_id, member, channel, shop_wish_stats(added=1, size=len(wishes) + 1)
+        )
+        return True, None
+
+    async def wishlist_embed(self, guild: discord.Guild, member: discord.abc.User) -> discord.Embed:
+        """Sección ⭐ Deseos de `perfil`: la lista de alguien, que es pública."""
+        now = self.clock()
+        wishes = await self.repository.wishlist(guild.id, member.id)
+        catalog = {i.id: i for i in await self.repository.items(guild.id, include_hidden=True)}
+        items = [catalog[w.item_id] for w in wishes if w.item_id in catalog]
+        if items:
+            total = sum(quote(item, now).total for item in items)
+            text = (
+                _clip("\n".join(compact_line(item, now) for item in items), 3600)
+                + f"\n\n**Todo junto:** {format_amount(total)} con IGIC."
+            )
+        else:
+            text = "Nada por ahora. Se apunta en la `tienda`: abre la ficha de algo y pulsa ⭐."
+        embed = discord.Embed(
+            title=f"⭐ Lista de deseos de {_name(member)}", description=text, color=COLOR
+        )
+        embed.set_footer(text=f"Caben {MAX_WISHES} cosas. Comprar algo lo quita de la lista.")
+        return embed
+
+    async def check_wishes(self) -> int:
+        """Mira todas las listas de deseos y avisa por privado de lo que ha cambiado.
+
+        Guarda lo visto aunque el aviso no llegue (privados cerrados o silenciados):
+        así no se repite al volver a activarlos.
+
+        Returns:
+            A cuántos miembros se ha avisado.
+        """
+        wishes = await self.repository.all_wishes()
+        if not wishes:
+            return 0
+        muted = await self.repository.muted()
+        now = self.clock()
+        catalogs: dict[int, dict[int, ShopItem]] = {}
+        balances: dict[tuple[int, int], int] = {}
+        changes = []
+        news: dict[tuple[int, int], list[str]] = defaultdict(list)
+        for wish in wishes:
+            if wish.guild_id not in catalogs:
+                items = await self.repository.items(wish.guild_id, include_hidden=True)
+                catalogs[wish.guild_id] = {item.id: item for item in items}
+            item = catalogs[wish.guild_id].get(wish.item_id)
+            if item is None:
+                continue
+            key = (wish.guild_id, wish.user_id)
+            if key not in balances:
+                balances[key] = await self.economy.balance(*key)
+            marks = self.wish_marks(item, now, balances[key])
+            stored = stored_seen(wish.seen, marks)
+            if stored != wish.seen:
+                changes.append((wish, stored))
+            if key in muted or not item.visible:
+                continue
+            news[key] += [
+                news_line(kind, item, now, season=season_name(item))
+                for kind in wish_news(wish.seen, marks)
+            ]
+        await self.repository.set_wish_seen(changes)
+        told = 0
+        for (guild_id, user_id), lines in news.items():
+            guild = self.bot.get_guild(guild_id)
+            if not lines or guild is None:
+                continue
+            if await self.whisper(guild_id, user_id, news_message(guild.name, lines)):
+                told += 1
+                logros.note(self.bot, guild_id, user_id, shop_wish_alert_stats(alerts=len(lines)))
+        return told
+
+    async def alert_stall(self, guild_id: int, listing: Listing) -> int:
+        """Avisa por privado a quien desea lo que se acaba de poner en el Rastro.
+
+        Returns:
+            A cuántos miembros se ha avisado.
+        """
+        guild = self.bot.get_guild(guild_id)
+        if guild is None:
+            return 0
+        muted = await self.repository.muted()
+        seller = guild.get_member(listing.seller_id)
+        text = stall_message(
+            guild.name,
+            f"**{listing.label}**",
+            seller=f"**{_name(seller)}**" if seller else "alguien",
+            price=listing.start_price,
+            closes_at=listing.expires_at,
+        )
+        told = 0
+        for user_id in await self.repository.wishers(guild_id, listing.item_id):
+            if user_id == listing.seller_id or (guild_id, user_id) in muted:
+                continue
+            if await self.whisper(guild_id, user_id, text):
+                told += 1
+                logros.note(self.bot, guild_id, user_id, shop_wish_alert_stats(stalls=1))
+        return told
+
+    async def whisper(self, guild_id: int, user_id: int, text: str) -> bool:
+        """Manda un mensaje privado a un miembro. `False` si no se puede (privados cerrados).
+
+        Es el único sitio del bot que escribe por privado: solo para los avisos de la
+        lista de deseos, que cada uno pide al apuntar algo y puede silenciar.
+        """
+        guild = self.bot.get_guild(guild_id)
+        member = guild.get_member(user_id) if guild else None
+        if member is None or member.bot:
+            return False
+        try:
+            await member.send(text, allowed_mentions=discord.AllowedMentions.none())
+        except discord.HTTPException:
+            logger.info("No se pudo mandar el aviso de la lista de deseos a %s", user_id)
+            return False
+        return True
+
+    def spawn(self, coroutine: Awaitable[object]) -> None:
+        """Lanza un aviso aparte, sin hacer esperar a quien lo provoca."""
+
+        async def run() -> None:
+            try:
+                await coroutine
+            except Exception:
+                logger.exception("Error mandando un aviso de la lista de deseos")
+
+        task = asyncio.get_running_loop().create_task(run())
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
 
     # -- Caducidad -------------------------------------------------------------------
 
     @tasks.loop(minutes=EXPIRY_MINUTES)
     async def _expire(self) -> None:
-        """Quita los roles alquilados que han vencido."""
+        """Quita los roles alquilados que han vencido y olvida los carritos abandonados."""
+        self.prune_carts(self.clock())
         try:
             await self.expire_rentals()
         except Exception:
@@ -2479,6 +2843,19 @@ class Tienda(commands.Cog):
 
     @_expire.before_loop
     async def _before_expire(self) -> None:
+        await self.bot.wait_until_ready()
+
+    @tasks.loop(minutes=WISH_MINUTES)
+    async def _watch_wishes(self) -> None:
+        """Mira si algo de las listas de deseos merece un aviso por privado."""
+        try:
+            await self.check_wishes()
+        except Exception:
+            # Una excepción sin capturar pararía la tarea para siempre.
+            logger.exception("Error mirando las listas de deseos")
+
+    @_watch_wishes.before_loop
+    async def _before_watch_wishes(self) -> None:
         await self.bot.wait_until_ready()
 
     async def expire_rentals(self) -> int:
@@ -2519,27 +2896,57 @@ class Tienda(commands.Cog):
             del self.skins[skin_key]
         for image_key in [k for k in self.skin_images if k[0] == guild.id]:
             del self.skin_images[image_key]
+        for cart_key in [k for k in self.carts if k[0] == guild.id]:
+            self.set_cart(*cart_key, {})
+        for prefs_key in [k for k in self.shop_prefs if k[0] == guild.id]:
+            del self.shop_prefs[prefs_key]
 
     # -- Comandos --------------------------------------------------------------------
 
-    @app_commands.command(name="tienda", description="Abre El Colmado de Jovani: roles, XP y más.")
+    @app_commands.command(
+        name="tienda",
+        description="Abre El Colmado de Jovani: busca, llena el carrito y apunta deseos.",
+    )
     @app_commands.guild_only()
-    async def tienda(self, interaction: discord.Interaction) -> None:
-        """Enseña el escaparate en el canal; comprar abre una caja privada."""
+    @app_commands.describe(
+        buscar="Un artículo o parte de su nombre (busca también en la descripción)."
+    )
+    async def tienda(self, interaction: discord.Interaction, buscar: str | None = None) -> None:
+        """Enseña el escaparate en el canal; la ficha y el carrito se abren en privado."""
         assert interaction.guild is not None  # guild_only
         # El escaparate se lee de la base de datos: «pensando…» mientras tanto.
         await interaction.response.defer(thinking=True)
-        view = await self.storefront(interaction.guild, interaction.user)
+        view = await self.storefront(interaction.guild, interaction.user, search=buscar)
         await edit(interaction, view=view, allowed_mentions=discord.AllowedMentions.none())
         view.interaction = interaction
+        if buscar:
+            logros.note(
+                self.bot, interaction.guild.id, interaction.user.id, shop_browse_stats(searches=1)
+            )
+
+    @tienda.autocomplete("buscar")
+    async def _buscar_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        if interaction.guild is None:
+            return []
+        needle = fold(current)
+        when = local_now(self.clock())
+        return [
+            app_commands.Choice(name=item.name[:100], value=item.name[:100])
+            for item in await self.repository.items(interaction.guild.id)
+            if needle in fold(item.name) and on_sale(item, when)
+        ][:25]
 
     @commands.command(name="tienda")
     @commands.guild_only()
-    async def tienda_text(self, ctx: commands.Context) -> None:
-        """Versión de texto de `tienda`."""
+    async def tienda_text(self, ctx: commands.Context, *, buscar: str | None = None) -> None:
+        """Versión de texto de `tienda`: `.tienda` o `.tienda plátano`."""
         assert ctx.guild is not None  # guild_only
-        view = await self.storefront(ctx.guild, ctx.author)
+        view = await self.storefront(ctx.guild, ctx.author, search=buscar)
         view.message = await ctx.send(view=view, allowed_mentions=discord.AllowedMentions.none())
+        if buscar:
+            logros.note(self.bot, ctx.guild.id, ctx.author.id, shop_browse_stats(searches=1))
 
     # -- Trastienda (la abre el comando `catalogo` del cog Admin) ---------------------
 
@@ -2703,7 +3110,7 @@ async def open_aisle(
     if (cog := find_cog(bot, Tienda)) is None or interaction.guild is None:
         return False
     view = await cog.storefront(interaction.guild, interaction.user)
-    view.aisle, view.tab, view.page = aisle, tab, 0
+    view.prefs.aisle, view.prefs.tab, view.page = aisle, tab, 0
     view.rebuild()
     await edit(interaction, view=view, allowed_mentions=discord.AllowedMentions.none())
     view.interaction = interaction
@@ -2749,6 +3156,16 @@ async def after_checkout(
 ) -> None:
     """Renta y logros de una compra de `pay_checkout`, sin anunciarla en el canal."""
     await view.cog.after_purchase(interaction, view, paid, announce=False)
+
+
+def wish_listed(bot: commands.Bot, guild_id: int, listing: Listing) -> None:
+    """El Rastro acaba de montar un puesto: avisa por privado a quien lo desea.
+
+    Va aparte (`Tienda.spawn`) para no hacer esperar a quien vende. No hace nada si la
+    tienda no está cargada.
+    """
+    if (cog := find_cog(bot, Tienda)) is not None:
+        cog.spawn(cog.alert_stall(guild_id, listing))
 
 
 async def owned_keys(bot: commands.Bot, guild_id: int, user_id: int) -> frozenset[str]:

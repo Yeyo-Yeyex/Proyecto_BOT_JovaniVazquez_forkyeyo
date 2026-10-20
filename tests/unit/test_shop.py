@@ -20,6 +20,7 @@ from interaction_fakes import fake_interaction
 from bot.cogs import shop as shop_cog
 from bot.cogs.shop import Backpack, Checkout, Tienda, item_card
 from bot.cogs.shop_admin import AdminPanel, ItemEditor, admin_card
+from bot.cogs.shop_front import PAGE_SIZE
 from bot.repositories.economy import (
     SHOP_ACCOUNT_ID,
     STATE_ACCOUNT_ID,
@@ -567,19 +568,24 @@ def test_role_problem_bloquea_roles_peligrosos_o_por_encima() -> None:
 async def test_escaparate_cabe_en_los_limites_de_discord(tmp_path: Path) -> None:
     clock = Clock()
     cog = await make_cog(tmp_path, clock)
-    for n in range(7):
-        await cog.repository.create_item(
-            GUILD, kind=Kind.TROPHY, name=f"Objeto con nombre largo {n}", emoji="💎",
-            description="x" * 200, price=1_000 + n, igic="general", now=NOW, stock=10,
+    for n in range(PAGE_SIZE + 5):
+        it = await cog.repository.create_item(
+            GUILD, kind=Kind.TROPHY, name=f"Objeto con un nombre largo {n:02d}"[:40],
+            emoji="<:jovani_moneda_de_oro:123456789012345678>", description="x" * 200,
+            price=1_000_000 + n, igic="general", now=NOW, stock=10,
         )  # fmt: skip
+        # Lo más largo que puede salir en una línea: rebaja, existencias y nivel.
+        await cog.repository.update_item(GUILD, it.id, min_level=50, discount=25)
     guild = make_guild()
     view = await cog.storefront(guild, make_member(guild))
     assert view.total_children_count <= 40
     assert len(texts(view)) <= 4000
-    buy_buttons = [
-        b for b in view.walk_children() if isinstance(b, ui.Button) and "Comprar" in (b.label or "")
-    ]
-    assert len(buy_buttons) == 5
+    picker = next(
+        c
+        for c in view.walk_children()
+        if isinstance(c, ui.Select) and c.custom_id == "tienda:elegir"
+    )
+    assert len(picker.options) == PAGE_SIZE and picker.max_values == PAGE_SIZE
     assert view.pages == 2
 
 
@@ -644,10 +650,14 @@ async def test_el_escaparate_marca_lo_que_ya_has_comprado(tmp_path: Path) -> Non
     guild = make_guild()
     member = make_member(guild)
     view = await cog.storefront(guild, member)
-    assert "Lo tienes" not in texts(view)
+    assert "✅" not in yate_line(view)
     await cog.repository.grant(GUILD, BUYER, it, NOW)
     view = await cog.storefront(guild, member)
-    assert "✅ Lo tienes" in texts(view)
+    assert "· ✅" in yate_line(view)
+
+
+def yate_line(view: ui.LayoutView) -> str:
+    return next(line for line in texts(view).splitlines() if "**Yate**" in line)
 
 
 async def test_rol_que_no_se_puede_dar_se_devuelve_entero(tmp_path: Path) -> None:
