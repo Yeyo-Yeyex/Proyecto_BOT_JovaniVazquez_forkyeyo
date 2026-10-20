@@ -2408,7 +2408,9 @@ async def test_resolver_una_apuesta_deportiva_llega_a_apuestas_y_a_los_logros_co
         resolved = await cog.settle(bet.commence + RESULT_DELAY)
 
         assert [r.bet.status for r in resolved] == ["won"]
-        channel.send.assert_awaited_once()
+        # Un envío es el resultado; los demás, los avisos de logros que desbloquea.
+        sent = [str(call.args[0]) for call in channel.send.await_args_list if call.args]
+        assert sum("**Final:" in text for text in sent) == 1
         plays = await client.casino_stats.report(
             GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
         )
