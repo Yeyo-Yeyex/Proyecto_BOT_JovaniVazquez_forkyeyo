@@ -27,7 +27,8 @@ sistema) solo da los totales del servidor y a cada miembro le llega una vez, en 
 siguiente acción con dinero (`hint`), que ya tiene la declaración, sin la cifra. La
 abre en `renta`: un sobre con el botón **Abrir** y, al abrirlo, el **resumen** (las
 cuentas en cinco líneas) con un botón para ver el **detalle** (el porqué de cada cifra,
-con sus artículos) y otro para volver (`bot.services.renta_report`).
+con sus artículos) y otro para volver (`bot.services.renta_report`). `saldo` tampoco
+adelanta nada: de una declaración sin abrir solo dice que está sin abrir (`pending`).
 
 Cada semana el bot crea un evento de Discord ("📬 Campaña de la Renta") que dura hasta
 el domingo, para que se vea sin ocupar un canal. Necesita el permiso **Gestionar
@@ -51,7 +52,7 @@ from discord.ext import commands, tasks
 from bot.cogs import achievements as logros
 from bot.cogs import intereses
 from bot.cogs import pets as mascotas
-from bot.repositories.economy import PAYMENT_PENDING
+from bot.repositories.economy import PAYMENT_PENDING, PAYMENT_SPLIT
 from bot.services.achievements import StatDelta
 from bot.services.economy import (
     Declaration,
@@ -59,11 +60,15 @@ from bot.services.economy import (
     IrpfPayment,
     IrpfRun,
     IrpfStatement,
+    fiscal_week,
     format_amount,
+    installment_deadlines,
+    monday_epoch,
     week_label,
     week_start,
 )
 from bot.services.levels import TIMEZONE, local_day
+from bot.services.pending import Pending, Side
 from bot.services.pets import Moment
 from bot.services.renta_report import detail_text, envelope_text, summary_text
 from bot.services.taxes import CLAIM_WEEKS, TAX_COLLECTOR
@@ -261,6 +266,22 @@ async def remind(bot: commands.Bot, interaction: discord.Interaction) -> None:
     """Atajo para el casino: avisa de la renta pendiente si el cog está cargado."""
     if (cog := find_cog(bot, Renta)) is not None:
         await cog.remind(interaction)
+
+
+async def pending(
+    bot: commands.Bot, guild_id: int, user_id: int, *, own: bool = True
+) -> list[Pending]:
+    """Lo pendiente con Hacienda (para `saldo`, ver `Renta.pending_for`), o `[]`.
+
+    Nunca lanza: si algo falla se registra y `saldo` sale sin estas líneas.
+    """
+    if (cog := find_cog(bot, Renta)) is None:
+        return []
+    try:
+        return await cog.pending_for(guild_id, user_id, own=own)
+    except Exception:
+        logger.exception("No se pudo consultar lo pendiente de la renta")
+        return []
 
 
 async def hint(
@@ -511,6 +532,73 @@ class Renta(commands.Cog):
         if paid or unpaid:
             lines.append(second_installment_hint(paid, unpaid))
         return lines
+
+    async def pending_for(self, guild_id: int, user_id: int, *, own: bool = True) -> list[Pending]:
+        """Lo pendiente con Hacienda, para `saldo`: deuda, plazos de la Renta y devoluciones.
+
+        Si la última declaración está sin abrir, sale sin cifra y sin las devoluciones:
+        el sobre se abre en `renta`. El plazo que se dice vale para cualquier resultado
+        («si sale a pagar»), así que tampoco adelanta nada.
+
+        Args:
+            own: `False` en el saldo de otro: solo la deuda, que ya enseña `perfil`.
+        """
+        items = []
+        if debt := await self.economy.tax_debt(guild_id, user_id):
+            items.append(
+                Pending(
+                    Side.PAY, "renta_debt", "⚖️",
+                    f"Deuda con Hacienda: {format_amount(debt)} · {TAX_COLLECTOR} se queda el "
+                    "30 % de todo lo que cobras hasta saldarla; se liquida en `/renta`",
+                    debt,
+                )
+            )  # fmt: skip
+        if not own:
+            return items
+        now = self.economy.now()
+        statement = await self.economy.irpf_statement(guild_id, user_id)
+        if statement is not None and not statement.opened:
+            due, _second = installment_deadlines(fiscal_week(statement.week))
+            text = "Renta de la semana sin abrir: ábrela en `/renta`"
+            if now < due:
+                text += "; si sale a pagar, hay plazo hasta el final del lunes"
+            items.append(
+                Pending(Side.PAY, "renta_sealed", "📬", text, 0, due if now < due else None)
+            )
+            return items
+        if statement is not None:
+            filed = statement.filed
+            if filed.payment == PAYMENT_PENDING:
+                items.append(
+                    Pending(
+                        Side.PAY, "renta_due", "💸",
+                        f"Renta: {format_amount(filed.result)} a pagar · entera o fraccionada "
+                        "en `/renta`; si no eliges, se cobra entera",
+                        filed.result, filed.pay_due,
+                    )
+                )  # fmt: skip
+            elif filed.payment == PAYMENT_SPLIT and not filed.second_at:
+                items.append(
+                    Pending(
+                        Side.PAY, "renta_second", "✂️",
+                        f"Segundo plazo de la Renta: {format_amount(filed.second)}",
+                        filed.second, filed.second_due,
+                    )
+                )  # fmt: skip
+        declarations = await self.economy.pending_declarations(guild_id, user_id)
+        if total := sum(d.refund for d in declarations):
+            # shortcut: cuenta el plazo desde la semana siguiente a la declarada; si el
+            # cierre llegó tarde (bot apagado), caduca algo después de lo que dice.
+            oldest = min(d.week_start for d in declarations)
+            items.append(
+                Pending(
+                    Side.COLLECT, "renta_refund", "📬",
+                    f"Devolución de la Renta: {format_amount(total)} · preséntala en `/renta` "
+                    "antes de que caduque",
+                    total, monday_epoch(oldest + timedelta(weeks=1 + CLAIM_WEEKS)),
+                )
+            )  # fmt: skip
+        return items
 
     async def remind(self, interaction: discord.Interaction) -> None:
         """Tras una jugada con botón o slash: avisa en efímero, una vez por campaña.

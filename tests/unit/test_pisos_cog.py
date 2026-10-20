@@ -452,11 +452,11 @@ async def test_cada_noche_se_cierran_los_dias_sin_romper_nada(tmp_path: Path) ->
     assert (await cog.service.market(GUILD)).leases["taco_bajo"].arrears >= 0
 
 
-async def test_la_funcion_puente_del_patrimonio_no_rompe_sin_el_cog() -> None:
+async def test_la_funcion_puente_de_saldo_no_rompe_sin_el_cog() -> None:
     from bot.cogs import pisos
 
-    bot = SimpleNamespace(get_cog=lambda _name: None)
-    assert await pisos.fiscal_of(bot, GUILD, 10) == 0  # type: ignore[arg-type]
+    bot = SimpleNamespace(get_cog=lambda _name: None, cogs={})
+    assert await pisos.pending(bot, GUILD, 10) == []  # type: ignore[arg-type]
 
 
 async def test_un_segundo_clic_en_pagar_no_vuelve_a_cobrar(tmp_path: Path) -> None:

@@ -8,6 +8,12 @@ criterio.
 
 ## 8.x
 
+### 8.11.0 · 2026-10-20
+
+- Saldo: `saldo` enseña lo que tienes pendiente de pagar, de cobrar y retenido, con su fecha
+- Saldo: el Patrimonio del lunes sale con la misma cuenta que `perfil`
+- Logros: 32 de mirar el saldo en 🏦 Banco
+
 ### 8.10.0 · 2026-10-20
 
 - Reinicio: mientras el bot espera a reiniciarse no se abren partidas ni paneles nuevos, y quien tiene uno abierto recibe un aviso para terminarlo

@@ -143,6 +143,7 @@ from bot.services.pachinko import BOARDS as PACHINKO_BOARDS
 from bot.services.pachinko import Kind as PachinkoKind
 from bot.services.pachinko import Volley as PachinkoVolley
 from bot.services.pachinko_motion import VolleyMotion as PachinkoMotion
+from bot.services.pending import Pending, Side
 from bot.services.pets_catalog import SPAWNING as PET_SPAWNING
 from bot.services.pets_catalog import SPECIES as PET_SPECIES
 from bot.services.poker import MAX_SEATS as POKER_MAX_SEATS
@@ -335,7 +336,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("rastro", "🧺 Rastro"),
     Category("pisos", "🏠 Pisos"),
     Category("pets", "🐾 Mascotas"),
-    Category("bizum", "🏦 Banco: Bizum y cuenta"),
+    Category("bizum", "🏦 Banco: saldo, Bizum y cuenta"),
     Category("economy", "🏛️ Economía y Hacienda"),
     # 🪏 Trabajo: una entrada del menú con una sección por oficio, como el casino.
     Category("work", "🪏 General", group=_WG),
@@ -478,6 +479,19 @@ VOICE_STREAK_STAT = "voice_streak_max"
 VOICE_WITH_PREFIX = "voice_with_"
 VOICE_PEOPLE_STAT = "voice_people"
 VOICE_BESTIE_STAT = "voice_bestie_max"
+#: `saldo`: un contador por día en que se mira (`saldo_day_AAAAMMDD`), de donde salen los
+#: días distintos y la racha más larga, y uno por tipo de cosa pendiente vista.
+SALDO_DAY_PREFIX = "saldo_day_"
+SALDO_DAYS_STAT = "saldo_days"
+SALDO_STREAK_STAT = "saldo_streak_max"
+SALDO_KIND_PREFIX = "saldo_kind_"
+SALDO_KINDS_STAT = "saldo_kinds"
+#: Saldo a partir del cual mirarlo sin nada por pagar es «Libre de cargas».
+SALDO_CLEAN_MIN = 100_000
+#: Veces más que tú que tiene que tener alguien para «Ojos que ven, corazón que siente».
+SALDO_RICHER_TIMES = 10
+#: Saldos con guasa que dan un secreto al mirarlos.
+SALDO_FUNNY = frozenset({42, 69, 666})
 #: Días del año en que cuenta jugar a cualquier juego del casino, `(mes, día)`.
 CASINO_DATES = {
     (12, 25): "casino_navidad",
@@ -8679,6 +8693,100 @@ def _build_catalog() -> tuple[Achievement, ...]:
         category="bizum", rarity=R, conditions=(("savings_week_max", SAVINGS_WEEK_MAX),),
         story=SAVINGS_BRACKET_STORY,
     ))  # fmt: skip
+    # Saldo y lo pendiente (cogs/casino.py: saldo_stats y saldo_peek_stats)
+    a += _tiers("bizum", "saldo_checks", [
+        (1, "saldo_1", "Contando las perras", "Mira tu saldo.", C),
+        (100, "saldo_100", "Adicto al extracto", "Mira tu saldo 100 veces.", C),
+        (1_000, "saldo_1000", "F5 al banco", "Mira tu saldo 1.000 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("bizum", SALDO_DAYS_STAT, [
+        (10, "saldo_days_10", "Cuentas claras", "Mira tu saldo 10 días distintos.", R),
+        (50, "saldo_days_50", "El contable de la familia", "Mira tu saldo 50 días distintos.", E),
+        (200, "saldo_days_200", "Libro mayor de edad", "Mira tu saldo 200 días distintos.", L),
+    ])  # fmt: skip
+    a += _tiers("bizum", SALDO_STREAK_STAT, [
+        (7, "saldo_streak_7", "Semana fiscalizada", "Mira tu saldo 7 días seguidos.", R),
+        (30, "saldo_streak_30", "Gran Hermano de la cuenta", "Mira tu saldo 30 días seguidos.", E),
+        (100, "saldo_streak_100", "Cien días de solvencia", "Mira tu saldo 100 días seguidos.", L),
+        (365, "saldo_streak_365", "Hacienda somos todos los días",
+         "Mira tu saldo 365 días seguidos.", M),
+    ])  # fmt: skip
+    a += _tiers("bizum", "saldo_peeks", [
+        (1, "saldo_peek_1", "Mirón de cartera", "Mira el saldo de otro miembro.", C),
+        (50, "saldo_peek_50", "Cotilla de sucursal",
+         "Mira el saldo de otros miembros 50 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("bizum", "saldo_peek_richer", [
+        (1, "saldo_peek_richer", "Ojos que ven, corazón que siente",
+         "Mira el saldo de alguien que tiene al menos diez veces más que tú.", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "saldo_pending_max", [
+        (3, "saldo_pending_3", "Pendientes de bisutería",
+         "Ten 3 cosas pendientes a la vez en tu saldo.", C),
+        (6, "saldo_pending_6", "Pendientes de plata",
+         "Ten 6 cosas pendientes a la vez en tu saldo.", R),
+        (10, "saldo_pending_10", "Pendientes de oro",
+         "Ten 10 cosas pendientes a la vez en tu saldo.", E),
+    ])  # fmt: skip
+    a += _tiers("bizum", SALDO_KINDS_STAT, [
+        (5, "saldo_kinds_5", "Coleccionista de recibos",
+         "Ten 5 tipos distintos de cosas pendientes en tu saldo, a la vez o en días distintos.", R),
+        (10, "saldo_kinds_10", "El cajón de las facturas",
+         "Ten 10 tipos distintos de cosas pendientes en tu saldo.", E),
+        (15, "saldo_kinds_15", "El archivador de la abuela",
+         "Ten 15 tipos distintos de cosas pendientes en tu saldo.", L),
+    ])  # fmt: skip
+    a += _tiers("bizum", "saldo_all_sides", [
+        (1, "saldo_all_sides", "Debe y haber",
+         "Ten a la vez algo por pagar, algo por cobrar y algo retenido en tu saldo.", R),
+    ])  # fmt: skip
+    a += _tiers("bizum", "saldo_red", [
+        (1, "saldo_red", "Vivir por encima de mis posibilidades",
+         "Mira tu saldo cuando lo que tienes por pagar pasa de lo que tienes.", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "saldo_clean", [
+        (1, "saldo_clean", "Libre de cargas",
+         f"Mira tu saldo con más de {_thousands(SALDO_CLEAN_MIN)} Y$ y nada por pagar.", R),
+    ])  # fmt: skip
+    a += _tiers("bizum", "saldo_debt", [
+        (1, "saldo_debt", "Ver para deber", "Mira tu saldo debiendo dinero a Hacienda.", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "saldo_sealed", [
+        (1, "saldo_sealed", "La Renta de Schrödinger",
+         "Mira tu saldo con la Renta de la semana sin abrir.", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "saldo_night", [
+        (1, "saldo_night", "Contar perras en vez de ovejas",
+         "Mira tu saldo entre las 3:00 y las 6:00.", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "saldo_monday", [
+        (1, "saldo_monday", "Odio los lunes",
+         "Mira tu saldo un lunes entre las 00:00 y las 00:10, cuando se cierra la semana fiscal.",
+         C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "saldo_mortgage_unpaid", [
+        (1, "saldo_mortgage_unpaid", "El banco siempre llama dos veces",
+         "Mira tu saldo con cuotas de la hipoteca sin pagar.", C, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "saldo_imv_late", [
+        (1, "saldo_imv_late", "La Cenicienta del IMV",
+         "Mira tu saldo pasadas las 23:00 con el IMV del día sin cobrar.", C, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "saldo_zero", [
+        (1, "saldo_zero", "Tieso como la mojama", "Mira tu saldo con 0 Y$.", C, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "saldo_exact_42", [
+        (1, "saldo_exact_42", "La respuesta a todo",
+         "Mira tu saldo cuando tengas exactamente 42 Y$.", C, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "saldo_exact_69", [
+        (1, "saldo_exact_69", "Cifra con postura",
+         "Mira tu saldo cuando tengas exactamente 69 Y$.", C, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "saldo_exact_666", [
+        (1, "saldo_exact_666", "Iron Maiden en la cuenta",
+         "Mira tu saldo cuando tengas exactamente 666 Y$.", C, True),
+    ])  # fmt: skip
     a += _tiers("economy", "donated", [
         (1, "donate_1", "Alma caritativa",
          "Dona a una ONG.", C),
@@ -19093,6 +19201,19 @@ def with_derived(stats: Mapping[str, int]) -> dict[str, int]:
         and day.isdigit()
     ]
     full[VOICE_STREAK_STAT] = _longest_run(days)
+    saldo_days = [
+        day
+        for stat, value in stats.items()
+        if stat.startswith(SALDO_DAY_PREFIX)
+        and value > 0
+        and len(day := stat[len(SALDO_DAY_PREFIX) :]) == 8
+        and day.isdigit()
+    ]
+    full[SALDO_DAYS_STAT] = len(saldo_days)
+    full[SALDO_STREAK_STAT] = _longest_run(saldo_days)
+    full[SALDO_KINDS_STAT] = sum(
+        1 for stat, value in stats.items() if stat.startswith(SALDO_KIND_PREFIX) and value > 0
+    )
     partners = [
         value for stat, value in stats.items() if stat.startswith(VOICE_WITH_PREFIX) and value > 0
     ]
@@ -23050,6 +23171,56 @@ def bizum_received_stats(*, amount: int, balance_after: int) -> StatDelta:
         add={"bizum_received_count": 1, "bizum_received": amount},
         peak={"balance_max": balance_after},
     )
+
+
+# -- Saldo -----------------------------------------------------------------------------
+
+
+def saldo_stats(*, balance: int, items: Sequence[Pending], when: float) -> StatDelta:
+    """Estadísticas de quien mira su propio saldo con lo que tiene pendiente.
+
+    Args:
+        balance: Su saldo.
+        items: Lo pendiente que se le ha enseñado (`bot.services.pending`).
+        when: Cuándo (epoch).
+    """
+    moment = datetime.fromtimestamp(when, TIMEZONE)
+    kinds = {item.kind for item in items}
+    sides = {item.side for item in items}
+    owed = sum(item.amount for item in items if item.side == Side.PAY)
+    delta = StatDelta(
+        add={
+            "saldo_checks": 1,
+            f"{SALDO_DAY_PREFIX}{moment:%Y%m%d}": 1,
+            **{f"{SALDO_KIND_PREFIX}{kind}": 1 for kind in kinds},
+        },
+        peak={"saldo_pending_max": len(items), "balance_max": balance},
+    )
+
+    def bump(stat: str, condition: bool) -> None:
+        if condition:
+            delta.add[stat] = 1
+
+    bump("saldo_all_sides", len(sides) == len(Side))
+    bump("saldo_red", owed > balance)
+    bump("saldo_clean", Side.PAY not in sides and balance > SALDO_CLEAN_MIN)
+    bump("saldo_debt", "renta_debt" in kinds)
+    bump("saldo_sealed", "renta_sealed" in kinds)
+    bump("saldo_mortgage_unpaid", "mortgage_unpaid" in kinds)
+    bump("saldo_imv_late", "imv" in kinds and moment.hour == 23)
+    bump("saldo_zero", balance == 0)
+    bump(f"saldo_exact_{balance}", balance in SALDO_FUNNY)
+    bump("saldo_night", 3 <= moment.hour < 6)
+    bump("saldo_monday", moment.weekday() == 0 and moment.hour == 0 and moment.minute < 10)
+    return delta
+
+
+def saldo_peek_stats(*, own_balance: int, their_balance: int) -> StatDelta:
+    """Estadísticas de quien mira el saldo de otro miembro."""
+    delta = StatDelta(add={"saldo_peeks": 1})
+    if their_balance >= SALDO_RICHER_TIMES * max(1, own_balance):
+        delta.add["saldo_peek_richer"] = 1
+    return delta
 
 
 # -- Rastro ----------------------------------------------------------------------------

@@ -1627,6 +1627,17 @@ class HousingRepository:
         finally:
             connection.close()
 
+    async def deposits_of(self, guild_id: int, user_id: int) -> list[finance.Deposit]:
+        """Las fianzas de alguien que siguen en el depósito (para `saldo`)."""
+        return await self._run(self._deposits_of_sync, guild_id, user_id)
+
+    def _deposits_of_sync(self, guild_id: int, user_id: int) -> list[finance.Deposit]:
+        connection = self._connect()
+        try:
+            return [d for d in finance.deposits_in(connection, guild_id) if d.user_id == user_id]
+        finally:
+            connection.close()
+
     async def last_day(self, guild_id: int) -> date | None:
         """Último día cerrado en el servidor, o `None` si nunca se cerró ninguno."""
         return await self._run(self._last_day_sync, guild_id)

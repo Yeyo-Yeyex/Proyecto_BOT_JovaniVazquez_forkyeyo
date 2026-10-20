@@ -198,6 +198,13 @@ python -m bot
   con el tope diario siempre se queda en el 19 % y sale a cero. El aviso
   llega una vez, en la siguiente acción con dinero; `saldo` enseña lo de ayer y
   lo que va saliendo hoy.
+- **Saldo (`saldo`):** además del saldo, lo que tienes pendiente con su fecha:
+  ⏳ por pagar (deuda con Hacienda, la Renta y su segundo plazo, el Patrimonio del
+  lunes, hipoteca, alquiler y recibos de esta noche, derramas, cuota de autónomo,
+  lo que le debes a tu madre), 📥 por cobrar (IMV y pensión de hoy, devoluciones
+  de la Renta, rentas de esta noche, boletos por sortear) y 🔒 retenido (pujas y
+  fianzas). La Renta sin abrir sale sin cifra. En el saldo de otro solo se ven su
+  Patrimonio y su deuda con Hacienda.
 - **IGIC:** el impuesto al consumo es el canario, no el IVA. Lo pagan las
   compras de la tienda, al tipo de cada artículo: cero, reducido (3 %),
   general (7 %, el de por defecto), incrementado (9,5 %) o de lujo (15 %),

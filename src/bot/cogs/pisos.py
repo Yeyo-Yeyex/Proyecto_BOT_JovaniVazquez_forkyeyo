@@ -42,8 +42,8 @@ la caja de comprar entero o vender todo desde una ficha, el mapa y la cartera de
 casi todas, la ficha desde la caja…). Van de una en una, la más probable primero, y
 cada una comprueba antes de empezar que el panel sigue donde estaba.
 
-Funciones puente para otros cogs: `fiscal_of` (valor fiscal de los pisos de alguien,
-para el aviso del Patrimonio de `saldo`). No lanzan y devuelven 0 sin el cog.
+Funciones puente para otros cogs: `pending` (lo pendiente de alguien en pisos, para
+`saldo`). No lanza y devuelve `[]` sin el cog.
 
 Logros: categoría 🏠 Pisos (`housing_*_stats` de `bot.services.achievements`).
 
@@ -116,6 +116,7 @@ from bot.services.housing_catalog import (
 from bot.services.housing_market import HousingService
 from bot.services.housing_scene import HousingScene
 from bot.services.levels import TIMEZONE
+from bot.services.pending import Pending
 from bot.services.pets import Event, Moment
 from bot.utils.cogs import find_cog
 from bot.utils.interactions import ack, edit, notify
@@ -3138,17 +3139,22 @@ class Pisos(commands.Cog):
 # -- Funciones puente ---------------------------------------------------------------
 
 
-async def fiscal_of(bot: commands.Bot, guild_id: int, user_id: int) -> int:
-    """Valor fiscal de los pisos de alguien (lo que suma al Patrimonio), o 0."""
+async def pending(bot: commands.Bot, guild_id: int, user_id: int) -> list[Pending]:
+    """Lo que alguien tiene pendiente en `pisos` (para `saldo`), o `[]`.
+
+    Lee el mercado de nuevo (la caché solo se refresca a ratos) y lo deja en la caché.
+    """
     cog = find_cog(bot, Pisos)
     if cog is None:
-        return 0
+        return []
     try:
-        _values, fiscal = await cog.repository.member_values(guild_id)
+        market = await cog.service.market(guild_id)
+        deposits = await cog.repository.deposits_of(guild_id, user_id)
     except (OSError, sqlite3.Error):
-        logger.exception("No se pudo leer el valor fiscal de los pisos")
-        return 0
-    return fiscal.get(user_id, 0)
+        logger.exception("No se pudo leer lo pendiente en pisos de %s", user_id)
+        return []
+    cog.market_cache[guild_id] = market
+    return view.pending_items(market, user_id, deposits, cog.service.today())
 
 
 async def setup(bot: BotClient) -> None:  # type: ignore[override]
