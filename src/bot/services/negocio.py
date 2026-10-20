@@ -159,6 +159,7 @@ class TurnResult:
         best: Si es su mejor turno en ventas.
         hour: Hora canaria a la que empezó.
         weekday: Día de la semana en que empezó (0 = lunes).
+        day: Día (ISO, hora canaria) en que empezó.
     """
 
     business: Business
@@ -170,6 +171,7 @@ class TurnResult:
     best: bool
     hour: int
     weekday: int
+    day: str = ""
 
     @property
     def net(self) -> int:
@@ -610,6 +612,7 @@ class BusinessService:
                 best=bool(best and best[0]),
                 hour=started.hour,
                 weekday=started.weekday(),
+                day=started.date().isoformat(),
             )
 
     # -- Las noches y la semana ---------------------------------------------------------

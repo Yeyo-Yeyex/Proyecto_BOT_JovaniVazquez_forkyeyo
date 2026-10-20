@@ -199,6 +199,7 @@ from bot.services.work_catalog import JOBS as WORK_JOBS
 from bot.services.work_tools import TOOLS as WORK_TOOLS
 
 if TYPE_CHECKING:
+    from bot.services.negocio import TurnResult
     from bot.services.pala import ShiftOutcome
 
 from bot.services.taxes import (
@@ -24659,3 +24660,59 @@ MEMORY_CONTENT = frozenset(
         "rondas",
     }
 )
+
+
+def business_stats(result: TurnResult, *, tired: bool = False) -> StatDelta:
+    """Estadísticas de un turno en el negocio propio (`bot.services.negocio`).
+
+    Args:
+        result: Lo que dejó el turno.
+        tired: Si el dueño abrió reventado.
+    """
+    summary = result.summary
+    business = result.business
+    sector = business.sector
+    outcomes = summary.outcomes
+    count = summary.count
+    add = {
+        "biz_turns": 1,
+        f"biz_turns_{sector}": 1,
+        "biz_clients": summary.served,
+        "biz_sales": summary.sales,
+        "biz_tips": summary.tips,
+        "biz_perfect": int(summary.grade == "S"),
+        "biz_grade_d": int(summary.grade == "D"),
+        "biz_wrong": count("wrong"),
+        "biz_left": count("left") + count("gone"),
+        "biz_exact": sum(1 for o in outcomes if o.exact),
+        "biz_caught": sum(1 for o in outcomes if "caught" in o.events),
+        "biz_missed_thief": sum(1 for o in outcomes if "missed_thief" in o.events),
+        "biz_false_accuse": count("false_accuse"),
+        "biz_over": count("over"),
+        "biz_short": count("short"),
+        "biz_diag_ok": sum(1 for o in outcomes if o.quote and o.result == "ok"),
+        "biz_bad_diag": count("bad_diagnosis"),
+        "biz_quote_caro": sum(1 for o in outcomes if o.quote == "caro" and o.result == "ok"),
+        "biz_rejected": count("rejected"),
+        "biz_usual_hit": sum(1 for o in outcomes if o.usual_hit),
+        "biz_fast": sum(1 for o in outcomes if o.speed == "fast" and o.result == "ok"),
+        "biz_night": int(result.hour < 6),
+        "biz_sunday": int(result.weekday == 6),
+        "biz_canarias": int(result.day[5:] == "05-30"),
+        "biz_tired": int(tired),
+        "biz_withheld": int(result.withheld > 0),
+        "biz_garnished": int(result.garnished > 0),
+        "biz_empty_turn": int(summary.served == 0),
+    }
+    return StatDelta(
+        add={stat: value for stat, value in add.items() if value},
+        peak={
+            "biz_best_turn": summary.sales,
+            "biz_clients_turn_max": summary.served,
+            "biz_stars_max": round(business.stars * 2),
+            "biz_loyalty_max": max(business.regulars.values(), default=0),
+            "biz_streak_max": business.open_streak,
+            "biz_turns_day_max": business.turns_today,
+            "balance_max": result.balance,
+        },
+    )
