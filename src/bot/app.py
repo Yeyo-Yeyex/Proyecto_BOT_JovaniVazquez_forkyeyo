@@ -27,6 +27,7 @@ from bot.repositories.backgammon import BackgammonRepository
 from bot.repositories.beernight import BeernightRepository
 from bot.repositories.beernight_sounds import BeernightSoundStore
 from bot.repositories.birthdays import BirthdayRepository
+from bot.repositories.business import BusinessRepository
 from bot.repositories.casino_stats import CasinoStatsRepository
 from bot.repositories.economy import EconomyRepository
 from bot.repositories.enraya import EnrayaRepository
@@ -53,6 +54,7 @@ from bot.repositories.welcome import WelcomeRepository
 from bot.repositories.work import WorkRepository
 from bot.services import node_scene
 from bot.services.economy import IRPF_START, STARTING_BALANCE, EconomyService
+from bot.services.negocio import BusinessService
 from bot.services.pala import WorkService
 from bot.services.telemetry import TelemetryService
 from bot.utils.cogs import find_cog
@@ -114,6 +116,7 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.pieles",
     "bot.cogs.pets",
     "bot.cogs.work",
+    "bot.cogs.business",
     "bot.cogs.birthdays",
     "bot.cogs.todo",
     "bot.cogs.beernight",
@@ -221,6 +224,10 @@ class BotClient(commands.Bot):
         self.odds_api_key = odds_api_key
         # Oficios, turnos y ascensos de `pala`; el dinero de las nóminas pasa por `economy`.
         self.work = WorkService(WorkRepository(database_path), self.economy, housing=self.housing)
+        # Negocios propios dentro de `pala`: comparten las franjas y la batería del curro;
+        # el dinero pasa por `economy`.
+        self.negocio = BusinessService(BusinessRepository(database_path), self.economy, self.work)
+        self.work.business = self.negocio
         # Los sonidos de entrada viven junto a la base de datos, en el mismo
         # volumen persistente (`.data/entradas/`).
         self.entrance_sounds = EntranceSoundStore(database_path.parent / "entradas")
@@ -297,6 +304,7 @@ class BotClient(commands.Bot):
         await self.news.initialize()
         await self.shop.initialize()
         await self.rastro.initialize()
+        await self.monte.initialize()
         await self.housing.initialize()
         await self.pets.initialize()
         await self.lottery.initialize()
@@ -311,6 +319,7 @@ class BotClient(commands.Bot):
         await self.porras.initialize()
         await self.sports.initialize()
         await self.work.repository.initialize()
+        await self.negocio.repository.initialize()
         await self.beernight.initialize()
         await self.telemetry_repository.initialize()
         await self.last_seen.initialize()

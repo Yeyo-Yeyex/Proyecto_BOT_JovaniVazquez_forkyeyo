@@ -38,6 +38,13 @@ Todo el dinero pasa por `EconomyService`:
   que entonces.
 - Veteranía: las ramas completadas en otros oficios suben el bruto del turno
   (`work.veteran_bonus`); es el mismo bruto de la nómina, sin camino propio.
+
+Franjas (`bot.services.agenda`): la jornada reserva las suyas y lo de fuera de ella
+(horas extra, B, guardias, estudio) gasta las libres, que comparte el negocio propio. El
+negocio entra por `WorkService.business` (`BusinessLink`): cuántas franjas ha usado hoy
+y cuándo trabajó por última vez (jubilación activa). La cuota de autónomo es una por
+persona y semana (`EconomyService.self_employed_fee_paid`). La reducción de jornada
+(`set_jornada`) y la excedencia (`request_excedencia`, `end_excedencia`) no mueven dinero.
 """
 
 from __future__ import annotations
@@ -50,8 +57,9 @@ import time
 from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass, field, replace
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
+from bot.services.agenda import EXTRA, GUARD, GUARD_FRANJAS, JORNADAS, STUDY, Agenda
 from bot.services.economy import EconomyService, InsufficientFundsError
 from bot.services.housing import HOME_REGEN
 from bot.services.levels import TIMEZONE, local_day
@@ -88,7 +96,6 @@ from bot.services.work import (
     MISSED_GUARD_PENALTY,
     MOM_REPAY_SHARE,
     OPTIONS_SHARE,
-    ORDINARY_SHIFTS,
     PERFORMANCE_MAX,
     PERFORMANCE_START,
     RAIN_ACCIDENT,
@@ -117,12 +124,15 @@ from bot.services.work import (
     WishFacts,
     accident_chance,
     active_share,
+    agenda_for,
     apply_performance,
     battery_now,
     beckham_eligible,
     catch_up,
     change_family,
     contribution_quality,
+    excedencia_blocker,
+    excedencia_return_at,
     family_breakdown,
     family_now,
     family_ready_at,
@@ -204,6 +214,18 @@ class WorkError(Exception):
     """Algo que impide la acción; el mensaje es para el usuario."""
 
 
+class BusinessLink(Protocol):
+    """Lo que la `pala` necesita saber del negocio propio (`bot.services.business`)."""
+
+    async def franjas_today(self, guild_id: int, user_id: int) -> int:
+        """Turnos de hoy en su negocio (0 si no tiene)."""
+        ...
+
+    async def last_turn_at(self, guild_id: int, user_id: int) -> float | None:
+        """Cuándo abrió su negocio por última vez (`None` si nunca)."""
+        ...
+
+
 def branch_quality(contract: Contract) -> float:
     """Calidad de lo cotizado en la rama en curso (`work.contribution_quality`).
 
@@ -255,6 +277,7 @@ class Status:
         veteran: Ramas completadas en otros oficios (experiencia y veteranía).
         pension_after: Si puede jubilarse, la pensión entera que tendría al hacerlo (0 si no;
             nunca menos que el suelo de sus jubilaciones de antes de la 8.0.0).
+        agenda: Sus franjas de hoy (con las del negocio).
     """
 
     contract: Contract
@@ -275,6 +298,7 @@ class Status:
     family: float = 100.0
     veteran: int = 0
     pension_after: int = 0
+    agenda: Agenda = field(default_factory=Agenda)
 
     @property
     def veteran_bonus(self) -> float:
@@ -571,6 +595,10 @@ class WorkService:
         rng: Azar de minijuegos, accidentes y eventos; inyectable en pruebas.
         housing: `pisos`: quien vive en su casa (o de alquiler en la de otro miembro)
             recarga la batería más rápido (`housing.HOME_REGEN`). Sin él, como siempre.
+
+    Attributes:
+        business: El negocio propio (`BusinessLink`); lo pone `BotClient` después de
+            crear los dos servicios. Sin él, nadie tiene negocio.
     """
 
     def __init__(
@@ -588,6 +616,17 @@ class WorkService:
         self._clock = clock
         self.rng = rng or random.Random()
         self._locks: dict[tuple[int, int], asyncio.Lock] = {}
+        self.business: BusinessLink | None = None
+
+    async def _business_franjas(self, guild_id: int, user_id: int) -> int:
+        """Turnos de hoy en su negocio; 0 sin negocio o si falla la lectura."""
+        if self.business is None:
+            return 0
+        try:
+            return await self.business.franjas_today(guild_id, user_id)
+        except (OSError, sqlite3.Error):
+            logger.warning("No se pudo mirar el negocio de %s", user_id, exc_info=True)
+            return 0
 
     def now(self) -> float:
         """Hora actual según el reloj del servicio (epoch)."""
@@ -659,6 +698,7 @@ class WorkService:
         )
         wish = None if contract.wish_day == today else wish_for(user_id, today, job, contract.level)
         earns = job.earns_triennia(contract.level, contract.branch)
+        agenda = agenda_for(contract, await self._business_franjas(guild_id, user_id))
         return Status(
             contract=contract,
             job=job,
@@ -678,7 +718,15 @@ class WorkService:
             family=family_now(contract, now),
             veteran=veteran,
             pension_after=pension_after,
+            agenda=agenda,
         )
+
+    async def agenda(self, guild_id: int, user_id: int) -> Agenda:
+        """Las franjas de hoy de un miembro, tenga curro o no (solo lee)."""
+        contract = await self.repository.contract(guild_id, user_id)
+        if contract is not None:
+            roll_over_day(contract, self._clock())
+        return agenda_for(contract, await self._business_franjas(guild_id, user_id))
 
     async def switch_outlook(
         self, guild_id: int, user_id: int, status: Status
@@ -768,6 +816,10 @@ class WorkService:
                     # El deseo del día también: cambiar de curro no da otro.
                     "wish_day",
                     "wish_streak",
+                    # Las franjas de hoy y la última excedencia son de la persona.
+                    "franjas_day",
+                    "franjas",
+                    "excedencia_last",
                 ):
                     setattr(contract, name, getattr(current, name))
             await self.repository.save_contract(guild_id, user_id, contract)
@@ -820,6 +872,10 @@ class WorkService:
                 f"📵 **La app te ha desconectado** por mala valoración hasta "
                 f"<t:{int(contract.blocked_until)}:t>. Ni un pedido, ni una explicación."
             )
+        if contract.on_excedencia:
+            raise WorkError(
+                "🏝️ Estás de excedencia. Vuelve al curro desde el menú de la jornada para fichar."
+            )
         if status.battery <= BATTERY_MIN:
             back = int(rested_at(contract, status.now))
             raise WorkError(
@@ -832,9 +888,22 @@ class WorkService:
             raise WorkError("En tu curro no se teletrabaja.")
         if study and not status.can_study:
             raise WorkError("En tu puesto no hay nada que opositar.")
+        kind = ShiftKind.STUDY if study else ShiftKind.GUARD if guard else status.next_kind
+        if contract.reduced and kind in (ShiftKind.EXTRA, ShiftKind.BLACK, ShiftKind.GUARD):
+            raise WorkError(
+                "🧸 Con la reducción de jornada no hay horas extra ni guardias: hoy ya has "
+                f"hecho tus {contract.jornada} turnos."
+            )
+        if kind is not ShiftKind.ORDINARY:
+            need = GUARD_FRANJAS if kind is ShiftKind.GUARD else 1
+            if not status.agenda.fits(need):
+                raise WorkError(
+                    f"🕗 No te quedan franjas libres hoy (tienes {status.agenda.free} y hacen "
+                    f"falta {need}): la jornada, las horas extra y tu negocio ya se han comido "
+                    "el día. Mañana más."
+                )
         if study:
             return self._study_shift(status, tools)
-        kind = ShiftKind.GUARD if guard else status.next_kind
         if contract.abroad and kind is ShiftKind.BLACK:
             # En Hong Kong no hay límite de horas extra como el del art. 35.2 ET.
             kind = ShiftKind.EXTRA
@@ -984,7 +1053,8 @@ class WorkService:
         missed = 0
         if contract.guard_week != week:
             if contract.guard_week:
-                missed = max(0, job.required_guards(contract.level) - contract.guards_week)
+                required = 0 if contract.reduced else job.required_guards(contract.level)
+                missed = max(0, required - contract.guards_week)
                 if missed:
                     contract.performance = max(
                         0, contract.performance - missed * MISSED_GUARD_PENALTY
@@ -1013,10 +1083,12 @@ class WorkService:
         if kind is ShiftKind.GUARD:
             contract.guards_week += 1
             contract.off_duty_until = now + GUARD_REST_SECONDS
+            contract.franjas[GUARD] = contract.franjas.get(GUARD, 0) + GUARD_FRANJAS
         else:
             contract.shifts_today += 1
             if kind is not ShiftKind.ORDINARY:
                 contract.extras_week += 1
+                contract.franjas[EXTRA] = contract.franjas.get(EXTRA, 0) + 1
         contract.last_shift_at = now
 
         # Dinero del turno.
@@ -1086,9 +1158,11 @@ class WorkService:
         fee = 0
         if position.self_employed and contract.fee_week != week:
             contract.fee_week = week
-            fee, balance = await self.economy.charge_self_employed_fee(
-                guild_id, user_id, amount=position.fee, concept="autonomos"
-            )
+            # Una sola cuota por persona: si ya la ha pagado su negocio, no hay otra.
+            if not await self.economy.self_employed_fee_paid(guild_id, user_id):
+                fee, balance = await self.economy.charge_self_employed_fee(
+                    guild_id, user_id, amount=position.fee, concept="autonomos"
+                )
 
         # Tareas y rendimiento (las tareas primero: si te bajan de puesto, se
         # quedan en el puesto que estabas, que es el que se reinicia).
@@ -1308,6 +1382,7 @@ class WorkService:
         family_parts = family_breakdown(ShiftKind.STUDY, now)
         intervention = change_family(contract, sum(v for _, v in family_parts), now)
         contract.motivated = False
+        contract.franjas[STUDY] = contract.franjas.get(STUDY, 0) + 1
         game = shift.game
         contract.progress["temario"] = contract.progress.get("temario", 0) + game.correct
         await self.repository.save_contract(guild_id, user_id, contract)
@@ -1625,6 +1700,15 @@ class WorkService:
         # Trabaja quien ha fichado en los últimos días, tenga contrato o no: dimitir justo
         # antes de cobrar no da la pensión entera.
         last = await self.repository.last_shift_at(guild_id, user_id) if records else None
+        if records and self.business is not None:
+            # La jubilación activa vale también por cuenta propia (art. 214 TRLGSS).
+            try:
+                turn = await self.business.last_turn_at(guild_id, user_id)
+            except (OSError, sqlite3.Error):
+                logger.warning("No se pudo mirar el negocio de %s", user_id, exc_info=True)
+                turn = None
+            if turn is not None and (last is None or turn > last):
+                last = turn
         if last is not None and now - last < LEAVE_AFTER_DAYS * 86_400:
             first = min(record.retired_at for record in records)
             share = active_share(int(max(0.0, now - first) // (7 * 86_400)))
@@ -1650,6 +1734,8 @@ class WorkService:
             return 0, contract.mom_debt
         week = week_of(local_day(self._clock()))
         fee = position.fee if position.self_employed and contract.fee_week != week else 0
+        if fee and await self.economy.self_employed_fee_paid(guild_id, user_id):
+            fee = 0
         return fee, contract.mom_debt
 
     async def claim_pension(self, guild_id: int, user_id: int) -> tuple[Payslip, int]:
@@ -1682,6 +1768,111 @@ class WorkService:
                 await self.repository.restore_pension_day(guild_id, user_id, previous)
                 raise
             return result.payslip, result.balance
+
+    # -- Jornada y excedencia --------------------------------------------------------
+
+    async def set_jornada(self, guild_id: int, user_id: int, franjas: int) -> Status:
+        """Pide la reducción de jornada (o volver a la completa) para mañana.
+
+        Reducción de jornada por cuidado de un familiar (art. 37.6 ET): de 1/8 a 1/2 de la
+        jornada, con el sueldo reducido en proporción (cada turno paga lo mismo; hay menos).
+        El preaviso (art. 37.7 ET) es el cambio de día. Pedir el tramo que ya se tiene
+        anula lo pedido. No mueve dinero.
+
+        Raises:
+            WorkError: Sin contrato, de excedencia o con un tramo que no existe.
+        """
+        if franjas not in JORNADAS:
+            raise WorkError("Ese tramo de jornada no existe.")
+        async with self._lock(guild_id, user_id):
+            now = self._clock()
+            contract = await self._contract(guild_id, user_id)
+            if contract is None:
+                raise WorkError("No tienes curro. Abre `pala` y elige uno.")
+            if contract.on_excedencia:
+                raise WorkError("Estás de excedencia: primero vuelve al curro.")
+            roll_over_day(contract, now)
+            if franjas == contract.jornada:
+                contract.jornada_next, contract.jornada_from = 0, ""
+            else:
+                tomorrow = local_day(now).toordinal() + 1
+                contract.jornada_next = franjas
+                contract.jornada_from = datetime.fromordinal(tomorrow).date().isoformat()
+            await self.repository.save_contract(guild_id, user_id, contract)
+            return await self._status(guild_id, user_id, contract)
+
+    async def request_excedencia(self, guild_id: int, user_id: int) -> Status:
+        """Pide la excedencia voluntaria (art. 46.2 ET): deja de reservar franjas.
+
+        Lo que impide pedirla está en `work.excedencia_blocker`. El contrato se conserva,
+        pero no se ficha hasta volver (`end_excedencia`). No mueve dinero.
+
+        Raises:
+            WorkError: Sin contrato o si no se puede pedir.
+        """
+        async with self._lock(guild_id, user_id):
+            now = self._clock()
+            contract = await self._contract(guild_id, user_id)
+            if contract is None:
+                raise WorkError("No tienes curro. Abre `pala` y elige uno.")
+            if (blocker := excedencia_blocker(contract, now)) is not None:
+                raise WorkError(blocker)
+            roll_over_day(contract, now)
+            settle(contract, now)
+            contract.excedencia_since = now
+            contract.jornada_next, contract.jornada_from = 0, ""
+            await self.repository.save_contract(guild_id, user_id, contract)
+            return await self._status(guild_id, user_id, contract)
+
+    async def end_excedencia(self, guild_id: int, user_id: int) -> Status:
+        """Vuelve de la excedencia al mismo puesto, con la barra a la mitad.
+
+        En la vida real solo hay derecho preferente al reingreso cuando haya vacante
+        (art. 46.5 ET); aquí se vuelve al mismo puesto (simplificación del proyecto), como
+        al volver tras `LEAVE_AFTER_DAYS` días sin fichar. No mueve dinero.
+
+        Raises:
+            WorkError: Sin contrato, sin excedencia o antes de los «cuatro meses».
+        """
+        async with self._lock(guild_id, user_id):
+            now = self._clock()
+            contract = await self._contract(guild_id, user_id)
+            if contract is None or not contract.on_excedencia:
+                raise WorkError("No estás de excedencia.")
+            back = excedencia_return_at(contract)
+            if now < back:
+                raise WorkError(
+                    "La excedencia dura al menos cuatro «meses» (art. 46.2 ET). Podrás volver "
+                    f"<t:{int(back)}:R>."
+                )
+            contract.excedencia_since = 0.0
+            contract.excedencia_last = now
+            contract.performance = PERFORMANCE_START
+            contract.warned = False
+            await self.repository.save_contract(guild_id, user_id, contract)
+            return await self._status(guild_id, user_id, contract)
+
+    async def spend_battery(self, guild_id: int, user_id: int, cost: float) -> float | None:
+        """Gasta batería por un turno en el negocio propio: la batería es de la persona.
+
+        Sin contrato no hay batería que gastar (`None`). Devuelve la batería de antes del
+        turno (para saber si iba reventado). No mueve dinero.
+        """
+        async with self._lock(guild_id, user_id):
+            now = self._clock()
+            contract = await self._contract(guild_id, user_id)
+            if contract is None:
+                return None
+            before = battery_now(contract, now)
+            settle(contract, now)
+            contract.battery = before - cost
+            await self.repository.save_contract(guild_id, user_id, contract)
+            return before
+
+    async def battery(self, guild_id: int, user_id: int) -> float | None:
+        """Batería de ahora (con la recarga), o `None` sin contrato. Solo lee."""
+        contract = await self._contract(guild_id, user_id)
+        return None if contract is None else battery_now(contract, self._clock())
 
     async def decline_promotion(self, guild_id: int, user_id: int) -> None:
         """Rechaza el ascenso de hoy (mañana te lo vuelven a ofrecer)."""
@@ -1870,7 +2061,7 @@ class WorkService:
                     raise WorkError("No estás saliente de guardia: no hay nada que cubrir.")
                 contract.off_duty_until = now
             elif favor.key == "cambio":
-                if contract.shifts_today < ORDINARY_SHIFTS:
+                if contract.shifts_today < contract.jornada:
                     raise WorkError("Aún te quedan turnos ordinarios hoy: guárdate a tu hermana.")
                 contract.shifts_today -= 1
             elif favor.key == "bizum":

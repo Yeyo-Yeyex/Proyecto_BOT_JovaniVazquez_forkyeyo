@@ -87,6 +87,7 @@ async def load_bot(tmp_path: Path) -> BotClient:
     await client.shop.initialize()
     await client.housing.initialize()
     await client.work.repository.initialize()
+    await client.negocio.repository.initialize()
     await client.horses.initialize()
     await client.gallos.initialize()
     await client.enraya.initialize()
@@ -848,6 +849,56 @@ async def test_un_turno_de_pala_apunta_sus_logros_con_el_bot_real(tmp_path: Path
         assert profile.stats["work_shifts"] == 1
         assert profile.stats["work_payslips"] == 1
         assert "pala_1" in profile.unlocked and "primera_nomina" in profile.unlocked
+    finally:
+        await client.close()
+
+
+async def test_un_turno_del_negocio_llega_a_logros_saldo_y_perfil_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """El negocio carga después de la pala y antes que los logros: todo debe encontrarse."""
+    client = await load_bot(tmp_path)
+    try:
+        cog = client.get_cog("Negocio")
+        work = client.get_cog("Trabajo")
+        casino = client.get_cog("Casino")
+        assert cog is not None and work is not None and casino is not None
+        owner = MagicMock(spec=discord.Member)
+        owner.id, owner.bot, owner.display_name = OWNER_ID, False, "Diego"
+        await client.economy.repository.apply(GUILD, OWNER_ID, [LedgerEntry(2_000_000, "x")])
+        await cog.service.open(
+            GUILD, OWNER_ID, sector="cafeteria", barrio="triana", name="Bar Pepe", palette=0,
+            emblem=0,
+        )  # fmt: skip
+        await cog.service.buy(GUILD, OWNER_ID, "cafe", 5)
+
+        def interaction() -> MagicMock:
+            fake = fake_interaction()
+            fake.user = owner
+            fake.guild_id = GUILD
+            fake.message = MagicMock()
+            fake.message.edit = AsyncMock()
+            return fake
+
+        module = importer("Negocio", client)
+        assert module.logros._cog(client) is client.get_cog("Achievements")
+        panel = module.NegocioPanel(cog, guild_id=GUILD, owner=owner, channel=None)
+        cog.panels.add(panel)
+        await panel._start(interaction())
+        assert panel.turn is not None
+        await panel._finish(None)
+
+        profile = await client.achievements.profile(GUILD, OWNER_ID)
+        assert profile.stats["biz_turns"] == 1
+        assert "biz_turns_1" in profile.unlocked
+        # `saldo` ve el local de esta noche y `perfil`, el negocio.
+        items = await casino._pending(GUILD, OWNER_ID, 0, own=True)
+        assert any(item.kind == "business_rent" for item in items)
+        embed = await work.work_embed(GUILD, owner)
+        assert any(field.name == "🏪 Negocio" for field in embed.fields)
+        # Y la pala sabe cuántas franjas ha usado el negocio.
+        agenda = await client.work.agenda(GUILD, OWNER_ID)
+        assert agenda.business == 1
     finally:
         await client.close()
 

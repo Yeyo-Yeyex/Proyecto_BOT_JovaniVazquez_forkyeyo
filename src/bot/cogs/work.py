@@ -1,13 +1,20 @@
 """Trabajo: `pala`, coger la pala y currar.
 
-`pala` abre el panel de tu curro (solo lo toca su dueño):
+`pala` abre el **inicio** (solo lo toca su dueño): una imagen de tu día con sus 8
+franjas (`bot.services.agenda`), la tarjeta de tu curro y la de tu negocio, y un botón
+para cada uno: 🪏 **Trabajo** (o 💼 **Buscar curro**) y 🏪 **Negocio** (o 🏪 **Montar
+negocio**, que lleva al panel de `bot.cogs.business`). La imagen la pinta la escena de los
+negocios (`negocio.paint`); sin Node ni Chromium, el inicio sale en texto.
+
+🪏 **Trabajo** es el panel de tu curro:
 
 - Sin contrato, un menú para elegir oficio (obra, hostelería, política, sanidad,
   oficina, reparto, funcionariado o influencer).
 - Con contrato: puesto, sueldo, batería, rendimiento, familia, jornada y lo
   que falta para ascender. Botones para ⛏️ **Fichar**, 📈 **Ascender** cuando
-  toca, 🎓 **Formación** cuando hace falta un curso y 📜 **Vida laboral**, y
-  menús para la máquina de café y para cambiar de oficio.
+  toca, 🎓 **Formación** cuando hace falta un curso, 📜 **Vida laboral** y 🏠
+  **Inicio**, y menús para la máquina de café, la jornada (reducción de jornada y
+  excedencia, sin dinero) y para cambiar de oficio.
 
 Según el oficio y el puesto aparecen también 🚑 **Guardia** (sanidad), 🏠
 **Teletrabajo** (oficina), 🌏 **Irse a Hong Kong** / ✈️ **Volver a casa**
@@ -60,7 +67,8 @@ en ellos. Permisos del bot: enviar mensajes en el canal.
 Funciones puente para `pisos`: el favor 👴 «Tus padres te avalan» (`parents_aval`,
 `spend_parents_aval` y `parents_lose_home`) y quién levanta la obra nueva de los lunes
 desde la rama Ladrillo (`ladrillo_builders`). Para `saldo`: la pensión de hoy, la
-cuota de autónomo y lo que se le debe a mamá (`pending`). No lanzan y no hacen nada
+cuota de autónomo y lo que se le debe a mamá (`pending`). Para el negocio: volver al
+inicio (`home`) y saber si alguien está fichando (`busy`). No lanzan y no hacen nada
 sin el cog.
 """
 
@@ -68,6 +76,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import io
 import logging
 import random
 import sqlite3
@@ -80,10 +89,13 @@ from discord import app_commands, ui
 from discord.ext import commands
 
 from bot.cogs import achievements as logros
+from bot.cogs import business as negocio
 from bot.cogs import pets as mascotas
 from bot.cogs import renta
 from bot.cogs import shop as tienda
 from bot.services.achievements import StatDelta, work_stats
+from bot.services.agenda import JORNADA_NAMES, JORNADAS
+from bot.services.business_view import dia_state
 from bot.services.economy import CURRENCY_EMOJI, format_amount, next_daily_at
 from bot.services.levels import TIMEZONE, local_day
 from bot.services.pala import (
@@ -116,6 +128,7 @@ from bot.services.work import (
     ACTIVE_SHARES,
     BATTERY_MAX,
     BATTERY_MIN,
+    EXCEDENCIA_MIN_DAYS,
     FAMILY_REGEN_PER_HOUR,
     FAMILY_TIERS,
     FLIGHT_PRICE,
@@ -139,6 +152,8 @@ from bot.services.work import (
     battery_bar,
     battery_eta,
     battery_state,
+    excedencia_blocker,
+    excedencia_return_at,
     family_ready_at,
     family_tier,
     performance_bar,
@@ -161,7 +176,7 @@ from bot.services.work_games import GRACE_SECONDS
 from bot.services.work_tools import TOOL_KEYS
 from bot.utils.cogs import find_cog
 from bot.utils.interactions import ack, claim_custom_ids, edit, notify
-from bot.utils.responder import ContextResponder, InteractionResponder
+from bot.utils.responder import ContextResponder
 
 if TYPE_CHECKING:
     from bot.app import BotClient
@@ -170,6 +185,8 @@ logger = logging.getLogger(__name__)
 
 #: Segundos sin tocar el panel antes de que caduque.
 PANEL_TIMEOUT = 300
+#: Nombre del PNG del inicio en el mensaje.
+HOME_PNG = "pala.png"
 COLOR_IDLE = discord.Color.from_rgb(230, 126, 34)
 COLOR_GAME = discord.Color.from_rgb(88, 101, 242)
 COLOR_BAD = discord.Color.from_rgb(80, 84, 92)
@@ -445,12 +462,28 @@ def status_text(status: Status, notes: list[str]) -> str:
         performance_bar(contract.performance)
         + (" · ⚠️ aviso: si vuelve a 0, te bajan" if contract.warned else ""),
         *family_lines(status),
-        f"🗓️ Hoy: {min(contract.shifts_today, ORDINARY_SHIFTS)}/{ORDINARY_SHIFTS} turnos "
+        f"🗓️ Hoy: {min(contract.shifts_today, contract.jornada)}/{contract.jornada} turnos "
         f"ordinarios · Extras legales esta semana: "
-        f"{min(contract.extras_week, LEGAL_EXTRAS_PER_WEEK)}/{LEGAL_EXTRAS_PER_WEEK}",
-        "Próximo turno: "
-        + ("cuando acabe el saliente" if status.off_duty else KIND_TEXT[status.next_kind]),
+        f"{min(contract.extras_week, LEGAL_EXTRAS_PER_WEEK)}/{LEGAL_EXTRAS_PER_WEEK} · "
+        f"franjas libres hoy: {status.agenda.free}",
+        "Próximo turno: " + next_turn_text(status),
     ]
+    if contract.on_excedencia:
+        back = int(excedencia_return_at(contract))
+        lines.append(
+            "🏝️ **De excedencia voluntaria** (art. 46.2 ET): no fichas ni reservas franjas. "
+            f"Puedes volver <t:{back}:R>, al mismo puesto y con la barra a la mitad."
+        )
+    elif contract.reduced:
+        lines.append(
+            f"🧸 **{JORNADA_NAMES[contract.jornada]}** (art. 37.6 ET): cobras por turno lo mismo, "
+            "pero sin horas extra, B ni guardias."
+        )
+    if contract.jornada_next:
+        lines.append(
+            f"-# A partir de mañana: {JORNADA_NAMES[contract.jornada_next].lower()} (preaviso, "
+            "art. 37.7 ET)."
+        )
     if status.can_guard:
         required = job.required_guards(contract.level)
         lines.append(
@@ -529,6 +562,86 @@ def status_text(status: Status, notes: list[str]) -> str:
         lines.append("")
         lines.extend(notes)
     return "\n".join(lines)
+
+
+def next_turn_text(status: Status) -> str:
+    """Qué sería el próximo turno, contando el saliente, la excedencia y la reducción."""
+    contract = status.contract
+    if contract.on_excedencia:
+        return "ninguno (excedencia)"
+    if status.off_duty:
+        return "cuando acabe el saliente"
+    if contract.reduced and status.next_kind is not ShiftKind.ORDINARY:
+        return "mañana (la reducción no deja hacer horas extra)"
+    return KIND_TEXT[status.next_kind]
+
+
+def home_text(state: dict[str, Any], *, image: bool) -> str:
+    """El texto del inicio: corto bajo la imagen y completo si no hay imagen."""
+    lines = [f"## 🗓️ {state['date']} · {state['free']}"]
+    if not image:
+        icons = {
+            "hecha": "🟩", "jornada": "🟨", "extra": "🟧", "guardia": "🟥",
+            "estudio": "🟪", "negocio": "🟦", "libre": "⬜",
+        }  # fmt: skip
+        lines.append("".join(icons[slot["kind"]] for slot in state["slots"]))
+        lines.append(
+            "-# 🟩 fichado · 🟨 jornada · 🟧 extra · 🟥 guardia · 🟪 estudio · "
+            "🟦 negocio · ⬜ libre"
+        )
+        if job := state["job"]:
+            lines.append(f"🪏 {job['title']} ({job['name']}, {job['level']}) · {job['today']}")
+        if business := state["business"]:
+            lines.append(
+                f"🏪 {business['name']} · {business['sector_name']} en {business['barrio']} · "
+                f"{business['today']}"
+            )
+    lines.append(f"-# {state['jornada']} · {state['tip']}")
+    return "\n".join(lines)
+
+
+def jornada_options(contract: Contract, now: float) -> list[discord.SelectOption]:
+    """Opciones del menú de la jornada: los tramos y la excedencia."""
+    if contract.on_excedencia:
+        return [
+            discord.SelectOption(
+                label="Volver de la excedencia",
+                value="x:off",
+                emoji="🔙",
+                description=(
+                    f"Al mismo puesto y con la barra a la mitad (mínimo {EXCEDENCIA_MIN_DAYS} días)"
+                ),
+            )
+        ]
+    pending = contract.jornada_next or contract.jornada
+    options = [
+        discord.SelectOption(
+            label=JORNADA_NAMES[franjas],
+            value=f"j:{franjas}",
+            emoji="🗓️" if franjas == ORDINARY_SHIFTS else "🧸",
+            description=(
+                f"{franjas} franjas de jornada"
+                + (" · sin horas extra ni guardias" if franjas < ORDINARY_SHIFTS else "")
+                + (" · la que tienes" if franjas == contract.jornada else " · desde mañana")
+            )[:100],
+            default=franjas == pending,
+        )
+        for franjas in JORNADAS
+    ]
+    blocker = excedencia_blocker(contract, now)
+    options.append(
+        discord.SelectOption(
+            label="Pedir la excedencia voluntaria",
+            value="x:on",
+            emoji="🏝️",
+            description=(
+                "Deja libres todas tus franjas, sin sueldo"
+                if blocker is None
+                else "Aún no puedes pedirla"
+            )[:100],
+        )
+    )
+    return options
 
 
 def job_lines(status: Status) -> list[str]:
@@ -912,6 +1025,10 @@ class PalaPanel(ui.LayoutView):
         self.gifts: frozenset[str] = frozenset()
         #: Caja de la tienda del regalo que está a punto de comprar y dar.
         self.checkout: tienda.Checkout | None = None
+        #: Si el mensaje enseña la imagen del inicio, y el cambio de adjuntos de la
+        #: próxima edición (`None` = no tocarlos; `[]` = quitar la imagen).
+        self.has_image = False
+        self._attach: list[discord.File] | None = None
 
     # -- Dibujo -----------------------------------------------------------------------
 
@@ -955,6 +1072,8 @@ class PalaPanel(ui.LayoutView):
         return button
 
     def _frame(self, text: str, color: discord.Color, rows: list[ui.ActionRow]) -> None:
+        if self.has_image:
+            self._attach, self.has_image = [], False
         self.clear_items()
         container = ui.Container(accent_colour=color)
         container.add_item(ui.TextDisplay(text[:3900]))
@@ -985,8 +1104,10 @@ class PalaPanel(ui.LayoutView):
         row: ui.ActionRow = ui.ActionRow()
         row.add_item(self._job_select(None))
         rows = [row]
+        more = ui.ActionRow(self._button("🏠 Inicio", self._go_home_screen))
         if (button := self._pension_button()) is not None:
-            rows.append(ui.ActionRow(button))
+            more.add_item(button)
+        rows.append(more)
         self._frame("\n".join(lines), COLOR_IDLE, rows)
 
     def _pension_button(self) -> ui.Button | None:
@@ -1122,16 +1243,71 @@ class PalaPanel(ui.LayoutView):
         elif status.contract.abroad:
             more.add_item(self._button(f"✈️ Volver a casa · {flight}", self._go_home))
         more.add_item(self._button("🎁 Regalos", self._gift_shop))
+        more.add_item(self._button("🏠 Inicio", self._go_home_screen))
         coffee_row: ui.ActionRow = ui.ActionRow()
         coffee_row.add_item(self._coffee_select(status.contract.coffees))
         family_row: ui.ActionRow = ui.ActionRow()
         family_row.add_item(self._family_select(status))
-        rows = [actions, more, coffee_row, family_row]
+        jornada_row: ui.ActionRow = ui.ActionRow()
+        jornada_row.add_item(self._jornada_select(status))
+        rows = [actions, more, coffee_row, family_row, jornada_row]
         if not status.contract.abroad:
             job_row: ui.ActionRow = ui.ActionRow()
             job_row.add_item(self._job_select(status.contract.job))
             rows.append(job_row)
         self._frame(status_text(status, notes), COLOR_IDLE, rows)
+
+    def _jornada_select(self, status: Status) -> ui.Select:
+        contract = status.contract
+        label = "Excedencia" if contract.on_excedencia else JORNADA_NAMES[contract.jornada]
+        select: ui.Select = ui.Select(
+            placeholder=f"🗓️ Jornada: {label}",
+            options=jornada_options(contract, status.now),
+            custom_id="pala-panel:jornada",
+        )
+
+        async def callback(interaction: discord.Interaction) -> None:
+            await self._jornada(interaction, select.values[0])
+
+        select.callback = callback  # type: ignore[method-assign]
+        return select
+
+    def show_home(self, state: dict[str, Any], png: bytes | None) -> None:
+        """El inicio: la imagen del día y los botones del curro y del negocio."""
+        self.clear_items()
+        container = ui.Container(accent_colour=COLOR_IDLE)
+        if png is not None:
+            container.add_item(
+                ui.MediaGallery(discord.MediaGalleryItem(f"attachment://{HOME_PNG}"))
+            )
+            self._attach, self.has_image = [discord.File(io.BytesIO(png), filename=HOME_PNG)], True
+        elif self.has_image:
+            self._attach, self.has_image = [], False
+        notes, self.notes = self.notes, []
+        text = home_text(state, image=png is not None)
+        container.add_item(ui.TextDisplay("\n".join([text, *notes])[:3900]))
+        self.add_item(container)
+        blue = discord.ButtonStyle.primary
+        row: ui.ActionRow = ui.ActionRow()
+        if state["job"] is not None:
+            row.add_item(
+                self._button("🪏 Trabajo", self._home, custom_id="pala-panel:trabajo", style=blue)
+            )
+        if state["business"] is not None:
+            row.add_item(
+                self._button(
+                    "🏪 Negocio", self._business, custom_id="pala-panel:negocio", style=blue
+                )
+            )
+        if state["job"] is None:
+            row.add_item(self._button("💼 Buscar curro", self._home, custom_id="pala-panel:buscar"))
+        if state["business"] is None:
+            row.add_item(
+                self._button("🏪 Montar negocio", self._business, custom_id="pala-panel:montar")
+            )
+        if (pension := self._pension_button()) is not None:
+            row.add_item(pension)
+        self.add_item(row)
 
     def show_game(self) -> None:
         """Pantalla del minijuego en marcha.
@@ -1258,13 +1434,36 @@ class PalaPanel(ui.LayoutView):
         await self._edit(None)
 
     async def _edit(self, interaction: discord.Interaction | None) -> None:
+        kwargs: dict[str, Any] = {"view": self}
+        if self._attach is not None:
+            # Poner o quitar la imagen del inicio: solo cuando cambia (subirla cuesta ~1 s).
+            kwargs["attachments"], self._attach = self._attach, None
         try:
             if interaction is not None:
-                await edit(interaction, view=self)
+                await edit(interaction, **kwargs)
             elif self.message is not None:
-                await self.message.edit(view=self)
+                await self.message.edit(**kwargs)
         except discord.HTTPException:
             logger.debug("No se pudo editar el panel de pala", exc_info=True)
+
+    async def home_state(self) -> dict[str, Any]:
+        """El estado de la escena del inicio con lo de ahora."""
+        status = await self.service.status(self.guild_id, self.owner.id)
+        self.pension = await self.service.pension(self.guild_id, self.owner.id)
+        business = await negocio.business_of(self.cog.bot, self.guild_id, self.owner.id)
+        agenda = (
+            status.agenda
+            if status is not None
+            else await self.service.agenda(self.guild_id, self.owner.id)
+        )
+        return dia_state(self._name, self.service.now(), agenda, status, business)
+
+    async def show_home_screen(self, interaction: discord.Interaction | None) -> None:
+        """Pinta el inicio y lo pone en el mensaje."""
+        state = await self.home_state()
+        png = await negocio.paint(self.cog.bot, state)
+        self.show_home(state, png)
+        await self._edit(interaction)
 
     async def refresh(self, interaction: discord.Interaction | None = None) -> None:
         """Vuelve al panel con el estado actual."""
@@ -1290,6 +1489,56 @@ class PalaPanel(ui.LayoutView):
     async def _home(self, interaction: discord.Interaction) -> None:
         await ack(interaction)
         await self.refresh(interaction)
+
+    async def _go_home_screen(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
+        await self.show_home_screen(interaction)
+
+    async def _business(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
+        if self.shift is not None:
+            await notify(interaction, "Termina el turno primero.")
+            return
+        self.stop()
+        self.cog.panels.discard(self)
+        if not await negocio.open_panel(self.cog.bot, interaction, self.owner, self.channel):
+            await notify(interaction, "Los negocios no están disponibles ahora mismo.")
+
+    async def _jornada(self, interaction: discord.Interaction, value: str) -> None:
+        await ack(interaction)
+        kind, _, arg = value.partition(":")
+        try:
+            if kind == "j" and arg.isdigit():
+                status = await self.service.set_jornada(self.guild_id, self.owner.id, int(arg))
+                stat = f"work_jornada_{arg}"
+                if status.contract.jornada_next:
+                    self.notes.append(
+                        f"🗓️ Pedido: {JORNADA_NAMES[status.contract.jornada_next].lower()} desde "
+                        "mañana (art. 37.7 ET: con preaviso)."
+                    )
+                else:
+                    self.notes.append("🗓️ Te quedas con la jornada que tienes.")
+            elif value == "x:on":
+                status = await self.service.request_excedencia(self.guild_id, self.owner.id)
+                stat = "work_excedencia"
+                self.notes.append(
+                    "🏝️ **Excedencia voluntaria.** Tus franjas quedan libres; tu puesto te espera. "
+                    "Sin sueldo, claro."
+                )
+            elif value == "x:off":
+                status = await self.service.end_excedencia(self.guild_id, self.owner.id)
+                stat = "work_excedencia_back"
+                self.notes.append("🔙 Vuelves al curro. La barra empieza a la mitad: a ganársela.")
+            else:
+                return
+        except WorkError as error:
+            await notify(interaction, str(error))
+            return
+        self.show_status(status)
+        await self._edit(interaction)
+        await logros.track(
+            self.cog.bot, self.guild_id, self.owner, self.channel, StatDelta(add={stat: 1})
+        )
 
     async def _hire(self, interaction: discord.Interaction, job_key: str) -> None:
         await ack(interaction)
@@ -1710,6 +1959,9 @@ class PalaPanel(ui.LayoutView):
             if self.shift is not None:
                 return
             key = (self.guild_id, self.owner.id)
+            if negocio.busy(self.cog.bot, *key):
+                await notify(interaction, "Estás atendiendo tu negocio. Una cosa cada vez.")
+                return
             if key in self.cog.working:
                 # Dos paneles abiertos no pueden fichar a la vez: el segundo se
                 # saltaría la jornada, la batería y la pregunta del B.
@@ -2078,6 +2330,8 @@ class Work(commands.Cog, name="Trabajo"):
             value="\n".join(career)[:1_024] if career else "Nada todavía. Ni unas prácticas.",
             inline=False,
         )
+        if line := await negocio.business_line(self.bot, guild_id, member.id):
+            embed.add_field(name="🏪 Negocio", value=line[:1_024], inline=False)
         embed.set_footer(text="Para fichar, ascender o cambiar de curro: pala.")
         return embed
 
@@ -2111,13 +2365,13 @@ class Work(commands.Cog, name="Trabajo"):
             return
         panel = PalaPanel(self, guild_id=guild.id, owner=user)
         panel.channel = channel
-        panel.pension = await self.service.pension(guild.id, user.id)
-        status = await self.service.status(guild.id, user.id)
-        if status is None:
-            panel.show_hiring(await self.service.history(guild.id, user.id), [])
-        else:
-            panel.show_status(status)
-        panel.message = await send(view=panel, allowed_mentions=discord.AllowedMentions.none())
+        state = await panel.home_state()
+        png = await negocio.paint(self.bot, state)
+        panel.show_home(state, png)
+        files, panel._attach = panel._attach or [], None
+        panel.message = await send(
+            view=panel, files=files, allowed_mentions=discord.AllowedMentions.none()
+        )
         self.panels.add(panel)
 
     @app_commands.command(name="pala", description="Coge la pala: tu curro, turnos y ascensos.")
@@ -2126,15 +2380,20 @@ class Work(commands.Cog, name="Trabajo"):
         """Abre el panel de tu curro. Solo en los canales elegidos con `tajo`, si los hay."""
 
         async def send(**kwargs: Any) -> discord.Message:
-            await interaction.response.send_message(**kwargs)
-            return await interaction.original_response()
+            return await interaction.followup.send(wait=True, **kwargs)
+
+        # Pintar el inicio puede pasar del segundo: se acepta antes.
+        await interaction.response.defer()
+
+        async def send_error(text: str) -> None:
+            await interaction.followup.send(text, ephemeral=True)
 
         await self._open(
             guild=interaction.guild,
             channel=interaction.channel,
             user=interaction.user,
             send=send,
-            send_error=InteractionResponder(interaction).send_error,
+            send_error=send_error,
         )
 
     @commands.command(name="pala")
@@ -2236,6 +2495,34 @@ async def ladrillo_builders(bot: commands.Bot, guild_id: int) -> tuple[int, ...]
     except (OSError, sqlite3.Error):
         logger.exception("No se pudo mirar quién está en la rama Ladrillo")
         return ()
+
+
+async def home(
+    bot: commands.Bot, interaction: discord.Interaction, owner: discord.abc.User, channel: object
+) -> None:
+    """Pone el inicio de `pala` en el mensaje del botón (ya aceptado con `ack`).
+
+    Lo usa el panel del negocio para volver. El mensaje trae la imagen del negocio, así
+    que el inicio la cambia siempre por la suya (o la quita).
+    """
+    cog = find_cog(bot, Work)
+    if cog is None or interaction.guild_id is None:
+        return
+    panel = PalaPanel(cog, guild_id=interaction.guild_id, owner=owner)
+    panel.channel = channel
+    panel.message = interaction.message
+    panel.has_image = True
+    cog.panels.add(panel)
+    try:
+        await panel.show_home_screen(interaction)
+    except (OSError, sqlite3.Error):
+        logger.exception("No se pudo abrir el inicio de pala de %s", owner.id)
+
+
+def busy(bot: commands.Bot, guild_id: int, user_id: int) -> bool:
+    """Si el miembro está fichando en la pala ahora mismo (solo memoria)."""
+    cog = find_cog(bot, Work)
+    return cog is not None and (guild_id, user_id) in cog.working
 
 
 async def pending(bot: commands.Bot, guild_id: int, user_id: int) -> list[Pending]:

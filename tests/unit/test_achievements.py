@@ -201,6 +201,18 @@ HOUSING_EVENT_KEYS = (
 )  # fmt: skip
 
 PRODUCED_STATS = {
+    # 🏪 Negocio propio de pala (`business_stats` y las acciones del negocio)
+    "biz_opened", "biz_turns", "biz_turns_cafeteria", "biz_turns_tienda", "biz_turns_taller",
+    "biz_sales", "biz_tips", "biz_best_turn", "biz_clients_turn_max", "biz_stars_max",
+    "biz_loyalty_max", "biz_usual_hit", "biz_perfect", "biz_grade_d", "biz_wrong", "biz_exact",
+    "biz_caught", "biz_missed_thief", "biz_false_accuse", "biz_diag_ok", "biz_bad_diag",
+    "biz_quote_caro", "biz_night", "biz_canarias", "biz_tired", "biz_empty_turn", "biz_withheld",
+    "biz_garnished", "biz_streak_max", "biz_turns_day_max", "biz_clients", "biz_sectors_tried",
+    "biz_themes_tried", "biz_islands_tried", "biz_restyled", "biz_purchases",
+    "biz_price_barato", "biz_price_normal", "biz_price_caro", "biz_price_carisimo",
+    "biz_nights_unpaid", "biz_closed_red", "biz_evicted", "work_jornada_4", "work_jornada_2",
+    "work_jornada_3",
+    "work_excedencia", "work_excedencia_back",
     # cogs/achievements.py: mensajes, voz, reacciones y la siembra del historial
     *message_stats("x", when=datetime(2026, 1, 1, tzinfo=TIMEZONE)).keys(),
     "msg_night", "msg_morning", "msg_long", "msg_short", "msg_caps", "msg_questions",
@@ -2021,3 +2033,17 @@ def test_un_fallo_al_empate_no_cuenta_como_empate_ni_como_goleada() -> None:
 def test_anular_o_mirar_las_apuestas_deportivas_tiene_su_contador() -> None:
     assert sports_void_stats().add == {"sports_refunds": 1}
     assert sports_slip_stats().add == {"sports_slips": 1}
+
+
+def test_negocio_cuenta_sectores_temas_e_islas_distintos() -> None:
+    stats = {
+        "biz_opened_taller": 2,
+        "biz_opened_tienda": 1,
+        "biz_theme_lujo": 3,
+        "biz_island_tf": 1,
+    }
+    full = with_derived(stats)
+    assert full["biz_sectors_tried"] == 2
+    assert full["biz_themes_tried"] == 1
+    assert full["biz_islands_tried"] == 1
+    assert "biz_streak_365" in newly_unlocked({"biz_streak_max": 365}, [])

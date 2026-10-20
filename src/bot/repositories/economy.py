@@ -114,6 +114,9 @@ Modelo de datos:
   el IRPF de la ganancia de cada venta, a nombre de cada copropietario, para que
   `hacienda` los cuente. El IRPF de las rentas va en `economy_tax_records`
   (concepto `pisos:renta`).
+- `economy_business_tax`: el IGIC, la tasa de la apertura y la retención del alquiler del
+  local que paga cada negocio de `pala` (`business`), para que `hacienda` los cuente. El
+  IRPF a cuenta de sus ventas va en `economy_tax_records` (clase `actividad`).
 - `economy_tax_debts` y `economy_debt_payments`: lo que se debe a Hacienda porque no
   llegó en efectivo (el Patrimonio de quien lo tiene todo en ladrillo, la declaración
   que sale a pagar) y lo que se ha ido cobrando: del monedero cada lunes, el 30 % de
@@ -1008,6 +1011,80 @@ class HousingMove:
     expenses: tuple[tuple[int, str, int], ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class BusinessCost:
+    """Un pago de un negocio de `pala`: lo que desaparece y lo que va al Estado.
+
+    Attributes:
+        concept: Motivo del libro (`negocio:compras`, `negocio:alquiler`…).
+        gone: Lo que se lleva quien no existe (el mayorista, el casero, la luz).
+        taxes: `(clase, importe)` que van al Estado: `igic`, `tasa` o `retencion` (la del
+            IRPF del casero, art. 100 RIRPF). Se cobran antes que `gone`.
+        expense: Si lo pagado es gasto deducible de la actividad (`INCOME_BUSINESS` en
+            negativo, con criterio de caja: se apunta lo que de verdad se paga).
+    """
+
+    concept: str
+    gone: int = 0
+    taxes: tuple[tuple[str, int], ...] = ()
+    expense: bool = True
+
+    @property
+    def total(self) -> int:
+        """Lo que cuesta entero."""
+        return self.gone + sum(amount for _kind, amount in self.taxes)
+
+
+@dataclass(frozen=True, slots=True)
+class BusinessMove:
+    """Todo el dinero de una operación de un negocio (`EconomyRepository.business`).
+
+    El negocio es de un autónomo: su caja es el monedero del dueño. En este orden:
+
+    Attributes:
+        user_id: El dueño.
+        refund: Fianza que vuelve del depósito de fianzas al cerrar (dinero propio: no es
+            renta ni se embarga).
+        forfeit: Fianza que se queda el casero por lo que se le debía (sale del depósito y
+            desaparece).
+        payments: Pagos enteros o nada (montar, comprar al mayorista, pagar la deuda del
+            local): si no llega, `InsufficientFundsError` y no se guarda nada.
+        deposit: Fianza que va al depósito de fianzas al montar (entera o nada).
+        sales: Ventas de un turno: las crea la demanda, que no existe.
+        sold_cost: Coste al mayorista de lo vendido: la retención a cuenta va sobre
+            `sales - sold_cost`.
+        bills: Recibos de la noche: se cobran por orden hasta donde llegue el monedero.
+        settle: Recibe, dentro de la transacción, lo que no llegó de `bills`.
+    """
+
+    user_id: int
+    refund: int = 0
+    forfeit: int = 0
+    payments: tuple[BusinessCost, ...] = ()
+    deposit: int = 0
+    sales: int = 0
+    sold_cost: int = 0
+    bills: tuple[BusinessCost, ...] = ()
+    settle: Callable[[sqlite3.Connection, int], None] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BusinessPaid:
+    """Cómo quedó el dinero de una operación de un negocio.
+
+    Attributes:
+        balance: Saldo final del dueño.
+        withheld: IRPF retenido a cuenta de las ventas.
+        garnished: Lo embargado de las ventas por deudas con Hacienda.
+        unpaid: Lo que no llegó de los recibos.
+    """
+
+    balance: int
+    withheld: int = 0
+    garnished: int = 0
+    unpaid: int = 0
+
+
 class EconomyRepository:
     """Acceso SQLite a la economía; comparte archivo con el resto del bot.
 
@@ -1373,6 +1450,15 @@ class EconomyRepository:
                     user_id INTEGER NOT NULL,
                     kind TEXT NOT NULL CHECK (kind IN ('itp', 'plusvalia')),
                     base INTEGER NOT NULL CHECK (base >= 0),
+                    tax INTEGER NOT NULL CHECK (tax > 0),
+                    created_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS economy_business_tax (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    kind TEXT NOT NULL,
                     tax INTEGER NOT NULL CHECK (tax > 0),
                     created_at REAL NOT NULL
                 );
@@ -3714,6 +3800,12 @@ class EconomyRepository:
                    tax, created_at
             FROM economy_housing_tax WHERE guild_id = :guild
             UNION ALL
+            SELECT user_id,
+                   CASE kind WHEN 'tasa' THEN 'tasas' WHEN 'retencion' THEN 'irpf_otros'
+                        ELSE 'igic' END,
+                   tax, created_at
+            FROM economy_business_tax WHERE guild_id = :guild
+            UNION ALL
             SELECT user_id, 'multas', amount, created_at
             FROM economy_sanctions WHERE guild_id = :guild
             UNION ALL
@@ -5674,6 +5766,151 @@ class EconomyRepository:
                     balances[member] = balances.get(member, before[member]) - paid
             return result, balances
 
+    async def business(
+        self,
+        guild_id: int,
+        *,
+        now: float,
+        week: FiscalWeek,
+        withhold: Callable[[int, Pace], int],
+        prepare: Callable[[sqlite3.Connection], tuple[T, BusinessMove]],
+    ) -> tuple[T, BusinessPaid]:
+        """Mueve el dinero de una operación de un negocio de `pala`.
+
+        `prepare` lo pone `bot.services.negocio` y corre dentro de la misma transacción,
+        antes que el dinero: lee y guarda el negocio y dice qué dinero se mueve. Si lanza,
+        o si no llega para un pago entero, no se guarda nada (tampoco lo de `prepare`).
+
+        Args:
+            week: Semana fiscal en curso.
+            withhold: Recibe `(margen del turno, renta de la semana)` y devuelve la
+                retención a cuenta (regla en `bot.services.taxes`).
+
+        Returns:
+            `(lo que devuelva prepare, cómo quedó el dinero)`.
+
+        Raises:
+            InsufficientFundsError: Si no llega para un pago entero.
+            BalanceLimitError: Si no le cabe lo que cobra.
+        """
+        return await self._run(self._business_sync, guild_id, now, week, withhold, prepare)
+
+    def _business_sync(
+        self,
+        guild_id: int,
+        now: float,
+        week: FiscalWeek,
+        withhold: Callable[[int, Pace], int],
+        prepare: Callable[[sqlite3.Connection], tuple[T, BusinessMove]],
+    ) -> tuple[T, BusinessPaid]:
+        with self._transaction() as connection:
+            result, move = prepare(connection)
+            user = move.user_id
+            self._ensure_wallet(connection, guild_id, user)
+            tax = garnished = 0
+            if move.forfeit > 0:
+                self._open_empty_wallet(connection, guild_id, HOUSING_DEPOSIT_ACCOUNT_ID)
+                self._apply_in_transaction(
+                    connection, guild_id, HOUSING_DEPOSIT_ACCOUNT_ID,
+                    (LedgerEntry(-move.forfeit, "negocio:fianza_perdida"),),
+                )  # fmt: skip
+            if move.refund > 0:
+                self._open_empty_wallet(connection, guild_id, HOUSING_DEPOSIT_ACCOUNT_ID)
+                self._apply_in_transaction(
+                    connection, guild_id, HOUSING_DEPOSIT_ACCOUNT_ID,
+                    (LedgerEntry(-move.refund, "negocio:fianza_devuelta"),),
+                )  # fmt: skip
+                self._apply_in_transaction(
+                    connection, guild_id, user,
+                    (LedgerEntry(move.refund, "negocio:fianza_devuelta"),),
+                )  # fmt: skip
+            for cost in move.payments:
+                if cost.total <= 0:
+                    continue
+                if self._ensure_wallet(connection, guild_id, user) < cost.total:
+                    raise InsufficientFundsError(self._ensure_wallet(connection, guild_id, user))
+                self._business_cost_in(connection, guild_id, user, cost, now, cost.total)
+            if move.deposit > 0:
+                self._open_empty_wallet(connection, guild_id, HOUSING_DEPOSIT_ACCOUNT_ID)
+                self._apply_in_transaction(
+                    connection, guild_id, user, (LedgerEntry(-move.deposit, "negocio:fianza"),)
+                )
+                self._apply_in_transaction(
+                    connection, guild_id, HOUSING_DEPOSIT_ACCOUNT_ID,
+                    (LedgerEntry(move.deposit, "negocio:fianza"),),
+                )  # fmt: skip
+            if move.sales > 0:
+                pace = self._pace_in(connection, guild_id, user, week)
+                margin = max(0, move.sales - move.sold_cost)
+                tax = max(0, min(move.sales, withhold(margin, pace)))
+                entries = [LedgerEntry(move.sales, "negocio:ventas")]
+                if tax:
+                    entries.append(LedgerEntry(-tax, "irpf:negocio:ventas"))
+                self._apply_in_transaction(connection, guild_id, user, entries)
+                if tax:
+                    self._credit_state_in(connection, guild_id, tax, "irpf:negocio:ventas")
+                self._record_in(
+                    connection, guild_id, user, now=now, concept="negocio:ventas",
+                    kind=INCOME_BUSINESS, gross=move.sales, withheld=tax,
+                )  # fmt: skip
+                garnished = self._garnish_in(connection, guild_id, user, move.sales - tax, now)
+            unpaid = 0
+            for cost in move.bills:
+                if cost.total <= 0:
+                    continue
+                room = min(cost.total, self._ensure_wallet(connection, guild_id, user))
+                unpaid += cost.total - room
+                if room > 0:
+                    self._business_cost_in(connection, guild_id, user, cost, now, room)
+            if move.settle is not None:
+                move.settle(connection, unpaid)
+            balance = self._ensure_wallet(connection, guild_id, user)
+            return result, BusinessPaid(balance, tax, garnished, unpaid)
+
+    def _business_cost_in(
+        self,
+        connection: sqlite3.Connection,
+        guild_id: int,
+        user_id: int,
+        cost: BusinessCost,
+        now: float,
+        most: int,
+    ) -> int:
+        """Cobra hasta `most` de un pago de un negocio: primero los impuestos, luego el resto.
+
+        Los impuestos van al Estado y a `economy_business_tax`; lo demás desaparece. Si es
+        gasto de la actividad, lo cobrado se apunta en `economy_tax_records` en negativo.
+
+        Returns:
+            El saldo final del dueño.
+        """
+        room = most
+        entries: list[LedgerEntry] = []
+        for kind, amount in cost.taxes:
+            cut = min(room, max(0, amount))
+            if cut <= 0:
+                continue
+            room -= cut
+            reason = f"{cost.concept}:{kind}"
+            entries.append(LedgerEntry(-cut, reason))
+            self._credit_state_in(connection, guild_id, cut, reason)
+            connection.execute(
+                "INSERT INTO economy_business_tax (guild_id, user_id, kind, tax, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (guild_id, user_id, kind, cut, now),
+            )
+        gone = min(room, max(0, cost.gone))
+        if gone:
+            entries.append(LedgerEntry(-gone, cost.concept))
+        balance = self._apply_in_transaction(connection, guild_id, user_id, entries)
+        paid = most - room + gone
+        if cost.expense and paid:
+            self._record_in(
+                connection, guild_id, user_id, now=now, concept=cost.concept,
+                kind=INCOME_BUSINESS, gross=-paid, withheld=0,
+            )  # fmt: skip
+        return balance
+
     def _housing_move_in(
         self,
         connection: sqlite3.Connection,
@@ -6295,6 +6532,26 @@ class EconomyRepository:
             )
             return charged, balance
 
+    async def contribution_paid(self, guild_id: int, user_id: int, *, start: float) -> bool:
+        """Si ha pagado la cuota de autónomos (`concept = 'autonomos'`) desde `start`."""
+        return await self._run(self._contribution_paid_sync, guild_id, user_id, start)
+
+    def _contribution_paid_sync(self, guild_id: int, user_id: int, start: float) -> bool:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                """
+                SELECT 1 FROM economy_payroll
+                WHERE guild_id = ? AND user_id = ? AND gross = 0 AND concept = 'autonomos'
+                  AND created_at >= ?
+                LIMIT 1
+                """,
+                (guild_id, user_id, start),
+            ).fetchone()
+        finally:
+            connection.close()
+        return row is not None
+
     async def work_net(self, guild_id: int, user_id: int, since: float) -> int:
         """Neto cobrado en nóminas desde `since` (lo cobrado en negro no cuenta)."""
         return await self._run(self._work_net_sync, guild_id, user_id, since)
@@ -6663,6 +6920,7 @@ class EconomyRepository:
                 "economy_slots_jackpots",
                 "economy_slots_mystery",
                 "economy_consumption_tax",
+                "economy_business_tax",
                 "economy_lottery_tax",
                 "economy_public_debt",
                 "economy_payroll",

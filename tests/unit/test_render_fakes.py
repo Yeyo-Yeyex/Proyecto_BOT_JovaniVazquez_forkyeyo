@@ -12,12 +12,14 @@ import inspect
 
 import pytest
 from render_fakes import (
+    FakeBusinessScene,
     FakeHoldWinScene,
     FakePachinkoRenderer,
     FakeSlotsScene,
     FakeWheelRenderer,
 )
 
+from bot.services.business_scene import BusinessScene
 from bot.services.hold_win_scene import HoldWinScene
 from bot.services.pachinko_render import PachinkoRenderer
 from bot.services.roulette_render import WheelRenderer
@@ -31,6 +33,7 @@ from bot.services.slots_scene import SlotsScene
         (FakeHoldWinScene, HoldWinScene),
         (FakeWheelRenderer, WheelRenderer),
         (FakePachinkoRenderer, PachinkoRenderer),
+        (FakeBusinessScene, BusinessScene),
     ],
     ids=lambda cls: cls.__name__,
 )
