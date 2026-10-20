@@ -20,7 +20,7 @@ from discord import ui
 from interaction_fakes import fake_interaction
 from render_fakes import FakeAllatuScene
 
-from bot.cogs.allatu import Allatu, AllatuBoard
+from bot.cogs.allatu import CONDOLENCE_LINES, Allatu, AllatuBoard
 from bot.repositories.economy import EconomyRepository
 from bot.services.allatu import BOXES, ROUNDS, Ending, Phase, Table
 from bot.services.economy import STARTING_BALANCE, EconomyService
@@ -98,10 +98,12 @@ def ledger_sum(tmp_path: Path) -> int:
 
 
 async def to_offer(board: AllatuBoard) -> None:
+    """Abre cajas hasta que llama la banca, sin sacar el gordo (que trae el pésame)."""
     game = board.game
     assert game is not None
     while game.phase is Phase.OPEN:
-        await board._press_box(click(), game.openable[0])
+        box = next((b for b in game.openable if game.values[b] != game.gordo), game.openable[0])
+        await board._press_box(click(), box)
 
 
 async def test_el_plato_cobra_y_pone_22_cajas_y_tres_controles(tmp_path: Path) -> None:
@@ -322,3 +324,19 @@ async def test_con_imagen_la_oferta_tiene_pintados_sus_tres_botones(
     # tabla siguiente, por adelantado y después de las imágenes de elegir caja.
     assert renderer.calls.count(("opening",)) == 1
     assert renderer.calls.index(("picks",)) < renderer.calls.index(("opening",))
+
+
+async def test_abrir_el_gordo_trae_el_pesame_y_no_trato_sigue_la_ronda(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path)
+    board = await open_board(cog)
+    rig(board, [Fraction(0), Fraction(10)] + [Fraction(1)] * 20)
+    await board._press_box(click(), 0)
+    await board._press_box(click(), 1)
+    game = board.game
+    assert game is not None and game.offer is not None and game.offer.condolence
+    text = board.embed.description or ""
+    assert any(line in text for line in CONDOLENCE_LINES)
+    assert "Con ❌ sigue la ronda" in text
+    assert by_id(board, "trato").label.startswith("✅ Trato")
+    await board._no_deal(click())
+    assert game.phase is Phase.OPEN and game.left_in_round == ROUNDS[0] - 1

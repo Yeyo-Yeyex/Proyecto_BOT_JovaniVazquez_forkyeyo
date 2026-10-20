@@ -110,3 +110,66 @@ def test_el_gordo_de_la_ruleta_cuenta_como_maximo() -> None:
     game.open(1)
     game.settle_now()
     assert allatu_stats(game, when=WHEN).peak["allatu_gordo_max"] == 1_000
+
+
+def with_values(values: list[Fraction], *, gordo: int = 10) -> AllatuGame:
+    """Una partida Normal con los premios puestos a mano y tu caja, la 0."""
+    game = AllatuGame(
+        stake=100,
+        table=Table.NORMAL,
+        gordo=gordo,
+        values=tuple(values),
+        haggle_luck=(False,) * len(ROUNDS),
+    )
+    game.choose(0)
+    return game
+
+
+def test_aceptar_el_pesame_por_mas_de_lo_apostado() -> None:
+    game = with_values([Fraction(2), Fraction(0), Fraction(10)] + [Fraction(2)] * 19)
+    game.open(1)
+    game.open(2)
+    offer = game.offer
+    assert offer is not None and offer.condolence and offer.amount == 150
+    game.deal()
+    delta = allatu_stats(game, when=WHEN)
+    add = delta.add
+    assert add["allatu_condolences"] == 1 and add["allatu_condolence_deals"] == 1
+    assert add["allatu_condolence_rich"] == 1 and add["allatu_first_deal"] == 1
+    assert add["allatu_comebacks"] == 1
+    assert delta.peak["allatu_comeback_max"] == 150
+
+
+def test_rechazar_el_pesame_y_ganar_sin_el_gordo() -> None:
+    game = with_values([Fraction(3), Fraction(10)] + [Fraction(0)] * 20)
+    game.open(1)
+    assert game.offer is not None and game.offer.condolence
+    play_to_final(game)
+    game.finish(swap=False)
+    delta = allatu_stats(game, when=WHEN)
+    add = delta.add
+    assert add["allatu_condolences"] == 1 and "allatu_condolence_deals" not in add
+    # Las cinco de ronda y el pésame, todas rechazadas.
+    assert add["allatu_all_no"] == 1 and add["allatu_no_deals"] == len(ROUNDS) + 1
+    assert add["allatu_comebacks"] == 1
+    assert delta.peak["allatu_comeback_max"] == 300
+
+
+def test_aceptar_la_oferta_de_ronda_tras_el_pesame_no_es_la_primera() -> None:
+    game = with_values([Fraction(1), Fraction(10)] + [Fraction(1)] * 20)
+    game.open(1)
+    game.no_deal()
+    while game.phase is Phase.OPEN:
+        game.open(game.openable[0])
+    game.deal()
+    add = allatu_stats(game, when=WHEN).add
+    assert "allatu_first_deal" not in add and "allatu_condolence_deals" not in add
+
+
+def test_perder_con_el_gordo_fuera_no_es_remontada() -> None:
+    game = with_values([Fraction(0), Fraction(10)] + [Fraction(0)] * 20)
+    game.open(1)
+    game.deal()
+    delta = allatu_stats(game, when=WHEN)
+    assert "allatu_comebacks" not in delta.add
+    assert "allatu_comeback_max" not in delta.peak

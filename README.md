@@ -624,8 +624,10 @@ python -m bot
   sorpresa que sortea una ruleta al empezar (casi siempre ×10; con suerte, hasta
   ×250, ×500 o ×1.000 según la tabla) y Perro Sanxe al teléfono. Eliges tu caja,
   abres las demás por rondas y tras cada ronda la banca te ofrece dinero: ✅
-  Trato, ❌ No trato o, una vez, 🤝 Regatear (sube o cuelga). Al final, te
-  quedas tu caja o la cambias. Una caja vale de media el 99 % de lo apostado y
+  Trato, ❌ No trato o, una vez, 🤝 Regatear (sube o cuelga). Debajo del gordo
+  hay una escalera de cajas rojas (hasta ×3, ×4 o ×5), así que perderlo no
+  acaba la partida, y si lo abres a mitad de ronda la banca llama en el acto
+  con el pésame. Al final, te quedas tu caja o la cambias. Una caja vale de media el 99 % de lo apostado y
   la oferta nunca lo supera, así que aceptar pronto sale caro. Todo se pinta
   con canvas en Node antes del clic: la animación de cada caja, la del trato y
   la del regateo.

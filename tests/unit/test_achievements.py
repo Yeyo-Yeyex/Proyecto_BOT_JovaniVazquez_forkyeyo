@@ -706,6 +706,8 @@ PRODUCED_STATS = {
     "allatu_greedy", "allatu_mult_max", "allatu_win_max", "allatu_zero", "allatu_min_stake",
     "allatu_cash_666", "allatu_cash_69", "allatu_cash_777", "allatu_night", "allatu_friday13",
     "allatu_inocentes", "allatu_canarias", "allatu_gordo_max", "allatu_streak",
+    "allatu_condolences", "allatu_condolence_deals", "allatu_condolence_rich",
+    "allatu_comebacks", "allatu_comeback_max",
     *(f"allatu_games_{t.key}" for t in TABLES),
     # cogs/tower.py (`tower_stats`)
     "tower_games", "tower_floors", "tower_random", "tower_cashouts", "tower_mult_max",
