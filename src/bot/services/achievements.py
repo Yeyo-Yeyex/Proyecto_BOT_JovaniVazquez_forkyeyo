@@ -14487,62 +14487,65 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
 
     # ⚽ Deportes (`deportes`: apuestas a cuota fija al 1X2 de LaLiga y la Champions) ---------
-    # Hay pocos partidos (unos 10 de LaLiga a la semana) y una apuesta por partido y persona:
-    # 100 apuestas son meses. Lo que se fuerza a propósito (el mínimo, el 69, a última hora)
-    # es Común o Raro; las cuotas acertadas salen de la probabilidad real (×10 es ~9 %).
+    # Cadencia: unos 10 partidos de LaLiga a la semana (más la Champions en su fase de liga)
+    # y una apuesta por partido y persona; quien apuesta a menudo hace unas 7 a la semana. Así,
+    # 100 apuestas son unos 3 meses (Épico) y 250, unos 8 (Legendario). Lo que se fuerza a
+    # propósito (el mínimo, el 69, a última hora) es Común o Raro. Las cuotas acertadas salen
+    # de la probabilidad real (×10 es ~9 %) y las cifras en Y$, de una apuesta normal de
+    # 1.000-5.000 Y$: la rareza fija el premio, e inflarla infla la economía.
     a += _tiers("deportes", "sports_bets", [
         (1, "sports_bets_1", "Saltar al césped", "Haz tu primera apuesta deportiva.", C),
-        (10, "sports_bets_10", "El diez a la espalda", "Haz 10 apuestas deportivas.", R),
-        (25, "sports_bets_25", "Carnet de socio", "Haz 25 apuestas deportivas.", E),
+        (10, "sports_bets_10", "El diez a la espalda", "Haz 10 apuestas deportivas.", C),
+        (25, "sports_bets_25", "Carnet de socio", "Haz 25 apuestas deportivas.", R),
         (50, "sports_bets_50", "Jornada 38 y pico", "Haz 50 apuestas deportivas.", E),
-        (100, "sports_bets_100", "Centenario de la grada", "Haz 100 apuestas deportivas.", L),
-        (250, "sports_bets_250", "Fichaje vitalicio", "Haz 250 apuestas deportivas.", M),
+        (100, "sports_bets_100", "Centenario de la grada", "Haz 100 apuestas deportivas.", E),
+        (250, "sports_bets_250", "Fichaje vitalicio", "Haz 250 apuestas deportivas.", L),
     ])  # fmt: skip
     a += _tiers("deportes", "sports_wins", [
         (1, "sports_wins_1", "Tres puntos", "Acierta una apuesta deportiva.", C),
-        (10, "sports_wins_10", "Pichichi de bolsillo", "Acierta 10 apuestas deportivas.", E),
-        (25, "sports_wins_25", "Balón de Oro de salón", "Acierta 25 apuestas deportivas.", L),
+        (10, "sports_wins_10", "Pichichi de bolsillo", "Acierta 10 apuestas deportivas.", R),
+        (25, "sports_wins_25", "Balón de Oro de salón", "Acierta 25 apuestas deportivas.", E),
         (50, "sports_wins_50", "Bota de Oro", "Acierta 50 apuestas deportivas.", L),
         (100, "sports_wins_100", "Más títulos que el Madrid",
-         "Acierta 100 apuestas deportivas.", M),
+         "Acierta 100 apuestas deportivas.", L),
     ])  # fmt: skip
     a += _tiers("deportes", "sports_losses", [
         (10, "sports_losses_10", "Dolor de Segunda", "Falla 10 apuestas deportivas.", R),
-        (50, "sports_losses_50", "Descenso a Segunda B", "Falla 50 apuestas deportivas.", L),
-        (100, "sports_losses_100", "Pagafantas de la Liga", "Falla 100 apuestas deportivas.", M),
+        (50, "sports_losses_50", "Descenso a Segunda B", "Falla 50 apuestas deportivas.", E),
+        (100, "sports_losses_100", "Pagafantas de la Liga", "Falla 100 apuestas deportivas.", L),
     ])  # fmt: skip
     a += _tiers("deportes", "sports_staked", [
         (10_000, "sports_staked_10k", "Fichaje de verano",
-         "Apuesta 10.000 Y$ en total en apuestas deportivas.", E),
+         "Apuesta 10.000 Y$ en total en apuestas deportivas.", C),
         (100_000, "sports_staked_100k", "Cláusula de rescisión",
-         "Apuesta 100.000 Y$ en total en apuestas deportivas.", L),
+         "Apuesta 100.000 Y$ en total en apuestas deportivas.", R),
         (1_000_000, "sports_staked_1m", "Fair play financiero",
-         "Apuesta 1.000.000 Y$ en total en apuestas deportivas.", M),
+         "Apuesta 1.000.000 Y$ en total en apuestas deportivas.", E),
     ], unit="money")  # fmt: skip
     a += _tiers("deportes", "sports_win_max", [
         (1_000, "sports_win_1k", "Prima por objetivos",
-         "Gana 1.000 Y$ netos con una apuesta deportiva.", R),
+         "Gana 1.000 Y$ netos con una apuesta deportiva.", C),
         (10_000, "sports_win_10k", "Fichaje bomba",
-         "Gana 10.000 Y$ netos con una apuesta deportiva.", E),
+         "Gana 10.000 Y$ netos con una apuesta deportiva.", R),
         (50_000, "sports_win_50k", "Traspaso del siglo",
-         "Gana 50.000 Y$ netos con una apuesta deportiva.", L),
+         "Gana 50.000 Y$ netos con una apuesta deportiva.", E),
         (500_000, "sports_win_500k", "El Gordo en pretemporada",
-         "Gana 500.000 Y$ netos con una apuesta deportiva.", M),
+         "Gana 500.000 Y$ netos con una apuesta deportiva.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("deportes", "sports_odds_won_max", [
         (300, "sports_odds_won_3", "Salta la sorpresa",
-         "Acierta una apuesta con cuota de ×3 o más.", R),
-        (500, "sports_odds_won_5", "Alcorconazo", "Acierta una apuesta con cuota de ×5 o más.", E),
+         "Acierta una apuesta con cuota de ×3 o más.", C),
+        (500, "sports_odds_won_5", "Alcorconazo", "Acierta una apuesta con cuota de ×5 o más.", R),
         (1_000, "sports_odds_won_10", "Maracanazo",
-         "Acierta una apuesta con cuota de ×10 o más.", L),
+         "Acierta una apuesta con cuota de ×10 o más.", E),
         (2_000, "sports_odds_won_20", "Milagro de Estambul",
          "Acierta una apuesta con cuota de ×20 o más.", L),
     ])  # fmt: skip
     a += _tiers("deportes", "sports_win_streak_max", [
         (3, "sports_streak_3", "Hat-trick", "Acierta 3 apuestas deportivas seguidas.", R),
         (5, "sports_streak_5", "Los cinco magníficos",
-         "Acierta 5 apuestas deportivas seguidas.", L),
-        (8, "sports_streak_8", "Invencibles", "Acierta 8 apuestas deportivas seguidas.", M),
+         "Acierta 5 apuestas deportivas seguidas.", E),
+        (8, "sports_streak_8", "Invencibles", "Acierta 8 apuestas deportivas seguidas.", L),
     ])  # fmt: skip
     a += _tiers("deportes", "sports_bet_long", [
         (1, "sports_long_1", "A por la machada", "Apuesta con una cuota de ×5 o más.", C),
@@ -14561,7 +14564,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          f"Apuesta {SPORTS_MIN_STAKE} Y$ justos en un partido.", C, True),
     ])  # fmt: skip
     a += _tiers("deportes", "sports_bet_cap", [
-        (1, "sports_bet_cap", "Fichaje galáctico", "Apuesta 50.000 Y$ justos en un partido.", R),
+        (1, "sports_bet_cap", "Fichaje galáctico",
+         f"Apuesta el máximo en un partido: {SPORTS_MAX_STAKE:_} Y$.".replace("_", "."), R),
     ])  # fmt: skip
     a += _tiers("deportes", "sports_bet_666", [
         (1, "sports_bet_666", "Los Diablos Rojos", "Apuesta 666 Y$ en un partido.", C, True),
