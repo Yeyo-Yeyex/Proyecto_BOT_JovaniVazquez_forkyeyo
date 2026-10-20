@@ -620,6 +620,19 @@ def daily_amount(streak: int) -> int:
     return DAILY_BASE + min((streak - 1) * DAILY_STREAK_BONUS, DAILY_MAX_BONUS)
 
 
+def next_streak(previous: DailyClaim | None, today: date) -> int | None:
+    """La racha que tendría cobrando el IMV `today`, o `None` si ya lo cobró ese día.
+
+    Sigue si el último cobro fue ayer; si se saltó un día, vuelve a 1.
+    """
+    if previous is None:
+        return 1
+    last = local_day(previous.last_claimed_at)
+    if last >= today:
+        return None
+    return previous.streak + 1 if last == today - timedelta(days=1) else 1
+
+
 def imv_after_work(amount: int, weekly_net: int) -> int:
     """IMV de un día tras descontar lo cobrado trabajando (ver `IMV_WORK_EXEMPT`).
 
@@ -1737,13 +1750,9 @@ class EconomyService:
         today = local_day(now)
 
         def decide(previous: DailyClaim | None) -> tuple[int, int] | None:
-            if previous is None:
-                streak = 1
-            else:
-                last = local_day(previous.last_claimed_at)
-                if last >= today:
-                    return None
-                streak = previous.streak + 1 if last == today - timedelta(days=1) else 1
+            streak = next_streak(previous, today)
+            if streak is None:
+                return None
             full.append(daily_amount(streak))
             return imv_after_work(full[-1], work_net), streak
 
@@ -1772,6 +1781,24 @@ class EconomyService:
             next_claim_at=next_daily_at(state.last_claimed_at),
             work_net=work_net,
         )
+
+    async def daily_preview(self, guild_id: int, user_id: int) -> tuple[int, int] | None:
+        """El IMV que aún puede cobrar hoy: `(cantidad, racha que se juega)`, o `None`.
+
+        Solo lee (para `saldo`): `None` si ya lo cobró hoy, vive fuera o está suspendido.
+        La racha es la que pierde si no lo cobra antes de medianoche (0 si ya no tenía).
+        """
+        now = self._clock()
+        if await self.repository.residence(guild_id, user_id) is not None:
+            return None
+        if await self.repository.imv_suspended_until(guild_id, user_id) > now:
+            return None
+        previous = await self.repository.daily_state(guild_id, user_id)
+        streak = next_streak(previous, local_day(now))
+        if streak is None:
+            return None
+        work_net = await self.repository.work_net(guild_id, user_id, now - IMV_WORK_WINDOW_SECONDS)
+        return imv_after_work(daily_amount(streak), work_net), streak - 1
 
     # -- Trabajo (`pala`) -------------------------------------------------------------
 

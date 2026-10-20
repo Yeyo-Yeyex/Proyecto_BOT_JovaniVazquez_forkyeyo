@@ -803,3 +803,68 @@ async def test_liquidar_la_deuda_desde_la_renta(
     assert ids(fresh) == [] and "Deuda liquidada" in (fresh.embed().description or "")
     # Lo pagado a mano no se avisa como un embargo.
     assert await cog.hint_for(GUILD, USER) is None
+
+
+# -- Lo pendiente para `saldo` -------------------------------------------------------------
+
+
+def add_return(service: EconomyService, *, opened: bool, payment: str, second: int = 0) -> None:
+    """Le apunta al miembro una declaración de la semana del 5 que sale a pagar 500 Y$."""
+    with service.repository._transaction() as connection:  # noqa: SLF001
+        connection.execute(
+            "INSERT INTO economy_irpf_returns (guild_id, user_id, week_start, base, quota, "
+            "deductions, withheld, result, created_at, opened, payment, pay_due, second, "
+            "second_due) VALUES (?, ?, '2026-10-05', 0, 0, 0, 0, 500, 0, ?, ?, 7e8, ?, 8e8)",
+            (GUILD, USER, int(opened), payment, second),
+        )
+
+
+async def test_saldo_no_destapa_la_renta_sin_abrir(tmp_path: Path) -> None:
+    clock = Clock(day(5))
+    service = await make_service(tmp_path, clock)
+    await service.settle_bet(GUILD, USER, game="ruleta", stake=1_000, payout=36_000)
+    filed = await close(service, clock, 12)
+    cog = Renta(MagicMock(), service)
+
+    (sealed,) = await cog.pending_for(GUILD, USER)
+
+    # Ni la cifra ni la devolución: solo que está sin abrir y el plazo, que vale para todos.
+    assert sealed.kind == "renta_sealed" and sealed.amount == 0
+    assert str(filed.refund) not in sealed.text
+    assert sealed.when == day(13, hour=0).timestamp()
+
+
+async def test_saldo_ensena_la_devolucion_con_lo_que_queda_para_que_caduque(
+    tmp_path: Path,
+) -> None:
+    clock = Clock(day(5))
+    service = await make_service(tmp_path, clock)
+    await service.settle_bet(GUILD, USER, game="ruleta", stake=1_000, payout=36_000)
+    filed = await close(service, clock, 12)
+    await service.repository.open_irpf_return(GUILD, USER, "2026-10-05")
+    cog = Renta(MagicMock(), service)
+
+    (refund,) = await cog.pending_for(GUILD, USER)
+
+    assert refund.kind == "renta_refund" and refund.amount == filed.refund
+    # Caduca el lunes en que ya han pasado CLAIM_WEEKS semanas desde el cierre (el 9 de nov.).
+    assert refund.when == day(9, month=11, hour=0).timestamp()
+
+
+async def test_saldo_ensena_la_renta_a_pagar_el_segundo_plazo_y_la_deuda(tmp_path: Path) -> None:
+    service = await make_service(tmp_path, Clock(day(13)))
+    cog = Renta(MagicMock(), service)
+    add_return(service, opened=True, payment=PAYMENT_PENDING)
+    add_debt(service, 300)
+
+    kinds = {i.kind: i for i in await cog.pending_for(GUILD, USER)}
+    assert kinds["renta_due"].amount == 500 and kinds["renta_due"].when == 7e8
+    assert kinds["renta_debt"].amount == 300
+    # En el saldo de otro, solo la deuda (lo que ya enseña `perfil`).
+    assert [i.kind for i in await cog.pending_for(GUILD, USER, own=False)] == ["renta_debt"]
+
+    with service.repository._transaction() as connection:  # noqa: SLF001
+        connection.execute("DELETE FROM economy_irpf_returns")
+    add_return(service, opened=True, payment=PAYMENT_SPLIT, second=200)
+    second = next(i for i in await cog.pending_for(GUILD, USER) if i.kind == "renta_second")
+    assert second.amount == 200 and second.when == 8e8

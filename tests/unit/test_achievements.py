@@ -92,6 +92,10 @@ from bot.services.achievements import (
     ROULETTE_FAVOURITE_STAT,
     ROULETTE_HIT_PREFIX,
     ROULETTE_NUMBERS_STAT,
+    SALDO_DAYS_STAT,
+    SALDO_FUNNY,
+    SALDO_KINDS_STAT,
+    SALDO_STREAK_STAT,
     SECRET_STAKES,
     SHOP_AISLES_STAT,
     SHOP_TRACKED_KEYS,
@@ -235,6 +239,12 @@ PRODUCED_STATS = {
     "interest_resist_streak", "interest_still_streak", "interest_ant_streak", "savings_rate_max",
     "savings_week_max",
     "interest_comeback",
+    # Saldo (cogs/casino.py: saldo_stats y saldo_peek_stats; test_saldo.py las suma)
+    "saldo_checks", "saldo_peeks", "saldo_peek_richer", "saldo_pending_max", "saldo_all_sides",
+    "saldo_red", "saldo_clean", "saldo_debt", "saldo_sealed", "saldo_night", "saldo_monday",
+    "saldo_mortgage_unpaid", "saldo_imv_late", "saldo_zero",
+    *(f"saldo_exact_{n}" for n in SALDO_FUNNY), SALDO_DAYS_STAT, SALDO_STREAK_STAT,
+    SALDO_KINDS_STAT,
     # Tienda (cogs/shop.py: shop_stats)
     "shop_purchases", "shop_spent", "shop_igic", "shop_roles", "shop_renewals", "shop_boosts",
     "shop_boost_queue_max", "shop_collection_max", "shop_sale_buys", "shop_discount_max",

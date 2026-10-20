@@ -25,9 +25,11 @@ from render_fakes import use_fake_drawings
 
 from bot.app import INITIAL_EXTENSIONS, BotClient
 from bot.repositories.economy import LedgerEntry
+from bot.repositories.rastro import Listing
 from bot.services.achievements import StatDelta
 from bot.services.blackjack import Card
 from bot.services.coin import Outcome
+from bot.services.economy import format_amount
 from bot.services.enraya import Board, Disc
 from bot.services.hold_win_render import Media
 from bot.services.robuso import ROBUSO_ID
@@ -37,6 +39,7 @@ from bot.services.work import ShiftRecord
 GUILD_ID = 1
 GUILD = GUILD_ID
 OWNER_ID = 10
+OTHER_ID = 20
 GAMES = (
     "Casino",
     "Blackjack",
@@ -1984,7 +1987,7 @@ async def test_saldo_patrimonio_y_hacienda_ven_los_pisos_con_el_bot_real(tmp_pat
         await client.economy.repository.apply(GUILD, OWNER_ID, [LedgerEntry(30_000_000, "test")])
         trade = await pisos_cog.service.buy(GUILD, OWNER_ID, "vegueta_edificio", 100)
 
-        fiscal = await importer("Casino", client).pisos.fiscal_of(client, GUILD, OWNER_ID)
+        fiscal = (await client.housing.member_values(GUILD))[1][OWNER_ID]
         assert fiscal >= trade.deal.quote.price
         patrimonio = client.get_cog("Patrimonio")
         assert patrimonio.housing is client.housing
@@ -2000,11 +2003,72 @@ async def test_saldo_patrimonio_y_hacienda_ven_los_pisos_con_el_bot_real(tmp_pat
         responder = MagicMock()
         responder.guild, responder.member, responder.channel = guild, member, MagicMock()
         responder.send = AsyncMock()
+
+        # `saldo` avisa del Patrimonio con la misma cuenta que `perfil`, pisos incluidos.
+        await client.get_cog("Casino")._saldo_impl(responder, member, None)
+        embed = responder.send.await_args.kwargs["embed"]
+        cash = await client.economy.balance(GUILD, OWNER_ID)
+        quote = await patrimonio.quote(GUILD, OWNER_ID, cash=cash, homes_fiscal=fiscal, objects=0)
+        due = next(f.value for f in embed.fields if f.name == "⏳ Por pagar")
+        assert quote.due and f"Patrimonio del lunes: {format_amount(quote.due)}" in due
+        responder.send.reset_mock()
         await client.get_cog("Casino")._hacienda_impl(responder)
         embed = responder.send.await_args.kwargs["embed"]
         housing = [f for f in embed.fields if f.name.startswith("🏠 Lo que pagan los pisos")]
         assert housing and "ITP" in housing[0].value
         assert len(embed) <= 6_000
+    finally:
+        await client.close()
+
+
+async def test_saldo_junta_lo_pendiente_de_cada_cog_con_el_bot_real(tmp_path: Path) -> None:
+    """Los puentes de `saldo` (Renta, pisos, pala, loterías y Rastro) llegan al cog de verdad."""
+    client = await load_bot(tmp_path)
+    try:
+        casino = client.get_cog("Casino")
+        now = client.economy.now()
+        with client.economy.repository._transaction() as connection:  # noqa: SLF001
+            connection.execute(
+                "INSERT INTO economy_tax_debts (guild_id, user_id, amount) VALUES (?, ?, 300)",
+                (GUILD, OWNER_ID),
+            )
+        await client.work.hire(GUILD, OWNER_ID, "obra")
+        contract = await client.work.repository.contract(GUILD, OWNER_ID)
+        contract.mom_debt = 1_234
+        await client.work.repository.save_contract(GUILD, OWNER_ID, contract)
+        connection = client.lottery._connect()  # noqa: SLF001
+        try:
+            client.lottery.reserve(
+                GUILD, OWNER_ID, game="primitiva", draw_at=now + 3_600, picks=[("1", 2)],
+                price=100, channel_id=None, now=now,
+            )(connection)  # fmt: skip
+            connection.commit()
+        finally:
+            connection.close()
+        connection = client.housing._connect()  # noqa: SLF001
+        try:
+            connection.execute(
+                "INSERT INTO housing_deposits (guild_id, listing, user_id, amount, since) "
+                "VALUES (?, 'vegueta_edificio', ?, 1600, 0)",
+                (GUILD, OWNER_ID),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        rastro = client.get_cog("Rastro")
+        rastro.listings[99] = Listing(
+            id=99, guild_id=GUILD, seller_id=OTHER_ID, entry_id=1, item_id=1, name="Gorra",
+            emoji="🧢", serial=None, edition=None, catalog_key=None, start_price=10,
+            channel_id=None, created_at=now, expires_at=now + 86_400, close_at=now + 3_600,
+            top_bidder=OWNER_ID, top_bid=50, top_escrow=55, top_reference=50, bids=1,
+            status="abierto",
+        )  # fmt: skip
+
+        mine = await casino._pending(GUILD, OWNER_ID, 0, own=True)
+        kinds = {item.kind for item in mine}
+        assert {"renta_debt", "imv", "mom_debt", "lottery", "deposit", "rastro_bid"} <= kinds
+        others = await casino._pending(GUILD, OWNER_ID, 0, own=False)
+        assert [item.kind for item in others] == ["renta_debt"]
     finally:
         await client.close()
 

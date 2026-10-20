@@ -21,7 +21,8 @@ Consultas (no mueven dinero; ver `bot.services.net_worth`):
 - Sección 🏰 Patrimonio de `perfil` (`patrimonio_embed`): todos los activos
   de alguien (efectivo, pisos, bienes de la tienda, boletos de lotería pendientes
   y la renta por cobrar), con su valor, su puesto y el Patrimonio que le
-  tocaría pagar el lunes.
+  tocaría pagar el lunes (`quote`, la misma cuenta que usa `saldo` con
+  `wealth_due`).
 - `fortunas`: la lista de todos los miembros por patrimonio, con el reparto
   de la riqueza del servidor (Gini y lo que tiene el más rico) y el título
   que luce cada uno (`shop.title_of`).
@@ -34,6 +35,7 @@ Permisos: enviar mensajes e insertar enlaces en el canal del anuncio.
 from __future__ import annotations
 
 import logging
+import sqlite3
 import time
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
@@ -62,8 +64,10 @@ from bot.services.taxes import (
     TAX_COLLECTOR,
     WEALTH_MAX_REDUCTION,
     WEALTH_MINIMUM,
+    WealthQuote,
     wealth_quote,
 )
+from bot.utils.cogs import find_cog
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
@@ -280,6 +284,26 @@ class Patrimonio(commands.Cog):
         rank = next((i for i, w in enumerate(ranked, 1) if w.user_id == user_id), len(ranked))
         return worth, rank, len(ranked)
 
+    async def quote(
+        self, guild_id: int, user_id: int, *, cash: int, homes_fiscal: int, objects: int
+    ) -> WealthQuote:
+        """Lo que el lunes le cobraría de Patrimonio con lo que tiene ahora.
+
+        Es la misma cuenta en `perfil` y en `saldo`: efectivo, pisos a su valor fiscal y
+        objetos de la tienda, con el límite conjunto del IRPF de esta semana (art. 31) y
+        las Grandes Fortunas.
+
+        Args:
+            objects: Valor de los objetos de la tienda que tributan (los trofeos).
+        """
+        irpf_base, irpf_quota = await self.economy.week_irpf(guild_id, user_id)
+        return wealth_quote(
+            cash + homes_fiscal + objects,
+            unproductive=objects,
+            irpf_base=irpf_base,
+            irpf_quota=irpf_quota,
+        )
+
     async def patrimonio_embed(
         self,
         guild: discord.Guild,
@@ -316,9 +340,9 @@ class Patrimonio(commands.Cog):
             text = "\n".join(shown)
             embed.add_field(name="Bienes", value=text[:1_024], inline=False)
         objects = sum(item.value for item in worth.goods if item.kind == Kind.TROPHY.value)
-        base = worth.cash + worth.homes_fiscal + objects
-        irpf_base, irpf_quota = await self.economy.week_irpf(guild.id, target.id)
-        quote = wealth_quote(base, unproductive=objects, irpf_base=irpf_base, irpf_quota=irpf_quota)
+        quote = await self.quote(
+            guild.id, target.id, cash=worth.cash, homes_fiscal=worth.homes_fiscal, objects=objects
+        )
         debt = await self.economy.tax_debt(guild.id, target.id)
         text = (
             f"El lunes te cobraría {format_amount(quote.due)} de Patrimonio (efectivo, pisos "
@@ -447,6 +471,28 @@ class Patrimonio(commands.Cog):
     async def fortunas_text(self, ctx: commands.Context) -> None:
         """Versión de texto (`.fortunas`)."""
         await self._fortunas_impl(ContextResponder(ctx))
+
+
+async def wealth_due(
+    bot: commands.Bot, guild_id: int, user_id: int, cash: int
+) -> WealthQuote | None:
+    """El Patrimonio que el lunes cobraría a alguien con `cash` en efectivo (para `saldo`).
+
+    `None` sin el cog o si falla la lectura de los pisos o de la tienda.
+    """
+    cog = find_cog(bot, Patrimonio)
+    if cog is None:
+        return None
+    try:
+        homes = (await cog.housing.member_values(guild_id))[1] if cog.housing else {}
+        goods = await cog.shop.holdings(guild_id, user_id, time.time()) if cog.shop else []
+        objects = sum(value for _u, _n, _e, kind, value, _x in goods if kind == Kind.TROPHY.value)
+        return await cog.quote(
+            guild_id, user_id, cash=cash, homes_fiscal=homes.get(user_id, 0), objects=objects
+        )
+    except (OSError, sqlite3.Error):
+        logger.exception("No se pudo calcular el Patrimonio de %s", user_id)
+        return None
 
 
 async def setup(bot: BotClient) -> None:  # type: ignore[override]
