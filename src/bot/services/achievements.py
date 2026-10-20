@@ -19460,7 +19460,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("negocio", "biz_exact", [
         (1, "biz_exact_1", "Cuentas claras, chocolate espeso",
          "Da un cambio exacto en la tienda.", C),
-        (100, "biz_exact_100", "Calculadora con patas", "Da 100 cambios exactos en la tienda.", R),
+        (100, "biz_exact_100", "El cambio que quieres ver en el mundo",
+         "Da 100 cambios exactos en la tienda.", R),
     ])  # fmt: skip
     a += _tiers("negocio", "biz_caught", [
         (1, "biz_caught_1", "Al ladrón, al ladrón", "Pilla a un ladrón en la tienda.", C),
@@ -19468,7 +19469,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Pilla a 25 ladrones en la tienda.", R),
     ])  # fmt: skip
     a += _tiers("negocio", "biz_missed_thief", [
-        (1, "biz_missed_1", "Aquí no ha pasado nada", "Deja escapar a un ladrón en la tienda.", C),
+        (1, "biz_missed_1", "Ojos que no ven, chocolate que vuela",
+         "Deja escapar a un ladrón en la tienda.", C),
         (25, "biz_missed_25", "Barra libre para chorizos",
          "Deja escapar a 25 ladrones en la tienda.", R, True),
     ])  # fmt: skip

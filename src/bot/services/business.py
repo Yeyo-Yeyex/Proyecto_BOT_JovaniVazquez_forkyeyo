@@ -76,28 +76,39 @@ REGULAR_CHANCE = 0.3
 LOYALTY_MAX = 10
 USUAL_LOYALTY = 3
 
-#: Lo que mueve la reputación cada cosa que pasa con un cliente (`business_games`).
+#: Lo que mueve la reputación cada cosa que pasa con un cliente (`business_games`). Con
+#: `docs/negocio_sim.py`, un jugador bueno (falla 1 de cada 8) a 4 turnos al día llega a las
+#: 5 estrellas en unas tres semanas; uno flojo (falla 1 de cada 3) se hunde.
 REPUTATION: dict[str, float] = {
-    "fast": 0.4,
-    "ok": 0.3,
-    "slow": 0.1,
-    "wrong": -1.0,
-    "left": -0.6,
+    "fast": 0.15,
+    "ok": 0.1,
+    "slow": 0.03,
+    "wrong": -0.5,
+    "left": -0.3,
     "short": -0.6,
-    "over": 0.1,
-    "caught": 0.6,
+    "over": 0.0,
+    "caught": 0.3,
     "missed_thief": 0.0,
-    "false_accuse": -3.0,
-    "bad_diagnosis": -1.5,
-    "rejected": -0.1,
-    "no_part": -0.3,
-    "cheap_quote": 0.2,
+    "false_accuse": -2.5,
+    "bad_diagnosis": -0.6,
+    "rejected": -0.05,
+    "no_part": -0.2,
+    "cheap_quote": 0.1,
 }
+#: Clientes de un turno de referencia: la reputación de un turno se escala a ellos, así un
+#: sector con pocos clientes por turno (el taller) sube y baja al mismo ritmo por turno.
+REPUTATION_CLIENTS = 8
 
 
 def stars(reputation: float) -> float:
     """Estrellas de 1 a 5, de media en media, de una reputación de 0 a 100."""
     return round((1 + 4 * max(0.0, min(REPUTATION_MAX, reputation)) / REPUTATION_MAX) * 2) / 2
+
+
+def turn_reputation(sector: Sector, raw: float, served: int, price: str) -> float:
+    """Lo que mueve la reputación un turno: lo de sus clientes escalado a `REPUTATION_CLIENTS`,
+    más lo del nivel de precios por cada cliente atendido."""
+    return (raw + PRICE_BY_KEY[price].reputation * served) * REPUTATION_CLIENTS / sector.clients
 
 
 def reputation_factor(reputation: float) -> float:

@@ -47,6 +47,7 @@ from bot.services.business import (
     opening_quote,
     spoil,
     turn_clients,
+    turn_reputation,
     wholesale,
 )
 from bot.services.business_catalog import (
@@ -581,10 +582,10 @@ class BusinessService:
                 business.roll_over(today, week)
                 for key, units in summary.units.items():
                     business.stock[key] = max(0, business.stock.get(key, 0) - units)
-                bonus = PRICE_BY_KEY[business.price].reputation * summary.served
-                business.reputation = max(
-                    0.0, min(REPUTATION_MAX, business.reputation + summary.reputation + bonus)
+                change = turn_reputation(
+                    business.sector_info, summary.reputation, summary.served, business.price
                 )
+                business.reputation = max(0.0, min(REPUTATION_MAX, business.reputation + change))
                 business.regulars = apply_loyalty(business.regulars, summary.loyalty)
                 business.sales_today += summary.sales
                 business.clients_today += summary.served

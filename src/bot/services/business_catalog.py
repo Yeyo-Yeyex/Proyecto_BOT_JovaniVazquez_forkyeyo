@@ -213,10 +213,10 @@ class PriceLevel:
 
 
 PRICE_LEVELS: tuple[PriceLevel, ...] = (
-    PriceLevel("barato", "Barato (−15 %)", 0.85, 1.15, 1.05, 0.3),
+    PriceLevel("barato", "Barato (−15 %)", 0.85, 1.15, 1.05, 0.1),
     PriceLevel("normal", "Normal", 1.0, 1.0, 1.0, 0.0),
     PriceLevel("caro", "Caro (+15 %)", 1.15, 0.85, 0.95, 0.0),
-    PriceLevel("carisimo", "Carísimo (+30 %)", 1.3, 0.68, 0.85, -0.3),
+    PriceLevel("carisimo", "Carísimo (+30 %)", 1.3, 0.68, 0.85, -0.1),
 )
 PRICE_BY_KEY: dict[str, PriceLevel] = {p.key: p for p in PRICE_LEVELS}
 
