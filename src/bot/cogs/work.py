@@ -59,7 +59,9 @@ en ellos. Permisos del bot: enviar mensajes en el canal.
 
 Funciones puente para `pisos`: el favor 👴 «Tus padres te avalan» (`parents_aval`,
 `spend_parents_aval` y `parents_lose_home`) y quién levanta la obra nueva de los lunes
-desde la rama Ladrillo (`ladrillo_builders`). No lanzan y no hacen nada sin el cog.
+desde la rama Ladrillo (`ladrillo_builders`). Para `saldo`: la pensión de hoy, la
+cuota de autónomo y lo que se le debe a mamá (`pending`). No lanzan y no hacen nada
+sin el cog.
 """
 
 from __future__ import annotations
@@ -82,7 +84,7 @@ from bot.cogs import pets as mascotas
 from bot.cogs import renta
 from bot.cogs import shop as tienda
 from bot.services.achievements import StatDelta, work_stats
-from bot.services.economy import CURRENCY_EMOJI, format_amount
+from bot.services.economy import CURRENCY_EMOJI, format_amount, next_daily_at
 from bot.services.levels import TIMEZONE, local_day
 from bot.services.pala import (
     OPTIONS_EXEMPT,
@@ -98,6 +100,7 @@ from bot.services.pala import (
     WorkError,
     WorkService,
 )
+from bot.services.pending import Pending, Side
 from bot.services.pets import Event as PetEvent
 from bot.services.pets import Moment
 from bot.services.taxes import (
@@ -2233,6 +2236,51 @@ async def ladrillo_builders(bot: commands.Bot, guild_id: int) -> tuple[int, ...]
     except (OSError, sqlite3.Error):
         logger.exception("No se pudo mirar quién está en la rama Ladrillo")
         return ()
+
+
+async def pending(bot: commands.Bot, guild_id: int, user_id: int) -> list[Pending]:
+    """Lo pendiente del trabajo (para `saldo`): la pensión de hoy, la cuota y lo de mamá.
+
+    Devuelve `[]` sin el cog o si falla la lectura.
+    """
+    cog = find_cog(bot, Work)
+    if cog is None:
+        return []
+    try:
+        pension = await cog.service.pension(guild_id, user_id)
+        fee, mom = await cog.service.dues(guild_id, user_id)
+    except (OSError, sqlite3.Error):
+        logger.exception("No se pudo leer lo pendiente del trabajo de %s", user_id)
+        return []
+    items = []
+    if pension.due:
+        items.append(
+            Pending(
+                Side.COLLECT, "pension", "👴",
+                f"Pensión de hoy: {format_amount(pension.amount)} brutos · se cobra en `pala` "
+                "y no se acumula",
+                pension.amount, next_daily_at(cog.service.now()),
+            )
+        )  # fmt: skip
+    if fee:
+        items.append(
+            Pending(
+                Side.PAY, "self_employed_fee", "🧾",
+                f"Cuota de autónomo de esta semana: {format_amount(fee)} · se cobra en tu "
+                "primer turno",
+                fee,
+            )
+        )  # fmt: skip
+    if mom:
+        items.append(
+            Pending(
+                Side.PAY, "mom_debt", "👩",
+                f"Le debes {format_amount(mom)} a tu madre · se queda el "
+                f"{round(MOM_REPAY_SHARE * 100)} % de lo que cobras en cada turno",
+                mom,
+            )
+        )  # fmt: skip
+    return items
 
 
 async def setup(bot: BotClient) -> None:  # type: ignore[override]

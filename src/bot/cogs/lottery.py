@@ -29,6 +29,7 @@ Dinero: compras y premios pasan por `EconomyService.lottery`. Las compras van
 al Estado sin IGIC y los premios pagan el gravamen especial del 20 % por
 encima de 400.000 Y$ (ver su docstring). Comprar y rascar llaman a
 `renta.remind`. Los sorteos no son interacciones: no avisan de la renta.
+Los boletos por sortear salen en `saldo` (`pending`).
 
 Logros: categoría Loterías, con `achievements.track` al comprar, al rascar y
 al cobrar un premio de sorteo.
@@ -41,6 +42,7 @@ from __future__ import annotations
 import logging
 import random
 import secrets
+import sqlite3
 import time
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
@@ -89,9 +91,11 @@ from bot.services.lottery import (
     settle_nacional,
     settle_pool,
 )
+from bot.services.pending import Pending, Side
 from bot.services.pets import Event, Moment
 from bot.services.taxes import LOTTERY_EXEMPT, TAX_COLLECTOR
 from bot.services.telemetry import TimedLock
+from bot.utils.cogs import find_cog
 from bot.utils.interactions import ack, edit
 
 if TYPE_CHECKING:
@@ -122,6 +126,9 @@ QUICK_BETS = (1, 5, 10)
 BILLETE = 10
 #: Boletos del historial en "Mis boletos".
 HISTORY_SIZE = 15
+#: Filas de boletos que mira `saldo` (salen antes las de sorteos pendientes).
+#: shortcut: quien tenga más filas por sortear ve solo estas; subirlo si pasa.
+PENDING_TICKETS = 200
 #: Ganadores que se nombran en el anuncio de un sorteo.
 ANNOUNCE_WINNERS = 10
 
@@ -1085,6 +1092,36 @@ class Loteria(commands.Cog):
             return
         panel = await self.open_panel(ctx.guild, ctx.author)
         panel.message = await ctx.send(view=panel, allowed_mentions=discord.AllowedMentions.none())
+
+
+async def pending(bot: commands.Bot, guild_id: int, user_id: int) -> list[Pending]:
+    """Los boletos de alguien que esperan sorteo (para `saldo`), uno por sorteo, o `[]`."""
+    cog = find_cog(bot, Loteria)
+    if cog is None:
+        return []
+    try:
+        records = await cog.repository.history(guild_id, user_id, limit=PENDING_TICKETS)
+    except (OSError, sqlite3.Error):
+        logger.exception("No se pudieron leer los boletos de %s", user_id)
+        return []
+    draws: dict[tuple[str, float], tuple[int, int]] = {}
+    for record in records:
+        if record.status == "open":
+            count, cost = draws.get((record.game, record.draw_at), (0, 0))
+            draws[(record.game, record.draw_at)] = (count + record.quantity, cost + record.cost)
+    items = []
+    for (key, draw_at), (count, cost) in draws.items():
+        game = GAME_BY_KEY.get(key)
+        name = f"{game.emoji} {game.name}" if game is not None else key
+        unit = "boleto" if count == 1 else "boletos"
+        items.append(
+            Pending(
+                Side.COLLECT, "lottery", "🎟️",
+                f"{count} {unit} de {name} por sortear ({format_amount(cost)} jugados)",
+                0, draw_at,
+            )
+        )  # fmt: skip
+    return items
 
 
 async def setup(bot: BotClient) -> None:  # type: ignore[override]

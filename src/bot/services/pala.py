@@ -1633,6 +1633,25 @@ class WorkService:
         claimed = await self.repository.pension_day(guild_id, user_id)
         return Pension(tuple(branches), amount, amount > 0 and claimed != today, full, share, floor)
 
+    async def dues(self, guild_id: int, user_id: int) -> tuple[int, int]:
+        """Lo que el trabajo aún le va a cobrar: `(cuota de autónomo, deuda con su madre)`.
+
+        La cuota es la de esta semana si es autónomo y aún no ha fichado (se cobra en el
+        primer turno); la deuda, lo que queda del Bizum de mamá (se devuelve con cada
+        turno). Solo lee (para `saldo`): `(0, 0)` si no tiene contrato.
+        """
+        contract = await self.repository.contract(guild_id, user_id)
+        job = JOB_BY_KEY.get(contract.job) if contract is not None else None
+        if contract is None or job is None:
+            return 0, 0
+        try:
+            position = job.position(contract.level, contract.branch)
+        except ValueError:  # un puesto que ya no está en el catálogo
+            return 0, contract.mom_debt
+        week = week_of(local_day(self._clock()))
+        fee = position.fee if position.self_employed and contract.fee_week != week else 0
+        return fee, contract.mom_debt
+
     async def claim_pension(self, guild_id: int, user_id: int) -> tuple[Payslip, int]:
         """Cobra la pensión del día.
 

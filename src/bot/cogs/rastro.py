@@ -28,6 +28,7 @@ o devuelve el objeto, y lo anuncia en el canal donde se montó el puesto. Los bo
 
 Logros: categoría 🧺 Rastro. Pujar y comprar son acciones con dinero: llaman a
 `renta.remind` y su resultado lleva `renta.hint` con la mascota (`Event.TRADE`).
+Las pujas y los puestos con pujas salen en `saldo` (`pending`).
 """
 
 from __future__ import annotations
@@ -62,6 +63,7 @@ from bot.services.achievements import (
 )
 from bot.services.economy import EconomyService, format_amount, parse_amount
 from bot.services.levels import TIMEZONE, calculate_level_progress
+from bot.services.pending import Pending, Side
 from bot.services.pets import Event, Moment
 from bot.services.rastro import (
     AUCTION_SECONDS,
@@ -1396,6 +1398,39 @@ class PageButton(ui.DynamicItem[ui.Button], template=r"rastro:pag:(?P<page>-?\d+
         await interaction.response.edit_message(
             **cog.board(interaction.guild.id, interaction.user.id, self.page)  # type: ignore[arg-type]
         )
+
+
+def pending(bot: commands.Bot, guild_id: int, user_id: int) -> list[Pending]:
+    """Pujas y puestos con pujas de alguien en el Rastro (para `saldo`), o `[]`.
+
+    Sale de los puestos abiertos que el cog tiene en memoria: no toca la base de datos.
+    """
+    cog = find_cog(bot, Rastro)
+    if cog is None:
+        return []
+    items = []
+    for listing in cog.listings.values():
+        if listing.guild_id != guild_id or listing.top_bid is None:
+            continue
+        if listing.top_bidder == user_id:
+            items.append(
+                Pending(
+                    Side.HELD, "rastro_bid", "🧺",
+                    f"Tu puja en el Rastro por {listing.label}: "
+                    f"{format_amount(listing.top_escrow or listing.top_bid)} con ITP",
+                    listing.top_escrow or listing.top_bid, listing.close_at,
+                )
+            )  # fmt: skip
+        elif listing.seller_id == user_id:
+            items.append(
+                Pending(
+                    Side.COLLECT, "rastro_sale", "🧺",
+                    f"Tu puesto del Rastro ({listing.label}) va por "
+                    f"{format_amount(listing.top_bid)}",
+                    listing.top_bid, listing.close_at,
+                )
+            )  # fmt: skip
+    return items
 
 
 async def setup(bot: BotClient) -> None:  # type: ignore[override]

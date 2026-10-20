@@ -34,6 +34,11 @@ de la mesa lo nombra. La precarga apunta con qué tapete se pintó: si el
 jugador lo cambia entre medias, se tira. La mesa no lleva el botón 🎨: sus 25
 botones ya llenan las cinco filas de Discord; el tapete se cambia en la mochila.
 
+**Saldo.** `saldo` junta lo pendiente de cada cog (por pagar, por cobrar y retenido,
+`bot.services.pending`) con sus funciones puente: `renta.pending`, `pisos.pending`,
+`work.pending`, `lottery.pending`, `rastro.pending` y `patrimonio.wealth_due`. En el
+saldo de otro solo salen su Patrimonio y su deuda con Hacienda.
+
 Si `CASINO_CHANNEL_IDS` está configurado, la ruleta solo se abre en esos
 canales. Permisos que necesita el bot en el canal: enviar mensajes,
 insertar enlaces (embeds) y adjuntar archivos (el GIF de la rueda).
@@ -49,7 +54,7 @@ import secrets
 from collections import deque
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import discord
@@ -57,11 +62,19 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.cogs import achievements as logros
-from bot.cogs import apuestas, pisos, renta
+from bot.cogs import apuestas, patrimonio, pisos, rastro, renta
 from bot.cogs import pets as mascotas
 from bot.cogs import shop as tienda
+from bot.cogs import work as curro
 from bot.services import skins
-from bot.services.achievements import StatDelta, casino_stats, hacienda_stats, roulette_stats
+from bot.services.achievements import (
+    StatDelta,
+    casino_stats,
+    hacienda_stats,
+    roulette_stats,
+    saldo_peek_stats,
+    saldo_stats,
+)
 from bot.services.economy import (
     CURRENCY_EMOJI,
     CURRENCY_NAME,
@@ -74,10 +87,13 @@ from bot.services.economy import (
     format_amount,
     gambling_tax_line,
     is_all_in,
+    monday_epoch,
+    next_daily_at,
     parse_amount,
     treasury_embed,
 )
-from bot.services.levels import TIMEZONE
+from bot.services.levels import TIMEZONE, local_day
+from bot.services.pending import Pending, Side, pending_fields
 from bot.services.pets import Event, Moment, bet_moment
 from bot.services.roulette import (
     COLOR_EMOJI,
@@ -108,7 +124,7 @@ from bot.services.tax_report import (
     solidarity_line,
 )
 from bot.services.tax_report import bills as tax_bills
-from bot.services.taxes import TAX_COLLECTOR, WEALTH_MINIMUM, wealth_tax
+from bot.services.taxes import TAX_COLLECTOR, WEALTH_MINIMUM
 from bot.utils.interactions import ack, edit, notify
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
@@ -1252,21 +1268,13 @@ class Casino(commands.Cog):
         if who.bot:
             await responder.send_error("Los bots no tienen monedero.")
             return
-        balance = await self.economy.balance(responder.guild.id, who.id)
+        guild_id = responder.guild.id
+        own = who.id == user.id
+        balance = await self.economy.balance(guild_id, who.id)
         description = f"{CURRENCY_EMOJI} **{who.display_name}** tiene **{format_amount(balance)}**"
-        # El Patrimonio se cobra el lunes sobre el saldo y los pisos de ese momento:
-        # avisarlo aquí es lo que empuja a gastar antes.
-        homes = await pisos.fiscal_of(self.bot, responder.guild.id, who.id)
-        if wealth := wealth_tax(balance + homes):
-            description += (
-                f"\n-# 🐶 Si el lunes sigue ahí, {TAX_COLLECTOR} se lleva "
-                f"{format_amount(wealth)} de Patrimonio (lo que pase de "
-                f"{format_amount(WEALTH_MINIMUM)} entre efectivo y pisos; lo que no tengas "
-                "en efectivo, de tus alquileres)."
-            )
         # La cuenta remunerada: enseñar lo de ayer y lo que va saliendo hoy es lo que
         # hace que se note y que dé pena fundírselo todo.
-        preview = await self.economy.interest_preview(responder.guild.id, who.id)
+        preview = await self.economy.interest_preview(guild_id, who.id)
         if preview.yesterday is not None:
             gross, tax = preview.yesterday
             description += (
@@ -1283,16 +1291,94 @@ class Casino(commands.Cog):
                 f"\n-# 🏦 Saldo medio de hoy: {format_amount(preview.average)}. Si no lo toca, "
                 f"mañana cobra {format_amount(preview.net)} netos.{top}"
             )
+        items = await self._pending(guild_id, who.id, balance, own=own)
+        if own and (pet := await mascotas.cameo(self.bot, guild_id, who.id, Moment(Event.MONEY))):
+            description += f"\n{pet}"
         embed = discord.Embed(description=description, color=COLOR_WIN)
+        for name, value in pending_fields(items):
+            embed.add_field(name=name, value=value, inline=False)
+        if not own:
+            embed.set_footer(
+                text="De lo pendiente, solo se ve el Patrimonio y la deuda con Hacienda: "
+                "lo demás lo ve cada uno en su saldo."
+            )
         await responder.send(embed=embed)
+        if own:
+            delta = saldo_stats(balance=balance, items=items, when=self.economy.now())
+        else:
+            mine = await self.economy.balance(guild_id, user.id)
+            delta = saldo_peek_stats(own_balance=mine, their_balance=balance)
+        logros.note_for(self.bot, responder, delta)
 
-    @app_commands.command(name="saldo", description=f"Muestra tus {CURRENCY_NAME} o los de otro.")
+    async def _pending(
+        self, guild_id: int, user_id: int, balance: int, *, own: bool
+    ) -> list[Pending]:
+        """Lo pendiente que sale en `saldo` (de otro, solo el Patrimonio y la deuda).
+
+        Cada cog da lo suyo con su función puente; se leen a la vez para que `saldo`
+        tarde lo que la lectura más lenta y no la suma de todas.
+        """
+        # Import tardío: `lottery` importa este módulo.
+        from bot.cogs import lottery as loterias
+
+        reads = [
+            self._wealth_pending(guild_id, user_id, balance),
+            renta.pending(self.bot, guild_id, user_id, own=own),
+        ]
+        if own:
+            reads += [
+                self._imv_pending(guild_id, user_id),
+                pisos.pending(self.bot, guild_id, user_id),
+                curro.pending(self.bot, guild_id, user_id),
+                loterias.pending(self.bot, guild_id, user_id),
+            ]
+        items = [item for found in await asyncio.gather(*reads) for item in found]
+        if own:
+            items += rastro.pending(self.bot, guild_id, user_id)
+        return items
+
+    async def _wealth_pending(self, guild_id: int, user_id: int, balance: int) -> list[Pending]:
+        """El Patrimonio que se cobraría el lunes, la misma cuenta que en `perfil`."""
+        quote = await patrimonio.wealth_due(self.bot, guild_id, user_id, balance)
+        if quote is None or not quote.due:
+            return []
+        # Se cobra sobre lo que haya el lunes: avisarlo es lo que empuja a gastar antes.
+        monday = monday_epoch(local_day(self.economy.now()) + timedelta(days=7))
+        return [
+            Pending(
+                Side.PAY, "wealth", "🐶",
+                f"Patrimonio del lunes: {format_amount(quote.due)}, si sigue habiendo más de "
+                f"{format_amount(WEALTH_MINIMUM)} entre efectivo, pisos y objetos (lo que no "
+                "esté en efectivo, de los alquileres)",
+                quote.due, monday,
+            )
+        ]  # fmt: skip
+
+    async def _imv_pending(self, guild_id: int, user_id: int) -> list[Pending]:
+        """El IMV de hoy, si aún no lo ha cobrado, con la racha que se juega."""
+        preview = await self.economy.daily_preview(guild_id, user_id)
+        if preview is None:
+            return []
+        amount, streak = preview
+        text = f"IMV de hoy sin cobrar: {format_amount(amount)} · `imv`"
+        if streak >= 2:
+            text += f"; si no lo cobras, pierdes la racha de {streak} días"
+        return [Pending(Side.COLLECT, "imv", "💶", text, amount, next_daily_at(self.economy.now()))]
+
+    @app_commands.command(
+        name="saldo",
+        description=f"Tus {CURRENCY_NAME} y lo que tienes pendiente, o el saldo de otro.",
+    )
     @app_commands.describe(miembro="De quién ver el saldo (por defecto, tú)")
     @app_commands.guild_only()
     async def saldo(
         self, interaction: discord.Interaction, miembro: discord.Member | None = None
     ) -> None:
-        """Muestra el saldo de yapdollars; abre el monedero si es la primera vez."""
+        """Muestra el saldo de yapdollars y lo pendiente; abre el monedero si es la primera vez.
+
+        Con `miembro`, su saldo con su Patrimonio y su deuda con Hacienda (lo que ya
+        enseña `perfil`); el resto de lo pendiente solo lo ve cada uno en el suyo.
+        """
         await self._saldo_impl(InteractionResponder(interaction), interaction.user, miembro)
 
     @commands.command(name="saldo")

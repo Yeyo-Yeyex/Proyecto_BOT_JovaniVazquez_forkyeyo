@@ -24,10 +24,11 @@ nueva se añade aquí y en la escena a la vez.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from bot.repositories.housing import Holding, Market, MemberDay, News
+from bot.repositories.housing_finance import Deposit
 from bot.services import housing as rules
 from bot.services.economy import format_amount
 from bot.services.housing_catalog import (
@@ -46,6 +47,8 @@ from bot.services.housing_catalog import (
     Listing,
 )
 from bot.services.housing_furniture import FURNITURE, furniture_stars
+from bot.services.levels import TIMEZONE
+from bot.services.pending import Pending, Side
 
 State = dict[str, Any]
 
@@ -1366,3 +1369,203 @@ def junta_state(market: Market, key: str, user_id: int, names: dict[int, str], n
         ),
     ] if votes else ["No hay nada que votar. Propón algo en el desplegable."]  # fmt: skip
     return state
+
+
+# -- Lo pendiente, para `saldo` -------------------------------------------------------
+
+
+def _midnight(day: date) -> float:
+    """El comienzo de `day` en hora canaria (epoch): cuando se cierra el día anterior."""
+    return datetime.combine(day, time.min, TIMEZONE).timestamp()
+
+
+def _place(market: Market, key: str) -> str:
+    """El nombre de un inmueble o de una VPO (`vpo:<unidad>`) para una línea."""
+    if key.startswith(VPO_PREFIX):
+        vpo = VPO_BY_KEY.get(key.removeprefix(VPO_PREFIX))
+        return f"tu VPO de {vpo.town}" if vpo is not None else "tu VPO"
+    listing = market.listing(key)
+    return listing.title if listing is not None else "un inmueble"
+
+
+def pending_items(
+    market: Market, user_id: int, deposits: list[Deposit], today: date
+) -> list[Pending]:
+    """Lo que un miembro tiene pendiente en `pisos`, para `saldo`.
+
+    Un día del juego es un mes de contrato y se cierra pasada la medianoche: cuotas,
+    recibos, alquiler y rentas salen «esta noche». Las rentas van brutas, antes de
+    gastos e IRPF, como en la cartera.
+
+    Args:
+        deposits: Sus fianzas en el depósito (`HousingRepository.deposits_of`).
+        today: Hoy, en hora canaria.
+    """
+    tonight = _midnight(today + timedelta(days=1))
+    items: list[Pending] = []
+    for mortgage in market.mortgages_of(user_id):
+        due = (mortgage.payment if mortgage.months_left > 0 else 0) + mortgage.unpaid_amount
+        if not due:
+            continue
+        text = f"Hipoteca de {_place(market, mortgage.listing)}: {format_amount(due)}"
+        kind = "mortgage"
+        if mortgage.unpaid_count:
+            kind = "mortgage_unpaid"
+            text += (
+                f" · ⚠️ {mortgage.unpaid_count} cuotas sin pagar: con "
+                f"{rules.EXECUTION_INSTALLMENTS}, el banco la ejecuta"
+            )
+        items.append(Pending(Side.PAY, kind, "🏦", text, due, tonight))
+    if debt := market.bank_debts.get(user_id, 0):
+        items.append(
+            Pending(
+                Side.PAY, "bank_debt", "🏦",
+                f"Deuda con el banco: {format_amount(debt)} · se cobra cada noche de lo que tengas",
+                debt, tonight,
+            )
+        )  # fmt: skip
+    if (unit := market.vpo_of(user_id)) is not None:
+        spec = VPO_BY_KEY[unit]
+        costs = rules.vpo_costs(spec.price, spec.community)
+        owner = market.vpo[unit]
+        due = costs.community + costs.ibi + owner.arrears
+        late = " y lo atrasado" if owner.arrears else ""
+        items.append(
+            Pending(
+                Side.PAY, "vpo_bills", "🏢",
+                f"Recibos de tu VPO: {format_amount(due)} (comunidad e IBI{late})", due, tonight,
+            )
+        )  # fmt: skip
+    for key, lease in market.leases.items():
+        if lease.member != user_id or lease.status not in (rules.RENTED, rules.DEFAULTING):
+            continue
+        text = (
+            f"Alquiler de {_place(market, key)}: {format_amount(lease.rent)} · "
+            "si no lo tienes entero, impago"
+        )
+        if lease.unpaid:
+            text += f" · ⚠️ debes {lease.unpaid} meses"
+        items.append(Pending(Side.PAY, "rent", "🔑", text, lease.rent, tonight))
+    rents = 0
+    for holding in market.of_member(user_id):
+        key = holding.listing
+        lease = market.leases.get(key)
+        if lease is None:
+            continue
+        if lease.status == rules.RENTED:
+            rents += lease.rent * holding.shares // rules.SHARES
+        if lease.arrears:
+            part = rules.split(lease.arrears, market.shares_of(key)).get(user_id, 0)
+            if part:
+                items.append(
+                    Pending(
+                        Side.PAY, "arrears", "🧾",
+                        f"Gastos atrasados de {_place(market, key)}: {format_amount(part)} · "
+                        "salen de la renta o del monedero",
+                        part, tonight,
+                    )
+                )  # fmt: skip
+        if market.manager(key) == user_id:
+            for decision in market.decisions.get(key, ()):
+                if decision.choice is None:
+                    items.append(
+                        Pending(
+                            Side.PAY, "decision", "🔧",
+                            f"Imprevisto en {_place(market, key)} sin decidir: si no eliges en "
+                            "`pisos`, lo arregla la gestora",
+                            decision.cost, _midnight(decision.until + timedelta(days=1)),
+                        )
+                    )  # fmt: skip
+    for vote in market.votes:
+        holders = market.shares_of(vote.listing)
+        if user_id not in holders or vote.kind not in ("derrama", "reforma"):
+            continue
+        if vote.kind == "derrama":
+            part = rules.split(vote.amount, holders).get(user_id, 0)
+            text = f"Derrama en {_place(market, vote.listing)}: tu parte, {format_amount(part)}"
+        else:
+            part = 0
+            text = f"Reforma en {_place(market, vote.listing)}: pagas tu parte si sale"
+        items.append(
+            Pending(
+                Side.PAY, f"vote_{vote.kind}", "🗳️",
+                text + " · quien no vota, cuenta a favor", part, vote.ends_at,
+            )
+        )  # fmt: skip
+    if (unit := market.reservation_of(user_id)) is not None:
+        spec = VPO_BY_KEY[unit]
+        _member, until = market.reservations[unit]
+        items.append(
+            Pending(
+                Side.PAY, "vpo_reserved", "🏢",
+                f"Te tocó una VPO en {spec.town}: cómprala por {format_amount(spec.price)} en "
+                "`pisos` o se la queda otro",
+                0, _midnight(until + timedelta(days=1)),  # comprarla es opcional: no se debe
+            )
+        )  # fmt: skip
+    if rents:
+        items.append(
+            Pending(
+                Side.COLLECT, "rents", "🏘️",
+                f"Rentas de esta noche: {format_amount(rents)} brutas (antes de gastos e IRPF)",
+                rents, tonight,
+            )
+        )  # fmt: skip
+    for (key, member), (price, until) in market.offers.items():
+        if member == user_id:
+            items.append(
+                Pending(
+                    Side.COLLECT, "vulture_offer", "💼",
+                    f"Buitre Capital ofrece {format_amount(price)} por {_place(market, key)}",
+                    price, _midnight(until + timedelta(days=1)),
+                )
+            )  # fmt: skip
+    for auction in market.auctions:
+        place = _place(market, auction.listing)
+        if auction.best_bidder == user_id:
+            items.append(
+                Pending(
+                    Side.HELD, "auction_bid", "🔨",
+                    f"Tu puja por {place}: {format_amount(auction.escrow)} con ITP y notaría",
+                    auction.escrow, auction.ends_at,
+                )
+            )  # fmt: skip
+        elif auction.seller == user_id and auction.judicial:
+            items.append(
+                Pending(
+                    Side.PAY, "auction_judicial", "⚖️",
+                    f"{place} está en subasta judicial por tu hipoteca", 0, auction.ends_at,
+                )
+            )  # fmt: skip
+        elif auction.seller == user_id and auction.best_bid:
+            items.append(
+                Pending(
+                    Side.COLLECT, "auction_sale", "🔨",
+                    f"Tu subasta de {place} va por {format_amount(auction.best_bid)}",
+                    auction.best_bid, auction.ends_at,
+                )
+            )  # fmt: skip
+    for deposit in deposits:
+        held = deposit.amount - deposit.forfeit
+        if held <= 0:
+            continue
+        lease = market.leases.get(deposit.listing)
+        if lease is not None and lease.member == user_id:
+            items.append(
+                Pending(
+                    Side.HELD, "deposit", "🔑",
+                    f"Fianza de {_place(market, deposit.listing)}: {format_amount(held)} · "
+                    "vuelve cuando dejes el piso",
+                    held,
+                )
+            )  # fmt: skip
+        else:
+            items.append(
+                Pending(
+                    Side.COLLECT, "deposit", "🔑",
+                    f"Te devuelven la fianza de {_place(market, deposit.listing)}: "
+                    f"{format_amount(held)}",
+                    held, tonight,
+                )
+            )  # fmt: skip
+    return items
