@@ -1076,6 +1076,7 @@ class BusinessPaid:
         balance: Saldo final del dueño.
         withheld: IRPF retenido a cuenta de las ventas.
         garnished: Lo embargado de las ventas por deudas con Hacienda.
+        bank_garnished: Lo embargado de las ventas por deudas con el banco (art. 607 LEC).
         unpaid: Lo que no llegó de los recibos.
     """
 
@@ -1083,6 +1084,7 @@ class BusinessPaid:
     withheld: int = 0
     garnished: int = 0
     unpaid: int = 0
+    bank_garnished: int = 0
 
 
 class EconomyRepository:
@@ -5807,7 +5809,7 @@ class EconomyRepository:
             result, move = prepare(connection)
             user = move.user_id
             self._ensure_wallet(connection, guild_id, user)
-            tax = garnished = 0
+            tax = garnished = bank = 0
             if move.forfeit > 0:
                 self._open_empty_wallet(connection, guild_id, HOUSING_DEPOSIT_ACCOUNT_ID)
                 self._apply_in_transaction(
@@ -5854,6 +5856,9 @@ class EconomyRepository:
                     kind=INCOME_BUSINESS, gross=move.sales, withheld=tax,
                 )  # fmt: skip
                 garnished = self._garnish_in(connection, guild_id, user, move.sales - tax, now)
+                bank = self._bank_garnish_in(
+                    connection, guild_id, user, move.sales - tax - garnished, now
+                )
             unpaid = 0
             for cost in move.bills:
                 if cost.total <= 0:
@@ -5865,7 +5870,7 @@ class EconomyRepository:
             if move.settle is not None:
                 move.settle(connection, unpaid)
             balance = self._ensure_wallet(connection, guild_id, user)
-            return result, BusinessPaid(balance, tax, garnished, unpaid)
+            return result, BusinessPaid(balance, tax, garnished, unpaid, bank)
 
     def _business_cost_in(
         self,
@@ -6449,13 +6454,16 @@ class EconomyRepository:
     def _bank_garnish_in(
         self, connection: sqlite3.Connection, guild_id: int, user_id: int, net: int, now: float
     ) -> int:
-        """Embarga de una nómina (o pensión) la deuda con el banco, por tramos del SMI.
+        """Embarga de una nómina, una pensión o las ventas de un negocio la deuda con el banco.
 
         La deuda con el banco es la que deja un préstamo vencido o una ejecución
         hipotecaria (`housing_bank_debts`). El juzgado embarga el sueldo con la escala del
         art. 607 LEC sobre todo lo cobrado en el día (`loans.wage_garnish`), después del
-        embargo de Hacienda, que va primero (art. 77 de la Ley 58/2003). El banco no
-        existe: lo embargado desaparece y baja la deuda.
+        embargo de Hacienda, que va primero (art. 77 de la Ley 58/2003). La escala vale
+        también para lo que gana un autónomo (art. 607.6) y todo se acumula (art. 607.3):
+        el día suma las nóminas y pensiones y las ventas de su negocio (lo cobrado ya
+        apuntado, `net` incluido). El banco no existe: lo embargado desaparece y baja la
+        deuda.
 
         Returns:
             Lo embargado (0 si no debe nada al banco).
@@ -6477,7 +6485,13 @@ class EconomyRepository:
             "WHERE guild_id = ? AND user_id = ? AND created_at >= ? AND net > 0",
             (guild_id, user_id, start),
         ).fetchone()
-        # La nómina de ahora ya está apuntada en `economy_payroll`.
+        (sales,) = connection.execute(
+            "SELECT COALESCE(SUM(gross - withheld), 0) FROM economy_tax_records "
+            "WHERE guild_id = ? AND user_id = ? AND created_at >= ? AND concept = 'negocio:ventas'",
+            (guild_id, user_id, start),
+        ).fetchone()
+        today = int(today) + int(sales)
+        # Lo de ahora (la nómina o las ventas del turno) ya está apuntado.
         taken = min(
             wage_garnish(int(today) - net, net),
             owed,

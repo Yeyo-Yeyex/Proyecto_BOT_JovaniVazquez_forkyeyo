@@ -28,6 +28,7 @@ from bot.services.business_catalog import SECTOR_BY_KEY
 from bot.services.business_games import COINS, TurnGame
 from bot.services.economy import STARTING_BALANCE, EconomyService
 from bot.services.housing_catalog import BARRIO_BY_KEY
+from bot.services.loans import wage_garnish
 from bot.services.negocio import BusinessError, BusinessService
 from bot.services.pala import WorkError, WorkService
 from bot.services.work import (
@@ -391,6 +392,34 @@ async def test_sin_dinero_el_local_se_debe_y_a_la_tercera_noche_te_desahucian(
 
 def pala_entry(delta: int) -> LedgerEntry:
     return LedgerEntry(delta, "prueba")
+
+
+async def test_las_ventas_del_turno_pagan_el_embargo_de_la_deuda_con_el_banco(
+    tmp_path: Path,
+) -> None:
+    """El art. 607 LEC alcanza a lo que gana un autónomo (607.6) y se acumula (607.3)."""
+    clock = Clock()
+    service, _work = await make(tmp_path, clock)
+    await open_cafe(service)
+    for product in SECTOR_BY_KEY["cafeteria"].products:
+        await service.buy(GUILD, USER, product.key, 2)
+    debt = 1_000_000
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS housing_bank_debts "
+            "(guild_id INTEGER, user_id INTEGER, amount INTEGER, PRIMARY KEY (guild_id, user_id))"
+        )
+        connection.execute("INSERT INTO housing_bank_debts VALUES (?, ?, ?)", (GUILD, USER, debt))
+    turn = await service.start_turn(GUILD, USER)
+    clock.now = play(turn.game, clock.now)
+    result = await service.finish_turn(GUILD, USER, turn)
+    net = result.summary.sales - result.withheld - result.garnished
+    assert result.bank_garnished == wage_garnish(0, net) > 0
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        (left,) = connection.execute("SELECT amount FROM housing_bank_debts").fetchone()
+    assert left == debt - result.bank_garnished
+    total, balance = wallet(tmp_path, USER)
+    assert total == balance == result.balance
 
 
 async def test_cerrar_devuelve_la_fianza(tmp_path: Path) -> None:

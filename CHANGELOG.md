@@ -8,6 +8,10 @@ criterio.
 
 ## 8.x
 
+### 8.15.1 · 2026-10-21
+
+- Negocios: el embargo de las deudas con el banco alcanza también a las ventas del negocio
+
 ### 8.15.0 · 2026-10-20
 
 - Banco: `banco`, préstamos personales con el 35 % junto a las hipotecas, tipo según tu perfil, TAE y seguro
