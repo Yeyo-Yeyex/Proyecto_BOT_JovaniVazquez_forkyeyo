@@ -21,12 +21,17 @@ mínimo. Los precios del catálogo van sin IGIC, como en un escaparate de
 empresa a empresa; el IGIC se suma en la caja y se enseña aparte, para que se
 vea lo que se lleva Perro Sanxe. Tratamiento fiscal en
 `bot.services.economy.EconomyService.purchase`.
+
+Carrito: se pagan varias líneas de una vez (`TicketLine`, hasta `MAX_CART_LINES`
+artículos y `MAX_QUANTITY` unidades de cada uno, `max_quantity`) y la factura
+desglosa el impuesto por tipo (`cart_receipt`).
 """
 
 from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -318,6 +323,116 @@ def rental_end(now: float, current_end: float | None, duration: int) -> float:
     return max(now, current_end or now) + duration
 
 
+# -- Carrito ---------------------------------------------------------------------------
+
+#: Unidades de un mismo artículo por compra: diez bombones sí, cien no (un ticket
+#: kilométrico no cabe en un mensaje).
+MAX_QUANTITY = 10
+#: Artículos distintos en un carrito: caben en un desplegable (25) con sitio de sobra.
+MAX_CART_LINES = 20
+
+
+def max_quantity(item: ShopItem, bought: int) -> int:
+    """Cuántas unidades de `item` puede llevarse ahora quien ya compró `bought`.
+
+    Un rol para siempre y una mascota solo se tienen una vez; el resto, hasta
+    `MAX_QUANTITY`, su límite por persona y lo que quede. `0` si no puede ninguna.
+    """
+    cap = 1 if item.permanent_role or item.kind is Kind.PET else MAX_QUANTITY
+    if item.per_user is not None:
+        cap = min(cap, item.per_user - bought)
+    if item.remaining is not None:
+        cap = min(cap, item.remaining)
+    return max(0, cap)
+
+
+@dataclass(frozen=True, slots=True)
+class TicketLine:
+    """Una línea del ticket: `qty` unidades de un artículo al precio de `price`.
+
+    El IGIC se calcula por unidad, como se cobra y se apunta cada venta
+    (`shop_purchases`), así que la línea es la suma exacta de sus unidades.
+    """
+
+    item: ShopItem
+    qty: int
+    price: Quote
+
+    @property
+    def base(self) -> int:
+        """Base imponible de la línea."""
+        return self.price.base * self.qty
+
+    @property
+    def tax(self) -> int:
+        """Impuesto de la línea."""
+        return self.price.tax * self.qty
+
+    @property
+    def total(self) -> int:
+        """Lo que se paga por la línea."""
+        return self.base + self.tax
+
+
+def tax_breakdown(lines: Sequence[TicketLine]) -> list[tuple[IgicRate, int, int]]:
+    """`(tipo, base, impuesto)` por tipo, de menor a mayor: el desglose de una factura."""
+    groups: dict[str, list[int]] = {}
+    rates: dict[str, IgicRate] = {}
+    for line in lines:
+        rate = line.price.rate
+        rates[rate.key] = rate
+        group = groups.setdefault(rate.key, [0, 0])
+        group[0] += line.base
+        group[1] += line.tax
+    return sorted(
+        ((rates[key], base, tax) for key, (base, tax) in groups.items()),
+        key=lambda row: (row[0].rate, row[0].key),
+    )
+
+
+def _quantity_lines(
+    line: TicketLine, width: int, serials: Sequence[int] = (), edition: int | None = None
+) -> list[str]:
+    """Lo que ocupa una línea en el ticket: artículo, unidades numeradas y rebaja."""
+    price = line.price
+    rows = [_ticket_line(f"{line.qty} × {line.item.name}", money(price.price * line.qty), width)]
+    if serials and edition is not None:
+        numbers = ", ".join(str(serial) for serial in serials)
+        noun = "Unidad" if len(serials) == 1 else "Unidades"
+        rows.append(f"    {noun} nº {numbers} de {edition}"[:width])
+    if price.discount:
+        rows.append(
+            _ticket_line(
+                f"    Rebaja -{price.discount_pct} %", f"-{money(price.discount * line.qty)}", width
+            )
+        )
+    return rows
+
+
+def _tax_rows(lines: Sequence[TicketLine], width: int) -> list[str]:
+    """Base e impuesto; con varios tipos, uno por tipo (`IGIC 7 % s/ 2.000`)."""
+    breakdown = tax_breakdown(lines)
+    rows = [_ticket_line("Base imponible", money(sum(line.base for line in lines)), width)]
+    if len(breakdown) == 1:
+        rate, _base, tax = breakdown[0]
+        return [*rows, _ticket_line(f"{rate.tax} {rate_label(rate.rate)}", money(tax), width)]
+    return rows + [
+        _ticket_line(f"{rate.tax} {rate_label(rate.rate)} s/ {money(base)}", money(tax), width)
+        for rate, base, tax in breakdown
+    ]
+
+
+def cart_preview(lines: Sequence[TicketLine]) -> str:
+    """El ticket antes de pagar: cada línea, el desglose de impuestos y el total."""
+    width = 26
+    rows: list[str] = []
+    for line in lines:
+        rows += _quantity_lines(line, width)
+    rows += ["─" * width, *_tax_rows(lines, width), "─" * width]
+    rows.append(_ticket_line("TOTAL", f"{money(sum(line.total for line in lines))} Y$", width))
+    return "```\n" + "\n".join(rows) + "\n```"
+
+
 def active_multiplier(windows: list[tuple[float, float, int]], now: float) -> float:
     """Multiplicador de XP en `now` según los potenciadores `(inicio, fin, %)`.
 
@@ -550,8 +665,8 @@ def invoice_code(number: int, when: float) -> str:
 _TICKET_WIDTH = 30
 
 
-def _ticket_line(left: str, right: str) -> str:
-    room = _TICKET_WIDTH - len(right) - 1
+def _ticket_line(left: str, right: str, width: int = _TICKET_WIDTH) -> str:
+    room = width - len(right) - 1
     if len(left) > room:
         left = left[: max(1, room - 1)] + "…"
     return f"{left:<{room}} {right}"
@@ -567,36 +682,66 @@ def receipt(
     serial: int | None = None,
     edition: int | None = None,
 ) -> str:
+    """Factura simplificada de una sola unidad (ver `cart_receipt`)."""
+    return cart_receipt(
+        [TicketLine(item, 1, price)],
+        invoices=[invoice],
+        when=when,
+        buyer=buyer,
+        serials={item.id: [serial]} if serial is not None else None,
+        editions={item.id: edition} if edition is not None else None,
+    )
+
+
+def cart_receipt(
+    lines: Sequence[TicketLine],
+    *,
+    invoices: Sequence[int],
+    when: float,
+    buyer: str,
+    serials: Mapping[int, Sequence[int]] | None = None,
+    editions: Mapping[int, int] | None = None,
+) -> str:
     """Factura simplificada en un bloque de código, como un ticket de caja.
+
+    Cada unidad es una venta con su número (`shop_purchases`), así que una compra
+    de varias lleva el primero y el último, que son correlativos. Con varios tipos
+    de impuesto, el impuesto va desglosado por tipo, como manda una factura.
 
     El artículo es contenido digital que se entrega al momento, así que no
     hay derecho de desistimiento (art. 103.m del Real Decreto Legislativo
     1/2007, de consumidores).
+
+    Args:
+        serials: Números de serie por artículo (`id`), si es de edición limitada.
+        editions: Unidades de la edición de esos artículos.
     """
     rule = "─" * _TICKET_WIDTH
     moment = datetime.fromtimestamp(when, TIMEZONE)
-    lines = [
+    number = invoice_code(min(invoices), when)
+    if len(invoices) > 1:
+        number += f" a {max(invoices):06d}"
+    rows = [
         "FACTURA SIMPLIFICADA",
-        f"Nº {invoice_code(invoice, when)}",
+        f"Nº {number}",
         SHOP_NAME,
         f"{moment:%d/%m/%Y %H:%M} · {buyer}"[:_TICKET_WIDTH],
         rule,
-        _ticket_line(f"1 × {item.name}", money(price.price)),
     ]
-    if serial is not None and edition is not None:
-        lines.append(f"    Unidad nº {serial} de {edition}")
-    if price.discount:
-        lines.append(
-            _ticket_line(f"    Rebaja -{price.discount_pct} %", f"-{money(price.discount)}")
+    for line in lines:
+        rows += _quantity_lines(
+            line,
+            _TICKET_WIDTH,
+            (serials or {}).get(line.item.id, ()),
+            (editions or {}).get(line.item.id),
         )
-    lines += [
-        _ticket_line("Base imponible", money(price.base)),
-        _ticket_line(f"IGIC {rate_label(price.rate.rate)}", money(price.tax)),
+    rows += [
+        *_tax_rows(lines, _TICKET_WIDTH),
         rule,
-        _ticket_line("TOTAL", f"{money(price.total)} Y$"),
+        _ticket_line("TOTAL", f"{money(sum(line.total for line in lines))} Y$"),
         rule,
         "Contenido digital entregado:",
         "sin desistimiento (art. 103.m",
         "TRLGDCU). Gracias.",
     ]
-    return "```\n" + "\n".join(lines) + "\n```"
+    return "```\n" + "\n".join(rows) + "\n```"

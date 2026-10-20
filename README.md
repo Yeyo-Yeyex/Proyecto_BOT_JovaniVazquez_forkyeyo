@@ -209,15 +209,21 @@ python -m bot
   compras de la tienda, al tipo de cada artículo: cero, reducido (3 %),
   general (7 %, el de por defecto), incrementado (9,5 %) o de lujo (15 %),
   como en los arts. 51 a 59 de la Ley 4/2012 de Canarias.
-- **Tienda** (`tienda`): El Colmado de Jovani. Escaparate con pestañas por
-  lo que hace cada artículo (🎭 roles, ⚡ XP, 🐾 mascotas, 💎 vitrina, 🫳 para
-  usar) y un desplegable de pasillos por su tema,
-  cada artículo con su botón **Comprar**, rebajas tachadas, existencias que
-  quedan y etiquetas de 🆕 nuevo y 🔥 lo más vendido. Los precios van sin IGIC; la caja enseña el
-  ticket (precio, rebaja, base, IGIC y total) y pide confirmar. Al pagar
-  llega una factura simplificada que solo ve el comprador y un aviso público
-  en el canal. Cualquiera puede comprar desde el escaparate de otro: la caja
-  se abre solo para quien pulsa.
+- **Tienda** (`tienda [buscar]`): El Colmado de Jovani. Escaparate en lista
+  compacta (15 artículos por página, una línea cada uno con su precio y
+  etiquetas: ✅ lo tienes, 🛒 en el carrito, ⭐ en tu lista, 📦 quedan, 🔒 nivel,
+  🔥 lo más vendido, 🆕 nuevo), con desplegables de sección (🎭 roles, ⚡ XP,
+  🐾 mascotas, 💎 vitrina, 🫳 para usar, 🎨 skins, ⭐ lista de deseos), pasillo
+  (con cuántos tienes de cada uno) y orden, filtros (ofertas, novedades, lo que
+  te llega, lo que tienes o te falta) y buscador. Elegir algo abre su **ficha**
+  privada: cantidad, ticket con su IGIC, **Pagar**, al carrito y ⭐. Elegir
+  varios los echa al **carrito**, que se paga todo junto o nada, con el
+  impuesto desglosado por tipo en la factura simplificada. Al pagar sale un
+  aviso público en el canal. Cualquiera puede comprar desde el escaparate de
+  otro: la ficha y el carrito se abren solo para quien pulsa.
+  - **Lista de deseos** pública (hasta 25 cosas, también en `perfil`): avisa
+    por mensaje privado de rebajas, temporadas, reposiciones, puestos del
+    Rastro y de cuándo ya te llega el dinero. Se silencia con 🔕.
   - Roles para siempre o alquilados (volver a comprar alarga el alquiler; al
     vencer, el bot los quita). Si no puede dar el rol, devuelve todo, IGIC
     incluido.
@@ -817,7 +823,7 @@ python -m bot
   Sustituye a `nivel`, `patrimonio`, `logros` y `mochila`. Solo lo maneja
   quien lo abre. Logros en 🏆 Coleccionista: *¿Quién soy yo?*, *Selfie
   diario*, *Ego de ministro*, *Fisgón de rellano*, *Informe de la UCO*,
-  *Pegasus de barrio*, *Expediente completo* (ver las diez secciones) y dos
+  *Pegasus de barrio*, *Expediente completo* (ver las once secciones) y dos
   secretos.
 - **Logros** (sección 🏆 de `perfil`): 3.931 logros en 56 categorías. El menú
   tiene tres grupos con secciones: 💬 Chat (general, estilo, risas, hacer
@@ -1251,10 +1257,11 @@ src/bot/
 │   ├── intereses.py     # Intereses diarios del monedero y liquidación del ahorro
 │   ├── donations.py     # donar: ONGs de broma y donativos deducibles
 │   ├── bizum.py         # bizum: transferencias entre miembros, exentas
-│   ├── shop.py          # tienda y mochila: escaparate, caja con IGIC, alquileres
+│   ├── shop.py          # tienda y mochila: compras y carrito con IGIC, deseos, alquileres
 │   ├── rastro.py        # vender y rastro: ofertas, puestos y subastas de segunda mano
 │   ├── pieles.py        # pieles: panel de skins e imágenes del tapete propio
 │   ├── shop_admin.py    # Trastienda de `catalogo`: panel y formularios
+│   ├── shop_front.py    # escaparate compacto, ficha, carrito y lista de deseos
 │   ├── pets.py          # mascota: panel, cuidados, apariciones y cameos en otros cogs
 │   ├── work.py          # pala: panel del curro, minijuego con botones, nóminas
 │   ├── blackjack.py     # Blackjack con botones (bj)

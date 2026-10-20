@@ -250,6 +250,13 @@ PRODUCED_STATS = {
     "shop_boost_queue_max", "shop_collection_max", "shop_sale_buys", "shop_discount_max",
     "shop_luxury", "shop_big_buy_max", "shop_limited", "shop_first_serial", "shop_last_unit",
     "shop_broke_buy", SHOP_AISLES_STAT, *(f"shop_key_{key}" for key in SHOP_TRACKED_KEYS),
+    # Carrito, ficha y lista de deseos (cogs/shop.py y cogs/shop_front.py: shop_cart_stats,
+    # shop_wish_stats, shop_wish_alert_stats y shop_browse_stats)
+    "shop_carts", "shop_cart_lines_max", "shop_cart_units_max", "shop_ticket_rates_max",
+    "shop_same_max", "shop_wishes", "shop_wishlist_max", "shop_wish_buys", "shop_wish_sale_buys",
+    "shop_wish_alerts", "shop_wish_stalls", "shop_searches", "shop_sheets",
+    "shop_cart_black_friday", "shop_cart_rebajas", "shop_cart_42", "shop_cart_emptied",
+    "shop_cart_failed",
     # Títulos (cogs/shop.py: shop_stats al comprar y shop_title_stats en la mochila)
     "shop_titles", "shop_title_swaps", "shop_title_off",
     # Skins (cogs/shop.py: shop_stats al comprar y shop_skin_stats al cambiarla)
