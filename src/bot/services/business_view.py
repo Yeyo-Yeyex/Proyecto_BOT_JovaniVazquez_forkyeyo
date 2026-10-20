@@ -59,7 +59,9 @@ GRADE_TITLES: dict[str, str] = {
 
 
 def signed(amount: int) -> str:
-    """`+1.234 Y$` o `−1.234 Y$` (el signo menos de verdad)."""
+    """`+1.234 Y$` o `−1.234 Y$` (el signo menos de verdad); `0 Y$` sin signo."""
+    if amount == 0:
+        return format_amount(0)
     if amount < 0:
         return "−" + format_amount(-amount)
     return "+" + format_amount(amount)
@@ -433,7 +435,8 @@ def turn_lines(result: Any) -> list[str]:
             loyalty = result.business.regulars.get(name, 0)
             lines.append(f"{name} sube a fidelidad {loyalty}")
         elif change < 0:
-            lines.append(f"{name} se ha ido molesto")
+            loyalty = result.business.regulars.get(name, 0)
+            lines.append(f"{name} baja a fidelidad {loyalty}")
     if caught := sum(1 for o in summary.outcomes if "caught" in o.events):
         lines.append(plural(caught, "listillo pillado", "listillos pillados"))
     if missed := summary.count("left"):

@@ -76,8 +76,13 @@ async def make_cog(tmp_path: Path) -> Work:
     return Work(bot, service)
 
 
-async def open_panel(cog: Work, channel_id: int = 99) -> tuple[PalaPanel | None, AsyncMock]:
-    send = AsyncMock(return_value=MagicMock())
+async def open_panel(
+    cog: Work, channel_id: int = 99, *, work: bool = True
+) -> tuple[PalaPanel | None, AsyncMock]:
+    """Abre `pala` y, con `work`, pasa del inicio al panel del curro (el botón 🪏 Trabajo)."""
+    message = MagicMock()
+    message.edit = AsyncMock()
+    send = AsyncMock(return_value=message)
     errors = AsyncMock()
     await cog._open(
         guild=MagicMock(id=GUILD),
@@ -87,6 +92,8 @@ async def open_panel(cog: Work, channel_id: int = 99) -> tuple[PalaPanel | None,
         send_error=errors,
     )
     panel = next(iter(cog.panels), None)
+    if panel is not None and work:
+        await panel.refresh()
     return panel, errors
 
 

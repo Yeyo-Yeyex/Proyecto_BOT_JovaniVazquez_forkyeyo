@@ -7,8 +7,8 @@ casillas de la ruleta o las piezas de cada tablero en segundo plano). Las prueba
 (`tests/integration/test_cog_bridges.py`) solo miran el orden de las respuestas, la
 base de datos, los logros y las jugadas: la imagen no entra en ninguna aserción.
 
-`use_fake_drawings` cambia esas clases (y las de la Torre del dragón, Allá tú, la Guerra y el
-blackjack) en sus módulos de
+`use_fake_drawings` cambia esas clases (y las de la Torre del dragón, Allá tú, la Guerra, el
+blackjack y los negocios de `pala`) en sus módulos de
 servicio ANTES de cargar los cogs. `load_extension` vuelve a ejecutar cada cog y su
 `from ... import SlotsScene` recoge el doble, así que el cog, el bot y la base de datos
 son los reales y solo se sustituye el dibujo. Los dobles devuelven los mismos tipos
@@ -27,6 +27,7 @@ import pytest
 
 import bot.services.allatu_scene as allatu_scene
 import bot.services.blackjack_scene as blackjack_scene
+import bot.services.business_scene as business_scene
 import bot.services.hold_win_render as hold_win_render
 import bot.services.hold_win_scene as hold_win_scene
 import bot.services.pachinko_render as pachinko_render
@@ -329,6 +330,23 @@ class FakeAllatuScene:
         return None
 
 
+class FakeBusinessScene:
+    """`BusinessScene` sin dibujar: un PNG de relleno por pantalla."""
+
+    @property
+    def disabled(self) -> bool:
+        return False
+
+    async def paint(self, states: list[dict[str, object]]) -> list[bytes] | None:
+        return [b"PNG" for _state in states]
+
+    async def still(self, state: dict[str, object]) -> bytes | None:
+        return b"PNG"
+
+    async def close(self) -> None:
+        return None
+
+
 def use_fake_drawings(monkeypatch: pytest.MonkeyPatch) -> None:
     """Sustituye los dibujantes por sus dobles; llamar antes de cargar los cogs."""
     monkeypatch.setattr(slots_scene, "SlotsScene", FakeSlotsScene)
@@ -340,3 +358,4 @@ def use_fake_drawings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(blackjack_scene, "BlackjackScene", FakeBlackjackScene)
     monkeypatch.setattr(tower_scene, "TowerScene", FakeTowerScene)
     monkeypatch.setattr(allatu_scene, "AllatuScene", FakeAllatuScene)
+    monkeypatch.setattr(business_scene, "BusinessScene", FakeBusinessScene)

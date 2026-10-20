@@ -1024,21 +1024,24 @@ GIFT_STORY = (
 #: Historias del primer turno con retención y de la reducción de jornada y la excedencia
 #: (`pala`, negocio propio).
 BIZ_WITHHELD_STORY = (
-    "🏪 **Hacienda también entra en tu local.** Lo que te queda de la actividad es un "
-    "rendimiento de actividades económicas: ingresos menos gastos (art. 27 LIRPF). Cuando "
-    "pagas el alquiler del local, el casero te lo cobra con su retención (art. 100 RIRPF), y "
-    "la fianza que dejaste al firmar es de un mes (art. 36.1 LAU). Lo que retiene Perro Sanxe "
-    "a cuenta se salda en la Renta del lunes."
+    "🏪 **Hacienda también entra en tu local.** Lo que gana un autónomo es un rendimiento de "
+    "actividades económicas: ingresos menos gastos (art. 27 LIRPF). En la vida real se "
+    "adelanta cada trimestre con el pago fraccionado del 20 % (art. 110 RIRPF); en el bot, "
+    "cada turno retiene a cuenta sobre su margen con tu tipo de la semana. Y como inquilino "
+    "de un local, el 19 % del alquiler lo ingresas tú en nombre del casero (art. 100 RIRPF). "
+    "La Renta del lunes ajusta lo que falte o sobre."
 )
 BIZ_JORNADA_STORY = (
     "⏳ **Menos horas, menos sueldo.** Reducir la jornada por cuidado de un hijo o de un "
-    "familiar baja el salario en la misma proporción (art. 37.6 ET). En el bot, los turnos "
-    "que pierdes los pierdes de verdad."
+    "familiar baja el salario en la misma proporción (art. 37.6 ET) y se avisa con quince "
+    "días (art. 37.7 ET). En el bot vale desde mañana: menos franjas de jornada, sin horas "
+    "extra y más tiempo para lo tuyo."
 )
 BIZ_EXCEDENCIA_STORY = (
     "🌴 **Excedencia.** La voluntaria dura de cuatro meses a cinco años y no se cobra "
-    "(art. 46.2 ET); al volver, el puesto no está garantizado, solo el derecho a ocupar "
-    "una vacante igual o similar."
+    "(art. 46.2 ET); al volver, el puesto no está garantizado, solo el derecho preferente "
+    "a una vacante igual o similar (art. 46.5 ET). En el bot vuelves a tu puesto, con la "
+    "barra a la mitad."
 )
 
 NONRESIDENT_STORY = (
@@ -19433,7 +19436,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Alcanza las 5 estrellas de reputación.", E),
     ])  # fmt: skip
     a += _tiers("negocio", "biz_loyalty_max", [
-        (10, "biz_loyal_10", "Hasta que el IVA nos separe",
+        (10, "biz_loyal_10", "Hasta que el IGIC nos separe",
          "Alcanza la fidelidad máxima con un habitual.", E),
     ])  # fmt: skip
     a += _tiers("negocio", "biz_usual_hit", [
@@ -19466,7 +19469,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("negocio", "biz_missed_thief", [
         (1, "biz_missed_1", "Aquí no ha pasado nada", "Deja escapar a un ladrón en la tienda.", C),
-        (25, "biz_missed_25", "Casa de la Pradera para cacos",
+        (25, "biz_missed_25", "Barra libre para chorizos",
          "Deja escapar a 25 ladrones en la tienda.", R, True),
     ])  # fmt: skip
     a += _tiers("negocio", "biz_false_accuse", [
@@ -19552,17 +19555,22 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Cierra el negocio con la semana en negativo.", C, True),
     ])  # fmt: skip
     a += _tiers("negocio", "biz_evicted", [
-        (1, "biz_evicted_1", "Se lo llevó la comunidad de propietarios",
+        (1, "biz_evicted_1", "Lanzamiento sin cohete",
          "Sufre el desahucio del local.", R, True),
     ])  # fmt: skip
     # Reducción de jornada y excedencia (art. 37.6 y 46.2 ET), en 🪏 General.
     a.append(Achievement(
-        id="work_jornada_4_1", name="Media jornada, media vida",
-        description="Pide reducir la jornada a 4 turnos.", category="work", rarity=C,
-        conditions=(("work_jornada_4", 1),), story=BIZ_JORNADA_STORY,
+        id="work_jornada_3_1", name="Tres cuartos de lo mismo",
+        description="Pide la reducción de jornada de un cuarto (3 franjas de jornada).",
+        category="work", rarity=C, conditions=(("work_jornada_3", 1),), story=BIZ_JORNADA_STORY,
     ))  # fmt: skip
     a += _tiers("work", "work_jornada_2", [
-        (1, "work_jornada_2_1", "Currar a media máquina", "Pide reducir la jornada a 2 turnos.", R),
+        (1, "work_jornada_2_1", "Currar a media máquina",
+         "Pide la media jornada (2 franjas de jornada).", C),
+    ])  # fmt: skip
+    a += _tiers("work", "work_jornada_4", [
+        (1, "work_jornada_4_1", "Jornada completa, cartera completa",
+         "Pide la jornada completa (4 franjas de jornada).", C),
     ])  # fmt: skip
     a.append(Achievement(
         id="work_excedencia_1", name="Excedencia de cuerpo presente",

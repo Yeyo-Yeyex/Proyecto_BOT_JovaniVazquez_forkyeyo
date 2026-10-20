@@ -64,6 +64,7 @@ from discord.ext import commands
 
 from bot.cogs import achievements as logros
 from bot.cogs import apuestas, patrimonio, pisos, rastro, renta
+from bot.cogs import business as negocio
 from bot.cogs import pets as mascotas
 from bot.cogs import shop as tienda
 from bot.cogs import work as curro
@@ -1332,6 +1333,7 @@ class Casino(commands.Cog):
                 self._imv_pending(guild_id, user_id),
                 pisos.pending(self.bot, guild_id, user_id),
                 curro.pending(self.bot, guild_id, user_id),
+                negocio.pending(self.bot, guild_id, user_id),
                 loterias.pending(self.bot, guild_id, user_id),
                 deportes.pending(self.bot, guild_id, user_id),
             ]

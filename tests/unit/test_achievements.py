@@ -211,6 +211,7 @@ PRODUCED_STATS = {
     "biz_themes_tried", "biz_islands_tried", "biz_restyled", "biz_purchases",
     "biz_price_barato", "biz_price_normal", "biz_price_caro", "biz_price_carisimo",
     "biz_nights_unpaid", "biz_closed_red", "biz_evicted", "work_jornada_4", "work_jornada_2",
+    "work_jornada_3",
     "work_excedencia", "work_excedencia_back",
     # cogs/achievements.py: mensajes, voz, reacciones y la siembra del historial
     *message_stats("x", when=datetime(2026, 1, 1, tzinfo=TIMEZONE)).keys(),
