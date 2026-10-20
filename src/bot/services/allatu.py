@@ -14,9 +14,18 @@ Cómo se juega:
 4. **La banca.** Tras cada ronda llama Perro Sanxe con una oferta (`offer`): ✅ Trato
    (cobra la oferta y acaba) o ❌ No trato (sigue). Una vez por partida se puede
    🤝 regatear: la mitad de las veces sube la oferta y la otra mitad cuelga y esa
-   ronda no hay oferta.
+   ronda no hay oferta. Si se abre el gordo a mitad de ronda, llama en el acto
+   con la oferta de esa ronda (el pésame, `Offer.condolence`): quien ya no quiere
+   seguir se va sin abrir más cajas.
 5. **El final.** Tras la quinta oferta quedan dos cajas, la tuya y otra: 🔒 te
    quedas la tuya o 🔄 la cambias, y cobras lo que haya dentro.
+
+**Escalera de premios.** Debajo del gordo hay cajas rojas (de ×1 o más: cinco en
+Normal hasta ×3, tres en Picante hasta ×4 y dos en Infierno hasta ×5), como en el
+concurso de la tele. Hasta la 8.7 el gordo era el 72-90 % del valor de la tabla y,
+al salir, en Picante e Infierno no quedaba ninguna caja que ganara: se seguían
+abriendo cajas para perder. Ahora es el 54-66 % y, sin él, sigue habiendo premios
+por los que jugar (`docs/allatu_tablas.py` lo mide).
 
 **Ventaja de la casa.** Los 21 premios de serie de cada tabla y la media del gordo
 suman exactamente 22 × 0,99: de media, una caja vale el 99 % de lo apostado
@@ -90,25 +99,25 @@ class Table(Enum):
         "normal",
         "Normal",
         "🎁",
-        _fr(*"0 0 0 0.01 0.02 0.05 0.05 0.1 0.1 0.15 0.2".split(),
-            *"0.2 0.25 0.25 0.3 0.4 0.5 0.5 0.5 1 1.5".split()),
-        ((10, 760), (20, 170), (50, 55), (100, 12), (250, 3)),
+        _fr(*"0 0 0 0 0 0 0 0 0.01 0.02 0.04".split(),
+            *"0.05 0.05 0.1 0.1 0.2 1 1.5 2 2 3".split()),
+        ((10, 945), (20, 38), (50, 10), (100, 5), (250, 2)),
     )  # fmt: skip
     PICANTE = (
         "picante",
         "Picante",
         "🌶️",
-        _fr(*"0 0 0 0 0 0 0.01 0.02 0.05 0.05 0.1 0.1 0.15".split(),
-            *"0.2 0.2 0.25 0.25 0.3 0.4 0.5 0.5".split()),
-        ((10, 760), (25, 180), (60, 45), (200, 12), (500, 3)),
+        _fr(*"0 0 0 0 0 0 0 0 0 0 0.01".split(),
+            *"0.02 0.03 0.03 0.05 0.05 0.1 0.15 1.5 2.5 4".split()),
+        ((10, 934), (25, 44), (60, 15), (200, 5), (500, 2)),
     )  # fmt: skip
     INFIERNO = (
         "infierno",
         "Infierno",
         "🔥",
-        _fr(*"0 0 0 0 0 0 0 0 0 0.01 0.01 0.02 0.03 0.05".split(),
-            *"0.1 0.1 0.15 0.2 0.25 0.4 0.76".split()),
-        ((10, 780), (20, 160), (60, 45), (250, 12), (1000, 3)),
+        _fr(*"0 0 0 0 0 0 0 0 0 0 0".split(),
+            *"0 0.01 0.02 0.03 0.05 0.08 0.1 0.2 2 5".split()),
+        ((10, 919), (20, 60), (60, 15), (250, 4), (1000, 2)),
     )  # fmt: skip
 
     label: str
@@ -236,6 +245,7 @@ class Offer:
         haggled: Si esta oferta es la que salió de un regateo con suerte.
         hung_up: Si Perro Sanxe colgó al regatear (y no hubo oferta).
         accepted: Si se aceptó.
+        condolence: Si es el pésame: la llamada fuera de ronda al abrir el gordo.
     """
 
     round: int
@@ -245,6 +255,7 @@ class Offer:
     haggled: bool = False
     hung_up: bool = False
     accepted: bool = False
+    condolence: bool = False
 
 
 @dataclass(slots=True)
@@ -350,6 +361,11 @@ class AllatuGame:
         return any(self.values[i] == self.gordo for i in self.closed)
 
     @property
+    def gordo_lost(self) -> bool:
+        """Si el gordo salió en una caja que abrió el jugador (no en la otra del final)."""
+        return any(self.values[i] == self.gordo for i in self.opened[: ROUND_ENDS[-1]])
+
+    @property
     def own_value(self) -> Fraction | None:
         """Lo que hay en tu caja (secreto hasta el final)."""
         return self.values[self.own] if self.own is not None else None
@@ -416,6 +432,9 @@ class AllatuGame:
     def open(self, box: int, *, random_pick: bool = False) -> Fraction:
         """Abre una caja. Si cierra la ronda, la banca hace su oferta (`offer`).
 
+        Si es el gordo y no cierra la ronda, llama igual con la oferta de la ronda
+        (el pésame): misma fórmula, así que no cambia el 99 %.
+
         Returns:
             Lo que había dentro.
 
@@ -433,14 +452,22 @@ class AllatuGame:
             self.random_opens += 1
         if len(self.opened) in ROUND_ENDS:
             self._call(ROUND_ENDS.index(len(self.opened)))
+        elif self.values[box] == self.gordo:
+            self._call(self.round, condolence=True)
         return self.values[box]
 
-    def _call(self, round_: int, factor: Fraction | None = None, *, haggled: bool = False) -> None:
+    def _call(
+        self,
+        round_: int,
+        factor: Fraction | None = None,
+        *,
+        haggled: bool = False,
+        condolence: bool = False,
+    ) -> None:
         mean = self.mean
         f = OFFER_FACTORS[round_] if factor is None else factor
-        self.offers.append(
-            Offer(round_, f, math.floor(self.stake * f * mean), mean, haggled=haggled)
-        )
+        amount = math.floor(self.stake * f * mean)
+        self.offers.append(Offer(round_, f, amount, mean, haggled=haggled, condolence=condolence))
         self.phase = Phase.OFFER
 
     def deal(self) -> int:
@@ -490,7 +517,9 @@ class AllatuGame:
         offer = self.offer
         assert offer is not None
         if self.haggle_luck[offer.round]:
-            self._call(offer.round, min(Fraction(1), offer.factor + HAGGLE_RAISE), haggled=True)
+            factor = min(Fraction(1), offer.factor + HAGGLE_RAISE)
+            # Regatear el pésame sigue siendo el pésame (para el texto y los logros).
+            self._call(offer.round, factor, haggled=True, condolence=offer.condolence)
             return True
         offer.hung_up = True
         self._next()

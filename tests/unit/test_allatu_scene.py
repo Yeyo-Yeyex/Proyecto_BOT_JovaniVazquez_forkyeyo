@@ -21,6 +21,7 @@ from test_node_scene import needs_node, node_ready
 from bot.services import browser_scene
 from bot.services.allatu import BOXES, ROUNDS, AllatuGame, Phase, Table
 from bot.services.allatu_scene import (
+    CONDOLENCE_TALK,
     FINAL_FRAME_MS,
     SCENE,
     AllatuScene,
@@ -216,3 +217,14 @@ async def test_node_y_chromium_pintan_lo_mismo_el_plato() -> None:
     ):
         diff = ImageChops.difference(a.convert("RGB"), b.convert("RGB"))
         assert sum(ImageStat.Stat(diff).mean) / 3 < 4
+
+
+def test_el_pesame_tiene_su_cartel_y_su_frase() -> None:
+    game = game_in(Phase.PICK)
+    game.values = (Fraction(0), Fraction(1_000), *[Fraction(1)] * 20)
+    game.choose(0)
+    game.open(1)
+    last = call_states(game)[-1]
+    assert last["label"] == "LLAMADA DE PÉSAME"
+    assert last["talk"] in CONDOLENCE_TALK
+    assert rest_state(game)["label"] == "LLAMADA DE PÉSAME"
