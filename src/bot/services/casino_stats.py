@@ -65,6 +65,7 @@ GAMES: dict[str, tuple[str, str]] = {
     "enraya": ("🔴", "4 en raya"),
     "backgammon": ("♟️", "Backgammon"),
     "porra": ("🎫", "Porras"),
+    "deportes": ("⚽", "Deportes"),
 }
 
 #: Prefijos del libro que pertenecen a otro juego de `GAMES`.

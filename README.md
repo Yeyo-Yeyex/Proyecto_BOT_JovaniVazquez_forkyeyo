@@ -47,6 +47,10 @@ pip install -e ".[dev]"
    blackjack, tragaperras, pachinko, lotería y porras) a esos canales: IDs
    separados por comas. En nuestro servidor, `#casino` es
    `1384280704539562054`. Vacío = se puede jugar en cualquier canal.
+5. `ODDS_API_KEY` (opcional, secreta) es la clave de [The Odds API](https://the-odds-api.com)
+   para las apuestas deportivas (`deportes`). El plan gratis (500 créditos al mes)
+   basta para LaLiga y la Champions: el bot gasta unos 330. Sin ella, `deportes`
+   avisa de que no está configurado.
 
 El bot carga automáticamente el archivo `.env` (si existe) al arrancar,
 mediante `python-dotenv`. En producción no es necesario un archivo

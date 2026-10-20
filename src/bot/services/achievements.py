@@ -166,6 +166,10 @@ from bot.services.slots import Kind as SlotKind
 from bot.services.slots import Spin
 from bot.services.slots import WinTier as SlotWinTier
 from bot.services.slots import pot_share as slots_pot_share
+from bot.services.sports import MAX_STAKE as SPORTS_MAX_STAKE
+from bot.services.sports import MIN_STAKE as SPORTS_MIN_STAKE
+from bot.services.sports import SPORTS
+from bot.services.sports import Pick as SportsPick
 from bot.services.timba import Act as TimbaAct
 from bot.services.timba import TimbaHand
 from bot.services.tower import DIFFICULTIES as TOWER_DIFFICULTIES
@@ -331,6 +335,8 @@ CATEGORIES: tuple[Category, ...] = (
     Category("backgammon", "♟️ Backgammon", group=_CG),
     Category("porras", "🎫 Porras", group=_CG),
     Category("apuestas", "📊 Estadísticas", group=_CG),
+    # Fuera del grupo 🎰 Casino: su desplegable ya tiene las 25 opciones de Discord.
+    Category("deportes", "⚽ Deportes"),
     Category("lottery", "🎟️ Loterías"),
     Category("shop", "🛍️ Tienda"),
     Category("rastro", "🧺 Rastro"),
@@ -593,6 +599,18 @@ PORRA_GAME_PREFIX = "porra_game_"
 PORRA_PROP_PREFIX = "porra_prop_"
 PORRA_GAMES = tuple(porra_allowed_games())
 PORRA_PROPS = tuple(prop.key for prop in PORRA_PROPOSITIONS)
+
+#: Prefijos de las apuestas deportivas por competición y por signo (`sports_pick_x`).
+SPORTS_LEAGUE_PREFIX = "sports_league_"
+SPORTS_PICK_PREFIX = "sports_pick_"
+SPORTS_LEAGUES = tuple(sport.key for sport in SPORTS)
+SPORTS_PICKS = tuple(pick.value.lower() for pick in SportsPick)
+#: Cuotas (en centésimas) a partir de las que una apuesta es a la sorpresa, y hasta
+#: las que es a lo seguro.
+SPORTS_LONG_ODDS = 500
+SPORTS_SAFE_ODDS = 130
+#: Goles de diferencia de una goleada.
+SPORTS_ROUT = 4
 
 _R = Rarity
 C, R, E, L, M = _R.COMMON, _R.RARE, _R.EPIC, _R.LEGENDARY, _R.MYTHIC
@@ -21250,6 +21268,108 @@ def porra_no_show_stats() -> StatDelta:
 def porra_snoop_stats() -> StatDelta:
     """Ha mirado quién apuesta qué con los prismáticos."""
     return StatDelta(add={"porra_snoops": 1})
+
+
+def sports_bet_stats(
+    *,
+    stake: int,
+    odds: int,
+    pick: str,
+    sport: str,
+    balance_before: int,
+    lead: float,
+    when: datetime,
+) -> StatDelta:
+    """Lo que cuenta una apuesta deportiva (`deportes`) al hacerla.
+
+    Args:
+        stake: Lo apostado.
+        odds: Cuota en centésimas.
+        pick: Signo: `1`, `X` o `2`.
+        sport: Competición (`bot.services.sports.SPORTS`).
+        balance_before: Saldo antes de apostar.
+        lead: Segundos que faltaban para el comienzo del partido.
+        when: Hora canaria de la apuesta.
+    """
+    add = {
+        "sports_bets": 1,
+        "sports_staked": stake,
+        f"{SPORTS_LEAGUE_PREFIX}{sport}": 1,
+        f"{SPORTS_PICK_PREFIX}{pick.lower()}": 1,
+    }
+
+    def bump(stat: str, condition: bool) -> None:
+        if condition:
+            add[stat] = 1
+
+    bump("sports_bet_long", odds >= SPORTS_LONG_ODDS)
+    bump("sports_bet_safe", odds <= SPORTS_SAFE_ODDS)
+    bump("sports_all_in", stake >= balance_before > 0)
+    bump("sports_bet_min", stake == SPORTS_MIN_STAKE)
+    bump("sports_bet_cap", stake == SPORTS_MAX_STAKE)
+    bump("sports_bet_666", stake == 666)
+    bump("sports_bet_69", stake == 69)
+    bump("sports_last_minute", lead <= 5 * 60)
+    bump("sports_early", lead >= 6 * 86_400)
+    bump("sports_night", 2 <= when.hour < 6)
+    bump("sports_nochevieja", (when.month, when.day) == (12, 31))
+    bump("sports_canarias", (when.month, when.day) == (5, 30))
+    bump("sports_friday13", when.weekday() == 4 and when.day == 13)
+    return StatDelta(add=add, peak={"sports_stake_max": stake, "sports_odds_max": odds})
+
+
+def sports_result_stats(
+    *, stake: int, odds: int, pick: str, payout: int, home: int, away: int, streak: int
+) -> StatDelta:
+    """Lo que cuenta una apuesta deportiva resuelta (sin lo común del casino).
+
+    Args:
+        stake: Lo apostado.
+        odds: Cuota en centésimas.
+        pick: Signo apostado: `1`, `X` o `2`.
+        payout: Lo cobrado, apuesta incluida (0 si falló).
+        home: Goles del equipo de casa.
+        away: Goles del de fuera.
+        streak: Apuestas acertadas seguidas, contando esta (0 si ha fallado).
+    """
+    add = {"sports_settled": 1}
+    peak = {}
+    draw = pick.upper() == SportsPick.DRAW
+    diff = home - away if pick == SportsPick.HOME else away - home
+
+    def bump(stat: str, condition: bool) -> None:
+        if condition:
+            add[stat] = 1
+
+    if payout:
+        add["sports_wins"] = 1
+        peak = {
+            "sports_win_max": payout - stake,
+            "sports_odds_won_max": odds,
+            "sports_win_streak_max": streak,
+        }
+        bump("sports_win_draw", draw)
+        bump("sports_win_00", draw and home == away == 0)
+        bump("sports_win_rout", not draw and diff >= SPORTS_ROUT)
+        bump("sports_win_by_one", not draw and diff == 1)
+    else:
+        add["sports_losses"] = 1
+        bump("sports_lost_safe", odds <= SPORTS_SAFE_ODDS)
+        bump("sports_lost_tied", not draw and home == away)
+        bump("sports_lost_rout", not draw and diff <= -SPORTS_ROUT)
+        bump("sports_lost_by_one", not draw and diff == -1)
+        bump("sports_lost_goals", draw and home + away >= 6)
+    return StatDelta(add=add, peak=peak)
+
+
+def sports_void_stats() -> StatDelta:
+    """Una apuesta deportiva anulada (partido sin resultado) y devuelta."""
+    return StatDelta(add={"sports_refunds": 1})
+
+
+def sports_slip_stats() -> StatDelta:
+    """Ha mirado sus apuestas deportivas con 🎟️ Mis apuestas."""
+    return StatDelta(add={"sports_slips": 1})
 
 
 def apuestas_stats(
