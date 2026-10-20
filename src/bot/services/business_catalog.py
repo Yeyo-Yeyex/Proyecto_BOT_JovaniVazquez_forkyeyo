@@ -279,7 +279,10 @@ FAULTS: dict[str, tuple[tuple[str, ...], str]] = {
         "frenos",
     ),
     "bateria": (
-        ("Por las mañanas no arranca: hace clic y nada.", "Se me quedó tirado con las luces puestas."),
+        (
+            "Por las mañanas no arranca: hace clic y nada.",
+            "Se me quedó tirado con las luces puestas.",
+        ),
         "bateria",
     ),
     "aceite": (

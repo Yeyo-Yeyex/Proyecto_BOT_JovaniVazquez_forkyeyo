@@ -31,6 +31,16 @@ Cómo funciona un turno, en resumen:
   días en el puesto, las tareas del puesto y, a veces, una formación.
 - **Sin despidos**: con la barra a cero hay un aviso y, si se repite, te bajan
   un puesto. Tras `LEAVE_AFTER_DAYS` días sin fichar, excedencia.
+- **Franjas** (`bot.services.agenda`): el día tiene 8 y la jornada reserva las suyas
+  (`Contract.jornada`) aunque no se fiche. Las horas extra, el B, las guardias (dos) y el
+  estudio gastan franjas libres, que comparte el negocio propio (`bot.services.business`).
+- **Reducción de jornada** (art. 37.6 ET): 3 o 2 franjas de jornada en vez de 4, desde
+  el día siguiente (preaviso, art. 37.7). Sin horas extra, B ni guardias (decisión del
+  proyecto, como el tiempo parcial del art. 12.4.c ET).
+- **Excedencia voluntaria** (art. 46.2 ET, `excedencia_blocker`): con un «año» en el
+  oficio (`EXCEDENCIA_SENIORITY_DAYS`), sin fichar ni reservar franjas, al menos
+  `EXCEDENCIA_MIN_DAYS` y otra solo pasados `EXCEDENCIA_COOLDOWN_DAYS` («4 años»). Se
+  vuelve al mismo puesto con la barra a la mitad.
 
 Carrera larga, también al estilo de los Sims:
 
@@ -108,6 +118,7 @@ from enum import StrEnum
 from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
+from bot.services.agenda import Agenda
 from bot.services.levels import TIMEZONE, local_day
 from bot.services.taxes import IRPF_YAPDOLLARS_PER_EURO, SS_MAX_BASE_EUR
 
@@ -211,6 +222,12 @@ PERFORMANCE_MAX = 100
 #: Barra con la que se entra a un puesto nuevo o se vuelve de excedencia.
 PERFORMANCE_START = 50
 LEAVE_AFTER_DAYS = 7
+#: Excedencia voluntaria (art. 46.2 ET) a la escala de la `pala`, donde un año son 7 días
+#: (los trienios son de 21): un año de antigüedad, cuatro meses como mínimo y cuatro años
+#: hasta la siguiente.
+EXCEDENCIA_SENIORITY_DAYS = 7
+EXCEDENCIA_MIN_DAYS = 2
+EXCEDENCIA_COOLDOWN_DAYS = 28
 #: Puntuación desde la que un turno cuenta como «bueno» para las tareas.
 GOOD_SCORE = 90
 PERFECT_SCORE = 100
@@ -744,6 +761,28 @@ class Contract:
     #: calidad de la pensión al jubilarse (`contribution_quality`).
     branch_gross: int = 0
     branch_days: int = 0
+    #: Franjas que reserva la jornada (`agenda.JORNADAS`): 4, o menos con la reducción.
+    jornada: int = ORDINARY_SHIFTS
+    #: Tramo pedido que entra el día `jornada_from` (0 = ninguno pendiente).
+    jornada_next: int = 0
+    jornada_from: str = ""
+    #: Desde cuándo está de excedencia voluntaria (0 = trabajando) y cuándo acabó la última.
+    excedencia_since: float = 0.0
+    excedencia_last: float = 0.0
+    #: Día (ISO) de `franjas` y lo gastado ese día fuera de la jornada, por clase
+    #: (`agenda.EXTRA`, `agenda.GUARD`, `agenda.STUDY`).
+    franjas_day: str = ""
+    franjas: dict[str, int] = field(default_factory=dict)
+
+    @property
+    def reduced(self) -> bool:
+        """Si tiene la jornada reducida (sin horas extra, B ni guardias)."""
+        return self.jornada < ORDINARY_SHIFTS
+
+    @property
+    def on_excedencia(self) -> bool:
+        """Si está de excedencia voluntaria."""
+        return self.excedencia_since > 0
 
 
 def family_now(contract: Contract, now: float) -> float:
@@ -892,6 +931,12 @@ def roll_over_day(contract: Contract, now: float) -> int:
     if contract.coffee_day != today.isoformat():
         contract.coffee_day = today.isoformat()
         contract.coffees = 0
+    if contract.franjas_day != today.isoformat():
+        contract.franjas_day = today.isoformat()
+        contract.franjas = {}
+    if contract.jornada_next and contract.jornada_from <= today.isoformat():
+        contract.jornada = contract.jornada_next
+        contract.jornada_next, contract.jornada_from = 0, ""
     return rest_days
 
 
@@ -900,11 +945,57 @@ def next_shift_kind(contract: Contract, now: float) -> ShiftKind:
 
     Debe llamarse después de `roll_over_day`.
     """
-    if contract.shifts_today < ORDINARY_SHIFTS:
+    if contract.shifts_today < contract.jornada:
         return ShiftKind.ORDINARY
     if contract.extras_week < LEGAL_EXTRAS_PER_WEEK:
         return ShiftKind.EXTRA
     return ShiftKind.BLACK
+
+
+def agenda_for(contract: Contract | None, business: int = 0) -> Agenda:
+    """Las franjas de hoy de un miembro (debe llamarse después de `roll_over_day`).
+
+    Sin contrato, o de excedencia, el curro no reserva nada; lo ya fichado hoy cuenta.
+
+    Args:
+        business: Turnos de hoy en su negocio.
+    """
+    if contract is None:
+        return Agenda(business=business)
+    return Agenda(
+        jornada=0 if contract.on_excedencia else contract.jornada,
+        ordinary=min(contract.shifts_today, contract.jornada),
+        outside=dict(contract.franjas),
+        business=business,
+    )
+
+
+def excedencia_blocker(contract: Contract, now: float) -> str | None:
+    """Lo que impide pedir la excedencia ahora, o `None` si se puede."""
+    if contract.on_excedencia:
+        return "Ya estás de excedencia."
+    if contract.abroad:
+        return "Estás en Hong Kong. Vuelve primero y luego pides la excedencia."
+    seniority = (now - contract.job_since) / 86_400
+    if seniority < EXCEDENCIA_SENIORITY_DAYS:
+        ready = int(contract.job_since + EXCEDENCIA_SENIORITY_DAYS * 86_400)
+        return (
+            f"Hace falta un «año» en el oficio ({EXCEDENCIA_SENIORITY_DAYS} días, art. 46.2 ET). "
+            f"Podrás pedirla <t:{ready}:R>."
+        )
+    if contract.excedencia_last:
+        ready = contract.excedencia_last + EXCEDENCIA_COOLDOWN_DAYS * 86_400
+        if now < ready:
+            return (
+                f"Hasta que pasen cuatro «años» ({EXCEDENCIA_COOLDOWN_DAYS} días) desde la "
+                f"última no puedes pedir otra (art. 46.2 ET). Podrás <t:{int(ready)}:R>."
+            )
+    return None
+
+
+def excedencia_return_at(contract: Contract) -> float:
+    """Desde cuándo puede volver de la excedencia (los «cuatro meses» de mínimo)."""
+    return contract.excedencia_since + EXCEDENCIA_MIN_DAYS * 86_400
 
 
 def shift_cost(kind: ShiftKind, *, remote: bool = False, calima: bool = False) -> int:
