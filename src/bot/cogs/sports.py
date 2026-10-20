@@ -532,8 +532,12 @@ class Deportes(commands.Cog):
     async def cog_load(self) -> None:
         """Carga los partidos guardados, abre la conexión con la API y arranca el bucle."""
         now = self.clock()
-        for sport in SPORTS:
-            await self._reload(sport.key, now)
+        try:
+            for sport in SPORTS:
+                await self._reload(sport.key, now)
+        except sqlite3.Error:
+            # Sin partidos en memoria el panel sale vacío hasta la siguiente consulta.
+            logger.exception("No se pudieron leer los partidos guardados de deportes")
         if self.api_key:
             if self._session is None:
                 timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS)
