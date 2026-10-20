@@ -102,7 +102,7 @@ ADMIN_COMMANDS = {
 TEXT_ONLY_COMMANDS = {"magik", "memes"}
 
 # Utilidades de mantenimiento para unos pocos IDs: no salen en la ayuda.
-HIDDEN_COMMANDS = {"reinicio", "bloquear"}
+HIDDEN_COMMANDS = {"reinicio", "bloquear", "crear"}
 
 
 def test_comandos_slash_y_texto_comparten_nombres_cortos_y_sin_alias(tmp_path: Path) -> None:

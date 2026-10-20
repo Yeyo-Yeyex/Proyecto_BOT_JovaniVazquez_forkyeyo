@@ -1070,6 +1070,11 @@ comando (con `/` ni con `.`) ni los botones de su archivo, también los de las m
 abiertas. Repetirlo lo desbloquea; sin comando, enseña los bloqueados. Sigue bloqueado
 tras reiniciar (tabla `blocked_commands`).
 
+`crear <miembro> <objeto>` (o `/crear`), con los mismos dos IDs y fuera de `ayuda`, mete un
+objeto de la tienda en la mochila de alguien para devolverle lo que perdió por un fallo:
+no cobra, no gasta existencias y no da número de serie. Solo objetos (ni roles, ni
+potenciadores, ni mascotas).
+
 ### Novedades: el changelog en Discord
 
 Cada vez que `actualizar.sh` despliega commits nuevos (de noche o con

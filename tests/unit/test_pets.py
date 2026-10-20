@@ -464,6 +464,26 @@ async def test_dar_de_comer_gasta_lo_de_la_mochila(tmp_path: Path) -> None:
     assert cat.bond == CARE_RULES[Care.FEED].points + FAVOURITE_BONUS
 
 
+async def test_la_cabra_no_se_come_lo_de_edicion_limitada(tmp_path: Path) -> None:
+    """Ni comprado (con número de serie) ni dado con `crear` (sin número)."""
+    cog, economy = await make_cog(tmp_path, Clock())
+    guild = make_guild()
+    member = make_member(guild)
+    await adopt(economy, cog.shop, "mascota_cabra")
+    await adopt(economy, cog.shop, "patata_espana")  # ejemplar único, nº 1/1
+    await adopt(economy, cog.shop, "piedra")
+    cubito = await cog.shop.item_by_key(GUILD, "cubito")  # cien numerados
+    assert cubito is not None and cubito.stock is not None
+    await cog.shop.grant(GUILD, OWNER, cubito, NOW)
+    panel = await cog.panel(guild, member, member)
+    assert "edición limitada" in texts(panel)
+
+    click = make_interaction(member)
+    await cog.open_feeding(click, panel)
+    picker = click.followup.send.await_args.kwargs["view"]
+    assert [o.label for o in picker.select.options] == ["Piedra"]
+
+
 async def test_sin_comida_avisa_y_la_piedra_no_come(tmp_path: Path) -> None:
     cog, economy = await make_cog(tmp_path, Clock())
     guild = make_guild()
