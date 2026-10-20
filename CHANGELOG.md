@@ -8,6 +8,11 @@ criterio.
 
 ## 8.x
 
+### 8.8.0 · 2026-10-20
+
+- Allá tú: escalera de premios bajo el gordo en las tres tablas y llamada del pésame al abrirlo
+- Logros: 11 de Allá tú (el pésame y ganar sin el gordo) y rarezas recalibradas
+
 ### 8.7.0 · 2026-10-19
 
 - Renta: la que sale a pagar se paga al abrirla, entera o fraccionada (60 % y 40 % el jueves)

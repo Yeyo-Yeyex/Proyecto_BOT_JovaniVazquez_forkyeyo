@@ -7,7 +7,9 @@ se elige una caja, que no se abre hasta el final, y se abren las demás por
 rondas de 6, 5, 4, 3 y 2. Tras cada ronda llama la banca con una oferta: ✅
 Trato (cobras y acaba), ❌ No trato (sigues) o, una vez por partida, 🤝 Regatear
 (la mitad de las veces sube la oferta; la otra mitad cuelga y esa ronda no hay
-oferta). Al final quedan dos cajas: 🔒 te quedas la tuya o 🔄 la cambias.
+oferta). Si se abre el gordo a mitad de ronda, llama en el acto con la oferta de
+esa ronda: el pésame, para irse sin abrir más cajas. Al final quedan dos cajas:
+🔒 te quedas la tuya o 🔄 la cambias.
 
 **Cada jugada es un GIF** (`bot.services.allatu_scene`): la ruleta del gordo,
 cada caja que se abre de cerca, la llamada de Perro Sanxe con su marcador, el
@@ -195,6 +197,15 @@ GORDO_DEAD = (
     "💀 El {gordo} se fue a otra caja.",
     "💀 Sin gordo: queda lo que queda.",
 )
+#: El pésame: la llamada fuera de ronda al abrir el gordo.
+CONDOLENCE_LINES = (
+    "🕯️ Ha salido el gordo y Perro Sanxe llama antes de tiempo.",
+    "🕯️ Llamada fuera de ronda: la banca ha visto salir el gordo.",
+    "🕯️ Perro Sanxe te acompaña en el sentimiento. Y en la cartera.",
+    "🕯️ Perro Sanxe llama para darte el pésame y una salida.",
+    "🕯️ Sin gordo, la banca se adelanta con su oferta.",
+    "🕯️ El gordo se ha ido, pero la partida sigue.",
+)
 HANG_LINES = (
     "📵 Perro Sanxe ha colgado. Esta ronda, sin oferta.",
     "📵 Ha colgado: dice que le llama Bruselas.",
@@ -362,11 +373,15 @@ class AllatuBoard(ui.View):
             lines.append(f"# 📞 Perro Sanxe ofrece {format_amount(offer.amount)} ({mult})")
             mood = offer_mood(game)
             pool = {"rata": RATA_LINES, "generosa": GENEROSA_LINES}.get(mood, NORMAL_LINES)
+            if offer.condolence:
+                pool = CONDOLENCE_LINES
             lines.append(self.quip or pool[(len(game.opened) + offer.amount) % len(pool)])
             lines.append(self._gordo_line(game))
             if history := self._history(game):
                 lines.append(history)
             extra = " · 🤝 Puedes regatear una vez" if game.can_haggle else ""
+            if offer.condolence:
+                extra += " · Con ❌ sigue la ronda"
             lines.append(
                 f"-# Media de las cajas cerradas: {format_multiplier(offer.mean)} · "
                 f"Oferta al {percent(float(offer.factor))} de la media{extra}"
@@ -835,9 +850,12 @@ class AllatuBoard(ui.View):
             renderer = self.cog.renderer
             then: Callable[[], Awaitable[Media | bytes | None]]
             if after.phase is Phase.OFFER:
+                condolence = after.offer is not None and after.offer.condolence
                 then, waiting_then = (
                     (lambda: renderer.call(after)),
-                    "# 📞 Ring, ring… llama Perro Sanxe",
+                    "# 📞 Ring, ring… Perro Sanxe ha visto el gordo"
+                    if condolence
+                    else "# 📞 Ring, ring… llama Perro Sanxe",
                 )
             else:
                 then, waiting_then = (lambda: renderer.still(after)), None
@@ -966,7 +984,8 @@ class AllatuBoard(ui.View):
             f"Una caja vale de media el 99 % de lo apostado. La banca ofrece la media "
             f"de lo que queda por {factors} según la ronda: quien llega al final "
             f"cobra el 99 % y quien acepta antes, menos. Regatear (una vez) sube un 10 % "
-            f"la mitad de las veces; la otra mitad, cuelga."
+            f"la mitad de las veces; la otra mitad, cuelga. Si abres el gordo a mitad "
+            f"de ronda, Perro Sanxe llama en el acto con la oferta de esa ronda."
         )
         await interaction.response.send_message(text, ephemeral=True)
 
@@ -1482,7 +1501,7 @@ class Allatu(commands.Cog, name="Allá tú"):
             await self._say(channel, text, user)
 
     async def shout_gordo(self, game: AllatuGame, user: discord.abc.User, channel: object) -> None:
-        """Anuncia los gordos máximos (los de una partida entre 333) al empezar."""
+        """Anuncia los gordos máximos (los de una partida entre 500) al empezar."""
         if game.gordo == game.table.max_gordo:
             text = SHOUT_GORDO.format(gordo=format_multiplier(game.gordo), who=user.mention)
             await self._say(channel, text, user)

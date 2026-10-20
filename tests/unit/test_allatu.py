@@ -32,10 +32,23 @@ def new_game(table: Table = Table.NORMAL, *, stake: int = 100, seed: int = 1) ->
     return AllatuGame.new(stake, table, random.Random(seed))
 
 
+def safe_box(game: AllatuGame) -> int:
+    """La primera caja que se puede abrir sin sacar el gordo (y su pésame), si la hay."""
+    return next((b for b in game.openable if game.values[b] != game.gordo), game.openable[0])
+
+
 def to_offer(game: AllatuGame) -> None:
-    """Abre cajas (las primeras que se puedan) hasta que llama la banca."""
+    """Abre cajas (las primeras que se puedan, el gordo la última) hasta que llama la banca."""
     while game.phase is Phase.OPEN:
-        game.open(game.openable[0])
+        game.open(safe_box(game))
+
+
+def rigged(values: list[Fraction], *, gordo: int = 10) -> AllatuGame:
+    """Una partida Normal con los premios puestos a mano (`values[i]` en la caja i)."""
+    game = new_game()
+    game.values = tuple(values)
+    game.gordo = gordo
+    return game
 
 
 def to_final(game: AllatuGame) -> None:
@@ -51,6 +64,20 @@ def to_final(game: AllatuGame) -> None:
 def test_cada_tabla_paga_de_media_el_99(table: Table) -> None:
     assert len(table.base) == BOXES - 1
     assert (sum(table.base) + table.gordo_mean) / BOXES == RTP
+
+
+@pytest.mark.parametrize("table", TABLES)
+def test_sin_el_gordo_aun_quedan_cajas_que_ganan(table: Table) -> None:
+    """La escalera de 8.8.0: perder el gordo no deja la partida decidida.
+
+    Antes el gordo era el 72-90 % del valor y, al salir, en Picante e Infierno
+    no quedaba ninguna caja de ×1 o más.
+    """
+    reds = [v for v in table.base if v >= 1]
+    assert len(reds) >= 2
+    assert max(reds) >= 3
+    # El gordo, como mucho dos tercios de lo que vale la tabla.
+    assert table.gordo_mean <= Fraction(2, 3) * BOXES * RTP
 
 
 @pytest.mark.parametrize("table", TABLES)
@@ -92,7 +119,7 @@ def test_la_media_de_lo_que_queda_no_cambia_de_media_al_abrir_una_caja() -> None
     game = new_game(Table.INFIERNO, seed=5)
     game.choose(3)
     for _ in range(4):
-        game.open(game.openable[0])
+        game.open(safe_box(game))
     before = game.mean
     after = []
     # El jugador no sabe qué hay en su caja: cualquier caja cerrada podría ser la
@@ -262,6 +289,60 @@ def test_cerrar_a_la_fuerza_acepta_la_oferta_o_la_que_tocaria() -> None:
     final.choose(0)
     to_final(final)
     assert final.settle_now() == int(final.stake * final.mean)
+
+
+def test_abrir_el_gordo_a_mitad_de_ronda_trae_el_pesame() -> None:
+    game = rigged([Fraction(0)] * 2 + [Fraction(10)] + [Fraction(1)] * 19)
+    game.choose(21)
+    game.open(0)
+    assert game.phase is Phase.OPEN and not game.gordo_lost
+    game.open(2)
+    offer = game.offer
+    assert offer is not None and offer.condolence and offer.round == 0
+    assert offer.factor == OFFER_FACTORS[0]
+    assert offer.amount == int(game.stake * OFFER_FACTORS[0] * game.mean)
+    assert game.gordo_lost and not game.gordo_alive
+    # ❌ sigue la misma ronda y al cerrarla llama como siempre.
+    game.no_deal()
+    assert game.phase is Phase.OPEN and game.round == 0 and game.left_in_round == 4
+    to_offer(game)
+    assert len(game.opened) == ROUND_ENDS[0]
+    last = game.offer
+    assert last is not None and not last.condolence and last.round == 0
+
+
+def test_el_pesame_se_puede_aceptar_y_regatear() -> None:
+    game = rigged([Fraction(10)] + [Fraction(1)] * 21)
+    game.haggle_luck = (True,) * len(ROUNDS)
+    game.choose(21)
+    game.open(0)
+    assert game.can_haggle and game.haggle()
+    up = game.offer
+    assert up is not None and up.haggled and up.condolence
+    assert game.deal() == up.amount and game.ending is Ending.DEAL
+
+
+def test_el_gordo_al_cerrar_la_ronda_no_llama_dos_veces() -> None:
+    game = rigged([Fraction(0)] * 5 + [Fraction(10)] + [Fraction(1)] * 16)
+    game.choose(21)
+    for box in range(ROUND_ENDS[0]):
+        game.open(box)
+    assert len(game.offers) == 1 and not game.offers[0].condolence
+
+
+def test_sin_abrir_el_gordo_no_hay_pesame() -> None:
+    game = rigged([Fraction(10)] + [Fraction(1)] * 21)
+    game.choose(0)
+    to_final(game)
+    assert len(game.offers) == len(ROUNDS)
+    assert not any(o.condolence for o in game.offers)
+    assert not game.gordo_lost
+    # El gordo en la otra caja del final tampoco cuenta como perdido al abrirse.
+    other = rigged([Fraction(1)] * 21 + [Fraction(10)])
+    other.choose(0)
+    to_final(other)
+    other.finish(swap=False)
+    assert not other.gordo_lost and not any(o.condolence for o in other.offers)
 
 
 def test_formatos() -> None:

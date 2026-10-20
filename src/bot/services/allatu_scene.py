@@ -20,11 +20,12 @@ ve en cada fotograma (las funciones `*_states` de aquí); la escena solo pinta.
   (0-1, la placa del premio que sube), `banner`, `flash` y `own` (si es tu caja,
   que lleva el cartel «TU CAJA»).
 - `call`: la llamada de la banca. `board` (para el panel de premios), `label`
-  (`OFERTA 2 DE 5`), `ring` (fotograma del timbre, o nada si ya ha cogido),
-  `answer` (0-1, descuelga), `count` (0-1, el marcador que sube), `amount` (lo
-  que marca ahora), `mult` (`×1,23`, al acabar de contar), `mood` (`rata`,
-  `normal`, `generosa`), `stamp` (0-1, el sello del humor), `talk` (texto del
-  bocadillo de Perro Sanxe), `hang` (0-1, cuelga), `coins` (0-1) y `banner`.
+  (`OFERTA 2 DE 5`, o `LLAMADA DE PÉSAME` al abrir el gordo), `ring` (fotograma
+  del timbre, o nada si ya ha cogido), `answer` (0-1, descuelga), `count` (0-1,
+  el marcador que sube), `amount` (lo que marca ahora), `mult` (`×1,23`, al
+  acabar de contar), `mood` (`rata`, `normal`, `generosa`), `stamp` (0-1, el
+  sello del humor), `talk` (texto del bocadillo de Perro Sanxe), `hang` (0-1,
+  cuelga), `coins` (0-1) y `banner`.
 - `final`: las dos últimas cajas en sus atriles. `board`, `a` (tu caja de
   siempre) y `b` (la otra), cada una con `n`, `v`, `tier`, `lid`, `rise`;
   `swap` (0-1, se cruzan), `mine` (`a` o `b`: la que te llevas), `shake`,
@@ -94,6 +95,8 @@ OPEN_BANNERS: dict[str, tuple[str, ...]] = {
 HAGGLE_TALK = ("¿UN POQUITO MÁS?", "¿Y SI LO SUBIMOS?", "TE LO DEJO A MITAD…")
 HAGGLE_UP_TALK = ("VALE, POR SER TÚ", "LO SACO DEL FALCON", "TE SUBO, PERO CALLA")
 HAGGLE_DOWN_TALK = ("¡TUT… TUT… TUT…!", "ME LLAMA BRUSELAS", "¡NI UN DURO MÁS!")
+#: Lo que dice al llamar para dar el pésame (al abrir el gordo a mitad de ronda).
+CONDOLENCE_TALK = ("LO SIENTO MUCHO", "MI MÁS SENTIDO PÉSAME", "TE ACOMPAÑO EN EL SENTIMIENTO")
 #: Lo que dice al llamar, según el humor de la oferta.
 CALL_TALK: dict[str, tuple[str, ...]] = {
     "rata": ("TÓMALO O DÉJALO", "ES LO QUE HAY", "HACIENDA SOMOS TODOS"),
@@ -384,6 +387,8 @@ def _call_base(game: AllatuGame) -> dict[str, Any]:
     offer = game.offer
     assert offer is not None
     label = "OFERTA FINAL" if offer.round == len(ROUNDS) - 1 else f"OFERTA {offer.round + 1} DE 5"
+    if offer.condolence:
+        label = "LLAMADA DE PÉSAME"
     if offer.haggled:
         label = "OFERTA REGATEADA"
     return {
@@ -405,7 +410,7 @@ def _call_rest(game: AllatuGame) -> dict[str, Any]:
         "amount": format_amount(offer.amount),
         "mult": format_multiplier(Fraction(offer.amount, game.stake)),
         "stamp": 1 if mood != "normal" else 0,
-        "talk": _talk(game, CALL_TALK[mood]),
+        "talk": _talk(game, CONDOLENCE_TALK if offer.condolence else CALL_TALK[mood]),
     }
 
 

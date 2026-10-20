@@ -4787,14 +4787,14 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("allatu", "allatu_swap_bad", [
         (10, "allatu_cambio_mal", "El cambio que dolió",
-         "Cambia de caja en el final y deja la mejor 10 veces.", C),
+         "Cambia de caja en el final y deja la mejor 10 veces.", R),
     ])  # fmt: skip
     a += _tiers("allatu", "allatu_swap_gordo_lost", [
         (1, "allatu_regalaste", "Regalaste el gordo",
          "Cambia tu caja en el final y deja el gordo en la otra.", E, True),
     ])  # fmt: skip
     a += _tiers("allatu", "allatu_final_gordo", [
-        (1, "allatu_gordo", "¡EL GORDO!", "Llévate el gordo con tu caja en el final.", R),
+        (1, "allatu_gordo", "¡EL GORDO!", "Llévate el gordo con tu caja en el final.", C),
         (10, "allatu_gordo_10", "Abonado al Gordo de Navidad",
          "Llévate el gordo en el final 10 veces.", L),
     ])  # fmt: skip
@@ -4841,22 +4841,22 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Abre el gordo con la primera caja de la partida.", C, True),
     ])  # fmt: skip
     a += _tiers("allatu", "allatu_gordo_max", [
-        (50, "allatu_vi_50", "Gordo con lorzas", "Que la ruleta saque un gordo de ×50 o más.", C),
+        (50, "allatu_vi_50", "Gordo con lorzas", "Que la ruleta saque un gordo de ×50 o más.", R),
         (100, "allatu_vi_100", "Gordo de comunión",
-         "Que la ruleta saque un gordo de ×100 o más.", C),
+         "Que la ruleta saque un gordo de ×100 o más.", R),
         (250, "allatu_vi_250", "Gordo de boda gitana",
          "Que la ruleta saque un gordo de ×250 o más.", R),
         (500, "allatu_vi_500", "Gordo de los fondos europeos",
          "Que la ruleta saque un gordo de ×500 o más.", E),
         (1_000, "allatu_vi_1000", "El Gordo de Navidad del plató",
-         "Que la ruleta saque el gordo de ×1.000 de la tabla Infierno.", E),
+         "Que la ruleta saque el gordo de ×1.000 de la tabla Infierno.", M),
     ])  # fmt: skip
     a += _tiers("allatu", "allatu_mult_max", [
         (200, "allatu_x2", "Doble ración de caja", "Cobra ×2 o más en Allá tú.", C),
         (1_000, "allatu_x10", "Caja de sorpresas",
-         "Cobra ×10 o más en Allá tú.", R),
+         "Cobra ×10 o más en Allá tú.", C),
         (5_000, "allatu_x50", "La caja de bombones de Forrest",
-         "Cobra ×50 o más en Allá tú.", L),
+         "Cobra ×50 o más en Allá tú.", M),
         (20_000, "allatu_x200", "Pelotazo urbanístico de los 2000",
          "Cobra ×200 o más en Allá tú.", M),
         (100_000, "allatu_x1000", "Caja fuerte", "Cobra ×1.000 o más en Allá tú.", M),
@@ -4874,7 +4874,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("allatu", "allatu_offer_max", [
         (500, "allatu_oferta_x5", "Perro Sanxe está asustado", "Recibe una oferta de ×5 o más.", C),
         (2_500, "allatu_oferta_x25", "Oferta de escándalo",
-         "Recibe una oferta de ×25 o más.", E),
+         "Recibe una oferta de ×25 o más.", L),
         (10_000, "allatu_oferta_x100", "Plan Marshall del plató",
          "Recibe una oferta de ×100 o más.", M),
     ])  # fmt: skip
@@ -4935,6 +4935,39 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("allatu", "allatu_random", [
         (50, "allatu_dados", "Caja al azar, corazón en un puño",
          "Abre 50 cajas con 🎲.", C),
+    ])  # fmt: skip
+    # El pésame (la llamada al abrir el gordo a mitad de ronda) y ganar sin el gordo (8.8.0).
+    a += _tiers("allatu", "allatu_condolences", [
+        (1, "allatu_pesame", "Velatorio en directo",
+         "Recibe la llamada del pésame: Perro Sanxe llama al abrir el gordo a mitad de ronda.",
+         C),
+        (50, "allatu_pesame_50", "Cliente fijo del tanatorio",
+         "Recibe la llamada del pésame en 50 partidas.", R),
+        (250, "allatu_pesame_250", "Abonado a la funeraria",
+         "Recibe la llamada del pésame en 250 partidas.", E),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_condolence_deals", [
+        (1, "allatu_pesame_trato", "Pésame mucho", "Acepta la oferta del pésame.", C),
+        (50, "allatu_pesame_trato_50", "Plañidera profesional",
+         "Acepta la oferta del pésame 50 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_condolence_rich", [
+        (1, "allatu_viuda_alegre", "La viuda alegre",
+         "Acepta la oferta del pésame por más de lo que apostaste.", R, True),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_comebacks", [
+        (1, "allatu_sin_gordo", "Hay vida después del gordo",
+         "Gana dinero en una partida en la que abriste el gordo.", C),
+        (10, "allatu_sin_gordo_10", "Lázaro del plató",
+         "Gana dinero en 10 partidas en las que abriste el gordo.", R),
+        (50, "allatu_sin_gordo_50", "Ave Fénix de cartón",
+         "Gana dinero en 50 partidas en las que abriste el gordo.", E),
+    ])  # fmt: skip
+    a += _tiers("allatu", "allatu_comeback_max", [
+        (300, "allatu_sin_gordo_x3", "El que resiste, gana",
+         "Cobra ×3 o más en una partida en la que abriste el gordo.", R),
+        (500, "allatu_sin_gordo_x5", "Resurrección en el Infierno",
+         "Cobra ×5 o más en una partida en la que abriste el gordo.", E),
     ])  # fmt: skip
 
     # ⚔️ Guerra --------------------------------------------------------------------------
@@ -21551,7 +21584,8 @@ def allatu_stats(
     bump("allatu_gordo_first", first is not None and game.values[first] == gordo)
     if game.ending is AllatuEnding.DEAL:
         bump("allatu_deals")
-        bump("allatu_first_deal", offers[-1].round == 0)
+        # La primera oferta de la partida: las regateadas sustituyen a la suya.
+        bump("allatu_first_deal", sum(not o.haggled for o in offers) == 1)
         # El trato se firma con tu caja de siempre: la que había al elegir.
         bump("allatu_own_gordo", own_gordo)
         bump("allatu_deal_gordo", own_gordo)
@@ -21561,7 +21595,8 @@ def allatu_stats(
         other = game.opened[-1]
         mine, theirs = game.values[own], game.values[other]
         bump("allatu_finals")
-        bump("allatu_all_no", rejected == len(offers) and len(offers) == len(ALLATU_ROUNDS))
+        rounds = sum(not o.condolence for o in offers)
+        bump("allatu_all_no", rejected == len(offers) and rounds == len(ALLATU_ROUNDS))
         swapped = game.ending is AllatuEnding.SWAPPED
         bump("allatu_swaps", swapped)
         bump("allatu_keeps", not swapped)
@@ -21573,6 +21608,14 @@ def allatu_stats(
         bump("allatu_own_gordo", (theirs if swapped else mine) == gordo)
         worst = max((o.amount for o in offers if not o.accepted and not o.hung_up), default=0)
         bump("allatu_greedy", worst >= 5 * game.stake and game.net < 0)
+    bump("allatu_condolences", any(o.condolence for o in offers))
+    took = [o for o in offers if o.accepted and o.condolence]
+    bump("allatu_condolence_deals", bool(took))
+    bump("allatu_condolence_rich", any(o.amount > game.stake for o in took))
+    if game.gordo_lost:
+        bump("allatu_comebacks", game.net > 0)
+        if game.payout:
+            delta.peak["allatu_comeback_max"] = game.payout * 100 // game.stake
     if game.payout:
         delta.peak["allatu_mult_max"] = game.payout * 100 // game.stake
     if game.net > 0:
