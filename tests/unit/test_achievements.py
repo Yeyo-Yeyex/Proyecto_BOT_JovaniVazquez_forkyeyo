@@ -201,6 +201,18 @@ HOUSING_EVENT_KEYS = (
 )  # fmt: skip
 
 PRODUCED_STATS = {
+    # 🏪 Negocio propio de pala (`business_stats` y las acciones del negocio)
+    "biz_opened", "biz_turns", "biz_turns_cafeteria", "biz_turns_tienda", "biz_turns_taller",
+    "biz_sales", "biz_tips", "biz_best_turn", "biz_clients_turn_max", "biz_stars_max",
+    "biz_loyalty_max", "biz_usual_hit", "biz_perfect", "biz_grade_d", "biz_wrong", "biz_exact",
+    "biz_caught", "biz_missed_thief", "biz_false_accuse", "biz_diag_ok", "biz_bad_diag",
+    "biz_quote_caro", "biz_night", "biz_canarias", "biz_tired", "biz_empty_turn", "biz_withheld",
+    "biz_garnished", "biz_streak_max", "biz_turns_day_max", "biz_clients", "biz_sectors_tried",
+    "biz_themes_tried", "biz_islands_tried", "biz_restyled", "biz_purchases",
+    "biz_price_barato", "biz_price_normal", "biz_price_caro", "biz_price_carisimo",
+    "biz_nights_unpaid", "biz_closed_red", "biz_evicted", "work_jornada_4", "work_jornada_2",
+    "work_jornada_3",
+    "work_excedencia", "work_excedencia_back",
     # cogs/achievements.py: mensajes, voz, reacciones y la siembra del historial
     *message_stats("x", when=datetime(2026, 1, 1, tzinfo=TIMEZONE)).keys(),
     "msg_night", "msg_morning", "msg_long", "msg_short", "msg_caps", "msg_questions",
@@ -304,6 +316,14 @@ PRODUCED_STATS = {
     "market_gift_received", "market_auction_won", "market_serial_bought",
     "market_title_bought", "market_tapete_bought", "market_listings", "market_withdrawn",
     "market_expired", "market_bids", "market_bid_max", "market_outbid",
+    # cogs/banco.py: el Monte de Piedad (monte_*_stats)
+    "monte_sold", "monte_sold_y", "monte_title_sold", "monte_pawned", "monte_loan_max",
+    "monte_tickets_max", "monte_redeemed", "monte_redeem_late", "monte_forfeited",
+    # cogs/banco.py y el cierre de cogs/pisos.py: préstamos y cuentas (loan_*_stats,
+    # bank_panel_stats)
+    "loans_signed", "loan_principal_max", "loans_open_max", "loan_longest", "loan_insured",
+    "loan_preferred", "loans_finished", "loans_repaid_early", "loans_desisted", "loan_covered",
+    "loan_unpaid", "loan_defaults", "asnef_seen", "bank_books",
     # cogs/pisos.py: housing_panel_stats, housing_purchase_stats, housing_sale_stats y
     # housing_day_stats (los eventos salen de housing.EVENTS y de advance_day)
     "pisos_opened", "pisos_exit", "pisos_mortgages", "pisos_loan_max",
@@ -2013,3 +2033,17 @@ def test_un_fallo_al_empate_no_cuenta_como_empate_ni_como_goleada() -> None:
 def test_anular_o_mirar_las_apuestas_deportivas_tiene_su_contador() -> None:
     assert sports_void_stats().add == {"sports_refunds": 1}
     assert sports_slip_stats().add == {"sports_slips": 1}
+
+
+def test_negocio_cuenta_sectores_temas_e_islas_distintos() -> None:
+    stats = {
+        "biz_opened_taller": 2,
+        "biz_opened_tienda": 1,
+        "biz_theme_lujo": 3,
+        "biz_island_tf": 1,
+    }
+    full = with_derived(stats)
+    assert full["biz_sectors_tried"] == 2
+    assert full["biz_themes_tried"] == 1
+    assert full["biz_islands_tried"] == 1
+    assert "biz_streak_365" in newly_unlocked({"biz_streak_max": 365}, [])

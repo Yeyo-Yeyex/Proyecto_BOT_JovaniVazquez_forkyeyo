@@ -64,6 +64,7 @@ from discord.ext import commands
 
 from bot.cogs import achievements as logros
 from bot.cogs import apuestas, patrimonio, pisos, rastro, renta
+from bot.cogs import business as negocio
 from bot.cogs import pets as mascotas
 from bot.cogs import shop as tienda
 from bot.cogs import work as curro
@@ -1320,6 +1321,7 @@ class Casino(commands.Cog):
         tarde lo que la lectura más lenta y no la suma de todas.
         """
         # Imports tardíos: `lottery` y `sports` importan este módulo.
+        from bot.cogs import banco
         from bot.cogs import lottery as loterias
         from bot.cogs import sports as deportes
 
@@ -1332,12 +1334,14 @@ class Casino(commands.Cog):
                 self._imv_pending(guild_id, user_id),
                 pisos.pending(self.bot, guild_id, user_id),
                 curro.pending(self.bot, guild_id, user_id),
+                negocio.pending(self.bot, guild_id, user_id),
                 loterias.pending(self.bot, guild_id, user_id),
                 deportes.pending(self.bot, guild_id, user_id),
             ]
         items = [item for found in await asyncio.gather(*reads) for item in found]
         if own:
             items += rastro.pending(self.bot, guild_id, user_id)
+            items += banco.pending(self.bot, guild_id, user_id)
         return items
 
     async def _wealth_pending(self, guild_id: int, user_id: int, balance: int) -> list[Pending]:

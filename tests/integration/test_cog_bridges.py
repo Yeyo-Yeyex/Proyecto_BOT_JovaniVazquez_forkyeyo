@@ -87,6 +87,7 @@ async def load_bot(tmp_path: Path) -> BotClient:
     await client.shop.initialize()
     await client.housing.initialize()
     await client.work.repository.initialize()
+    await client.negocio.repository.initialize()
     await client.horses.initialize()
     await client.gallos.initialize()
     await client.enraya.initialize()
@@ -848,6 +849,56 @@ async def test_un_turno_de_pala_apunta_sus_logros_con_el_bot_real(tmp_path: Path
         assert profile.stats["work_shifts"] == 1
         assert profile.stats["work_payslips"] == 1
         assert "pala_1" in profile.unlocked and "primera_nomina" in profile.unlocked
+    finally:
+        await client.close()
+
+
+async def test_un_turno_del_negocio_llega_a_logros_saldo_y_perfil_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """El negocio carga después de la pala y antes que los logros: todo debe encontrarse."""
+    client = await load_bot(tmp_path)
+    try:
+        cog = client.get_cog("Negocio")
+        work = client.get_cog("Trabajo")
+        casino = client.get_cog("Casino")
+        assert cog is not None and work is not None and casino is not None
+        owner = MagicMock(spec=discord.Member)
+        owner.id, owner.bot, owner.display_name = OWNER_ID, False, "Diego"
+        await client.economy.repository.apply(GUILD, OWNER_ID, [LedgerEntry(2_000_000, "x")])
+        await cog.service.open(
+            GUILD, OWNER_ID, sector="cafeteria", barrio="triana", name="Bar Pepe", palette=0,
+            emblem=0,
+        )  # fmt: skip
+        await cog.service.buy(GUILD, OWNER_ID, "cafe", 5)
+
+        def interaction() -> MagicMock:
+            fake = fake_interaction()
+            fake.user = owner
+            fake.guild_id = GUILD
+            fake.message = MagicMock()
+            fake.message.edit = AsyncMock()
+            return fake
+
+        module = importer("Negocio", client)
+        assert module.logros._cog(client) is client.get_cog("Achievements")
+        panel = module.NegocioPanel(cog, guild_id=GUILD, owner=owner, channel=None)
+        cog.panels.add(panel)
+        await panel._start(interaction())
+        assert panel.turn is not None
+        await panel._finish(None)
+
+        profile = await client.achievements.profile(GUILD, OWNER_ID)
+        assert profile.stats["biz_turns"] == 1
+        assert "biz_turns_1" in profile.unlocked
+        # `saldo` ve el local de esta noche y `perfil`, el negocio.
+        items = await casino._pending(GUILD, OWNER_ID, 0, own=True)
+        assert any(item.kind == "business_rent" for item in items)
+        embed = await work.work_embed(GUILD, owner)
+        assert any(field.name == "🏪 Negocio" for field in embed.fields)
+        # Y la pala sabe cuántas franjas ha usado el negocio.
+        agenda = await client.work.agenda(GUILD, OWNER_ID)
+        assert agenda.business == 1
     finally:
         await client.close()
 
@@ -2115,6 +2166,72 @@ async def test_saldo_junta_lo_pendiente_de_cada_cog_con_el_bot_real(tmp_path: Pa
         assert {"renta_debt", "imv", "mom_debt", "lottery", "deposit", "rastro_bid"} <= kinds
         others = await casino._pending(GUILD, OWNER_ID, 0, own=False)
         assert [item.kind for item in others] == ["renta_debt"]
+    finally:
+        await client.close()
+
+
+async def test_el_banco_empena_vende_y_avisa_en_saldo_con_el_bot_real(tmp_path: Path) -> None:
+    """`banco` carga tras la tienda y `pisos`: el Monte quita el título (`shop.refresh_worn`),
+    apunta logros, su papeleta sale en `saldo` y el fichero de morosos sale en `perfil`."""
+    from bot.services.shop import Kind, quote
+
+    client = await load_bot(tmp_path)
+    try:
+        banco = client.get_cog("Banco")
+        casino = client.get_cog("Casino")
+        module = importer("Banco", client)
+        assert module.logros._cog(client) is client.get_cog("Achievements")
+        owner = MagicMock(spec=discord.Member)
+        owner.id, owner.bot, owner.display_name = OWNER_ID, False, "Diego"
+        entries = []
+        for name in ("Guitarra", "Bandurria"):
+            item = await client.shop.create_item(
+                GUILD_ID, kind=Kind.TROPHY, name=name, emoji="🎸", description="",
+                price=10_000, igic="general", now=banco.clock(),
+            )  # fmt: skip
+            price = quote(item, banco.clock())
+            await client.economy.repository.apply(
+                GUILD, OWNER_ID, [LedgerEntry(price.total, "test")]
+            )
+            await client.economy.purchase(
+                GUILD, OWNER_ID, base=price.base, tax=price.tax, concept="objeto",
+                reserve=client.shop.reserve(
+                    GUILD, OWNER_ID, item.id, expected=price, level=99, now=banco.clock()
+                ),
+            )  # fmt: skip
+            found = await client.shop.inventory(GUILD_ID, OWNER_ID, banco.clock())
+            entries.append(next(e.id for e in found if e.item_id == item.id))
+        panel = module.BankPanel(banco, GUILD_ID, owner, "monte")
+        await panel.screen()
+
+        for entry, button in ((entries[0], module.PawnButton), (entries[1], module.SellButton)):
+            panel.selected_entry = entry
+            interaction = fake_interaction(owner)
+            interaction.client = client
+            interaction.channel = None
+            await next(i for i in panel.children if isinstance(i, button)).callback(interaction)
+
+        stats = (await client.achievements.profile(GUILD, OWNER_ID)).stats
+        assert stats["monte_pawned"] == 1 and stats["monte_sold"] == 1
+        kinds = {item.kind for item in await casino._pending(GUILD, OWNER_ID, 0, own=True)}
+        assert "monte_ticket" in kinds
+        for tab in ("loans", "books"):
+            panel.tab = tab
+            kwargs = await panel.screen()
+            assert kwargs["embed"].fields
+        connection = client.housing._connect()  # noqa: SLF001
+        try:
+            connection.execute(
+                "INSERT INTO housing_bank_debts (guild_id, user_id, amount) VALUES (?, ?, 5000)",
+                (GUILD, OWNER_ID),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = GUILD_ID
+        embed = await client.get_cog("Patrimonio").patrimonio_embed(guild, owner, owner, None)
+        assert "ASNEF" in embed.fields[0].value
     finally:
         await client.close()
 

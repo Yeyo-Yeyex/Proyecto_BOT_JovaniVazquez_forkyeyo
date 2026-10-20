@@ -30,6 +30,7 @@ from typing import Any
 from bot.repositories.housing import Holding, Market, MemberDay, News
 from bot.repositories.housing_finance import Deposit
 from bot.services import housing as rules
+from bot.services import loans as lending
 from bot.services.economy import format_amount
 from bot.services.housing_catalog import (
     BARRIO_BY_KEY,
@@ -1416,11 +1417,28 @@ def pending_items(
                 f"{rules.EXECUTION_INSTALLMENTS}, el banco la ejecuta"
             )
         items.append(Pending(Side.PAY, kind, "🏦", text, due, tonight))
+    for loan in market.loans_of(user_id):
+        due = loan.monthly + loan.unpaid_amount
+        if not due:
+            continue
+        # La primera cuota se cobra la noche siguiente a firmar (`Loan.first_day`).
+        first = date.fromisoformat(loan.first_day)
+        when = tonight if today >= first else _midnight(first + timedelta(days=1))
+        text = f"Préstamo #{loan.id} del banco: {format_amount(due)}"
+        kind = "loan"
+        if loan.unpaid_count:
+            kind = "loan_unpaid"
+            text += (
+                f" · ⚠️ {loan.unpaid_count} cuotas sin pagar: con "
+                f"{lending.DEFAULT_INSTALLMENTS}, vence entero"
+            )
+        items.append(Pending(Side.PAY, kind, "💳", text, due, when))
     if debt := market.bank_debts.get(user_id, 0):
         items.append(
             Pending(
                 Side.PAY, "bank_debt", "🏦",
-                f"Deuda con el banco: {format_amount(debt)} · se cobra cada noche de lo que tengas",
+                f"Deuda con el banco: {format_amount(debt)} · se cobra cada noche de lo que "
+                "tengas y se embarga de tus nóminas",
                 debt, tonight,
             )
         )  # fmt: skip

@@ -22,6 +22,8 @@ from bot.repositories.housing import (
     Eviction,
     HousingError,
     HousingRepository,
+    LoanClosed,
+    LoanDesk,
     Market,
     MemberDay,
     MemberSale,
@@ -29,6 +31,7 @@ from bot.repositories.housing import (
     Purchase,
     ReformDone,
     Sale,
+    SignedLoan,
     Signing,
     TenantDeal,
     VoteResult,
@@ -109,6 +112,70 @@ class HousingService:
         """Neto medio de nómina al día de los últimos 30 días (lo que miran VPO y bono)."""
         work = await self.economy.work_net_days(guild_id, user_id, rules.INCOME_DAYS)
         return work // rules.INCOME_DAYS
+
+    async def loan_desk(self, guild_id: int, user_id: int) -> tuple[LoanDesk, int]:
+        """Lo que ve el banco de un miembro para un préstamo y lo que ingresa al día."""
+        work = await self.economy.work_net_days(guild_id, user_id, rules.INCOME_DAYS)
+        rent = await self.repository.income(
+            guild_id, user_id, self.today() - timedelta(days=rules.INCOME_DAYS)
+        )
+        desk = await self.repository.loan_desk(guild_id, user_id, payroll=work > 0)
+        return desk, rules.daily_income(work, rent.rent)
+
+    async def take_loan(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        principal: int,
+        months: int,
+        insured: bool,
+        rate: float,
+    ) -> tuple[SignedLoan, int]:
+        """Firma un préstamo personal (ver `EconomyService.housing`).
+
+        Raises:
+            HousingError: Si debe a Hacienda o el banco no presta (ver `take_loan` del
+                repositorio).
+        """
+        if await self.economy.tax_debt(guild_id, user_id) > 0:
+            # Lo prestado se embargaría al entrar: el banco no presta a quien debe a Hacienda.
+            raise HousingError(
+                "Debes dinero a Hacienda y tendrías la cuenta embargada: el banco no presta. "
+                "Liquida la deuda en `renta`."
+            )
+        desk, income = await self.loan_desk(guild_id, user_id)
+        now = self._clock()
+        run = self.repository.take_loan(
+            guild_id, user_id, principal=principal, months=months, insured=insured, rate=rate,
+            income=income, payroll=desk.profile.payroll, day=local_day(now), now=now,
+        )  # fmt: skip
+        signed, balances = await self.economy.housing(guild_id, run)
+        return signed, balances[user_id]
+
+    async def repay_loan(self, guild_id: int, user_id: int, loan_id: int) -> tuple[LoanClosed, int]:
+        """Amortiza un préstamo entero con su compensación.
+
+        Raises:
+            HousingError: Si no es suyo o ya está cerrado.
+            InsufficientFundsError: Si no le llega. No se mueve nada.
+        """
+        run = self.repository.repay_loan(guild_id, user_id, loan_id, self._clock())
+        closed, balances = await self.economy.housing(guild_id, run)
+        return closed, balances[user_id]
+
+    async def desist_loan(
+        self, guild_id: int, user_id: int, loan_id: int
+    ) -> tuple[LoanClosed, int]:
+        """Desiste de un préstamo antes de la primera cuota.
+
+        Raises:
+            HousingError: Si no es suyo, ya está cerrado o ya se cobró una cuota.
+            InsufficientFundsError: Si ya no tiene lo recibido. No se mueve nada.
+        """
+        run = self.repository.desist_loan(guild_id, user_id, loan_id, self._clock())
+        closed, balances = await self.economy.housing(guild_id, run)
+        return closed, balances[user_id]
 
     async def buy(
         self,

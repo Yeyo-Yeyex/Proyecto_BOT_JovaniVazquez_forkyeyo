@@ -11,7 +11,10 @@ Tablas (en el mismo archivo SQLite que el resto del bot):
   debe de cuotas sin pagar.
 - `housing_euribor`: el Euríbor simulado de cada lunes.
 - `housing_bank_debts`: lo que se sigue debiendo al banco después de una ejecución
-  hipotecaria (no hay dación en pago).
+  hipotecaria (no hay dación en pago) o del vencimiento de un préstamo.
+- `housing_loans`: los préstamos personales de `banco` (reglas en `bot.services.loans`),
+  con lo pendiente, el tipo fijo, la cuota, la prima del seguro, lo que se debe de cuotas
+  sin pagar y lo cobrado.
 - `housing_vpo`: de quién es cada VPO y lo que debe de recibos.
 - `housing_vpo_signups`, `housing_vpo_reservations` y `housing_vpo_draws`: quién está
   apuntado al sorteo, a quién le ha tocado y qué lunes se sorteó.
@@ -52,6 +55,7 @@ TABLES = (
     "housing_socimi",
     "housing_deposits",
     "housing_promotions",
+    "housing_loans",
 )
 
 SCHEMA = """
@@ -161,6 +165,34 @@ CREATE TABLE IF NOT EXISTS housing_promotions (
     created_at REAL NOT NULL,
     PRIMARY KEY (guild_id, key)
 );
+
+CREATE TABLE IF NOT EXISTS housing_loans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    principal INTEGER NOT NULL CHECK (principal > 0),
+    balance INTEGER NOT NULL CHECK (balance >= 0),
+    rate REAL NOT NULL,
+    payment INTEGER NOT NULL CHECK (payment >= 0),
+    months INTEGER NOT NULL,
+    months_left INTEGER NOT NULL,
+    fee INTEGER NOT NULL DEFAULT 0,
+    premium INTEGER NOT NULL DEFAULT 0,
+    premium_tax INTEGER NOT NULL DEFAULT 0,
+    covers_left INTEGER NOT NULL DEFAULT 0,
+    unpaid_count INTEGER NOT NULL DEFAULT 0,
+    unpaid_amount INTEGER NOT NULL DEFAULT 0 CHECK (unpaid_amount >= 0),
+    paid INTEGER NOT NULL DEFAULT 0,
+    interest_paid INTEGER NOT NULL DEFAULT 0,
+    first_day TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'activo'
+        CHECK (status IN ('activo', 'pagado', 'desistido', 'vencido')),
+    created_at REAL NOT NULL,
+    closed_at REAL
+);
+
+CREATE INDEX IF NOT EXISTS housing_loans_member
+    ON housing_loans (guild_id, user_id, status);
 
 CREATE TABLE IF NOT EXISTS housing_deposits (
     guild_id INTEGER NOT NULL,
@@ -346,6 +378,209 @@ def add_bank_debt_in(
         """,
         (guild_id, user_id, amount),
     )
+
+
+# -- Préstamos personales ---------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Loan:
+    """Un préstamo personal del banco.
+
+    Attributes:
+        principal: Lo prestado.
+        balance: Lo que queda por devolver.
+        rate: TIN anual fijo.
+        payment: Cuota de cada mes (un día del bot), sin seguro.
+        months: Plazo al firmar.
+        months_left: Cuotas que quedan.
+        fee: Comisión de apertura cobrada al firmar (vuelve si se desiste).
+        premium: Prima del seguro con cada cuota (0 sin seguro).
+        premium_tax: Su impuesto (IPS).
+        covers_left: Cuotas que aún puede pagar el seguro si no llegas.
+        unpaid_count: Cuotas seguidas sin pagar del todo.
+        unpaid_amount: Lo que se debe de cuotas sin pagar.
+        paid: Lo cobrado hasta hoy (cuotas, primas e impuesto).
+        interest_paid: Lo que de eso fueron intereses.
+        first_day: Primer cierre de `pisos` que cobra cuota (ISO); hasta entonces se puede
+            desistir.
+        status: `activo`, `pagado`, `desistido` o `vencido`.
+    """
+
+    id: int
+    user_id: int
+    principal: int
+    balance: int
+    rate: float
+    payment: int
+    months: int
+    months_left: int
+    fee: int
+    premium: int
+    premium_tax: int
+    covers_left: int
+    unpaid_count: int
+    unpaid_amount: int
+    paid: int
+    interest_paid: int
+    first_day: str
+    status: str
+    created_at: float
+
+    @property
+    def owed(self) -> int:
+        """Todo lo que hay que devolver para cancelarlo (sin la compensación)."""
+        return self.balance + self.unpaid_amount
+
+    @property
+    def monthly(self) -> int:
+        """Lo que sale cada mes con cuota: cuota, prima e impuesto."""
+        return self.payment + self.premium + self.premium_tax if self.months_left > 0 else 0
+
+    @property
+    def insured(self) -> bool:
+        """Si lleva el seguro de protección de pagos."""
+        return self.premium > 0
+
+
+def _loan(row: sqlite3.Row) -> Loan:
+    return Loan(
+        id=int(row["id"]),
+        user_id=int(row["user_id"]),
+        principal=int(row["principal"]),
+        balance=int(row["balance"]),
+        rate=float(row["rate"]),
+        payment=int(row["payment"]),
+        months=int(row["months"]),
+        months_left=int(row["months_left"]),
+        fee=int(row["fee"]),
+        premium=int(row["premium"]),
+        premium_tax=int(row["premium_tax"]),
+        covers_left=int(row["covers_left"]),
+        unpaid_count=int(row["unpaid_count"]),
+        unpaid_amount=int(row["unpaid_amount"]),
+        paid=int(row["paid"]),
+        interest_paid=int(row["interest_paid"]),
+        first_day=str(row["first_day"]),
+        status=str(row["status"]),
+        created_at=float(row["created_at"]),
+    )
+
+
+def loans_in(connection: sqlite3.Connection, guild_id: int) -> list[Loan]:
+    """Préstamos activos del servidor, del más antiguo al más nuevo."""
+    rows = connection.execute(
+        "SELECT * FROM housing_loans WHERE guild_id = ? AND status = 'activo' ORDER BY id",
+        (guild_id,),
+    )
+    return [_loan(r) for r in rows]
+
+
+def loan_in(connection: sqlite3.Connection, guild_id: int, loan_id: int) -> Loan | None:
+    """Un préstamo cualquiera del servidor, esté como esté."""
+    row = connection.execute(
+        "SELECT * FROM housing_loans WHERE guild_id = ? AND id = ?", (guild_id, loan_id)
+    ).fetchone()
+    return _loan(row) if row else None
+
+
+def add_loan_in(
+    connection: sqlite3.Connection,
+    guild_id: int,
+    user_id: int,
+    *,
+    principal: int,
+    rate: float,
+    payment: int,
+    months: int,
+    fee: int,
+    premium: int,
+    premium_tax: int,
+    covers: int,
+    first_day: str,
+    now: float,
+) -> int:
+    """Firma un préstamo y devuelve su id."""
+    cursor = connection.execute(
+        """
+        INSERT INTO housing_loans
+            (guild_id, user_id, principal, balance, rate, payment, months, months_left, fee,
+             premium, premium_tax, covers_left, first_day, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (guild_id, user_id, principal, principal, rate, payment, months, months, fee,
+         premium, premium_tax, covers, first_day, now),
+    )  # fmt: skip
+    return int(cursor.lastrowid or 0)
+
+
+def save_loan_in(
+    connection: sqlite3.Connection,
+    loan: Loan,
+    *,
+    balance: int,
+    months_left: int,
+    covers_left: int,
+    unpaid_count: int,
+    unpaid_amount: int,
+    paid: int,
+    interest_paid: int,
+) -> None:
+    """Guarda cómo queda un préstamo activo tras una noche."""
+    connection.execute(
+        """
+        UPDATE housing_loans SET balance = ?, months_left = ?, covers_left = ?,
+            unpaid_count = ?, unpaid_amount = ?, paid = ?, interest_paid = ?
+        WHERE id = ?
+        """,
+        (balance, months_left, covers_left, unpaid_count, unpaid_amount, paid, interest_paid,
+         loan.id),
+    )  # fmt: skip
+
+
+def close_loan_in(
+    connection: sqlite3.Connection, loan_id: int, status: str, now: float, *, paid: int = 0
+) -> None:
+    """Cierra un préstamo (`pagado`, `desistido` o `vencido`), sumando lo cobrado al cerrar."""
+    connection.execute(
+        """
+        UPDATE housing_loans SET balance = 0, unpaid_amount = 0, months_left = 0, status = ?,
+            paid = paid + ?, closed_at = ?
+        WHERE id = ?
+        """,
+        (status, paid, now, loan_id),
+    )
+
+
+def loan_history_in(connection: sqlite3.Connection, guild_id: int, user_id: int) -> tuple[int, int]:
+    """`(préstamos devueltos, impagos)` de un miembro: lo que mira el banco de su historial.
+
+    Los impagos son los préstamos vencidos y las hipotecas ejecutadas.
+    """
+    (paid,) = connection.execute(
+        "SELECT COUNT(*) FROM housing_loans WHERE guild_id = ? AND user_id = ? "
+        "AND status = 'pagado'",
+        (guild_id, user_id),
+    ).fetchone()
+    (defaults,) = connection.execute(
+        """
+        SELECT (SELECT COUNT(*) FROM housing_loans
+                WHERE guild_id = :g AND user_id = :u AND status = 'vencido')
+             + (SELECT COUNT(*) FROM housing_mortgages
+                WHERE guild_id = :g AND user_id = :u AND status = 'ejecutada')
+        """,
+        {"g": guild_id, "u": user_id},
+    ).fetchone()
+    return int(paid), int(defaults)
+
+
+def bank_debt_in(connection: sqlite3.Connection, guild_id: int, user_id: int) -> int:
+    """Lo que debe un miembro al banco (0 si nada)."""
+    row = connection.execute(
+        "SELECT amount FROM housing_bank_debts WHERE guild_id = ? AND user_id = ?",
+        (guild_id, user_id),
+    ).fetchone()
+    return int(row["amount"]) if row else 0
 
 
 # -- Vivienda habitual ------------------------------------------------------------------

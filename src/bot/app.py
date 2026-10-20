@@ -27,6 +27,7 @@ from bot.repositories.backgammon import BackgammonRepository
 from bot.repositories.beernight import BeernightRepository
 from bot.repositories.beernight_sounds import BeernightSoundStore
 from bot.repositories.birthdays import BirthdayRepository
+from bot.repositories.business import BusinessRepository
 from bot.repositories.casino_stats import CasinoStatsRepository
 from bot.repositories.economy import EconomyRepository
 from bot.repositories.enraya import EnrayaRepository
@@ -38,6 +39,7 @@ from bot.repositories.housing import HousingRepository
 from bot.repositories.lottery import LotteryRepository
 from bot.repositories.message_stats import MessageStatsRepository
 from bot.repositories.moderation import ModerationRepository
+from bot.repositories.monte import MonteRepository
 from bot.repositories.news import NewsRepository
 from bot.repositories.pets import PetRepository
 from bot.repositories.poker import PokerRepository
@@ -52,6 +54,7 @@ from bot.repositories.welcome import WelcomeRepository
 from bot.repositories.work import WorkRepository
 from bot.services import node_scene
 from bot.services.economy import IRPF_START, STARTING_BALANCE, EconomyService
+from bot.services.negocio import BusinessService
 from bot.services.pala import WorkService
 from bot.services.telemetry import TelemetryService
 from bot.utils.cogs import find_cog
@@ -109,9 +112,11 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.shop",
     "bot.cogs.rastro",
     "bot.cogs.pisos",
+    "bot.cogs.banco",
     "bot.cogs.pieles",
     "bot.cogs.pets",
     "bot.cogs.work",
+    "bot.cogs.business",
     "bot.cogs.birthdays",
     "bot.cogs.todo",
     "bot.cogs.beernight",
@@ -184,6 +189,9 @@ class BotClient(commands.Bot):
         # Puestos, pujas y ventas de segunda mano del Rastro (`vender`, `rastro`); el
         # dinero pasa por `economy` y el objeto, por la mochila de la tienda.
         self.rastro = MarketRepository(database_path)
+        # Papeletas y ventas del Monte de Piedad de `banco`; el dinero pasa por `economy`
+        # (con la caja de la tienda) y el objeto, por la mochila de la tienda.
+        self.monte = MonteRepository(database_path)
         # Inmuebles, participaciones e inquilinos de `pisos`; el dinero pasa por `economy`.
         self.housing = HousingRepository(database_path)
         # Estado de las mascotas (`mascota`); quién tiene cada una lo dice la tienda.
@@ -216,6 +224,10 @@ class BotClient(commands.Bot):
         self.odds_api_key = odds_api_key
         # Oficios, turnos y ascensos de `pala`; el dinero de las nóminas pasa por `economy`.
         self.work = WorkService(WorkRepository(database_path), self.economy, housing=self.housing)
+        # Negocios propios dentro de `pala`: comparten las franjas y la batería del curro;
+        # el dinero pasa por `economy`.
+        self.negocio = BusinessService(BusinessRepository(database_path), self.economy, self.work)
+        self.work.business = self.negocio
         # Los sonidos de entrada viven junto a la base de datos, en el mismo
         # volumen persistente (`.data/entradas/`).
         self.entrance_sounds = EntranceSoundStore(database_path.parent / "entradas")
@@ -292,6 +304,7 @@ class BotClient(commands.Bot):
         await self.news.initialize()
         await self.shop.initialize()
         await self.rastro.initialize()
+        await self.monte.initialize()
         await self.housing.initialize()
         await self.pets.initialize()
         await self.lottery.initialize()
@@ -306,6 +319,7 @@ class BotClient(commands.Bot):
         await self.porras.initialize()
         await self.sports.initialize()
         await self.work.repository.initialize()
+        await self.negocio.repository.initialize()
         await self.beernight.initialize()
         await self.telemetry_repository.initialize()
         await self.last_seen.initialize()

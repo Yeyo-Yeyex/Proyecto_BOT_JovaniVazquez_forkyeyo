@@ -8,6 +8,19 @@ criterio.
 
 ## 8.x
 
+### 8.15.0 · 2026-10-20
+
+- Banco: `banco`, préstamos personales con el 35 % junto a las hipotecas, tipo según tu perfil, TAE y seguro
+- Banco: Monte de Piedad, vende al 85 % de lo que pagaste o empeña al 55 % y desempeña en 3 días
+- Banco: las cuentas de la tienda, el banco y el casino
+- Banco: fichero de morosos (ASNEF) y embargo de nómina por tramos para las deudas con el banco
+- Logros: 16 del Monte en 🧺 Rastro y 18 de préstamos y cuentas en 🏦 Banco
+
+### 8.14.0 · 2026-10-20
+
+- Negocios: monta tu cafetería, tienda o taller dentro de `pala`
+- Pala: un inicio con tus 8 franjas del día, reducción de jornada y excedencia (como mucho 4 horas extra al día)
+
 ### 8.13.0 · 2026-10-20
 
 - Deportes: `deportes`, apuestas con cuotas fijas a LaLiga y la Champions

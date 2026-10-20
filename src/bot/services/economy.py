@@ -31,6 +31,9 @@ from bot.repositories.economy import (
     BalanceLimitError,
     BetSettlement,
     BizumReceipt,
+    BusinessCost,
+    BusinessMove,
+    BusinessPaid,
     DailyClaim,
     DonationReceipt,
     EconomyRepository,
@@ -48,6 +51,7 @@ from bot.repositories.economy import (
     LotteryPayout,
     MarketMove,
     MarketPayment,
+    MonteMove,
     PokerSettlement,
     PorraBetReceipt,
     PorraCapError,
@@ -58,6 +62,7 @@ from bot.repositories.economy import (
     SlotsSettlement,
     SportsBet,
     SportsBetTakenError,
+    TillEmptyError,
     Treasury,
     WealthCharge,
     WealthRun,
@@ -124,6 +129,9 @@ __all__ = [
     "BalanceLimitError",
     "BetSettlement",
     "BizumReceipt",
+    "BusinessCost",
+    "BusinessMove",
+    "BusinessPaid",
     "CURRENCY_EMOJI",
     "CURRENCY_NAME",
     "CURRENCY_SYMBOL",
@@ -154,6 +162,7 @@ __all__ = [
     "MARKET_ACCOUNT_ID",
     "MarketMove",
     "MarketPayment",
+    "MonteMove",
     "PorraBetReceipt",
     "PorraCapError",
     "PorraClosedError",
@@ -166,6 +175,7 @@ __all__ = [
     "STARTING_BALANCE",
     "SHOP_ACCOUNT_ID",
     "STATE_ACCOUNT_ID",
+    "TillEmptyError",
     "Treasury",
     "fiscal_week",
     "format_amount",
@@ -562,6 +572,13 @@ def irpf_totals(income: WeekIncome, savings: int) -> tuple[int, int]:
     """
     tax = week_tax(income)
     return tax.base + max(0, savings), tax.quota + savings_tax(savings)
+
+
+def withhold_business(margin: int, pace: Pace) -> int:
+    """Retención a cuenta de un turno de un negocio: el tipo estable sobre su margen."""
+    if margin <= 0:
+        return 0
+    return round(margin * stable_rate(pace, pace.current.plus(business=margin)))
 
 
 def withhold_rent(rent: HousingRent, pace: Pace) -> int:
@@ -1519,6 +1536,41 @@ class EconomyService:
         """
         return await self.repository.market(guild_id, now=self._clock(), prepare=prepare)
 
+    async def monte(
+        self,
+        guild_id: int,
+        prepare: Callable[[sqlite3.Connection], tuple[T, MonteMove]],
+    ) -> tuple[T, int]:
+        """Mueve el dinero de una operación del Monte de Piedad (`bot.services.monte`).
+
+        El Monte compra y presta con la caja de la tienda (`SHOP_ACCOUNT_ID`): lo que se
+        gastó en la tienda vuelve a circular y lo que se le devuelve vuelve a la caja. No
+        se crea ni se destruye nada.
+
+        Tratamiento fiscal:
+
+        - **Vender al Monte:** quien vende es un particular, así que no repercute IGIC
+          (art. 4 de la Ley 20/1991). El ITP de la compra lo pagaría el Monte (art. 8.a del
+          RDL 1/1993), que no es un miembro: no se cobra. Para quien vende es una
+          transmisión (art. 33.1 LIRPF), pero siempre por menos de lo que le costó (el
+          Monte paga una parte de lo pagado en la tienda), así que no hay ganancia (art.
+          34.1.a LIRPF); la pérdida no se computa, por decisión del proyecto, como en el
+          Rastro. Es un cobro: paga el embargo de la deuda con Hacienda (`garnish`).
+        - **Empeñar:** un préstamo con prenda (arts. 1857 y 1863 del Código Civil). Lo
+          prestado no es renta, porque se devuelve. Exento de ITP y AJD (art. 45.I.B.15 del
+          RDL 1/1993; la prenda tributa como el préstamo, art. 15.1). No se embarga, igual
+          que el Bizum de mamá: es dinero que se devuelve.
+        - **Desempeñar:** el interés es el precio del préstamo, exento de IGIC como
+          operación financiera (art. 18 del Decreto Legislativo 1/2025 de Canarias). No se
+          deduce en el IRPF: un préstamo para consumo no da derecho a nada.
+
+        Raises:
+            TillEmptyError: Si la caja de la tienda no llega para pagar.
+            InsufficientFundsError: Si al miembro no le llega para desempeñar.
+            BalanceLimitError: Si al miembro no le cabe lo que cobra.
+        """
+        return await self.repository.monte(guild_id, now=self._clock(), prepare=prepare)
+
     async def housing(
         self,
         guild_id: int,
@@ -1562,6 +1614,17 @@ class EconomyService:
           5/2019 la limita). Los intereses del mes se restan de la renta de ese
           inmueble (art. 23.1.a LIRPF). En la ejecución, la subasta al 70 % (art. 671
           LEC) cancela lo que llegue y el resto queda como deuda con el banco.
+        - **Los préstamos personales** (`banco`, reglas en `bot.services.loans`): el mismo
+          banco que no existe, así que lo prestado se crea de la nada y las cuotas y la
+          comisión de apertura desaparecen. No es renta (se devuelve). Exento de ITP y AJD
+          (art. 45.I.B.15 del RDL 1/1993); intereses y comisiones, exentos de IGIC como
+          operaciones financieras (art. 18 del Decreto Legislativo 1/2025 de Canarias), y sin
+          deducción en el IRPF (son para consumo). La prima del seguro de protección de
+          pagos desaparece (la aseguradora no existe) y lleva el IPS del 8 % (art. 12 de la
+          Ley 13/1996), al Estado; lo que paga el seguro no mueve dinero (paga al banco). Al
+          desistir (art. 28 de la Ley 16/2011) la comisión vuelve, y amortizar antes paga la
+          compensación del art. 30. La deuda de un préstamo vencido se suma a la deuda con
+          el banco y se embarga de las nóminas (`EconomyRepository.credit_salary`).
         - **La VPO** se compra a la promoción pública con IGIC al tipo cero
           (primera entrega de vivienda protegida, art. 52 de la Ley 4/2012) y solo
           paga notaría; el precio va a la cuenta del Estado, que la recompra al
@@ -1591,6 +1654,49 @@ class EconomyService:
         now = self._clock()
         return await self.repository.housing(
             guild_id, now=now, week=self._week(now), withhold=withhold_rent, prepare=prepare
+        )
+
+    async def business(
+        self,
+        guild_id: int,
+        prepare: Callable[[sqlite3.Connection], tuple[T, BusinessMove]],
+    ) -> tuple[T, BusinessPaid]:
+        """Mueve el dinero de una operación de un negocio de `pala` (`bot.services.negocio`).
+
+        El negocio es de un autónomo (fase 1): no tiene caja propia y todo sale y entra del
+        monedero de su dueño. Tratamiento fiscal:
+
+        - **Las ventas** de cada turno son rendimiento de actividades económicas (art. 27
+          LIRPF), imputadas con criterio de caja (art. 7.2 RIRPF: ingreso al cobrar, gasto
+          al pagar). La demanda no existe: se crean de la nada. Retienen a cuenta con el
+          tipo estable de la semana sobre el margen del turno (ventas menos el coste de lo
+          vendido) en lugar del 20 % del pago fraccionado (art. 110 RIRPF): una sola vara
+          para toda la renta, como pide la Biblia. Les alcanza el embargo del 30 %.
+        - **Las compras al mayorista** pagan IGIC (tipo cero el pan y la leche, art. 52 de
+          la Ley 4/2012; el resto, el general del art. 51), que va al Estado; la base
+          desaparece. El autónomo está en el régimen especial del pequeño empresario de
+          Canarias: no repercute IGIC en sus ventas y no deduce el soportado, así que base
+          e IGIC son gasto de la actividad.
+        - **Montar el negocio:** la tasa de la apertura es una tasa municipal (va al
+          Estado: no hay ayuntamientos); la fianza del local, dos mensualidades (art. 36.1
+          de la Ley 29/1994), va al depósito de fianzas y vuelve al cerrar; el
+          acondicionamiento lleva IGIC y es gasto de esa semana (elementos de poco valor,
+          art. 12.3.e LIS, al que remite el art. 30 LIRPF; simplificación del proyecto).
+        - **Cada noche,** el alquiler del local lleva IGIC y la retención del 19 % del IRPF
+          del casero (art. 100 RIRPF), que el inquilino ingresa en el Estado; el resto se
+          lo lleva el casero, que no existe. Los suministros llevan IGIC. Se cobra lo que
+          llegue y el resto queda como deuda del local. Todo es gasto de la actividad.
+
+        La cuota de autónomos va aparte (`charge_self_employed_fee`). Ver
+        `EconomyRepository.business` para el orden de los movimientos.
+
+        Raises:
+            InsufficientFundsError: Si no llega para un pago entero.
+            BalanceLimitError: Si no le cabe lo que cobra.
+        """
+        now = self._clock()
+        return await self.repository.business(
+            guild_id, now=now, week=self._week(now), withhold=withhold_business, prepare=prepare
         )
 
     async def mom_bizum(self, guild_id: int, user_id: int, *, amount: int) -> int:
@@ -1771,6 +1877,26 @@ class EconomyService:
         lo convierte en cifras por juego). Ver `EconomyRepository.casino_ledger`.
         """
         return await self.repository.casino_ledger(guild_id, user_id)
+
+    async def ledger_summary(
+        self,
+        guild_id: int,
+        *,
+        account: int | None,
+        reasons: Sequence[str],
+        since: float | None = None,
+    ) -> dict[str, tuple[int, int]]:
+        """`{motivo: (movimientos, suma)}` del libro de una cuenta o de los miembros (solo lee).
+
+        Ver `EconomyRepository.ledger_summary`.
+        """
+        return await self.repository.ledger_summary(
+            guild_id, account=account, reasons=reasons, since=since
+        )
+
+    async def system_balances(self, guild_id: int, accounts: Sequence[int]) -> dict[int, int]:
+        """Saldo de cuentas de la casa (la caja de la tienda, los botes), sin abrirlas."""
+        return await self.repository.system_balances(guild_id, accounts)
 
     async def member_balances(self, guild_id: int) -> dict[int, int]:
         """Saldo de cada miembro del servidor (para `fortunas`). Solo lee."""
@@ -2034,6 +2160,16 @@ class EconomyService:
         return await self.repository.charge_contribution(
             guild_id, user_id, amount=amount, concept=concept, now=self._clock()
         )
+
+    async def self_employed_fee_paid(self, guild_id: int, user_id: int) -> bool:
+        """Si ya ha pagado la cuota de autónomos de esta semana (fiscal).
+
+        Una persona paga una sola cuota al RETA aunque tenga dos actividades (un puesto de
+        autónomo en la `pala` y su negocio): la cotización depende de sus rendimientos, no
+        de cuántas actividades tenga (RDL 13/2022). Solo lee.
+        """
+        week = self._week()
+        return await self.repository.contribution_paid(guild_id, user_id, start=week.start)
 
     async def pay_undeclared(
         self, guild_id: int, user_id: int, *, amount: int, concept: str
