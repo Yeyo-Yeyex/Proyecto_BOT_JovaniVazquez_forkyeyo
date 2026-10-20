@@ -508,6 +508,11 @@ class NegocioPanel(ui.LayoutView):
             lines.append(
                 f"-# ⚖️ Embargo por tu deuda con Hacienda: −{format_amount(result.garnished)}"
             )
+        if result.bank_garnished:
+            lines.append(
+                "-# ⚖️ Embargo del juzgado por tu deuda con el banco (art. 607 LEC): "
+                f"−{format_amount(result.bank_garnished)}"
+            )
         lines.append(
             f"-# Estrellas: {_stars_text(result.stars_before)} → "
             f"{_stars_text(result.business.stars)}"

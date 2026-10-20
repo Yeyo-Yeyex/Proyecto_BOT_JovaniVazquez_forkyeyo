@@ -156,6 +156,7 @@ class TurnResult:
         withheld: IRPF a cuenta de las ventas.
         garnished: Lo embargado por deudas con Hacienda.
         balance: Saldo final del dueño.
+        bank_garnished: Lo embargado por deudas con el banco (art. 607 LEC).
         stars_before: Estrellas al empezar.
         best: Si es su mejor turno en ventas.
         hour: Hora canaria a la que empezó.
@@ -173,11 +174,12 @@ class TurnResult:
     hour: int
     weekday: int
     day: str = ""
+    bank_garnished: int = 0
 
     @property
     def net(self) -> int:
         """Lo que entró en el bolsillo (ventas menos lo retenido y embargado)."""
-        return self.summary.sales - self.withheld - self.garnished
+        return self.summary.sales - self.withheld - self.garnished - self.bank_garnished
 
 
 @dataclass(frozen=True, slots=True)
@@ -614,6 +616,7 @@ class BusinessService:
                 hour=started.hour,
                 weekday=started.weekday(),
                 day=started.date().isoformat(),
+                bank_garnished=paid.bank_garnished,
             )
 
     # -- Las noches y la semana ---------------------------------------------------------
