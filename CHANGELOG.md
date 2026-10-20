@@ -8,6 +8,11 @@ criterio.
 
 ## 8.x
 
+### 8.9.0 · 2026-10-20
+
+- Admin: `crear`, para que Yeyo y Dani devuelvan un objeto perdido
+- Mascotas: ya no se comen lo de edición limitada, como la patata con forma de España
+
 ### 8.8.0 · 2026-10-20
 
 - Allá tú: escalera de premios bajo el gordo en las tres tablas y llamada del pésame al abrirlo
