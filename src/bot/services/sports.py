@@ -87,6 +87,8 @@ MIN_ODDS = 101
 MAX_ODDS = 2_500
 #: Casas de apuestas con los tres signos que hacen falta para fiarse de un partido.
 MIN_BOOKMAKERS = 3
+#: Nombre del empate entre los resultados del mercado `h2h` de The Odds API.
+DRAW_NAME = "Draw"
 #: Apuesta mínima y máxima por partido.
 MIN_STAKE = 10
 MAX_STAKE = 50_000
@@ -231,7 +233,7 @@ def parse_odds(events: Sequence[Mapping[str, Any]], *, now: float) -> list[Match
             home, away = str(event["home_team"]), str(event["away_team"])
             commence = float(event["commence_time"])
             event_id, sport = str(event["id"]), str(event["sport_key"])
-            bookmakers = event.get("bookmakers") or []
+            bookmakers = _items(event.get("bookmakers"))
         except (KeyError, TypeError, ValueError):
             continue
         if commence <= now or home == away:
@@ -244,22 +246,39 @@ def parse_odds(events: Sequence[Mapping[str, Any]], *, now: float) -> list[Match
     return sorted(matches, key=lambda m: (m.commence, m.home))
 
 
-def _book(bookmaker: Mapping[str, Any], home: str, away: str) -> dict[Pick, float] | None:
-    """Las tres cuotas `h2h` de una casa, o `None` si falta alguna o no tiene sentido."""
-    for market in bookmaker.get("markets") or []:
-        if market.get("key") != "h2h":
+def _book(bookmaker: object, home: str, away: str) -> dict[Pick, float] | None:
+    """Las tres cuotas `h2h` de una casa, o `None` si falta alguna o no tiene sentido.
+
+    Un resultado que no es ninguno de los equipos ni `DRAW_NAME`, o uno repetido,
+    descarta la casa: no se adivina qué quería decir.
+    """
+    if not isinstance(bookmaker, Mapping):
+        return None
+    names = {home: Pick.HOME, away: Pick.AWAY, DRAW_NAME: Pick.DRAW}
+    for market in _items(bookmaker.get("markets")):
+        if not isinstance(market, Mapping) or market.get("key") != "h2h":
             continue
         book: dict[Pick, float] = {}
-        for outcome in market.get("outcomes") or []:
-            name = outcome.get("name")
-            pick = Pick.HOME if name == home else Pick.AWAY if name == away else Pick.DRAW
+        for outcome in _items(market.get("outcomes")):
+            if not isinstance(outcome, Mapping) or not isinstance(outcome.get("name"), str):
+                return None
+            pick = names.get(outcome["name"])
+            if pick is None or pick in book:
+                return None
             try:
-                book[pick] = float(outcome["price"])
+                price = float(outcome["price"])
             except (KeyError, TypeError, ValueError):
                 return None
-        if len(book) == len(Pick) and all(price > 1 for price in book.values()):
-            return book
+            if not (math.isfinite(price) and price > 1):
+                return None
+            book[pick] = price
+        return book if len(book) == len(Pick) else None
     return None
+
+
+def _items(value: object) -> list[Any]:
+    """`value` si es una lista; si no (falta o viene mal), una lista vacía."""
+    return value if isinstance(value, list) else []
 
 
 def parse_scores(events: Sequence[Mapping[str, Any]]) -> dict[str, Score]:

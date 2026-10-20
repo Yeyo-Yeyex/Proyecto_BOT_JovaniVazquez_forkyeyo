@@ -200,11 +200,6 @@ def test_parse_odds_ordena_por_comienzo() -> None:
     ]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="parse_odds promete saltarse lo mal formado, pero una casa, un mercado o un "
-    "resultado que no es un objeto lanza AttributeError en vez de saltarse",
-)
 @pytest.mark.parametrize(
     "broken",
     ["casa", ["lista"], 7, {"markets": ["h2h"]}, {"markets": [{"key": "h2h", "outcomes": ["x"]}]}],
@@ -215,6 +210,24 @@ def test_parse_odds_no_revienta_con_casas_que_no_son_objetos(broken: Any) -> Non
     matches = parse_odds([event(bookmakers=[broken, *good])], now=NOW)
 
     assert len(matches) == 1
+
+
+def test_parse_odds_descarta_la_casa_con_un_resultado_raro_o_una_cuota_infinita() -> None:
+    fourth = bookmaker(2.1, 3.4, 3.5)
+    fourth["markets"][0]["outcomes"].append({"name": "Suspendido", "price": 50.0})
+    endless = bookmaker(2.1, 3.4, 3.5)
+    endless["markets"][0]["outcomes"][0]["price"] = float("inf")
+    good = [bookmaker(2.1, 3.4, 3.5)] * (MIN_BOOKMAKERS - 1)
+
+    for broken in (fourth, endless):
+        assert parse_odds([event(bookmakers=[*good, broken])], now=NOW) == []
+
+
+def test_parse_odds_salta_un_partido_cuyas_casas_no_son_una_lista() -> None:
+    odd = event(event_id="raro")
+    odd["bookmakers"] = 7
+
+    assert [m.event_id for m in parse_odds([odd, event()], now=NOW)] == ["ev1"]
 
 
 # -- Cuotas: la casa nunca regala -------------------------------------------------------

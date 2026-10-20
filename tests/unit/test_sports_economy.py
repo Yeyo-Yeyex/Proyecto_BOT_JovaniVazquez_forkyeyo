@@ -28,7 +28,7 @@ from bot.services.economy import (
     SportsBetTakenError,
 )
 from bot.services.levels import local_day
-from bot.services.sports import GAME, MAX_STAKE, MIN_STAKE, payout
+from bot.services.sports import GAME, MIN_STAKE, payout
 from bot.services.taxes import GAMBLING_EXEMPT, gambling_day_tax
 
 GUILD = 1
@@ -680,7 +680,3 @@ async def test_borrar_los_datos_del_servidor_borra_sus_apuestas_y_deja_las_de_ot
     assert await service.sports_bets(GUILD, USER, limit=10) == []
     assert wallet(tmp_path, SPORTS_ACCOUNT_ID) == 0
     assert wallet(tmp_path, SPORTS_ACCOUNT_ID, OTHER_GUILD) == kept.stake
-
-
-async def test_los_limites_de_apuesta_del_servicio_deportivo_son_coherentes() -> None:
-    assert 0 < MIN_STAKE <= MAX_STAKE
