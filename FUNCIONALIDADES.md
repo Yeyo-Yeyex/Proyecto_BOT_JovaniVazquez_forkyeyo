@@ -845,6 +845,17 @@ anterior. No se puede pedir otro mientras uno está en marcha; una petición sin
 respuesta en 30 minutos se da por perdida. Detalle en el README («Reiniciar
 desde Discord»).
 
+Modo reinicio: desde que se pide `reinicio` hasta que el bot se apaga, ningún comando
+funciona salvo `reinicio` y `bloquear` (con `/` y con `.`); quien lo intenta ve «🔁 Me voy
+a reiniciar en breve, así que no se abren partidas ni paneles nuevos». Los paneles y las
+partidas ya abiertos siguen funcionando para poder terminarlos, y la primera vez que
+alguien pulsa uno de sus botones recibe un aviso privado para que acabe lo que tenga. Si
+el NAS contesta sin reiniciar (no pudo construir la imagen) o la petición caduca, todo
+vuelve a abrir. Al apagarse por cualquier motivo (también la actualización de la noche o
+un reinicio a mano en el NAS), en los segundos en que los juegos cierran sus partidas
+tampoco responden los botones. El 🔁 de otra partida es un botón y sigue abriendo una;
+se cierra al apagar como las demás.
+
 **Novedades.** Tras cada despliegue con commits nuevos (el de las 5:00 o
 `reinicio`) que arranque bien, el bot publica «📜 Novedades del bot»: la lista
 de PR fusionados desde el despliegue anterior, con enlace y autor, y en modo

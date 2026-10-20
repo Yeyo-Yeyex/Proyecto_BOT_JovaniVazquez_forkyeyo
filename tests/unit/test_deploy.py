@@ -175,8 +175,25 @@ async def test_pedirlo_deja_la_nota_y_confirma(tmp_path: Path, user_id: int) -> 
     await cog.request_impl(responder)
 
     assert not responder.errors
-    assert "Pedido" in responder.sent[0]
+    assert "Pedido" in responder.sent[0] and "no se abren partidas" in responder.sent[0]
     assert Mailbox(tmp_path / "buzon").pending(NOW) == DeployRequest(555, user_id, NOW)
+    assert cog.restarting
+
+
+@pytest.mark.asyncio
+async def test_sin_reinicio_del_nas_se_vuelve_a_abrir(tmp_path: Path) -> None:
+    """Mientras la petición espera sigue cerrado; si el NAS contesta sin reiniciar, abre."""
+    cog = make_cog(tmp_path)
+    await cog.request_impl(FakeResponder(user_id=YEYO))
+    await cog._poll()
+    assert cog.restarting
+
+    buzon = tmp_path / "buzon"
+    (buzon / REQUEST_FILE).replace(buzon / RUNNING_FILE)
+    (buzon / RESULT_FILE).write_text("error\nLa imagen no se ha podido construir.\n", "utf-8")
+    await cog._poll()
+
+    assert not cog.restarting
 
 
 @pytest.mark.asyncio
@@ -188,6 +205,7 @@ async def test_no_se_pide_dos_veces(tmp_path: Path) -> None:
     await cog.request_impl(second)
 
     assert "Ya hay un reinicio pedido" in second.errors[0]
+    assert cog.restarting
     assert Mailbox(tmp_path / "buzon").pending(NOW).user_id == YEYO
 
 

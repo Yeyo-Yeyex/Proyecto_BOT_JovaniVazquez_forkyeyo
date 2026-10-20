@@ -19,6 +19,7 @@ import aiohttp
 import discord
 from discord.ext import commands
 
+from bot.cogs.deploy import Deploy
 from bot.repositories import sqlite
 from bot.repositories.achievements import AchievementRepository
 from bot.repositories.activity import ActivityRepository
@@ -52,6 +53,7 @@ from bot.services import node_scene
 from bot.services.economy import IRPF_START, STARTING_BALANCE, EconomyService
 from bot.services.pala import WorkService
 from bot.services.telemetry import TelemetryService
+from bot.utils.cogs import find_cog
 
 logger = logging.getLogger(__name__)
 
@@ -315,6 +317,10 @@ class BotClient(commands.Bot):
 
     async def close(self) -> None:
         """Cierra la conexión, descarga los cogs y luego los procesos de Node."""
+        # Antes de descargar los juegos, que cierran sus partidas: sin comandos ni
+        # botones mientras tanto (modo reinicio, `bot.cogs.deploy`).
+        if (deploy := find_cog(self, Deploy)) is not None:
+            deploy.closing = True
         if self._keep_warm_task is not None:
             self._keep_warm_task.cancel()
         if self._checkpoint_task is not None:

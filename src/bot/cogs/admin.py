@@ -14,6 +14,9 @@ no se ejecuta para nadie (ni con `/` ni con `.`), y los botones, menús y formul
 que vienen de su mismo archivo (las mesas que ya estaban abiertas, el 🔁 de otra
 partida) tampoco responden. Se guarda en la base de datos, así que sigue bloqueado
 tras un reinicio o un despliegue hasta que se desbloquea con el mismo comando.
+Los mismos controles cierran la puerta durante un reinicio: ningún comando salvo
+`reinicio` y `bloquear`, y los botones con un aviso o parados (modo reinicio, ver
+`bot.cogs.deploy`).
 
 `crear` mete en la mochila de un miembro un objeto de la tienda (para devolver uno
 perdido por un fallo), con los mismos dos IDs y sin salir en `ayuda`. Solo objetos:
@@ -41,6 +44,7 @@ que junta estas mismas acciones en un menú.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import io
 import json
@@ -60,8 +64,8 @@ from discord.ui.view import BaseView, ViewStore
 
 from bot.cogs import moderation as historial
 from bot.cogs import robuso as robuso_logros
-from bot.cogs.deploy import DEPLOYERS, can_post, news_channel, resolve_target
-from bot.cogs.errors import BLOCKED_ERROR
+from bot.cogs.deploy import DEPLOYERS, Deploy, can_post, news_channel, resolve_target
+from bot.cogs.errors import BLOCKED_ERROR, CLOSING_CLICK, RESTART_CLICK, RESTART_ERROR
 from bot.cogs.telemetry import Telemetry, report_inputs
 from bot.repositories.news import NewsSettings
 from bot.repositories.welcome import WelcomeSettings
@@ -103,7 +107,7 @@ TAJO_ALL_WORDS = {"todos", "todas", "cualquiera", "quitar"}
 ROBUSO_PLACES = {"hongkong": True, "madrid": False}
 # Palabras que en `bienv` quitan el GIF y vuelven al vídeo de Kratos.
 GIF_RESET_WORDS = {"quitar", "video", "vídeo", "ninguno"}
-# Lo que `bloquear` no bloquea: el propio desbloqueo y el despliegue del arreglo.
+# Lo que `bloquear` no bloquea, ni el modo reinicio: el desbloqueo y el despliegue.
 UNBLOCKABLE = {"bloquear", "reinicio"}
 # Comandos del cog que filtran por `DEPLOYERS` en vez de por Administrador.
 DEPLOYER_COMMANDS = {"bloquear", "crear"}
@@ -202,6 +206,12 @@ def _blocks_click(module: str, interaction: discord.Interaction) -> bool:
     return module in cog.blocked_modules(interaction.guild_id)
 
 
+def _restart(bot: object) -> Deploy | None:
+    """El cog `Deploy` si hay un reinicio en marcha (pedido o apagándose)."""
+    deploy = find_cog(bot, Deploy)  # type: ignore[arg-type]
+    return deploy if deploy is not None and (deploy.restarting or deploy.closing) else None
+
+
 Locate = Callable[..., tuple[str, discord.Interaction]]
 
 # Por dónde corre discord.py cada clic y formulario, y de qué archivo es cada uno: la
@@ -214,7 +224,11 @@ _DISPATCHERS: tuple[tuple[type, str, Locate], ...] = (
 
 
 def _guarded(original: Callable[..., Awaitable[Any]], locate: Locate) -> Callable[..., Any]:
-    """Envuelve un reparto de discord.py: el clic bloqueado se contesta y no sigue."""
+    """Envuelve un reparto de discord.py: el clic bloqueado se contesta y no sigue.
+
+    Con un reinicio pedido, el clic sigue (para terminar la partida) y la primera vez
+    se avisa; con el bot apagándose, se para.
+    """
 
     @functools.wraps(original)
     async def run(self: Any, *args: Any) -> Any:
@@ -222,7 +236,19 @@ def _guarded(original: Callable[..., Awaitable[Any]], locate: Locate) -> Callabl
         if _blocks_click(module, interaction):
             await notify(interaction, BLOCKED_ERROR)
             return None
-        return await original(self, *args)
+        restart = _restart(interaction.client)
+        if restart is not None and restart.closing:
+            await notify(interaction, CLOSING_CLICK)
+            return None
+        result = await original(self, *args)
+        # Después del clic, para no comerle sus 3 segundos. shortcut: el 🔁 de otra
+        # partida es un clic y la abre igual (se cierra al apagar como las demás); si
+        # da guerra, que el 🔁 de cada juego mire `restarting` antes de cobrar.
+        if restart is not None and interaction.user.id not in restart.warned:
+            with contextlib.suppress(discord.HTTPException):
+                await notify(interaction, RESTART_CLICK)
+                restart.warned.add(interaction.user.id)
+        return result
 
     return run
 
@@ -233,7 +259,8 @@ def install_click_block() -> None:
     Los métodos de `_DISPATCHERS` son internos de discord.py y corren el callback de cada
     botón, menú, formulario o botón dinámico (también los que rescata `bot.cogs.errors`);
     si cambian, falla `tests/integration/test_bloquear.py`. Sin el cog `Admin`, el
-    envoltorio no hace nada.
+    envoltorio solo mira el modo reinicio (al apagarse, `Admin` se descarga antes que
+    `Deploy`).
     shortcut: no para los clics que atiende un listener propio (los del minijuego de
     `pala`, `claim_custom_ids`); si un fallo pasa por ahí, añadir allí la misma comprobación.
     """
@@ -281,6 +308,12 @@ class Admin(commands.Cog):
     async def _text_allowed(self, ctx: commands.Context) -> bool:
         """Control global de los comandos `.` (`bot.add_check`): el bloqueado no corre."""
         if (
+            ctx.command is not None
+            and ctx.command.qualified_name not in UNBLOCKABLE
+            and _restart(self.bot) is not None
+        ):
+            raise commands.DisabledCommand(RESTART_ERROR)
+        if (
             ctx.guild is not None
             and ctx.command is not None
             and ctx.command.qualified_name in self.blocked.get(ctx.guild.id, ())
@@ -296,14 +329,18 @@ class Admin(commands.Cog):
         así que el aviso se da aquí. El autocompletado no se para: no hace nada.
         """
         name = (interaction.data or {}).get("name")
-        if (
-            interaction.type is discord.InteractionType.application_command
-            and interaction.guild_id is not None
-            and name in self.blocked.get(interaction.guild_id, ())
+        if interaction.type is not discord.InteractionType.application_command:
+            return True
+        if name not in UNBLOCKABLE and _restart(self.bot) is not None:
+            text = RESTART_ERROR
+        elif interaction.guild_id is not None and name in self.blocked.get(
+            interaction.guild_id, ()
         ):
-            await interaction.response.send_message(BLOCKED_ERROR, ephemeral=True)
-            return False
-        return True
+            text = BLOCKED_ERROR
+        else:
+            return True
+        await interaction.response.send_message(text, ephemeral=True)
+        return False
 
     # --- Autorización -----------------------------------------------------
 

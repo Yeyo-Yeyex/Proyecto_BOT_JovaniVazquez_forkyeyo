@@ -1,4 +1,4 @@
-"""Pruebas de `bloquear` con el bot real (`BotClient` y `load_extension`).
+"""Pruebas de `bloquear` y del modo reinicio con el bot real (`BotClient` y `load_extension`).
 
 El bloqueo cruza cogs: lo guarda `Admin`, lo contesta `Errors` en los comandos `.` y
 para los botones de otro cog envolviendo el reparto de clics de discord.py. Por eso se
@@ -20,7 +20,13 @@ from interaction_fakes import fake_interaction
 
 from bot.app import BotClient
 from bot.cogs.deploy import DEPLOYERS
-from bot.cogs.errors import BLOCKED_ERROR, describe_command_error
+from bot.cogs.errors import (
+    BLOCKED_ERROR,
+    CLOSING_CLICK,
+    RESTART_CLICK,
+    RESTART_ERROR,
+    describe_command_error,
+)
 
 GUILD_ID = 10
 #: Solo Yeyo y Dani bloquean, como con `reinicio`.
@@ -34,6 +40,14 @@ async def load_bot(tmp_path: Path) -> BotClient:
     for extension in ("bot.cogs.errors", "bot.cogs.blackjack", "bot.cogs.mines", "bot.cogs.admin"):
         await client.load_extension(extension)
     return client
+
+
+async def load_deploy(client: BotClient) -> commands.Cog | None:
+    """Carga `Despliegue`, que guarda el modo reinicio, sin su bucle (no hay sesión)."""
+    await client.load_extension("bot.cogs.deploy")
+    deploy = client.get_cog("Despliegue")
+    deploy._poll.cancel()  # type: ignore[union-attr]
+    return deploy
 
 
 def admin_ctx(client: BotClient, user_id: int = ADMIN_ID, *, admin: bool = True) -> MagicMock:
@@ -183,5 +197,81 @@ async def test_solo_yeyo_y_dani_pueden_bloquear(tmp_path: Path) -> None:
         ctx.command = client.get_command("tajo")
         with pytest.raises(commands.MissingPermissions):
             await admin.cog_check(ctx)  # type: ignore[union-attr]
+    finally:
+        await client.close()
+
+
+async def test_con_el_reinicio_pedido_no_se_abre_nada_y_lo_abierto_avisa(tmp_path: Path) -> None:
+    client = await load_bot(tmp_path)
+    deploy = await load_deploy(client)
+    try:
+        deploy.restarting = True  # type: ignore[union-attr]
+
+        # `.bj` no corre y `Errors` da el aviso del reinicio; `reinicio` y `bloquear`, sí.
+        ctx = MagicMock(guild=SimpleNamespace(id=GUILD_ID), command=client.get_command("blackjack"))
+        with pytest.raises(commands.DisabledCommand) as raised:
+            await client.can_run(ctx)
+        assert describe_command_error(raised.value) == RESTART_ERROR
+        for name in ("reinicio", "bloquear"):
+            ctx.command = client.get_command(name)
+            assert await client.can_run(ctx)
+
+        # `/blackjack` tampoco; `/reinicio`, sí.
+        slash = click(client)
+        slash.type = discord.InteractionType.application_command
+        slash.data = {"name": "blackjack"}
+        assert not await client.tree.interaction_check(slash)
+        slash.response.send_message.assert_awaited_once_with(RESTART_ERROR, ephemeral=True)
+        slash = click(client)
+        slash.type = discord.InteractionType.application_command
+        slash.data = {"name": "reinicio"}
+        assert await client.tree.interaction_check(slash)
+
+        # Un panel abierto sigue y avisa una vez, después de contestar el clic.
+        async def hit(interaction: discord.Interaction) -> None:
+            await interaction.response.defer()
+
+        view = ui.View()
+        button: ui.Button = ui.Button(label="pedir carta")
+        button.callback = hit  # type: ignore[method-assign]
+        view.add_item(button)
+        for warned in (True, False):
+            pressed = click(client)
+            task = view._dispatch_item(button, pressed)
+            assert task is not None
+            await task
+            pressed.response.defer.assert_awaited_once()
+            if warned:
+                pressed.followup.send.assert_awaited_once_with(RESTART_CLICK, ephemeral=True)
+            else:
+                pressed.followup.send.assert_not_awaited()
+
+        # Si el NAS no reinicia, todo vuelve a abrir.
+        deploy.restarting = False  # type: ignore[union-attr]
+        ctx.command = client.get_command("blackjack")
+        assert await client.can_run(ctx)
+        view.stop()
+    finally:
+        await client.close()
+    # Al apagarse se marca antes de descargar los juegos.
+    assert deploy.closing  # type: ignore[union-attr]
+
+
+async def test_apagandose_los_botones_no_responden(tmp_path: Path) -> None:
+    client = await load_bot(tmp_path)
+    deploy = await load_deploy(client)
+    try:
+        deploy.closing = True  # type: ignore[union-attr]
+        view = ui.View()
+        button: ui.Button = ui.Button(label="plantarse")
+        button.callback = AsyncMock()  # type: ignore[method-assign]
+        view.add_item(button)
+        pressed = click(client)
+        task = view._dispatch_item(button, pressed)
+        assert task is not None
+        await task
+        button.callback.assert_not_awaited()
+        pressed.response.send_message.assert_awaited_once_with(CLOSING_CLICK, ephemeral=True)
+        view.stop()
     finally:
         await client.close()

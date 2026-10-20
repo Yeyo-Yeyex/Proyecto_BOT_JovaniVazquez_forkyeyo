@@ -46,6 +46,18 @@ ADMIN_ONLY_ERROR = "Solo los administradores pueden usar este comando."
 BLOCKED_ERROR = (
     "🔒 Esto está desactivado mientras se arregla un fallo. Volverá en cuanto esté arreglado."
 )
+#: Comando nuevo con un reinicio en marcha (`reinicio`, ver `bot.cogs.deploy`).
+RESTART_ERROR = (
+    "🔁 Me voy a reiniciar en breve, así que no se abren partidas ni paneles nuevos. "
+    "Vuelve en unos minutos."
+)
+#: Primer clic de cada uno en un panel abierto mientras espera el reinicio.
+RESTART_CLICK = (
+    "🔁 Me voy a reiniciar en unos minutos: termina lo que tengas abierto, que no se pueden "
+    "abrir partidas nuevas."
+)
+#: Clic con el bot ya apagándose: las partidas se están cerrando.
+CLOSING_CLICK = "🔌 Me estoy reiniciando ahora mismo. Vuelve en un par de minutos."
 #: Aviso para un clic en botones que ya no atiende nadie.
 EXPIRED_CLICK = (
     "Estos botones ya caducaron. Ábrelo otra vez con su comando.",
@@ -87,7 +99,8 @@ def describe_command_error(error: commands.CommandError) -> str | None:
     if isinstance(error, commands.CheckFailure):
         return "No puedes usar este comando aquí."
     if isinstance(error, commands.DisabledCommand):
-        return BLOCKED_ERROR
+        # `bloquear` la lanza vacía; el modo reinicio, con su aviso.
+        return RESTART_ERROR if str(error) == RESTART_ERROR else BLOCKED_ERROR
     return GENERIC_ERROR
 
 
