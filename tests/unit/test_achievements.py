@@ -100,6 +100,10 @@ from bot.services.achievements import (
     SHOP_AISLES_STAT,
     SHOP_TRACKED_KEYS,
     SHOP_USE_KINDS_STAT,
+    SPORTS_LEAGUE_PREFIX,
+    SPORTS_LEAGUES,
+    SPORTS_PICK_PREFIX,
+    SPORTS_PICKS,
     TOPIC_KINDS_STAT,
     UNLOCKED_STAT,
     VOICE_BESTIE_STAT,
@@ -130,6 +134,10 @@ from bot.services.achievements import (
     roulette_stats,
     slots_autoplay_stats,
     slots_stats,
+    sports_bet_stats,
+    sports_result_stats,
+    sports_slip_stats,
+    sports_void_stats,
     total_reward,
     with_derived,
 )
@@ -780,6 +788,17 @@ PRODUCED_STATS = {
     *PORRA_STATS,
     *(f"{PORRA_GAME_PREFIX}{game}" for game in PORRA_GAMES),
     *(f"{PORRA_PROP_PREFIX}{prop}" for prop in PORRA_PROPS),
+    # Apuestas deportivas (`sports_*_stats`; las pruebas del final comprueban cada una)
+    *(f"{SPORTS_LEAGUE_PREFIX}{league}" for league in SPORTS_LEAGUES),
+    *(f"{SPORTS_PICK_PREFIX}{pick}" for pick in SPORTS_PICKS),
+    "sports_bets", "sports_staked", "sports_bet_long", "sports_bet_safe", "sports_all_in",
+    "sports_bet_min", "sports_bet_cap", "sports_bet_666", "sports_bet_69", "sports_last_minute",
+    "sports_early", "sports_night", "sports_nochevieja", "sports_canarias", "sports_friday13",
+    "sports_stake_max", "sports_odds_max", "sports_settled", "sports_wins", "sports_losses",
+    "sports_win_max", "sports_odds_won_max", "sports_win_streak_max", "sports_win_draw",
+    "sports_win_00", "sports_win_rout", "sports_win_by_one", "sports_lost_safe",
+    "sports_lost_tied", "sports_lost_rout", "sports_lost_by_one", "sports_lost_goals",
+    "sports_refunds", "sports_slips",
     # 🎸 Robuso (cogs/robuso.py y los ecos de services/robuso.py; test_robuso.py las suma)
     *ROBUSO_ECHOES.values(), *ROBUSO_DAILY, f"{VOICE_WITH_PREFIX}{ROBUSO_ID}",
     "robuso_hk_new_year", "robuso_silence_max", "robuso_voice_gap_max", "robuso_hk_vc_minutes",
@@ -1869,3 +1888,128 @@ def test_los_juegos_distintos_del_casino_salen_de_los_contadores_por_juego() -> 
     assert full[CASINO_GAMES_100_STAT] == 2
     assert full[CASINO_GAMES_1000_STAT] == 1
     assert full[CASINO_NIGHT_GAMES_STAT] == 1
+
+
+# -- Apuestas deportivas -----------------------------------------------------------------
+
+
+def _sports_bet(**over: object) -> StatDelta:
+    args = {
+        "stake": 100, "odds": 200, "pick": "1", "sport": "soccer_spain_la_liga",
+        "balance_before": 1_000, "lead": 3 * 86_400, "when": at(12),
+    }  # fmt: skip
+    return sports_bet_stats(**{**args, **over})
+
+
+def test_una_apuesta_deportiva_normal_solo_cuenta_lo_basico() -> None:
+    delta = _sports_bet()
+    assert delta.add == {
+        "sports_bets": 1,
+        "sports_staked": 100,
+        f"{SPORTS_LEAGUE_PREFIX}soccer_spain_la_liga": 1,
+        f"{SPORTS_PICK_PREFIX}1": 1,
+    }
+    assert delta.peak == {"sports_stake_max": 100, "sports_odds_max": 200}
+
+
+def test_el_signo_se_cuenta_en_minuscula() -> None:
+    assert _sports_bet(pick="X").add[f"{SPORTS_PICK_PREFIX}x"] == 1
+
+
+@pytest.mark.parametrize(
+    ("over", "stat"),
+    [
+        ({"odds": 500}, "sports_bet_long"),
+        ({"odds": 130}, "sports_bet_safe"),
+        ({"stake": 1_000}, "sports_all_in"),
+        ({"stake": 10}, "sports_bet_min"),
+        ({"stake": 50_000, "balance_before": 90_000}, "sports_bet_cap"),
+        ({"stake": 666}, "sports_bet_666"),
+        ({"stake": 69}, "sports_bet_69"),
+        ({"lead": 300}, "sports_last_minute"),
+        ({"lead": 6 * 86_400}, "sports_early"),
+        ({"when": at(3)}, "sports_night"),
+        ({"when": at(12, month=12, day=31)}, "sports_nochevieja"),
+        ({"when": at(12, month=5, day=30)}, "sports_canarias"),
+        ({"when": at(12, month=2, day=13)}, "sports_friday13"),
+    ],
+)
+def test_las_apuestas_deportivas_con_guasa_suman_su_estadistica(over: dict, stat: str) -> None:
+    assert _sports_bet(**over).add[stat] == 1
+
+
+def test_los_limites_de_las_apuestas_deportivas_no_se_pasan_de_largo() -> None:
+    assert "sports_bet_long" not in _sports_bet(odds=499).add
+    assert "sports_bet_safe" not in _sports_bet(odds=131).add
+    assert "sports_last_minute" not in _sports_bet(lead=301).add
+    assert "sports_early" not in _sports_bet(lead=6 * 86_400 - 1).add
+    assert "sports_night" not in _sports_bet(when=at(6)).add
+    assert "sports_all_in" not in _sports_bet(stake=100, balance_before=0).add
+
+
+def _sports_result(**over: object) -> StatDelta:
+    args = {
+        "stake": 100, "odds": 200, "pick": "1", "payout": 200, "home": 2, "away": 1, "streak": 1,
+    }  # fmt: skip
+    return sports_result_stats(**{**args, **over})
+
+
+def test_un_acierto_suma_ganancia_cuota_y_racha() -> None:
+    delta = _sports_result(odds=250, payout=250, streak=3)
+    assert delta.add == {"sports_settled": 1, "sports_wins": 1, "sports_win_by_one": 1}
+    assert delta.peak == {
+        "sports_win_max": 150, "sports_odds_won_max": 250, "sports_win_streak_max": 3,
+    }  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    ("over", "stat"),
+    [
+        ({"pick": "X", "payout": 300, "home": 1, "away": 1}, "sports_win_draw"),
+        ({"pick": "X", "payout": 300, "home": 0, "away": 0}, "sports_win_00"),
+        ({"home": 4, "away": 0}, "sports_win_rout"),
+        ({"pick": "2", "home": 0, "away": 4}, "sports_win_rout"),
+        ({"pick": "2", "home": 0, "away": 1}, "sports_win_by_one"),
+    ],
+)
+def test_los_aciertos_con_guasa_suman_su_estadistica(over: dict, stat: str) -> None:
+    assert _sports_result(**over).add[stat] == 1
+
+
+def test_un_empate_acertado_no_es_ni_goleada_ni_por_un_gol() -> None:
+    draw = _sports_result(pick="X", payout=300, home=1, away=1)
+    assert draw.add == {"sports_settled": 1, "sports_wins": 1, "sports_win_draw": 1}
+    assert "sports_win_00" not in _sports_result(pick="X", payout=300, home=2, away=2).add
+    assert "sports_win_rout" not in _sports_result(home=3, away=0).add
+
+
+def test_un_fallo_suma_el_fallo_y_ningun_pico() -> None:
+    delta = _sports_result(payout=0, streak=0, home=0, away=2)
+    assert delta.add == {"sports_settled": 1, "sports_losses": 1}
+    assert not delta.peak
+
+
+@pytest.mark.parametrize(
+    ("over", "stat"),
+    [
+        ({"odds": 130, "home": 0, "away": 1}, "sports_lost_safe"),
+        ({"home": 1, "away": 1}, "sports_lost_tied"),
+        ({"pick": "1", "home": 0, "away": 4}, "sports_lost_rout"),
+        ({"pick": "2", "home": 4, "away": 0}, "sports_lost_rout"),
+        ({"home": 0, "away": 1}, "sports_lost_by_one"),
+        ({"pick": "X", "home": 3, "away": 3}, "sports_lost_goals"),
+    ],
+)
+def test_los_fallos_con_guasa_suman_su_estadistica(over: dict, stat: str) -> None:
+    assert _sports_result(payout=0, streak=0, **over).add[stat] == 1
+
+
+def test_un_fallo_al_empate_no_cuenta_como_empate_ni_como_goleada() -> None:
+    delta = _sports_result(payout=0, streak=0, pick="X", home=3, away=0)
+    assert delta.add.keys() == {"sports_settled", "sports_losses"}
+    assert "sports_lost_goals" not in _sports_result(payout=0, pick="X", home=2, away=0).add
+
+
+def test_anular_o_mirar_las_apuestas_deportivas_tiene_su_contador() -> None:
+    assert sports_void_stats().add == {"sports_refunds": 1}
+    assert sports_slip_stats().add == {"sports_slips": 1}

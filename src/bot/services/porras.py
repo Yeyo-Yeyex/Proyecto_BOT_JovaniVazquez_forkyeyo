@@ -34,9 +34,10 @@ arriesga. Con 5 no basta para que nunca salga a cuenta (decisión del proyecto,
 para que haya porras con chicha), pero sí para que no se vaya de las manos.
 
 Juegos. Valen todos los de `casino_stats.GAMES` menos los de `EXCLUDED_GAMES`: el
-crash, que es una mesa compartida con su propio ritmo, y las propias porras. Un
-juego nuevo que llame a `apuestas.record` tiene porras sin hacer nada más: las
-propuestas genéricas solo usan apuesta, premio y saldo. Las específicas
+crash, que es una mesa compartida con su propio ritmo, las propias porras y las
+apuestas deportivas, que se resuelven días después. Un juego nuevo que llame a
+`apuestas.record` tiene porras sin hacer nada más: las propuestas genéricas solo
+usan apuesta, premio y saldo. Las específicas
 (`Proposition.games`) piden claves de `Play.details` que el juego debe mandar;
 una prueba lo comprueba.
 """
@@ -52,7 +53,7 @@ from bot.services.economy import format_amount
 from bot.services.taxes import gaming_tax
 
 #: Juegos sobre los que no se puede montar una porra.
-EXCLUDED_GAMES = frozenset({"crash", "porra"})
+EXCLUDED_GAMES = frozenset({"crash", "porra", "deportes"})
 #: Clave del juego en el libro (`porra:apuesta`) y en `GAMES`.
 GAME = "porra"
 

@@ -56,6 +56,8 @@ from bot.repositories.economy import (
     PorraSideError,
     SavingsRun,
     SlotsSettlement,
+    SportsBet,
+    SportsBetTakenError,
     Treasury,
     WealthCharge,
     WealthRun,
@@ -159,6 +161,8 @@ __all__ = [
     "PorraSideError",
     "PokerSettlement",
     "SlotsSettlement",
+    "SportsBet",
+    "SportsBetTakenError",
     "STARTING_BALANCE",
     "SHOP_ACCOUNT_ID",
     "STATE_ACCOUNT_ID",
@@ -909,6 +913,77 @@ class EconomyService:
             week=fiscal_week(local_day(now)),
             image_withhold=lambda gross, _pace: image_rights_withholding(gross),
         )
+
+    async def sports_bet(self, bet: SportsBet, *, game: str) -> tuple[SportsBet, int]:
+        """Apuesta a un partido de `deportes`; el dinero espera en el depósito.
+
+        Tratamiento fiscal: juego, como el resto del casino. Es una apuesta de
+        contrapartida (art. 3.c de la Ley 13/2011: se apuesta contra el operador a una
+        cuota fijada al apostar), y su premio es ganancia patrimonial de la base general
+        (art. 33.1 LIRPF) cuyas pérdidas solo compensan ganancias de juego (art. 33.5.d).
+        No tiene el gravamen especial de las loterías (disposición adicional 33.ª LIRPF:
+        solo loterías del Estado, ONCE y Cruz Roja) ni IAJ aparte: el operador es la casa
+        del bot, que no existe, como en los caballos. Al apostar no se toca el día del
+        casino: la ganancia o pérdida se imputa cuando se sabe el resultado (art. 14.1.c
+        LIRPF), así que entra entera en `settle_sports_bet`.
+
+        Returns:
+            La apuesta guardada y el saldo de quien apuesta.
+
+        Raises:
+            SportsBetTakenError: Ya tiene una apuesta a ese partido.
+            InsufficientFundsError: No le llega.
+        """
+        return await self.repository.sports_bet(bet, game=game)
+
+    async def settle_sports_bet(
+        self, guild_id: int, bet_id: int, *, payout: int, game: str
+    ) -> tuple[SportsBet, BetSettlement] | None:
+        """Resuelve una apuesta de `deportes` con su premio (0 si ha fallado).
+
+        Tratamiento fiscal: juego (ver `sports_bet`). Lo apostado y lo cobrado entran a
+        la vez en el día del casino de hoy y ajustan su retención como `settle_bet`. El
+        premio sale de la nada y lo apostado desaparece, como en el resto del casino: lo
+        compensa el margen de las cuotas (`bot.services.sports.RTP`).
+
+        Returns:
+            La apuesta resuelta y lo movido en el día del casino, o `None` si ya estaba
+            resuelta.
+
+        Raises:
+            BalanceLimitError: Si el premio pasaría el saldo máximo. No se mueve nada.
+        """
+        now = self._clock()
+        return await self.repository.settle_sports_bet(
+            guild_id,
+            bet_id,
+            payout=payout,
+            game=game,
+            day=local_day(now).isoformat(),
+            now=now,
+            day_tax=gambling_day_tax,
+        )
+
+    async def void_sports_bet(
+        self, guild_id: int, bet_id: int, *, game: str
+    ) -> tuple[SportsBet, int] | None:
+        """Anula una apuesta de `deportes` (partido aplazado o sin resultado) y la devuelve.
+
+        Tratamiento fiscal: ninguno. Es el dinero propio que vuelve sin que haya habido
+        juego, así que no entra en el casino ni se embarga.
+
+        Returns:
+            La apuesta anulada y el saldo de su dueño, o `None` si ya estaba resuelta.
+        """
+        return await self.repository.void_sports_bet(guild_id, bet_id, game=game, now=self._clock())
+
+    async def open_sports_bets(self) -> list[SportsBet]:
+        """Las apuestas de `deportes` sin resolver de todos los servidores."""
+        return await self.repository.open_sports_bets()
+
+    async def sports_bets(self, guild_id: int, user_id: int, *, limit: int) -> list[SportsBet]:
+        """Las apuestas de `deportes` de alguien: abiertas primero y luego las últimas."""
+        return await self.repository.sports_bets(guild_id, user_id, limit=limit)
 
     async def slots_pot(self, guild_id: int, *, seed: int) -> int:
         """Bote común de la tragaperras del servidor (lo siembra si es nuevo)."""
