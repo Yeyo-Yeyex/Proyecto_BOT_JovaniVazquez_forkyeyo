@@ -7,6 +7,15 @@ lanzado cada minuto por cron, descarga `main`, reconstruye y reinicia. Cuando
 el script termina, este cog publica el resultado en el canal donde se pidió,
 lo haga el bot viejo (si no hubo reinicio) o el nuevo.
 
+Modo reinicio: desde que se pide `reinicio` hasta que el bot se apaga
+(`restarting`), no corre ningún comando nuevo salvo `reinicio` y `bloquear`, y la
+primera vez que alguien pulsa un botón de un panel abierto se le avisa de que
+termine lo que tenga. Si el NAS contesta sin reiniciar (no pudo compilar) o la
+petición caduca, se vuelve a abrir. Al apagarse por lo que sea, también de noche
+o a mano (`closing`, lo pone `BotClient.close`), tampoco se atienden botones:
+las partidas se están cerrando. Los controles están en `bot.cogs.admin`, junto a
+los de `bloquear`.
+
 Novedades: cada vez que el NAS despliega commits nuevos (de noche o por
 `reinicio`), deja en el buzón la lista de lo que entró en `main`: PR y
 commits subidos sin PR. Este cog pide a GitHub la
@@ -261,6 +270,12 @@ class Deploy(commands.Cog, name="Despliegue"):
         self._clock = clock or (lambda: datetime.now(UTC))
         #: Cómo se piden los PR; sin él, a la API de GitHub (las pruebas lo cambian).
         self._fetch = fetch
+        #: Reinicio pedido y aún sin hacer: no se abren comandos nuevos.
+        self.restarting = False
+        #: El bot ya se está apagando: tampoco se atienden botones.
+        self.closing = False
+        #: Quién ha visto ya el aviso del reinicio al pulsar un botón.
+        self.warned: set[int] = set()
 
     async def cog_load(self) -> None:
         self.bot.add_dynamic_items(OldNewsButton)
@@ -301,9 +316,13 @@ class Deploy(commands.Cog, name="Despliegue"):
             )
             return
         logger.info("Reinicio pedido por %s", member.id)
+        self.restarting = True
+        self.warned.clear()
         await responder.send(
             "🔁 Pedido. En menos de un minuto el NAS baja lo último de GitHub, "
-            "reconstruye y me reinicia (unos minutos). Aviso aquí cuando acabe.",
+            "reconstruye y me reinicia (unos minutos). Aviso aquí cuando acabe. "
+            "Hasta entonces no se abren partidas ni paneles nuevos; lo que ya esté "
+            "abierto se puede terminar.",
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
@@ -401,6 +420,9 @@ class Deploy(commands.Cog, name="Despliegue"):
     async def _poll(self) -> None:
         await self.announce()
         await self.announce_news()
+        if self.restarting and self.mailbox.pending(self._clock()) is None:
+            # El NAS contestó sin reiniciarme (no pudo compilar) o la petición caducó.
+            self.restarting = False
 
     @_poll.before_loop
     async def _before_poll(self) -> None:

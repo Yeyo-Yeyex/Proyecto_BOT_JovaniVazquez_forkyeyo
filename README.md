@@ -1064,6 +1064,12 @@ cron de `actualizar.sh --solicitud` hace el trabajo. Al acabar, el bot publica
 en el mismo canal si ha ido bien o qué ha fallado. Si en un par de minutos no
 pasa nada, falta la línea de `--solicitud` en el crontab.
 
+Mientras espera, el bot está en modo reinicio: no corre ningún comando salvo
+`reinicio` y `bloquear`, y los paneles abiertos siguen funcionando con un aviso para
+terminarlos. Si el script contesta sin reiniciar o la petición caduca (30 min), vuelve
+a abrir. Al apagarse (por `reinicio`, de noche o a mano) tampoco atiende botones
+mientras los juegos cierran sus partidas.
+
 `bloquear <comando>` (o `/bloquear`) es su freno de emergencia, con los mismos dos IDs y
 tampoco sale en `ayuda`: mientras se arregla un fallo o un exploit, nadie puede usar ese
 comando (con `/` ni con `.`) ni los botones de su archivo, también los de las mesas ya
