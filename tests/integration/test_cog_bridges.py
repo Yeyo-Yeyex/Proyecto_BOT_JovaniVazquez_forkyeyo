@@ -93,6 +93,7 @@ async def load_bot(tmp_path: Path) -> BotClient:
     await client.backgammon.initialize()
     await client.poker.initialize()
     await client.porras.initialize()
+    await client.sports.initialize()
     await client.slots_repository.initialize()
     for extension in INITIAL_EXTENSIONS:
         await client.load_extension(extension)
@@ -2330,5 +2331,93 @@ async def test_las_sanciones_de_admin_llegan_al_historial_del_panel_con_el_bot_r
             OWNER_ID,
             "por spam",
         )
+    finally:
+        await client.close()
+
+
+async def bet_on_match(client: BotClient, *, user_id: int = OWNER_ID):  # noqa: ANN201
+    """Una apuesta deportiva abierta (1 al Madrid, 100 Y$ a ×1,85) en el partido `e1`."""
+    from bot.repositories.economy import SportsBet
+
+    start = client.economy.now() + 3_600
+    ticket = SportsBet(
+        id=0,
+        guild_id=GUILD_ID,
+        user_id=user_id,
+        channel_id=77,
+        event_id="e1",
+        sport="soccer_spain_la_liga",
+        home="Real Madrid",
+        away="Barcelona",
+        commence=start,
+        pick="1",
+        odds=185,
+        stake=100,
+        created_at=client.economy.now(),
+    )
+    bet, _ = await client.economy.sports_bet(ticket, game="deportes")
+    return bet
+
+
+async def test_saldo_incluye_las_apuestas_deportivas_abiertas_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """`deportes` carga después que el casino: su puente de lo pendiente tiene que llegar."""
+    client = await load_bot(tmp_path)
+    try:
+        bet = await bet_on_match(client)
+        casino = client.get_cog("Casino")
+
+        mine = await casino._pending(GUILD, OWNER_ID, 0, own=True)
+        others = await casino._pending(GUILD, OWNER_ID, 0, own=False)
+
+        [line] = [item for item in mine if item.kind == "sports_bet"]
+        assert (line.amount, line.when) == (100, bet.commence)
+        assert "Real Madrid – Barcelona" in line.text
+        assert not any(item.kind == "sports_bet" for item in others)
+    finally:
+        await client.close()
+
+
+async def test_resolver_una_apuesta_deportiva_llega_a_apuestas_y_a_los_logros_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """El puente `deportes` -> `apuestas` y logros con los cogs cargados como en producción."""
+    from bot.services.sports import RESULT_DELAY, Match, Score
+
+    client = await load_bot(tmp_path)
+    try:
+        bet = await bet_on_match(client)
+        cog = client.get_cog("Deportes")
+        match = Match("e1", bet.sport, bet.home, bet.away, bet.commence, {})
+        await client.sports.save_odds(bet.sport, [match], now=bet.created_at, remaining=None)
+        await client.sports.save_scores(
+            bet.sport, {"e1": Score(2, 1)}, now=bet.created_at, remaining=None
+        )
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.bot = False
+        owner.display_name = "Diego"
+        guild = MagicMock(spec=discord.Guild)
+        guild.get_member = MagicMock(return_value=owner)
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.send = AsyncMock()
+        client.get_guild = MagicMock(return_value=guild)  # type: ignore[method-assign]
+        client.get_channel = MagicMock(return_value=channel)  # type: ignore[method-assign]
+
+        resolved = await cog.settle(bet.commence + RESULT_DELAY)
+
+        assert [r.bet.status for r in resolved] == ["won"]
+        channel.send.assert_awaited_once()
+        plays = await client.casino_stats.report(
+            GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
+        )
+        assert plays.by_game["deportes"].plays == 1
+        pending = client.get_cog("Achievements")._pending[GUILD_ID][OWNER_ID]
+        assert pending.add["casino_plays"] == 1
+        assert pending.add["casino_game_deportes"] == 1
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["sports_settled"] == 1
+        assert profile.stats["sports_wins"] == 1
     finally:
         await client.close()

@@ -31,6 +31,7 @@ EXPECTED_COMMANDS = {
     "ruleta",
     "tragas",
     "caballo",
+    "deportes",
     "bacara",
     "gallos",
     "4enraya",
@@ -113,6 +114,7 @@ def test_comandos_slash_y_texto_comparten_nombres_cortos_y_sin_alias(tmp_path: P
             command_prefix=".",
             database_path=tmp_path / "message_stats.sqlite3",
         )
+        await client.sports.initialize()  # `Deportes.cog_load` lee los partidos guardados
         try:
             for extension in INITIAL_EXTENSIONS:
                 await client.load_extension(extension)
@@ -158,6 +160,7 @@ def test_la_ayuda_real_va_por_menus_y_respeta_los_limites_de_discord(tmp_path: P
             command_prefix=".",
             database_path=tmp_path / "message_stats.sqlite3",
         )
+        await client.sports.initialize()  # `Deportes.cog_load` lee los partidos guardados
         try:
             for extension in INITIAL_EXTENSIONS:
                 await client.load_extension(extension)
