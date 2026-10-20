@@ -73,6 +73,7 @@ async def load_bot(tmp_path: Path) -> BotClient:
     await client.shop.initialize()
     await client.housing.initialize()
     await client.work.repository.initialize()
+    await client.negocio.repository.initialize()
     await client.horses.initialize()
     await client.gallos.initialize()
     await client.enraya.initialize()
@@ -896,6 +897,118 @@ async def press_war_surrender(client: BotClient, owner: MagicMock) -> Click:
 
     async def click(interaction: MagicMock) -> None:
         await table._surrender(interaction)
+
+    return click
+
+
+async def business_panel(client: BotClient, owner: MagicMock, *, opened: bool = True):  # noqa: ANN201
+    """Panel del negocio con un negocio montado (o sin él) y dinero de sobra."""
+    cog = client.get_cog("Negocio")
+    await client.economy.repository.apply(GUILD_ID, owner.id, [_entry()])
+    if opened:
+        await cog.service.open(
+            GUILD_ID, owner.id, sector="cafeteria", barrio="triana", name="Bar", palette=0,
+            emblem=0,
+        )  # fmt: skip
+        await cog.service.buy(GUILD_ID, owner.id, "cafe", 5)
+    panel = module_of(client, "Negocio").NegocioPanel(
+        cog, guild_id=GUILD_ID, owner=owner, channel=MagicMock(send=AsyncMock())
+    )
+    cog.panels.add(panel)
+    await panel.refresh()
+    return panel
+
+
+def _entry():  # noqa: ANN202
+    from bot.repositories.economy import LedgerEntry
+
+    return LedgerEntry(5_000_000, "prueba")
+
+
+async def press_business_from_home(client: BotClient, owner: MagicMock) -> Click:
+    panel = module_of(client, "Trabajo").PalaPanel(
+        client.get_cog("Trabajo"), guild_id=GUILD_ID, owner=owner
+    )
+
+    async def click(interaction: MagicMock) -> None:
+        interaction.message = MagicMock(edit=AsyncMock())
+        await panel._business(interaction)
+
+    return click
+
+
+async def press_pala_home(client: BotClient, owner: MagicMock) -> Click:
+    panel = await obra_panel(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._go_home_screen(interaction)
+
+    return click
+
+
+async def press_pala_jornada(client: BotClient, owner: MagicMock) -> Click:
+    panel = await obra_panel(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._jornada(interaction, "j:3")
+
+    return click
+
+
+async def press_business_open(client: BotClient, owner: MagicMock) -> Click:
+    panel = await business_panel(client, owner, opened=False)
+    panel.draft.update(sector="tienda", barrio="ofra", name="Súper")
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._open(interaction)
+
+    return click
+
+
+async def press_business_buy(client: BotClient, owner: MagicMock) -> Click:
+    panel = await business_panel(client, owner)
+    panel.product = "zumo"
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._buy(1)(interaction)
+
+    return click
+
+
+async def press_business_turn(client: BotClient, owner: MagicMock) -> Click:
+    panel = await business_panel(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._start(interaction)
+        if panel._timer is not None:
+            panel._timer.cancel()
+
+    return click
+
+
+async def press_business_price(client: BotClient, owner: MagicMock) -> Click:
+    panel = await business_panel(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._set_price(interaction, "caro")
+
+    return click
+
+
+async def press_business_close(client: BotClient, owner: MagicMock) -> Click:
+    panel = await business_panel(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._close(interaction)
+
+    return click
+
+
+async def press_business_screen(client: BotClient, owner: MagicMock) -> Click:
+    panel = await business_panel(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._almacen(interaction)
 
     return click
 
@@ -1883,6 +1996,15 @@ CASES: dict[str, Press] = {
     "pala: caja de un regalo": press_pala_buy_gift,
     "pala: comprar y dar un regalo": press_pala_pay_gift,
     "pala: excusa familiar": press_pala_dodge,
+    "pala: volver al inicio": press_pala_home,
+    "pala: elegir jornada": press_pala_jornada,
+    "pala: abrir el negocio desde el inicio": press_business_from_home,
+    "negocio: montarlo": press_business_open,
+    "negocio: comprar al mayorista": press_business_buy,
+    "negocio: abrir un turno": press_business_turn,
+    "negocio: precios": press_business_price,
+    "negocio: cerrarlo": press_business_close,
+    "negocio: ir al almacén": press_business_screen,
     "tienda: comprar": press_checkout,
     "tienda: ver la ficha": press_shop_sheet,
     "tienda: pagar en la ficha": press_shop_sheet_pay,

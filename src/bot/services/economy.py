@@ -31,6 +31,9 @@ from bot.repositories.economy import (
     BalanceLimitError,
     BetSettlement,
     BizumReceipt,
+    BusinessCost,
+    BusinessMove,
+    BusinessPaid,
     DailyClaim,
     DonationReceipt,
     EconomyRepository,
@@ -124,6 +127,9 @@ __all__ = [
     "BalanceLimitError",
     "BetSettlement",
     "BizumReceipt",
+    "BusinessCost",
+    "BusinessMove",
+    "BusinessPaid",
     "CURRENCY_EMOJI",
     "CURRENCY_NAME",
     "CURRENCY_SYMBOL",
@@ -562,6 +568,13 @@ def irpf_totals(income: WeekIncome, savings: int) -> tuple[int, int]:
     """
     tax = week_tax(income)
     return tax.base + max(0, savings), tax.quota + savings_tax(savings)
+
+
+def withhold_business(margin: int, pace: Pace) -> int:
+    """Retención a cuenta de un turno de un negocio: el tipo estable sobre su margen."""
+    if margin <= 0:
+        return 0
+    return round(margin * stable_rate(pace, pace.current.plus(business=margin)))
 
 
 def withhold_rent(rent: HousingRent, pace: Pace) -> int:
@@ -1593,6 +1606,49 @@ class EconomyService:
             guild_id, now=now, week=self._week(now), withhold=withhold_rent, prepare=prepare
         )
 
+    async def business(
+        self,
+        guild_id: int,
+        prepare: Callable[[sqlite3.Connection], tuple[T, BusinessMove]],
+    ) -> tuple[T, BusinessPaid]:
+        """Mueve el dinero de una operación de un negocio de `pala` (`bot.services.negocio`).
+
+        El negocio es de un autónomo (fase 1): no tiene caja propia y todo sale y entra del
+        monedero de su dueño. Tratamiento fiscal:
+
+        - **Las ventas** de cada turno son rendimiento de actividades económicas (art. 27
+          LIRPF), imputadas con criterio de caja (art. 7.2 RIRPF: ingreso al cobrar, gasto
+          al pagar). La demanda no existe: se crean de la nada. Retienen a cuenta con el
+          tipo estable de la semana sobre el margen del turno (ventas menos el coste de lo
+          vendido) en lugar del 20 % del pago fraccionado (art. 110 RIRPF): una sola vara
+          para toda la renta, como pide la Biblia. Les alcanza el embargo del 30 %.
+        - **Las compras al mayorista** pagan IGIC (tipo cero el pan y la leche, art. 52 de
+          la Ley 4/2012; el resto, el general del art. 51), que va al Estado; la base
+          desaparece. El autónomo está en el régimen especial del pequeño empresario de
+          Canarias: no repercute IGIC en sus ventas y no deduce el soportado, así que base
+          e IGIC son gasto de la actividad.
+        - **Montar el negocio:** la tasa de la apertura es una tasa municipal (va al
+          Estado: no hay ayuntamientos); la fianza del local, dos mensualidades (art. 36.1
+          de la Ley 29/1994), va al depósito de fianzas y vuelve al cerrar; el
+          acondicionamiento lleva IGIC y es gasto de esa semana (elementos de poco valor,
+          art. 12.3.e LIS, al que remite el art. 30 LIRPF; simplificación del proyecto).
+        - **Cada noche,** el alquiler del local lleva IGIC y la retención del 19 % del IRPF
+          del casero (art. 100 RIRPF), que el inquilino ingresa en el Estado; el resto se
+          lo lleva el casero, que no existe. Los suministros llevan IGIC. Se cobra lo que
+          llegue y el resto queda como deuda del local. Todo es gasto de la actividad.
+
+        La cuota de autónomos va aparte (`charge_self_employed_fee`). Ver
+        `EconomyRepository.business` para el orden de los movimientos.
+
+        Raises:
+            InsufficientFundsError: Si no llega para un pago entero.
+            BalanceLimitError: Si no le cabe lo que cobra.
+        """
+        now = self._clock()
+        return await self.repository.business(
+            guild_id, now=now, week=self._week(now), withhold=withhold_business, prepare=prepare
+        )
+
     async def mom_bizum(self, guild_id: int, user_id: int, *, amount: int) -> int:
         """El Bizum de mamá de `pala`: tu madre te adelanta `amount`.
 
@@ -2034,6 +2090,16 @@ class EconomyService:
         return await self.repository.charge_contribution(
             guild_id, user_id, amount=amount, concept=concept, now=self._clock()
         )
+
+    async def self_employed_fee_paid(self, guild_id: int, user_id: int) -> bool:
+        """Si ya ha pagado la cuota de autónomos de esta semana (fiscal).
+
+        Una persona paga una sola cuota al RETA aunque tenga dos actividades (un puesto de
+        autónomo en la `pala` y su negocio): la cotización depende de sus rendimientos, no
+        de cuántas actividades tenga (RDL 13/2022). Solo lee.
+        """
+        week = self._week()
+        return await self.repository.contribution_paid(guild_id, user_id, start=week.start)
 
     async def pay_undeclared(
         self, guild_id: int, user_id: int, *, amount: int, concept: str

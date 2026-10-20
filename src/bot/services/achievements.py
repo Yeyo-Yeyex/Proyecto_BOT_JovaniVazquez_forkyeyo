@@ -199,6 +199,7 @@ from bot.services.work_catalog import JOBS as WORK_JOBS
 from bot.services.work_tools import TOOLS as WORK_TOOLS
 
 if TYPE_CHECKING:
+    from bot.services.negocio import TurnResult
     from bot.services.pala import ShiftOutcome
 
 from bot.services.taxes import (
@@ -354,6 +355,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("funcionariado", "🗂️ Funcionariado", group=_WG),
     Category("influencer", "🤳 Influencer", group=_WG),
     Category("hongkong", "🇭🇰 Hong Kong", group=_WG),
+    Category("negocio", "🏪 Negocio", group=_WG),
     Category("robuso", "🎸 Robuso", secret=True),
     Category("meta", "🏆 Coleccionista"),
 )
@@ -666,6 +668,10 @@ PISOS_THEMES_STAT = "pisos_themes"
 #: Saldo por debajo del cual comprar te deja «todo en ladrillo».
 PISOS_BROKE_BELOW = 1_000
 
+
+#: Sectores y temas de local del negocio propio (`biz_opened_<sector>`, `biz_theme_<tema>`).
+BIZ_SECTORS = ("cafeteria", "tienda", "taller")
+BIZ_THEMES = ("marinero", "historico", "centro", "obrero", "playa", "lujo", "rural")
 
 #: Tipos de vehículo del Pollo (`chicken_render.VEHICLES`), uno por logro de atropello.
 CHICKEN_VEHICLE_KINDS = ("car", "van", "truck", "bus", "moto", "taxi")
@@ -1015,6 +1021,29 @@ GIFT_STORY = (
 )
 
 #: Discurso del logro `no_residente`: dejar de ser residente fiscal en España.
+#: Historias del primer turno con retención y de la reducción de jornada y la excedencia
+#: (`pala`, negocio propio).
+BIZ_WITHHELD_STORY = (
+    "🏪 **Hacienda también entra en tu local.** Lo que gana un autónomo es un rendimiento de "
+    "actividades económicas: ingresos menos gastos (art. 27 LIRPF). En la vida real se "
+    "adelanta cada trimestre con el pago fraccionado del 20 % (art. 110 RIRPF); en el bot, "
+    "cada turno retiene a cuenta sobre su margen con tu tipo de la semana. Y como inquilino "
+    "de un local, el 19 % del alquiler lo ingresas tú en nombre del casero (art. 100 RIRPF). "
+    "La Renta del lunes ajusta lo que falte o sobre."
+)
+BIZ_JORNADA_STORY = (
+    "⏳ **Menos horas, menos sueldo.** Reducir la jornada por cuidado de un hijo o de un "
+    "familiar baja el salario en la misma proporción (art. 37.6 ET) y se avisa con quince "
+    "días (art. 37.7 ET). En el bot vale desde mañana: menos franjas de jornada, sin horas "
+    "extra y más tiempo para lo tuyo."
+)
+BIZ_EXCEDENCIA_STORY = (
+    "🌴 **Excedencia.** La voluntaria dura de cuatro meses a cinco años y no se cobra "
+    "(art. 46.2 ET); al volver, el puesto no está garantizado, solo el derecho preferente "
+    "a una vacante igual o similar (art. 46.5 ET). En el bot vuelves a tu puesto, con la "
+    "barra a la mitad."
+)
+
 NONRESIDENT_STORY = (
     "✈️ **Ya no eres residente fiscal en España.** Quien pasa más de 183 días del año "
     "fuera deja de serlo (art. 9.1.a LIRPF), salvo que su familia o sus intereses "
@@ -19358,6 +19387,203 @@ def _build_catalog() -> tuple[Achievement, ...]:
                             ("robuso_coworkers", 1), ("robuso_flakes", 1)), secret=True),
     ]  # fmt: skip
 
+    # 🏪 Negocio ------------------------------------------------------------------------
+    a += _tiers("negocio", "biz_opened", [
+        (1, "biz_opened_1", "Mi casa es tu local", "Abre tu primer negocio.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_turns", [
+        (1, "biz_turns_1", "Barra libre de trabajo", "Haz tu primer turno en el negocio.", C),
+        (10, "biz_turns_10", "Cliente fijo de tu propio local", "Haz 10 turnos en el negocio.", C),
+        (100, "biz_turns_100", "Sin vacaciones desde el 2026", "Haz 100 turnos en el negocio.", R),
+        (500, "biz_turns_500", "Se alquila alma", "Haz 500 turnos en el negocio.", E),
+        (1000, "biz_turns_1000", "El que cierra el chiringuito",
+         "Haz 1.000 turnos en el negocio.", L),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_turns_cafeteria", [
+        (100, "biz_cafe_100", "Cortado de tanto trabajar", "Haz 100 turnos en una cafetería.", E),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_turns_tienda", [
+        (100, "biz_tienda_100", "Vuelva usted mañana", "Haz 100 turnos en una tienda.", E),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_turns_taller", [
+        (100, "biz_taller_100", "Aceite de motor y sangre", "Haz 100 turnos en un taller.", E),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_clients", [
+        (1000, "biz_clients_1000", "Pase usted, que hay cola", "Atiende a 1.000 clientes.", E),
+        (5000, "biz_clients_5000", "Turno de tarde en la Gran Vía", "Atiende a 5.000 clientes.", L),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_sales", [
+        (1_000_000, "biz_sales_1m", "Caja registradora de Hacienda",
+         "Vende 1.000.000 Y$ en total.", R),
+        (10_000_000, "biz_sales_10m", "Más facturas que el Corte Inglés",
+         "Vende 10.000.000 Y$ en total.", E),
+        (100_000_000, "biz_sales_100m", "Inditex de barrio", "Vende 100.000.000 Y$ en total.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_tips", [
+        (100_000, "biz_tips_100k", "Quédese con el cambio", "Reúne 100.000 Y$ en propinas.", R),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_best_turn", [
+        (20_000, "biz_best_20k", "Turno de récord Guinness",
+         "Vende 20.000 Y$ en un solo turno.", R),
+        (40_000, "biz_best_40k", "Black Friday un martes cualquiera",
+         "Vende 40.000 Y$ en un solo turno.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_clients_turn_max", [
+        (12, "biz_turn_clients_12", "Aforo completo", "Atiende a 12 clientes en un solo turno.", R),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_stars_max", [
+        (10, "biz_stars_5", "Cinco estrellas y un Ferrari",
+         "Alcanza las 5 estrellas de reputación.", E),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_loyalty_max", [
+        (10, "biz_loyal_10", "Hasta que el IGIC nos separe",
+         "Alcanza la fidelidad máxima con un habitual.", E),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_usual_hit", [
+        (1, "biz_usual_1", "Lo de siempre, Manolo", "Acierta «lo de siempre» de un habitual.", C),
+        (50, "biz_usual_50", "Camarero de Cheers",
+         "Acierta «lo de siempre» de habituales 50 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_perfect", [
+        (1, "biz_perfect_1", "Matrícula de honor en barra", "Saca una S en un turno.", C),
+        (50, "biz_perfect_50", "Ni una mancha en el mandil", "Saca una S en 50 turnos.", E),
+        (250, "biz_perfect_250", "El Messi del mostrador", "Saca una S en 250 turnos.", L),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_grade_d", [
+        (1, "biz_d_1", "Aprobado por los pelos de la barba", "Acaba un turno con nota D.", C),
+        (10, "biz_d_10", "Repetidor de FP", "Acaba 10 turnos con nota D.", R, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_wrong", [
+        (1, "biz_wrong_1", "Yo pedí un cortado, no una tortilla", "Sirve mal una comanda.", C),
+        (100, "biz_wrong_100", "Camarero de Torrente", "Sirve mal 100 comandas.", R, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_exact", [
+        (1, "biz_exact_1", "Cuentas claras, chocolate espeso",
+         "Da un cambio exacto en la tienda.", C),
+        (100, "biz_exact_100", "El cambio que quieres ver en el mundo",
+         "Da 100 cambios exactos en la tienda.", R),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_caught", [
+        (1, "biz_caught_1", "Al ladrón, al ladrón", "Pilla a un ladrón en la tienda.", C),
+        (25, "biz_caught_25", "Se te escapa menos que a Casillas",
+         "Pilla a 25 ladrones en la tienda.", R),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_missed_thief", [
+        (1, "biz_missed_1", "Ojos que no ven, chocolate que vuela",
+         "Deja escapar a un ladrón en la tienda.", C),
+        (25, "biz_missed_25", "Barra libre para chorizos",
+         "Deja escapar a 25 ladrones en la tienda.", R, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_false_accuse", [
+        (1, "biz_false_1", "Yo acuso... al inocente", "Acusa a un cliente que no robaba.", C, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_diag_ok", [
+        (1, "biz_diag_1", "Dr. House de los carburadores", "Arregla un coche en el taller.", C),
+        (100, "biz_diag_100", "Mecánico de Fórmula Bar", "Arregla 100 coches en el taller.", E),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_bad_diag", [
+        (1, "biz_bad_diag_1", "Tiene arreglo, pero otro",
+         "Falla un diagnóstico en el taller.", C, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_quote_caro", [
+        (1, "biz_quote_1", "Presupuesto sin compromiso (el suyo)",
+         "Que te acepten un presupuesto caro.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_night", [
+        (1, "biz_night_1", "Abierto hasta que amanezca",
+         "Haz un turno de madrugada (de 0 a 6 h).", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_canarias", [
+        (1, "biz_canarias_1", "Papas con mojo y cierre por festivo",
+         "Haz un turno el Día de Canarias (30 de mayo).", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_tired", [
+        (1, "biz_tired_1", "Zombi con delantal", "Abre el negocio sin descansar.", C, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_empty_turn", [
+        (1, "biz_empty_1", "Aquí no entra ni el gato",
+         "Haz un turno sin atender a nadie.", C, True),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="biz_withheld_1", name="Hacienda también pide lo de siempre",
+        description="Haz un turno con retención de IRPF.", category="negocio", rarity=C,
+        conditions=(("biz_withheld", 1),), story=BIZ_WITHHELD_STORY,
+    ))  # fmt: skip
+    a += _tiers("negocio", "biz_garnished", [
+        (1, "biz_garnished_1", "Embargo que te vi", "Haz un turno con embargo.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_streak_max", [
+        (7, "biz_streak_7", "Semana laboral sin lunes", "Abre el negocio 7 días seguidos.", R),
+        (30, "biz_streak_30", "Ni los domingos ni los festivos",
+         "Abre el negocio 30 días seguidos.", E),
+        (100, "biz_streak_100", "Cien años tras el mostrador",
+         "Abre el negocio 100 días seguidos.", L),
+        (365, "biz_streak_365", "Año sin cerrar, año sin dormir",
+         "Abre el negocio 365 días seguidos.", M),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_turns_day_max", [
+        (8, "biz_day_8", "Jornada de 24 horas, pero con gracia", "Haz 8 turnos en un solo día.", R),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_sectors_tried", [
+        (3, "biz_sectors_3", "Cafetería, tienda y taller: el trío calavera",
+         "Abre un negocio de cada sector.", E),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_themes_tried", [
+        (7, "biz_themes_7", "Pasaporte de interiorista", "Prueba los 7 temas de local.", L),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_islands_tried", [
+        (2, "biz_islands_2", "Entre dos aguas (y dos locales)",
+         "Abre un negocio en Gran Canaria y otro en Tenerife.", R),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_restyled", [
+        (1, "biz_restyled_1", "Cambio de rótulo, cambio de suerte",
+         "Cambia el rótulo de tu negocio.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_purchases", [
+        (1, "biz_buy_1", "Vamos de mayoristas", "Haz una compra al mayorista.", C),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="biz_prices_all", name="Rebajas, ofertas y atracos",
+        description="Pon los precios en barato, normal, caro y carísimo.", category="negocio",
+        rarity=R,
+        conditions=(("biz_price_barato", 1), ("biz_price_normal", 1), ("biz_price_caro", 1),
+                    ("biz_price_carisimo", 1)),
+    ))  # fmt: skip
+    a += _tiers("negocio", "biz_nights_unpaid", [
+        (1, "biz_unpaid_1", "Alquiler a la fresca", "Pasa una noche sin llegar para el local.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_closed_red", [
+        (1, "biz_closed_red_1", "Cierre en números rojos, cierre en bata",
+         "Cierra el negocio con la semana en negativo.", C, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_evicted", [
+        (1, "biz_evicted_1", "Lanzamiento sin cohete",
+         "Sufre el desahucio del local.", R, True),
+    ])  # fmt: skip
+    # Reducción de jornada y excedencia (art. 37.6 y 46.2 ET), en 🪏 General.
+    a.append(Achievement(
+        id="work_jornada_3_1", name="Tres cuartos de lo mismo",
+        description="Pide la reducción de jornada de un cuarto (3 franjas de jornada).",
+        category="work", rarity=C, conditions=(("work_jornada_3", 1),), story=BIZ_JORNADA_STORY,
+    ))  # fmt: skip
+    a += _tiers("work", "work_jornada_2", [
+        (1, "work_jornada_2_1", "Currar a media máquina",
+         "Pide la media jornada (2 franjas de jornada).", C),
+    ])  # fmt: skip
+    a += _tiers("work", "work_jornada_4", [
+        (1, "work_jornada_4_1", "Jornada completa, cartera completa",
+         "Pide la jornada completa (4 franjas de jornada).", C),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="work_excedencia_1", name="Excedencia de cuerpo presente",
+        description="Pide la excedencia.", category="work", rarity=R,
+        conditions=(("work_excedencia", 1),), story=BIZ_EXCEDENCIA_STORY,
+    ))  # fmt: skip
+    a += _tiers("work", "work_excedencia_back", [
+        (1, "work_excedencia_back_1", "El que se fue sin pagar y volvió",
+         "Vuelve de la excedencia.", R),
+    ])  # fmt: skip
+
     countable = sum(
         1
         for x in a
@@ -19562,6 +19788,15 @@ def with_derived(stats: Mapping[str, int]) -> dict[str, int]:
             if stats.get(f"{PISOS_BARRIO_PREFIX}{key}", 0) > 0
         }
         & set(HOUSING_THEMES)
+    )
+    full["biz_sectors_tried"] = sum(
+        1 for sector in BIZ_SECTORS if stats.get(f"biz_opened_{sector}", 0) > 0
+    )
+    full["biz_themes_tried"] = sum(
+        1 for theme in BIZ_THEMES if stats.get(f"biz_theme_{theme}", 0) > 0
+    )
+    full["biz_islands_tried"] = sum(
+        1 for isle in ("gc", "tf") if stats.get(f"biz_island_{isle}", 0) > 0
     )
     return full
 
@@ -24659,3 +24894,59 @@ MEMORY_CONTENT = frozenset(
         "rondas",
     }
 )
+
+
+def business_stats(result: TurnResult, *, tired: bool = False) -> StatDelta:
+    """Estadísticas de un turno en el negocio propio (`bot.services.negocio`).
+
+    Args:
+        result: Lo que dejó el turno.
+        tired: Si el dueño abrió reventado.
+    """
+    summary = result.summary
+    business = result.business
+    sector = business.sector
+    outcomes = summary.outcomes
+    count = summary.count
+    add = {
+        "biz_turns": 1,
+        f"biz_turns_{sector}": 1,
+        "biz_clients": summary.served,
+        "biz_sales": summary.sales,
+        "biz_tips": summary.tips,
+        "biz_perfect": int(summary.grade == "S"),
+        "biz_grade_d": int(summary.grade == "D"),
+        "biz_wrong": count("wrong"),
+        "biz_left": count("left") + count("gone"),
+        "biz_exact": sum(1 for o in outcomes if o.exact),
+        "biz_caught": sum(1 for o in outcomes if "caught" in o.events),
+        "biz_missed_thief": sum(1 for o in outcomes if "missed_thief" in o.events),
+        "biz_false_accuse": count("false_accuse"),
+        "biz_over": count("over"),
+        "biz_short": count("short"),
+        "biz_diag_ok": sum(1 for o in outcomes if o.quote and o.result == "ok"),
+        "biz_bad_diag": count("bad_diagnosis"),
+        "biz_quote_caro": sum(1 for o in outcomes if o.quote == "caro" and o.result == "ok"),
+        "biz_rejected": count("rejected"),
+        "biz_usual_hit": sum(1 for o in outcomes if o.usual_hit),
+        "biz_fast": sum(1 for o in outcomes if o.speed == "fast" and o.result == "ok"),
+        "biz_night": int(result.hour < 6),
+        "biz_sunday": int(result.weekday == 6),
+        "biz_canarias": int(result.day[5:] == "05-30"),
+        "biz_tired": int(tired),
+        "biz_withheld": int(result.withheld > 0),
+        "biz_garnished": int(result.garnished > 0),
+        "biz_empty_turn": int(summary.served == 0),
+    }
+    return StatDelta(
+        add={stat: value for stat, value in add.items() if value},
+        peak={
+            "biz_best_turn": summary.sales,
+            "biz_clients_turn_max": summary.served,
+            "biz_stars_max": round(business.stars * 2),
+            "biz_loyalty_max": max(business.regulars.values(), default=0),
+            "biz_streak_max": business.open_streak,
+            "biz_turns_day_max": business.turns_today,
+            "balance_max": result.balance,
+        },
+    )

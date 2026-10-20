@@ -415,6 +415,16 @@ python -m bot
   sube la barra, con racha. Los ascensos de las ramas, las jubilaciones, los
   exits y los vídeos virales se anuncian en el canal. Un administrador limita
   los canales con `tajo`.
+- **Negocios** (dentro de `pala`, 8.14.0): `pala` abre un inicio con la imagen de
+  tu día en 8 **franjas**, el tiempo que comparten el curro y tu negocio: la jornada
+  reserva las suyas aunque no fiches y cada hora extra se la quitas al negocio. Hay
+  reducción de jornada y excedencia voluntaria (sin dinero). Desde 🏪 **Negocio** se
+  monta una ☕ cafetería, 🛒 tienda o 🔧 taller en un barrio de `pisos`, con nombre,
+  colores y emblema propios. Eres autónomo y respondes con lo tuyo: el local, los
+  suministros y la cuota corren aunque no abras. Cada turno gasta una franja y es un
+  minijuego activo, con clientes que se cansan de esperar y habituales que piden «lo
+  de siempre». El panel entero son escenas de Node. Diseño y fases en
+  `docs/negocios.md`; equilibrio en `docs/negocio_sim.py`.
 - **Bizum** (`bizum`): manda yapdollars a otro miembro al momento. Llega
   entero: exento de Donaciones y sin IRPF (en la vida real, entre amigos se
   pagaría; el bot trata a todo el servidor como familia directa). Mínimo 5 Y$
@@ -1268,6 +1278,7 @@ src/bot/
 │   ├── shop_front.py    # escaparate compacto, ficha, carrito y lista de deseos
 │   ├── pets.py          # mascota: panel, cuidados, apariciones y cameos en otros cogs
 │   ├── work.py          # pala: panel del curro, minijuego con botones, nóminas
+│   ├── business.py      # Negocios de pala: panel, minijuegos, noches y puentes
 │   ├── blackjack.py     # Blackjack con botones (bj)
 │   ├── slots.py         # Tragaperras: botones, re-giro, doble o nada, giro del día y bote
 │   ├── crash.py         # Crash: cohete compartido por canal, rondas seguidas
@@ -1302,6 +1313,13 @@ src/bot/
 │   ├── taxes.py         # IRPF, nómina, Patrimonio, IGIC, loterías, donativos y ahorro
 │   ├── interest.py      # Cuenta remunerada: saldo medio, tramos, rachas y liquidación
 │   ├── work.py          # Reglas de pala: batería, jornada, familia, ascensos
+│   ├── agenda.py        # Las 8 franjas del día que comparten la pala y el negocio
+│   ├── business.py      # Reglas de los negocios: local, demanda, reputación
+│   ├── business_catalog.py # Sectores, productos, rótulos y habituales
+│   ├── business_games.py # Minijuegos del negocio: comandas, caja, diagnóstico
+│   ├── business_scene.py # Escena de Node del inicio y del negocio
+│   ├── business_view.py # Lo que enseña cada pantalla del negocio
+│   ├── negocio.py       # Casos de uso del negocio y su dinero
 │   ├── work_catalog.py  # Oficios, puestos, contenido de minijuegos y eventos
 │   ├── work_games.py    # Minijuegos de pala: cavar, detectar, memoria, diálogo
 │   ├── work_tools.py    # Herramientas de curro de la tienda y su efecto en pala

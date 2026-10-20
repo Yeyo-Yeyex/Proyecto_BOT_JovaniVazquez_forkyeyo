@@ -107,3 +107,15 @@ Cambiar de oficio después de acabar el primero (obra, día 161), solo con sueld
   entonces (`Branch.pension`, columna `legacy` de `work_retirements`). La calidad de esas
   ramas es entera, porque no hay historial.
 - P4 y P5 bajan algo; las ramas suben.
+
+## Negocios (8.14.0)
+
+El negocio propio de `pala` comparte las 8 franjas del día con el curro: la jornada
+reserva 4 y lo que queda es para horas extra o para el negocio. Sus cifras y su porqué están
+en `docs/negocios.md` («Equilibrio») y salen de `docs/negocio_sim.py`.
+
+- **Ingresos:** un buen jugador saca con 4 turnos de su negocio lo que un P2-P3 de obra con 4
+  turnos de jornada; con 8, lo que un P5.
+- **Coste:** montarlo cuesta 1-2 semanas de un P3.
+- **No toca la curva de la `pala`:** el negocio de la fase 1 no llega a los puestos altos.
+
