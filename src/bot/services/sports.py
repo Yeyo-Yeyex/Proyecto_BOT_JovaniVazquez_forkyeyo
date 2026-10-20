@@ -1,0 +1,423 @@
+"""Apuestas deportivas: cuotas fijas sobre partidos de verdad, en yapdollars.
+
+Lógica pura y el cliente de la API de cuotas, sin Discord ni base de datos. El cog
+(`bot.cogs.sports`) enseña los partidos y mueve los botones; los partidos se guardan en
+`bot.repositories.sports` y el dinero pasa por `EconomyService.sports_bet` y
+`EconomyService.settle_sports_bet`.
+
+De dónde salen los partidos. The Odds API (the-odds-api.com) da los próximos partidos de
+cada competición de `SPORTS` con las cuotas 1X2 de las casas de apuestas europeas
+(`OddsClient.odds`) y, al acabar, el marcador (`OddsClient.scores`). El plan gratis da
+500 créditos al mes: cada consulta de cuotas cuesta 1 (0 si no hay partidos) y cada
+consulta de resultados con `daysFrom`, 2. Por eso las consultas se espacian
+(`odds_due`, `scores_due`) y se guarda una reserva para los resultados (`QUOTA_RESERVE`).
+Con LaLiga y la Champions salen unos 330 créditos al mes; otra competición sumaría unos
+150 y no cabría con holgura.
+
+Cómo se ponen las cuotas (`house_odds`). Cada casa de apuestas lleva su margen: sus
+probabilidades implícitas (1 / cuota) suman más de 1. Se quitan normalizándolas, se
+hace la media entre casas (`fair_probabilities`) y la casa del bot pone la suya con su
+retorno: `cuota = RTP / probabilidad`, redondeada hacia abajo a la centésima. Con
+`RTP` = 0,94 el jugador recupera de media el 94 % de lo que apuesta, como en las casas de
+verdad (y algo menos que los caballos, por las noticias que la cuota del bot tarda en
+recoger). Es un sumidero de dinero, como el resto del casino: lo apostado desaparece y el
+premio se crea, y de media se crea menos de lo que desaparece. Un signo cuya cuota no
+llegaría a `MIN_ODDS` sin regalar dinero no se ofrece.
+
+Qué se apuesta. Solo el resultado al final del partido (1, X o 2), una apuesta por
+partido y persona y de `MIN_STAKE` a `MAX_STAKE`. El tope existe porque las cuotas del
+bot se refrescan cada pocas horas: quien se entere antes de una baja de última hora
+podría ganarle a una cuota vieja, y el tope limita cuánto. Se apuesta hasta el
+comienzo del partido. Lo que la API no da por terminado `VOID_AFTER` después del
+comienzo (aplazado, suspendido o sin datos) se anula y se devuelve.
+
+Limitación conocida: el marcador de la API es el final, así que en una eliminatoria con
+prórroga cuenta lo que pasó en ella. En LaLiga y en la fase de liga de la Champions no
+hay prórroga.
+"""
+
+from __future__ import annotations
+
+import math
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Any
+
+import aiohttp
+
+#: Clave del juego en el libro (`deportes:apuesta`), en `casino_stats.GAMES` y en los logros.
+GAME = "deportes"
+
+
+@dataclass(frozen=True, slots=True)
+class Sport:
+    """Una competición con apuestas.
+
+    Attributes:
+        key: Clave de The Odds API (`soccer_spain_la_liga`).
+        emoji: Icono en el panel.
+        name: Nombre corto que se enseña.
+    """
+
+    key: str
+    emoji: str
+    name: str
+
+    @property
+    def label(self) -> str:
+        """`🇪🇸 LaLiga`."""
+        return f"{self.emoji} {self.name}"
+
+
+#: Competiciones con apuestas, en el orden del panel. Añadir una gasta unos 150 créditos
+#: más al mes de la API (ver la cabecera del módulo).
+SPORTS: tuple[Sport, ...] = (
+    Sport("soccer_spain_la_liga", "🇪🇸", "LaLiga"),
+    Sport("soccer_uefa_champs_league", "🏆", "Champions"),
+)
+SPORT_BY_KEY: dict[str, Sport] = {sport.key: sport for sport in SPORTS}
+
+#: Retorno al jugador: de cada 100 Y$ apostados vuelven 94 de media.
+RTP = 0.94
+#: Cuotas en centésimas (`185` = paga 1,85 veces lo apostado). La más baja que se
+#: ofrece y la más alta: por encima se recorta, que solo baja el retorno.
+MIN_ODDS = 101
+MAX_ODDS = 2_500
+#: Casas de apuestas con los tres signos que hacen falta para fiarse de un partido.
+MIN_BOOKMAKERS = 3
+#: Nombre del empate entre los resultados del mercado `h2h` de The Odds API.
+DRAW_NAME = "Draw"
+#: Apuesta mínima y máxima por partido.
+MIN_STAKE = 10
+MAX_STAKE = 50_000
+
+#: Cuánto hacia delante se piden partidos.
+LOOKAHEAD_SECONDS = 7 * 86_400
+#: Cada cuánto se refrescan las cuotas de una competición.
+ODDS_EVERY = 8 * 3_600
+#: Antes de cada comienzo, las cuotas se refrescan otra vez si tienen más de
+#: `PRE_MATCH_EVERY`: así la última hora no se apuesta con cuotas de la mañana.
+PRE_MATCH_WINDOW = 90 * 60
+PRE_MATCH_EVERY = 60 * 60
+#: Tras el comienzo, cuándo se empieza a preguntar el resultado (un partido dura unas
+#: 1 h 55 min con el descanso) y cada cuánto se vuelve a preguntar.
+RESULT_DELAY = 115 * 60
+SCORES_EVERY = 20 * 60
+#: Lo que no tiene resultado tras este tiempo se anula. La API solo devuelve resultados
+#: de hasta 3 días atrás (`daysFrom`), así que tiene que ser algo menos.
+VOID_AFTER = 70 * 3_600
+#: Créditos de la API que se guardan para los resultados: por debajo, las cuotas solo se
+#: piden una vez cada `LOW_QUOTA_EVERY`, lo justo para notar cuando la API renueva los
+#: créditos a principio de mes.
+QUOTA_RESERVE = 60
+LOW_QUOTA_EVERY = 86_400
+
+
+class Pick(StrEnum):
+    """Signo de la quiniela: gana el de casa, empate o gana el de fuera."""
+
+    HOME = "1"
+    DRAW = "X"
+    AWAY = "2"
+
+
+@dataclass(frozen=True, slots=True)
+class Match:
+    """Un partido con sus cuotas.
+
+    Attributes:
+        event_id: Id de The Odds API.
+        sport: Clave de `SPORTS`.
+        home: Equipo de casa.
+        away: Equipo de fuera.
+        commence: Comienzo (epoch).
+        odds: Cuota de cada signo en centésimas; 0 si no se ofrece.
+    """
+
+    event_id: str
+    sport: str
+    home: str
+    away: str
+    commence: float
+    odds: Mapping[Pick, int]
+
+    def team(self, pick: Pick) -> str:
+        """El nombre del signo: el equipo, o «Empate»."""
+        return {Pick.HOME: self.home, Pick.DRAW: "Empate", Pick.AWAY: self.away}[pick]
+
+    @property
+    def title(self) -> str:
+        """`Real Madrid – Barcelona`."""
+        return f"{self.home} – {self.away}"
+
+    @property
+    def open_picks(self) -> list[Pick]:
+        """Los signos que se pueden apostar."""
+        return [pick for pick in Pick if self.odds.get(pick, 0) >= MIN_ODDS]
+
+
+@dataclass(frozen=True, slots=True)
+class Score:
+    """Marcador final de un partido."""
+
+    home: int
+    away: int
+
+    @property
+    def pick(self) -> Pick:
+        """El signo que ha salido."""
+        if self.home > self.away:
+            return Pick.HOME
+        if self.home < self.away:
+            return Pick.AWAY
+        return Pick.DRAW
+
+
+# -- Cuotas -------------------------------------------------------------------------------
+
+
+def fair_probabilities(books: Iterable[Mapping[Pick, float]]) -> dict[Pick, float]:
+    """Probabilidad de cada signo sin el margen de las casas, media de todas.
+
+    Args:
+        books: Las cuotas decimales de cada casa (`{Pick.HOME: 1.85, …}`), con los
+            tres signos.
+
+    Returns:
+        Probabilidades que suman 1, o `{}` si no hay casas.
+    """
+    totals = dict.fromkeys(Pick, 0.0)
+    count = 0
+    for book in books:
+        implied = {pick: 1 / book[pick] for pick in Pick}
+        overround = sum(implied.values())
+        for pick in Pick:
+            totals[pick] += implied[pick] / overround
+        count += 1
+    if not count:
+        return {}
+    return {pick: total / count for pick, total in totals.items()}
+
+
+def house_odds(probabilities: Mapping[Pick, float]) -> dict[Pick, int]:
+    """Cuota del bot de cada signo, en centésimas (0 si no se ofrece).
+
+    Hacia abajo y con tope arriba, así nunca devuelve más de `RTP`. Un signo tan
+    favorito que su cuota no llega a `MIN_ODDS` se queda sin cuota: subirla a 1,01
+    regalaría dinero.
+    """
+    odds = {}
+    for pick in Pick:
+        probability = probabilities.get(pick, 0.0)
+        cents = math.floor(100 * RTP / probability) if probability > 0 else MAX_ODDS
+        odds[pick] = min(cents, MAX_ODDS) if cents >= MIN_ODDS else 0
+    return odds
+
+
+def payout(stake: int, odds: int) -> int:
+    """Lo que cobra una apuesta acertada, apuesta incluida (hacia abajo)."""
+    return stake * odds // 100
+
+
+def parse_odds(events: Sequence[Mapping[str, Any]], *, now: float) -> list[Match]:
+    """Los partidos de una respuesta de cuotas de The Odds API (`dateFormat=unix`).
+
+    Se quedan los que no han empezado y tienen al menos `MIN_BOOKMAKERS` casas con
+    los tres signos del mercado `h2h`. Lo que no tenga la forma esperada se salta.
+    """
+    matches = []
+    for event in events:
+        try:
+            home, away = str(event["home_team"]), str(event["away_team"])
+            commence = float(event["commence_time"])
+            event_id, sport = str(event["id"]), str(event["sport_key"])
+            bookmakers = _items(event.get("bookmakers"))
+        except (KeyError, TypeError, ValueError):
+            continue
+        if commence <= now or home == away:
+            continue
+        books = [book for b in bookmakers if (book := _book(b, home, away)) is not None]
+        if len(books) < MIN_BOOKMAKERS:
+            continue
+        odds = house_odds(fair_probabilities(books))
+        matches.append(Match(event_id, sport, home, away, commence, odds))
+    return sorted(matches, key=lambda m: (m.commence, m.home))
+
+
+def _book(bookmaker: object, home: str, away: str) -> dict[Pick, float] | None:
+    """Las tres cuotas `h2h` de una casa, o `None` si falta alguna o no tiene sentido.
+
+    Un resultado que no es ninguno de los equipos ni `DRAW_NAME`, o uno repetido,
+    descarta la casa: no se adivina qué quería decir.
+    """
+    if not isinstance(bookmaker, Mapping):
+        return None
+    names = {home: Pick.HOME, away: Pick.AWAY, DRAW_NAME: Pick.DRAW}
+    for market in _items(bookmaker.get("markets")):
+        if not isinstance(market, Mapping) or market.get("key") != "h2h":
+            continue
+        book: dict[Pick, float] = {}
+        for outcome in _items(market.get("outcomes")):
+            if not isinstance(outcome, Mapping) or not isinstance(outcome.get("name"), str):
+                return None
+            pick = names.get(outcome["name"])
+            if pick is None or pick in book:
+                return None
+            try:
+                price = float(outcome["price"])
+            except (KeyError, TypeError, ValueError):
+                return None
+            if not (math.isfinite(price) and price > 1):
+                return None
+            book[pick] = price
+        return book if len(book) == len(Pick) else None
+    return None
+
+
+def _items(value: object) -> list[Any]:
+    """`value` si es una lista; si no (falta o viene mal), una lista vacía."""
+    return value if isinstance(value, list) else []
+
+
+def parse_scores(events: Sequence[Mapping[str, Any]]) -> dict[str, Score]:
+    """Marcadores de los partidos terminados de una respuesta de resultados."""
+    results = {}
+    for event in events:
+        if not event.get("completed"):
+            continue
+        try:
+            goals = {str(s["name"]): int(s["score"]) for s in event.get("scores") or []}
+            score = Score(goals[str(event["home_team"])], goals[str(event["away_team"])])
+            results[str(event["id"])] = score
+        except (KeyError, TypeError, ValueError):
+            continue
+    return results
+
+
+# -- Cuándo preguntar -------------------------------------------------------------------
+
+
+def odds_due(
+    *, now: float, fetched_at: float | None, next_kickoff: float | None, remaining: int | None
+) -> bool:
+    """Si toca pedir las cuotas de una competición.
+
+    Cada `ODDS_EVERY` y, en los `PRE_MATCH_WINDOW` antes de un comienzo, si las que hay
+    tienen más de `PRE_MATCH_EVERY`. Con menos de `QUOTA_RESERVE` créditos
+    (`remaining`), solo una vez cada `LOW_QUOTA_EVERY`.
+    """
+    if fetched_at is None:
+        return True
+    age = now - fetched_at
+    if not quota_allows_odds(remaining):
+        return age >= LOW_QUOTA_EVERY
+    if age >= ODDS_EVERY:
+        return True
+    soon = next_kickoff is not None and 0 <= next_kickoff - now <= PRE_MATCH_WINDOW
+    return soon and age >= PRE_MATCH_EVERY
+
+
+def scores_due(*, now: float, checked_at: float | None, oldest: float | None) -> bool:
+    """Si toca pedir resultados: hay apuestas de un partido que ya debería haber acabado.
+
+    Args:
+        oldest: Comienzo del partido más antiguo con apuestas sin resolver.
+    """
+    if oldest is None or now < oldest + RESULT_DELAY:
+        return False
+    return checked_at is None or now - checked_at >= SCORES_EVERY
+
+
+def days_from(*, now: float, oldest: float) -> int:
+    """`daysFrom` para pedir resultados: 1 basta salvo que algo lleve casi un día."""
+    return 1 if now - oldest < 20 * 3_600 else 3
+
+
+def quota_allows_odds(remaining: int | None) -> bool:
+    """Si quedan créditos para pedir cuotas sin tocar la reserva de los resultados."""
+    return remaining is None or remaining > QUOTA_RESERVE
+
+
+# -- Cliente de la API ------------------------------------------------------------------
+
+
+class FeedError(Exception):
+    """La API de cuotas no ha contestado bien. El mensaje nunca lleva la clave."""
+
+
+@dataclass(frozen=True, slots=True)
+class FeedReply:
+    """Una respuesta de la API.
+
+    Attributes:
+        events: Los partidos que devuelve.
+        remaining: Créditos que quedan este mes (cabecera `x-requests-remaining`), o
+            `None` si no viene.
+    """
+
+    events: list[dict[str, Any]]
+    remaining: int | None
+
+
+class OddsClient:
+    """Cliente mínimo de The Odds API v4.
+
+    Args:
+        session: Sesión HTTP del cog (la cierra él).
+        api_key: Clave de la API. Es secreta: va en la consulta y nunca en un error.
+    """
+
+    BASE_URL = "https://api.the-odds-api.com/v4/sports"
+
+    def __init__(self, session: aiohttp.ClientSession, api_key: str) -> None:
+        self.session = session
+        self.api_key = api_key
+
+    async def odds(self, sport: str, *, now: float) -> FeedReply:
+        """Cuotas 1X2 de las casas europeas para los próximos `LOOKAHEAD_SECONDS`."""
+        return await self._get(
+            f"{self.BASE_URL}/{sport}/odds/",
+            {
+                "regions": "eu",
+                "markets": "h2h",
+                "oddsFormat": "decimal",
+                "dateFormat": "unix",
+                "commenceTimeFrom": _iso(now),
+                "commenceTimeTo": _iso(now + LOOKAHEAD_SECONDS),
+            },
+        )
+
+    async def scores(self, sport: str, *, days: int) -> FeedReply:
+        """Partidos en juego y terminados de los últimos `days` días (1 a 3)."""
+        return await self._get(
+            f"{self.BASE_URL}/{sport}/scores/", {"daysFrom": str(days), "dateFormat": "unix"}
+        )
+
+    async def _get(self, url: str, params: dict[str, str]) -> FeedReply:
+        try:
+            async with self.session.get(url, params={**params, "apiKey": self.api_key}) as reply:
+                remaining = _int_header(reply.headers.get("x-requests-remaining"))
+                if reply.status != 200:
+                    raise FeedError(f"La API de cuotas contesta {reply.status}")
+                payload = await reply.json()
+        except (aiohttp.ClientError, TimeoutError, ValueError) as error:
+            # Sin encadenar: el error de aiohttp lleva la URL, y la URL lleva la clave.
+            raise FeedError(f"La API de cuotas no responde ({type(error).__name__})") from None
+        if not isinstance(payload, list):
+            raise FeedError("La API de cuotas devuelve algo que no es una lista")
+        return FeedReply([e for e in payload if isinstance(e, dict)], remaining)
+
+
+def _iso(epoch: float) -> str:
+    """Fecha en el formato que pide la API: `2026-10-20T18:00:00Z`."""
+    return datetime.fromtimestamp(int(epoch), UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _int_header(value: str | None) -> int | None:
+    """Una cabecera numérica (la API manda `"497"` o `"497.0"`), o `None`."""
+    try:
+        return int(float(value)) if value is not None else None
+    except ValueError:
+        return None

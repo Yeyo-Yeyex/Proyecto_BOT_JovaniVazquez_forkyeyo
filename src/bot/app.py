@@ -45,6 +45,7 @@ from bot.repositories.porras import PorraRepository
 from bot.repositories.rastro import MarketRepository
 from bot.repositories.shop import ShopRepository
 from bot.repositories.slots import SlotsRepository
+from bot.repositories.sports import SportsRepository
 from bot.repositories.telemetry import TelemetryRepository
 from bot.repositories.todo import TodoRepository
 from bot.repositories.welcome import WelcomeRepository
@@ -100,6 +101,7 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.renta",
     "bot.cogs.apuestas",
     "bot.cogs.porras",
+    "bot.cogs.sports",
     "bot.cogs.patrimonio",
     "bot.cogs.intereses",
     "bot.cogs.donations",
@@ -156,6 +158,7 @@ class BotClient(commands.Bot):
         database_path: Path,
         casino_channel_ids: frozenset[int] = frozenset(),
         presences: bool = True,
+        odds_api_key: str = "",
     ) -> None:
         self.database_path = database_path
         self.message_stats = MessageStatsRepository(database_path)
@@ -207,6 +210,10 @@ class BotClient(commands.Bot):
         self.poker = PokerRepository(database_path)
         # Porras sobre las jugadas de otro (`porra`); el dinero pasa por `economy`.
         self.porras = PorraRepository(database_path)
+        # Partidos y cuotas de las apuestas deportivas (`deportes`); el dinero pasa por
+        # `economy`. Sin clave de la API de cuotas, `deportes` dice que no está configurado.
+        self.sports = SportsRepository(database_path)
+        self.odds_api_key = odds_api_key
         # Oficios, turnos y ascensos de `pala`; el dinero de las nóminas pasa por `economy`.
         self.work = WorkService(WorkRepository(database_path), self.economy, housing=self.housing)
         # Los sonidos de entrada viven junto a la base de datos, en el mismo
@@ -297,6 +304,7 @@ class BotClient(commands.Bot):
         await self.backgammon.initialize()
         await self.poker.initialize()
         await self.porras.initialize()
+        await self.sports.initialize()
         await self.work.repository.initialize()
         await self.beernight.initialize()
         await self.telemetry_repository.initialize()
@@ -342,6 +350,7 @@ async def start_bot(
     command_prefix: str,
     database_path: Path,
     casino_channel_ids: frozenset[int] = frozenset(),
+    odds_api_key: str = "",
 ) -> None:
     """Crea el cliente y lo ejecuta hasta que se detenga o falle.
 
@@ -351,6 +360,8 @@ async def start_bot(
         database_path: Ubicación de la base de datos persistente del bot.
         casino_channel_ids: Canales donde se permiten los juegos del casino
             (vacío = cualquiera).
+        odds_api_key: Clave de The Odds API para `deportes` (vacía = sin apuestas
+            deportivas). Nunca se registra en logs.
 
     Si el «Presence Intent» no está activado en el portal, vuelve a arrancar
     sin él en vez de caerse: solo se pierde la «última vez conectado» de `admin`.
@@ -364,6 +375,7 @@ async def start_bot(
             database_path=database_path,
             casino_channel_ids=casino_channel_ids,
             presences=presences,
+            odds_api_key=odds_api_key,
         )
         try:
             async with client:

@@ -8,6 +8,10 @@ criterio.
 
 ## 8.x
 
+### 8.13.0 · 2026-10-20
+
+- Deportes: `deportes`, apuestas con cuotas fijas a LaLiga y la Champions
+
 ### 8.12.0 · 2026-10-20
 
 - Tienda: escaparate en lista compacta (15 por página) con buscador, filtros y orden

@@ -94,6 +94,10 @@ Modelo de datos:
 - `economy_porra_bets`: cada apuesta a una porra (quién, a qué opción y cuánto).
   Es la verdad del dinero de cada porra: el reparto se calcula con estas filas.
 - `economy_porra_settled`: porras ya liquidadas, para no pagar dos veces.
+- `economy_wallets` con `user_id = SPORTS_ACCOUNT_ID`: el depósito de las apuestas
+  deportivas (`deportes`). Guarda lo apostado a cada partido hasta que se resuelve.
+- `economy_sports_bets`: cada apuesta deportiva (quién, a qué partido y signo, a qué
+  cuota y cuánto) y cómo acabó. Una por partido y persona.
 - `economy_gaming_tax`: el Impuesto sobre Actividades de Juego de cada porra
   (y, con `porra_id = 0`, la comisión de cada bote de la `timba`),
   a nombre de cada apostante (art. 48 de la Ley 13/2011), para `hacienda`.
@@ -130,7 +134,7 @@ import json
 import sqlite3
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
@@ -200,6 +204,10 @@ HOUSING_DEPOSIT_ACCOUNT_ID = -700
 #: `user_id` del depósito de las subastas de `pisos`: la mejor puja de cada subasta, con lo
 #: que pagará de ITP y notaría, espera aquí y se devuelve entera a quien superan.
 HOUSING_AUCTION_ACCOUNT_ID = -800
+
+#: `user_id` del depósito de las apuestas deportivas: lo apostado a un partido espera aquí
+#: hasta que se sabe el resultado (o se anula), así no desaparece del libro mientras tanto.
+SPORTS_ACCOUNT_ID = -900
 
 #: Motivo del libro de las rentas de `pisos` (y concepto en `economy_tax_records`).
 HOUSING_RENT_CONCEPT = "pisos:renta"
@@ -426,6 +434,10 @@ class PorraCapError(Exception):
     def __init__(self, room: int) -> None:
         super().__init__(f"Solo caben {room}")
         self.room = room
+
+
+class SportsBetTakenError(Exception):
+    """El miembro ya tiene una apuesta a ese partido: una por partido."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -681,6 +693,67 @@ class PorraPayment:
     bets: dict[int, BetSettlement]
     image_tax: int = 0
     subject_balance: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SportsBet:
+    """Una apuesta deportiva (`deportes`), tal y como se guarda.
+
+    Attributes:
+        id: Id de la fila (0 antes de guardarla).
+        channel_id: Canal donde se apostó: ahí sale el resultado.
+        event_id: Id del partido en The Odds API.
+        sport: Competición (`bot.services.sports.SPORTS`).
+        home: Equipo de casa.
+        away: Equipo de fuera.
+        commence: Comienzo del partido (epoch).
+        pick: Signo apostado: `1`, `X` o `2`.
+        odds: Cuota fijada al apostar, en centésimas.
+        stake: Lo apostado.
+        created_at: Cuándo se apostó (epoch).
+        status: `open`, `won`, `lost` o `void` (anulada y devuelta).
+        payout: Lo cobrado, apuesta incluida (lo devuelto si se anuló; 0 si falló).
+        settled_at: Cuándo se resolvió (epoch), o `None`.
+    """
+
+    id: int
+    guild_id: int
+    user_id: int
+    channel_id: int
+    event_id: str
+    sport: str
+    home: str
+    away: str
+    commence: float
+    pick: str
+    odds: int
+    stake: int
+    created_at: float
+    status: str = "open"
+    payout: int = 0
+    settled_at: float | None = None
+
+
+def _sports_bet(row: sqlite3.Row) -> SportsBet:
+    """Una fila de `economy_sports_bets` como `SportsBet`."""
+    return SportsBet(
+        id=int(row["id"]),
+        guild_id=int(row["guild_id"]),
+        user_id=int(row["user_id"]),
+        channel_id=int(row["channel_id"]),
+        event_id=str(row["event_id"]),
+        sport=str(row["sport"]),
+        home=str(row["home"]),
+        away=str(row["away"]),
+        commence=float(row["commence"]),
+        pick=str(row["pick"]),
+        odds=int(row["odds"]),
+        stake=int(row["stake"]),
+        created_at=float(row["created_at"]),
+        status=str(row["status"]),
+        payout=int(row["payout"]),
+        settled_at=None if row["settled_at"] is None else float(row["settled_at"]),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1230,6 +1303,29 @@ class EconomyRepository:
                     settled_at REAL NOT NULL,
                     PRIMARY KEY (guild_id, porra_id)
                 );
+
+                CREATE TABLE IF NOT EXISTS economy_sports_bets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    channel_id INTEGER NOT NULL,
+                    event_id TEXT NOT NULL,
+                    sport TEXT NOT NULL,
+                    home TEXT NOT NULL,
+                    away TEXT NOT NULL,
+                    commence REAL NOT NULL,
+                    pick TEXT NOT NULL,
+                    odds INTEGER NOT NULL CHECK (odds > 100),
+                    stake INTEGER NOT NULL CHECK (stake > 0),
+                    created_at REAL NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'open',
+                    payout INTEGER NOT NULL DEFAULT 0,
+                    settled_at REAL,
+                    UNIQUE (guild_id, user_id, event_id)
+                );
+
+                CREATE INDEX IF NOT EXISTS economy_sports_bets_open
+                    ON economy_sports_bets (status, commence);
 
                 CREATE TABLE IF NOT EXISTS economy_gaming_tax (
                     guild_id INTEGER NOT NULL,
@@ -2838,6 +2934,253 @@ class EconomyRepository:
                 (guild_id, porra_id, int(refund), now),
             )
             return PorraPayment(bets=results, image_tax=image_tax, subject_balance=subject_balance)
+
+    # -- Apuestas deportivas -------------------------------------------------------
+
+    async def sports_bet(self, bet: SportsBet, *, game: str) -> tuple[SportsBet, int]:
+        """Cobra una apuesta deportiva y la deja en el depósito, todo atómico.
+
+        El dinero sale ya del monedero, pero no entra en el día del casino hasta que se
+        resuelve (`settle_sports_bet`): la ganancia o pérdida de una apuesta es del día
+        en que se sabe el resultado.
+
+        Args:
+            bet: La apuesta sin guardar (`id` 0).
+            game: Prefijo de los motivos del libro (`deportes:deposito`).
+
+        Returns:
+            La apuesta guardada, con su `id`, y el saldo de quien apuesta.
+
+        Raises:
+            SportsBetTakenError: Ya tiene una apuesta a ese partido. No se cobra nada.
+            InsufficientFundsError: No le llega.
+        """
+        return await self._run(self._sports_bet_sync, bet, game)
+
+    def _sports_bet_sync(self, bet: SportsBet, game: str) -> tuple[SportsBet, int]:
+        if bet.stake <= 0 or bet.odds <= 100:
+            raise ValueError("Apuesta deportiva inválida.")
+        with self._transaction() as connection:
+            taken = connection.execute(
+                """
+                SELECT 1 FROM economy_sports_bets
+                WHERE guild_id = ? AND user_id = ? AND event_id = ?
+                """,
+                (bet.guild_id, bet.user_id, bet.event_id),
+            ).fetchone()
+            if taken is not None:
+                raise SportsBetTakenError
+            balance = self._apply_in_transaction(
+                connection,
+                bet.guild_id,
+                bet.user_id,
+                (LedgerEntry(-bet.stake, f"{game}:deposito"),),
+            )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO economy_wallets (guild_id, user_id, balance)
+                VALUES (?, ?, 0)
+                """,
+                (bet.guild_id, SPORTS_ACCOUNT_ID),
+            )
+            self._apply_in_transaction(
+                connection,
+                bet.guild_id,
+                SPORTS_ACCOUNT_ID,
+                (LedgerEntry(bet.stake, f"{game}:deposito"),),
+            )
+            cursor = connection.execute(
+                """
+                INSERT INTO economy_sports_bets
+                    (guild_id, user_id, channel_id, event_id, sport, home, away, commence,
+                     pick, odds, stake, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    bet.guild_id,
+                    bet.user_id,
+                    bet.channel_id,
+                    bet.event_id,
+                    bet.sport,
+                    bet.home,
+                    bet.away,
+                    bet.commence,
+                    bet.pick,
+                    bet.odds,
+                    bet.stake,
+                    bet.created_at,
+                ),
+            )
+            return replace(bet, id=int(cursor.lastrowid or 0), status="open"), balance
+
+    async def settle_sports_bet(
+        self,
+        guild_id: int,
+        bet_id: int,
+        *,
+        payout: int,
+        game: str,
+        day: str,
+        now: float,
+        day_tax: Callable[[int], int],
+    ) -> tuple[SportsBet, BetSettlement] | None:
+        """Resuelve una apuesta deportiva: vacía su depósito y paga, todo atómico.
+
+        Lo apostado vuelve del depósito y se juega en el día de hoy junto al premio
+        (`<juego>:apuesta` y `<juego>:premio`), así el día del casino ve la ganancia neta
+        de la apuesta y su IRPF se ajusta como en cualquier jugada.
+
+        Args:
+            payout: Lo que cobra, apuesta incluida; 0 si ha fallado.
+
+        Returns:
+            La apuesta resuelta y lo que ha movido en su día del casino, o `None` si ya
+            estaba resuelta (no se mueve nada).
+
+        Raises:
+            BalanceLimitError: Si el premio pasaría el saldo máximo. No se mueve nada.
+        """
+        return await self._run(
+            self._settle_sports_bet_sync, guild_id, bet_id, payout, game, day, now, day_tax
+        )
+
+    def _settle_sports_bet_sync(
+        self,
+        guild_id: int,
+        bet_id: int,
+        payout: int,
+        game: str,
+        day: str,
+        now: float,
+        day_tax: Callable[[int], int],
+    ) -> tuple[SportsBet, BetSettlement] | None:
+        if payout < 0:
+            raise ValueError("El premio no puede ser negativo.")
+        with self._transaction() as connection:
+            bet = self._open_sports_bet_in(connection, guild_id, bet_id)
+            if bet is None:
+                return None
+            self._apply_in_transaction(
+                connection,
+                guild_id,
+                SPORTS_ACCOUNT_ID,
+                (LedgerEntry(-bet.stake, f"{game}:deposito"),),
+            )
+            # Lo apostado vuelve al monedero fuera del día del casino y se juega dentro:
+            # el día solo ve la apuesta y el premio, no el depósito.
+            self._apply_in_transaction(
+                connection, guild_id, bet.user_id, (LedgerEntry(bet.stake, f"{game}:deposito"),)
+            )
+            entries = [LedgerEntry(-bet.stake, f"{game}:apuesta")]
+            if payout:
+                entries.append(LedgerEntry(payout, f"{game}:premio"))
+            result = self._settle_gamble_in(
+                connection,
+                guild_id,
+                bet.user_id,
+                entries,
+                day=day,
+                now=now,
+                adjust_tax=True,
+                day_tax=day_tax,
+            )
+            status = "won" if payout else "lost"
+            self._close_sports_bet_in(connection, bet, status, payout, now)
+            return replace(bet, status=status, payout=payout, settled_at=now), result
+
+    async def void_sports_bet(
+        self, guild_id: int, bet_id: int, *, game: str, now: float
+    ) -> tuple[SportsBet, int] | None:
+        """Anula una apuesta deportiva y devuelve lo apostado, sin tocar el casino.
+
+        Returns:
+            La apuesta anulada y el saldo de su dueño, o `None` si ya estaba resuelta.
+        """
+        return await self._run(self._void_sports_bet_sync, guild_id, bet_id, game, now)
+
+    def _void_sports_bet_sync(
+        self, guild_id: int, bet_id: int, game: str, now: float
+    ) -> tuple[SportsBet, int] | None:
+        with self._transaction() as connection:
+            bet = self._open_sports_bet_in(connection, guild_id, bet_id)
+            if bet is None:
+                return None
+            self._apply_in_transaction(
+                connection,
+                guild_id,
+                SPORTS_ACCOUNT_ID,
+                (LedgerEntry(-bet.stake, f"{game}:deposito"),),
+            )
+            # Dinero propio que vuelve: ni casino ni embargo (Biblia, «Embargo de la deuda»).
+            balance = self._apply_in_transaction(
+                connection,
+                guild_id,
+                bet.user_id,
+                (LedgerEntry(bet.stake, f"{game}:devolucion"),),
+            )
+            self._close_sports_bet_in(connection, bet, "void", bet.stake, now)
+            return replace(bet, status="void", payout=bet.stake, settled_at=now), balance
+
+    @staticmethod
+    def _open_sports_bet_in(
+        connection: sqlite3.Connection, guild_id: int, bet_id: int
+    ) -> SportsBet | None:
+        row = connection.execute(
+            """
+            SELECT * FROM economy_sports_bets
+            WHERE guild_id = ? AND id = ? AND status = 'open'
+            """,
+            (guild_id, bet_id),
+        ).fetchone()
+        return _sports_bet(row) if row is not None else None
+
+    @staticmethod
+    def _close_sports_bet_in(
+        connection: sqlite3.Connection, bet: SportsBet, status: str, payout: int, now: float
+    ) -> None:
+        connection.execute(
+            """
+            UPDATE economy_sports_bets SET status = ?, payout = ?, settled_at = ?
+            WHERE guild_id = ? AND id = ?
+            """,
+            (status, payout, now, bet.guild_id, bet.id),
+        )
+
+    async def open_sports_bets(self) -> list[SportsBet]:
+        """Las apuestas deportivas sin resolver de todos los servidores, por comienzo."""
+        return await self._run(self._open_sports_bets_sync)
+
+    def _open_sports_bets_sync(self) -> list[SportsBet]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                SELECT * FROM economy_sports_bets WHERE status = 'open'
+                ORDER BY commence, id
+                """
+            ).fetchall()
+        finally:
+            connection.close()
+        return [_sports_bet(row) for row in rows]
+
+    async def sports_bets(self, guild_id: int, user_id: int, *, limit: int) -> list[SportsBet]:
+        """Las apuestas deportivas de alguien: las abiertas y luego las últimas resueltas."""
+        return await self._run(self._sports_bets_sync, guild_id, user_id, limit)
+
+    def _sports_bets_sync(self, guild_id: int, user_id: int, limit: int) -> list[SportsBet]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                SELECT * FROM economy_sports_bets WHERE guild_id = ? AND user_id = ?
+                ORDER BY status = 'open' DESC, COALESCE(settled_at, commence) DESC, id DESC
+                LIMIT ?
+                """,
+                (guild_id, user_id, limit),
+            ).fetchall()
+        finally:
+            connection.close()
+        return [_sports_bet(row) for row in rows]
 
     # -- Declaración semanal -------------------------------------------------------
 
@@ -6132,6 +6475,7 @@ class EconomyRepository:
                 "economy_interest_savings",
                 "economy_porra_bets",
                 "economy_porra_settled",
+                "economy_sports_bets",
                 "economy_gaming_tax",
                 "economy_market_tax",
                 "economy_housing_tax",

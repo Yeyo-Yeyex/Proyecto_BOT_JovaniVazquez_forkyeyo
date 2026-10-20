@@ -166,6 +166,10 @@ from bot.services.slots import Kind as SlotKind
 from bot.services.slots import Spin
 from bot.services.slots import WinTier as SlotWinTier
 from bot.services.slots import pot_share as slots_pot_share
+from bot.services.sports import MAX_STAKE as SPORTS_MAX_STAKE
+from bot.services.sports import MIN_STAKE as SPORTS_MIN_STAKE
+from bot.services.sports import SPORTS
+from bot.services.sports import Pick as SportsPick
 from bot.services.timba import Act as TimbaAct
 from bot.services.timba import TimbaHand
 from bot.services.tower import DIFFICULTIES as TOWER_DIFFICULTIES
@@ -331,6 +335,8 @@ CATEGORIES: tuple[Category, ...] = (
     Category("backgammon", "♟️ Backgammon", group=_CG),
     Category("porras", "🎫 Porras", group=_CG),
     Category("apuestas", "📊 Estadísticas", group=_CG),
+    # Fuera del grupo 🎰 Casino: su desplegable ya tiene las 25 opciones de Discord.
+    Category("deportes", "⚽ Deportes"),
     Category("lottery", "🎟️ Loterías"),
     Category("shop", "🛍️ Tienda"),
     Category("rastro", "🧺 Rastro"),
@@ -593,6 +599,18 @@ PORRA_GAME_PREFIX = "porra_game_"
 PORRA_PROP_PREFIX = "porra_prop_"
 PORRA_GAMES = tuple(porra_allowed_games())
 PORRA_PROPS = tuple(prop.key for prop in PORRA_PROPOSITIONS)
+
+#: Prefijos de las apuestas deportivas por competición y por signo (`sports_pick_x`).
+SPORTS_LEAGUE_PREFIX = "sports_league_"
+SPORTS_PICK_PREFIX = "sports_pick_"
+SPORTS_LEAGUES = tuple(sport.key for sport in SPORTS)
+SPORTS_PICKS = tuple(pick.value.lower() for pick in SportsPick)
+#: Cuotas (en centésimas) a partir de las que una apuesta es a la sorpresa, y hasta
+#: las que es a lo seguro.
+SPORTS_LONG_ODDS = 500
+SPORTS_SAFE_ODDS = 130
+#: Goles de diferencia de una goleada.
+SPORTS_ROUT = 4
 
 _R = Rarity
 C, R, E, L, M = _R.COMMON, _R.RARE, _R.EPIC, _R.LEGENDARY, _R.MYTHIC
@@ -14468,6 +14486,209 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Pita a alguien con el silbato de árbitro.", C, True),
     ])  # fmt: skip
 
+    # ⚽ Deportes (`deportes`: apuestas a cuota fija al 1X2 de LaLiga y la Champions) ---------
+    # Cadencia: unos 10 partidos de LaLiga a la semana (más la Champions en su fase de liga)
+    # y una apuesta por partido y persona; quien apuesta a menudo hace unas 7 a la semana. Así,
+    # 100 apuestas son unos 3 meses (Épico) y 250, unos 8 (Legendario). Lo que se fuerza a
+    # propósito (el mínimo, el 69, a última hora) es Común o Raro. Las cuotas acertadas salen
+    # de la probabilidad real (×10 es ~9 %) y las cifras en Y$, de una apuesta normal de
+    # 1.000-5.000 Y$: la rareza fija el premio, e inflarla infla la economía.
+    a += _tiers("deportes", "sports_bets", [
+        (1, "sports_bets_1", "Saltar al césped", "Haz tu primera apuesta deportiva.", C),
+        (10, "sports_bets_10", "El diez a la espalda", "Haz 10 apuestas deportivas.", C),
+        (25, "sports_bets_25", "Carnet de socio", "Haz 25 apuestas deportivas.", R),
+        (50, "sports_bets_50", "Jornada 38 y pico", "Haz 50 apuestas deportivas.", E),
+        (100, "sports_bets_100", "Centenario de la grada", "Haz 100 apuestas deportivas.", E),
+        (250, "sports_bets_250", "Fichaje vitalicio", "Haz 250 apuestas deportivas.", L),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_wins", [
+        (1, "sports_wins_1", "Tres puntos", "Acierta una apuesta deportiva.", C),
+        (10, "sports_wins_10", "Pichichi de bolsillo", "Acierta 10 apuestas deportivas.", R),
+        (25, "sports_wins_25", "Balón de Oro de salón", "Acierta 25 apuestas deportivas.", E),
+        (50, "sports_wins_50", "Bota de Oro", "Acierta 50 apuestas deportivas.", L),
+        (100, "sports_wins_100", "Más títulos que el Madrid",
+         "Acierta 100 apuestas deportivas.", L),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_losses", [
+        (10, "sports_losses_10", "Dolor de Segunda", "Falla 10 apuestas deportivas.", R),
+        (50, "sports_losses_50", "Descenso a Segunda B", "Falla 50 apuestas deportivas.", E),
+        (100, "sports_losses_100", "Pagafantas de la Liga", "Falla 100 apuestas deportivas.", L),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_staked", [
+        (10_000, "sports_staked_10k", "Fichaje de verano",
+         "Apuesta 10.000 Y$ en total en apuestas deportivas.", C),
+        (100_000, "sports_staked_100k", "Cláusula de rescisión",
+         "Apuesta 100.000 Y$ en total en apuestas deportivas.", R),
+        (1_000_000, "sports_staked_1m", "Fair play financiero",
+         "Apuesta 1.000.000 Y$ en total en apuestas deportivas.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("deportes", "sports_win_max", [
+        (1_000, "sports_win_1k", "Prima por objetivos",
+         "Gana 1.000 Y$ netos con una apuesta deportiva.", C),
+        (10_000, "sports_win_10k", "Fichaje bomba",
+         "Gana 10.000 Y$ netos con una apuesta deportiva.", R),
+        (50_000, "sports_win_50k", "Traspaso del siglo",
+         "Gana 50.000 Y$ netos con una apuesta deportiva.", E),
+        (500_000, "sports_win_500k", "El Gordo en pretemporada",
+         "Gana 500.000 Y$ netos con una apuesta deportiva.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("deportes", "sports_odds_won_max", [
+        (300, "sports_odds_won_3", "Salta la sorpresa",
+         "Acierta una apuesta con cuota de ×3 o más.", C),
+        (500, "sports_odds_won_5", "Alcorconazo", "Acierta una apuesta con cuota de ×5 o más.", R),
+        (1_000, "sports_odds_won_10", "Maracanazo",
+         "Acierta una apuesta con cuota de ×10 o más.", E),
+        (2_000, "sports_odds_won_20", "Milagro de Estambul",
+         "Acierta una apuesta con cuota de ×20 o más.", L),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_win_streak_max", [
+        (3, "sports_streak_3", "Hat-trick", "Acierta 3 apuestas deportivas seguidas.", R),
+        (5, "sports_streak_5", "Los cinco magníficos",
+         "Acierta 5 apuestas deportivas seguidas.", E),
+        (8, "sports_streak_8", "Invencibles", "Acierta 8 apuestas deportivas seguidas.", L),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_bet_long", [
+        (1, "sports_long_1", "A por la machada", "Apuesta con una cuota de ×5 o más.", C),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_bet_safe", [
+        (1, "sports_safe_1", "Aparcar el autobús", "Apuesta con una cuota de ×1,30 o menos.", C),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_all_in", [
+        (1, "sports_all_in_1", "Jugarse el descenso",
+         "Apuesta todo tu saldo en una apuesta deportiva.", C),
+        (5, "sports_all_in_5", "Jugarse la vida en el descuento",
+         "Apuesta todo tu saldo 5 veces en apuestas deportivas.", R),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_bet_min", [
+        (1, "sports_bet_min", "Fichaje de la cantera",
+         f"Apuesta {SPORTS_MIN_STAKE} Y$ justos en un partido.", C, True),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_bet_cap", [
+        (1, "sports_bet_cap", "Fichaje galáctico",
+         f"Apuesta el máximo en un partido: {SPORTS_MAX_STAKE:_} Y$.".replace("_", "."), R),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_bet_666", [
+        (1, "sports_bet_666", "Los Diablos Rojos", "Apuesta 666 Y$ en un partido.", C, True),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_bet_69", [
+        (1, "sports_bet_69", "Cambio de posición", "Apuesta 69 Y$ en un partido.", C, True),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_last_minute", [
+        (1, "sports_last_minute_1", "Cierre del mercado",
+         "Apuesta en un partido a 5 minutos o menos de su comienzo.", C),
+        (10, "sports_last_minute_10", "Deadline Day",
+         "Apuesta 10 veces a 5 minutos o menos del comienzo del partido.", R),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_early", [
+        (1, "sports_early", "Reserva de entradas",
+         "Apuesta en un partido con 6 días o más de antelación.", R),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_night", [
+        (1, "sports_night", "Insomnio de Champions",
+         "Apuesta en un partido entre las 2:00 y las 6:00.", C, True),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_nochevieja", [
+        (1, "sports_nochevieja", "Campanadas con prórroga",
+         "Apuesta en un partido en Nochevieja.", C, True),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_canarias", [
+        (1, "sports_canarias", "Derbi canario",
+         "Apuesta en un partido el Día de Canarias.", C, True),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_friday13", [
+        (1, "sports_friday13", "Mal fario", "Apuesta en un partido un viernes 13.", R, True),
+    ])  # fmt: skip
+    a += _tiers("deportes", f"{SPORTS_PICK_PREFIX}x", [
+        (5, "sports_pick_x_5", "Cero a cero y a cenar", "Apuesta al empate 5 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("deportes", f"{SPORTS_PICK_PREFIX}2", [
+        (10, "sports_pick_2_10", "Maleta en el autobús",
+         "Apuesta 10 veces al equipo de fuera.", R),
+    ])  # fmt: skip
+    a += _tiers("deportes", f"{SPORTS_LEAGUE_PREFIX}soccer_uefa_champs_league", [
+        (10, "sports_champions_10", "Himno de la Champions",
+         "Haz 10 apuestas en partidos de la Champions.", R),
+    ])  # fmt: skip
+    a.append(
+        Achievement(
+            id="sports_all_picks",
+            name="El 1, la X y el 2",
+            description="Apuesta al equipo de casa, al empate y al de fuera.",
+            category="deportes",
+            rarity=R,
+            conditions=tuple((f"{SPORTS_PICK_PREFIX}{pick}", 1) for pick in SPORTS_PICKS),
+        )
+    )
+    a.append(
+        Achievement(
+            id="sports_all_leagues",
+            name="Doblete liguero y europeo",
+            description="Apuesta en todas las competiciones: LaLiga y la Champions.",
+            category="deportes",
+            rarity=R,
+            conditions=tuple((f"{SPORTS_LEAGUE_PREFIX}{league}", 1) for league in SPORTS_LEAGUES),
+        )
+    )
+    a.append(
+        Achievement(
+            id="sports_ups_downs",
+            name="Temporada de altibajos",
+            description="Acierta 10 apuestas deportivas y falla otras 10.",
+            category="deportes",
+            rarity=E,
+            conditions=(("sports_wins", 10), ("sports_losses", 10)),
+        )
+    )
+    a += _tiers("deportes", "sports_win_draw", [
+        (1, "sports_win_draw", "Reparto de puntos", "Acierta un empate.", R),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_win_00", [
+        (1, "sports_win_00", "Cero goles, mil alegrías", "Acierta un empate a 0-0.", E, True),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_win_rout", [
+        (1, "sports_win_rout_1", "Manita de campeón",
+         "Acierta una apuesta en la que tu equipo gana por 4 goles o más.", R),
+        (5, "sports_win_rout_5", "Mineirazo",
+         "Acierta 5 apuestas en las que tu equipo gana por 4 goles o más.", E),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_win_by_one", [
+        (1, "sports_win_by_one_1", "Uno a cero y a casa",
+         "Acierta una apuesta en la que tu equipo gana por un gol.", C),
+        (10, "sports_win_by_one_10", "Resultadismo puro",
+         "Acierta 10 apuestas en las que tu equipo gana por un gol.", R),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_lost_safe", [
+        (1, "sports_lost_safe_1", "Favorito de papel",
+         "Falla una apuesta con una cuota de ×1,30 o menos.", R),
+        (5, "sports_lost_safe_5", "Remontada ajena",
+         "Falla 5 apuestas con una cuota de ×1,30 o menos.", E),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_lost_tied", [
+        (1, "sports_lost_tied_1", "Me lo igualan",
+         "Falla una apuesta por un empate (apostabas a un equipo).", C),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_lost_rout", [
+        (1, "sports_lost_rout_1", "Cuatro a cero en la cara",
+         "Falla una apuesta en la que tu equipo pierde por 4 goles o más.", R),
+        (5, "sports_lost_rout_5", "Lavadora de goles",
+         "Falla 5 apuestas en las que tu equipo pierde por 4 goles o más.", E),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_lost_by_one", [
+        (1, "sports_lost_by_one_1", "Por un gol, cuñao",
+         "Falla una apuesta en la que tu equipo pierde por un gol.", C),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_lost_goals", [
+        (1, "sports_lost_goals", "Festival de goles ajeno",
+         "Falla una apuesta al empate en un partido con 6 goles o más.", E, True),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_refunds", [
+        (1, "sports_refunds_1", "Suspendido por la lluvia",
+         "Que te devuelvan una apuesta deportiva por un partido aplazado.", R),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_slips", [
+        (1, "sports_slips_1", "Revisión del VAR", "Mira tus apuestas con 🎟️ Mis apuestas.", C),
+    ])  # fmt: skip
+
     # 🏰 patrimonio (`perfil`), 💎 `fortunas` y 🧾 la factura de `hacienda` ------------------------
     # Mirar es una decisión: nada pasa de Raro. El patrimonio neto sí cuesta.
     a += _tiers("economy", "patrimonio_views", [
@@ -21250,6 +21471,108 @@ def porra_no_show_stats() -> StatDelta:
 def porra_snoop_stats() -> StatDelta:
     """Ha mirado quién apuesta qué con los prismáticos."""
     return StatDelta(add={"porra_snoops": 1})
+
+
+def sports_bet_stats(
+    *,
+    stake: int,
+    odds: int,
+    pick: str,
+    sport: str,
+    balance_before: int,
+    lead: float,
+    when: datetime,
+) -> StatDelta:
+    """Lo que cuenta una apuesta deportiva (`deportes`) al hacerla.
+
+    Args:
+        stake: Lo apostado.
+        odds: Cuota en centésimas.
+        pick: Signo: `1`, `X` o `2`.
+        sport: Competición (`bot.services.sports.SPORTS`).
+        balance_before: Saldo antes de apostar.
+        lead: Segundos que faltaban para el comienzo del partido.
+        when: Hora canaria de la apuesta.
+    """
+    add = {
+        "sports_bets": 1,
+        "sports_staked": stake,
+        f"{SPORTS_LEAGUE_PREFIX}{sport}": 1,
+        f"{SPORTS_PICK_PREFIX}{pick.lower()}": 1,
+    }
+
+    def bump(stat: str, condition: bool) -> None:
+        if condition:
+            add[stat] = 1
+
+    bump("sports_bet_long", odds >= SPORTS_LONG_ODDS)
+    bump("sports_bet_safe", odds <= SPORTS_SAFE_ODDS)
+    bump("sports_all_in", stake >= balance_before > 0)
+    bump("sports_bet_min", stake == SPORTS_MIN_STAKE)
+    bump("sports_bet_cap", stake == SPORTS_MAX_STAKE)
+    bump("sports_bet_666", stake == 666)
+    bump("sports_bet_69", stake == 69)
+    bump("sports_last_minute", lead <= 5 * 60)
+    bump("sports_early", lead >= 6 * 86_400)
+    bump("sports_night", 2 <= when.hour < 6)
+    bump("sports_nochevieja", (when.month, when.day) == (12, 31))
+    bump("sports_canarias", (when.month, when.day) == (5, 30))
+    bump("sports_friday13", when.weekday() == 4 and when.day == 13)
+    return StatDelta(add=add, peak={"sports_stake_max": stake, "sports_odds_max": odds})
+
+
+def sports_result_stats(
+    *, stake: int, odds: int, pick: str, payout: int, home: int, away: int, streak: int
+) -> StatDelta:
+    """Lo que cuenta una apuesta deportiva resuelta (sin lo común del casino).
+
+    Args:
+        stake: Lo apostado.
+        odds: Cuota en centésimas.
+        pick: Signo apostado: `1`, `X` o `2`.
+        payout: Lo cobrado, apuesta incluida (0 si falló).
+        home: Goles del equipo de casa.
+        away: Goles del de fuera.
+        streak: Apuestas acertadas seguidas, contando esta (0 si ha fallado).
+    """
+    add = {"sports_settled": 1}
+    peak = {}
+    draw = pick.upper() == SportsPick.DRAW
+    diff = home - away if pick == SportsPick.HOME else away - home
+
+    def bump(stat: str, condition: bool) -> None:
+        if condition:
+            add[stat] = 1
+
+    if payout:
+        add["sports_wins"] = 1
+        peak = {
+            "sports_win_max": payout - stake,
+            "sports_odds_won_max": odds,
+            "sports_win_streak_max": streak,
+        }
+        bump("sports_win_draw", draw)
+        bump("sports_win_00", draw and home == away == 0)
+        bump("sports_win_rout", not draw and diff >= SPORTS_ROUT)
+        bump("sports_win_by_one", not draw and diff == 1)
+    else:
+        add["sports_losses"] = 1
+        bump("sports_lost_safe", odds <= SPORTS_SAFE_ODDS)
+        bump("sports_lost_tied", not draw and home == away)
+        bump("sports_lost_rout", not draw and diff <= -SPORTS_ROUT)
+        bump("sports_lost_by_one", not draw and diff == -1)
+        bump("sports_lost_goals", draw and home + away >= 6)
+    return StatDelta(add=add, peak=peak)
+
+
+def sports_void_stats() -> StatDelta:
+    """Una apuesta deportiva anulada (partido sin resultado) y devuelta."""
+    return StatDelta(add={"sports_refunds": 1})
+
+
+def sports_slip_stats() -> StatDelta:
+    """Ha mirado sus apuestas deportivas con 🎟️ Mis apuestas."""
+    return StatDelta(add={"sports_slips": 1})
 
 
 def apuestas_stats(

@@ -39,12 +39,16 @@ class BotConfig:
             aplicación (`/poner`).
         casino_channel_ids: Canales donde se permiten los juegos del casino.
             Vacío significa "cualquier canal".
+        odds_api_key: Clave de The Odds API para las apuestas deportivas
+            (`deportes`). Es secreta. Vacía, `deportes` dice que no está configurado
+            y el bot no pide cuotas.
     """
 
     token: str
     log_level: str = DEFAULT_LOG_LEVEL
     command_prefix: str = DEFAULT_COMMAND_PREFIX
     casino_channel_ids: frozenset[int] = frozenset()
+    odds_api_key: str = ""
 
 
 def load_config(env: os._Environ[str] | dict[str, str] | None = None) -> BotConfig:
@@ -90,6 +94,7 @@ def load_config(env: os._Environ[str] | dict[str, str] | None = None) -> BotConf
         log_level=log_level,
         command_prefix=command_prefix,
         casino_channel_ids=casino_channel_ids,
+        odds_api_key=source.get("ODDS_API_KEY", "").strip(),
     )
 
 
