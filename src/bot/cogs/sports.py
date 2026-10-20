@@ -33,6 +33,10 @@ Logros: sección ⚽ Deportes del grupo 🎰 Casino (`sports_bet_stats`,
 `sports_result_stats`), más lo común del casino al resolverse (`casino_play` y
 `apuestas.record`). No admite porras (`porras.EXCLUDED_GAMES`): se resuelve días después.
 
+Telemetría: cada consulta a la API cuenta como evento `deportes` (`cuotas` o
+`resultados`, con lo que tarda y si falla) y los créditos que quedan, como
+`créditos de la API`: así el informe dice si el plan gratis llega.
+
 Si `CASINO_CHANNEL_IDS` está configurado, solo se abre en esos canales. Permisos del bot
 en el canal: enviar mensajes e insertar enlaces. No necesita intents especiales.
 """
@@ -101,7 +105,7 @@ from bot.services.sports import (
     payout,
     scores_due,
 )
-from bot.services.telemetry import TimedLock
+from bot.services.telemetry import TimedLock, report_event
 from bot.utils.cogs import find_cog
 from bot.utils.interactions import ack, edit, notify
 
@@ -286,6 +290,17 @@ def result_message(resolved: list[Resolved]) -> str:
     if len(resolved) > RESULT_LINES:
         lines.append(f"-# Y {len(resolved) - RESULT_LINES} apuestas más.")
     return "\n".join(lines)
+
+
+def _ms(started: float) -> float:
+    """Milisegundos desde `started` (`time.perf_counter`)."""
+    return (time.perf_counter() - started) * 1000
+
+
+def _report_credits(remaining: int | None) -> None:
+    """Apunta en la telemetría los créditos de la API que quedan (en el campo de `ms`)."""
+    if remaining is not None:
+        report_event("deportes", "créditos de la API", float(remaining))
 
 
 def win_streak(bets: list[SportsBet]) -> int:
@@ -716,12 +731,16 @@ class Deportes(commands.Cog):
     async def _fetch_odds(self, sport: str, now: float, remaining: int | None) -> int | None:
         """Pide y guarda las cuotas de una competición. Devuelve los créditos que quedan."""
         assert self.client is not None
+        started = time.perf_counter()
         try:
             reply = await self.client.odds(sport, now=now)
         except FeedError as error:
             logger.warning("Cuotas de %s: %s", sport, error)
+            report_event("deportes", "cuotas", _ms(started), error=True)
             await self.repository.mark_checked(sport, "odds_at", now=now)
             return remaining
+        report_event("deportes", "cuotas", _ms(started))
+        _report_credits(reply.remaining)
         await self.repository.save_odds(
             sport, parse_odds(reply.events, now=now), now=now, remaining=reply.remaining
         )
@@ -733,12 +752,16 @@ class Deportes(commands.Cog):
     ) -> int | None:
         """Pide y guarda los resultados de una competición. Devuelve los créditos que quedan."""
         assert self.client is not None
+        started = time.perf_counter()
         try:
             reply = await self.client.scores(sport, days=days)
         except FeedError as error:
             logger.warning("Resultados de %s: %s", sport, error)
+            report_event("deportes", "resultados", _ms(started), error=True)
             await self.repository.mark_checked(sport, "scores_at", now=now)
             return remaining
+        report_event("deportes", "resultados", _ms(started))
+        _report_credits(reply.remaining)
         await self.repository.save_scores(
             sport, parse_scores(reply.events), now=now, remaining=reply.remaining
         )
