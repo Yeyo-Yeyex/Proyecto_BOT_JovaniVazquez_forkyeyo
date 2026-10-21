@@ -221,6 +221,10 @@ HOME_RENTED = "alquiler"
 MORTGAGE_PURCHASE = "compra"
 #: Hipoteca nueva sobre algo que ya se tenía (`banco`, 🔐 Garantías).
 MORTGAGE_REMORTGAGE = "rehipoteca"
+#: Préstamo personal de `banco` (🏦 Préstamos).
+LOAN_PERSONAL = "personal"
+#: Anticipo de las rentas de un inmueble (`banco`, 💸 Anticipos): `listing` dice cuál.
+LOAN_ADVANCE = "rentas"
 #: Columnas añadidas después de crear las tablas: `(tabla, columna, DDL)`, para las bases de
 #: datos de antes (las migra `HousingRepository.initialize`).
 LATER_COLUMNS = (
@@ -461,7 +465,7 @@ class Loan:
     first_day: str
     status: str
     created_at: float
-    kind: str = "personal"
+    kind: str = LOAN_PERSONAL
     listing: str | None = None
     aval: str | None = None
 
@@ -479,6 +483,11 @@ class Loan:
     def insured(self) -> bool:
         """Si lleva el seguro de protección de pagos."""
         return self.premium > 0
+
+    @property
+    def advance(self) -> bool:
+        """Si es un anticipo de rentas (no cuenta en el tope de préstamos personales)."""
+        return self.kind == LOAN_ADVANCE
 
 
 def _loan(row: sqlite3.Row) -> Loan:
@@ -540,17 +549,19 @@ def add_loan_in(
     covers: int,
     first_day: str,
     now: float,
+    kind: str = LOAN_PERSONAL,
+    listing: str | None = None,
 ) -> int:
-    """Firma un préstamo y devuelve su id."""
+    """Firma un préstamo (o un anticipo de las rentas de `listing`) y devuelve su id."""
     cursor = connection.execute(
         """
         INSERT INTO housing_loans
             (guild_id, user_id, principal, balance, rate, payment, months, months_left, fee,
-             premium, premium_tax, covers_left, first_day, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             premium, premium_tax, covers_left, first_day, created_at, kind, listing)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (guild_id, user_id, principal, principal, rate, payment, months, months, fee,
-         premium, premium_tax, covers, first_day, now),
+         premium, premium_tax, covers, first_day, now, kind, listing),
     )  # fmt: skip
     return int(cursor.lastrowid or 0)
 

@@ -2260,7 +2260,7 @@ async def test_el_banco_sin_monte_y_el_fichero_de_morosos_en_perfil_con_el_bot_r
         owner = MagicMock(spec=discord.Member)
         owner.id, owner.bot, owner.display_name = OWNER_ID, False, "Diego"
         panel = module.BankPanel(banco, GUILD_ID, owner)
-        for tab in ("loans", "guarantees", "books"):
+        for tab in ("loans", "guarantees", "advances", "books"):
             panel.tab = tab
             kwargs = await panel.screen()
             assert kwargs["embed"].fields
@@ -2346,6 +2346,70 @@ async def test_pisos_abre_las_garantias_y_se_rehipoteca_con_el_bot_real(tmp_path
         casino = client.get_cog("Casino")
         kinds = {item.kind for item in await casino._pending(GUILD, OWNER_ID, 0, own=True)}  # noqa: SLF001
         assert "mortgage" in kinds
+    finally:
+        await client.close()
+
+
+async def test_pisos_abre_los_anticipos_y_se_adelantan_las_rentas_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """💸 Adelantar rentas de `pisos` abre `banco` en 💸 Anticipos con el inmueble elegido;
+    desde ahí se pide, se firma, la cuota sale en `saldo` y los logros se apuntan."""
+    client = await load_bot(tmp_path)
+    try:
+        pisos = client.get_cog("Pisos")
+        await client.economy.repository.apply(GUILD, OWNER_ID, [LedgerEntry(10_000_000, "test")])
+        await pisos.service.buy(GUILD, OWNER_ID, "taco_bajo", 100)
+        connection = client.housing._connect()  # noqa: SLF001
+        try:
+            connection.execute(
+                "UPDATE housing_leases SET status = 'alquilado', tenant = 'familia', "
+                "rent = 8000, until = '2099-01-01' WHERE guild_id = ? AND listing = ?",
+                (GUILD, "taco_bajo"),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        owner = MagicMock(spec=discord.Member)
+        owner.id, owner.bot, owner.display_name = OWNER_ID, False, "Diego"
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = GUILD_ID
+        owner.guild = guild
+        painter = MagicMock()
+        painter.paint = AsyncMock(side_effect=lambda states: [b"PNG"] * len(states))
+        painter.close = AsyncMock()
+        pisos.painter.scene = painter
+        panel = importer("Pisos", client).Panel(pisos, guild=guild, owner=owner)
+        panel.listing, panel.screen = "taco_bajo", "gestion"
+        interaction = fake_interaction(owner)
+        interaction.client, interaction.guild, interaction.channel = client, guild, None
+        await panel._advance(interaction)  # noqa: SLF001
+        shown = interaction.edit_original_response.await_args.kwargs
+        assert shown["embed"].title == "💸 Banco · Anticipos"
+        bank = shown["view"]
+        assert bank.advance_key == "taco_bajo" and bank.advance_months == 12
+
+        ask = next(
+            c for c in bank.children if getattr(c, "custom_id", "") == "banco:anticipo_pedir"
+        )
+        clicked = fake_interaction(owner)
+        clicked.client, clicked.guild, clicked.channel = client, guild, None
+        await ask.callback(clicked)
+        assert bank.advance_offer is not None
+        sign = next(
+            c for c in bank.children if getattr(c, "custom_id", "") == "banco:anticipo_firmar"
+        )
+        clicked = fake_interaction(owner)
+        clicked.client, clicked.guild, clicked.channel = client, guild, None
+        await sign.callback(clicked)
+        (loan,) = (await pisos.service.market(GUILD)).loans_of(OWNER_ID)
+        assert loan.advance and loan.listing == "taco_bajo" and loan.payment == 8_000
+        profile = await client.achievements.profile(GUILD, OWNER_ID)
+        assert profile.stats["advances_signed"] == 1 and "advance_1" in profile.unlocked
+        assert "advance_12" in profile.unlocked
+        casino = client.get_cog("Casino")
+        pending = await casino._pending(GUILD, OWNER_ID, 0, own=True)  # noqa: SLF001
+        assert any("Anticipo de rentas de" in item.text for item in pending)
     finally:
         await client.close()
 

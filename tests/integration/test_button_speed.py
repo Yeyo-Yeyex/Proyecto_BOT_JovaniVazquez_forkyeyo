@@ -1594,6 +1594,126 @@ async def press_garantia_sign(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+def pisos_let(client: BotClient, key: str) -> None:
+    """Alquila un inmueble a una familia de la gestora, con contrato para rato."""
+    connection = client.housing._connect()  # noqa: SLF001
+    try:
+        connection.execute(
+            "UPDATE housing_leases SET status = 'alquilado', tenant = 'familia', rent = 8000, "
+            "until = '2099-01-01' WHERE guild_id = ? AND listing = ?",
+            (GUILD_ID, key),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+async def anticipos_panel(client: BotClient, owner: MagicMock, *, signed: bool = False):  # noqa: ANN201
+    """El panel de `banco` en 💸 Anticipos con un inmueble alquilado (y un anticipo firmado)."""
+    await pisos_owned(client, "taco_bajo")
+    pisos_let(client, "taco_bajo")
+    if signed:
+        service = client.get_cog("Banco").housing
+        desk = await service.advance_desk(GUILD_ID, OWNER_ID)
+        await service.advance(GUILD_ID, OWNER_ID, "taco_bajo", months=3, rate=desk.rate)
+    return await banco_panel(client, owner, "advances")
+
+
+async def press_anticipo_pick(client: BotClient, owner: MagicMock) -> Click:
+    panel = await anticipos_panel(client, owner)
+    select = child(panel, discord.ui.Select, "banco:anticipo")
+
+    async def click(interaction: MagicMock) -> None:
+        select._values = ["taco_bajo"]  # lo que Discord rellena al elegir
+        await select.callback(interaction)
+
+    return click
+
+
+async def press_anticipo_term(client: BotClient, owner: MagicMock) -> Click:
+    panel = await anticipos_panel(client, owner)
+    select = child(panel, discord.ui.Select, "banco:anticipo_plazo")
+
+    async def click(interaction: MagicMock) -> None:
+        select._values = ["6"]
+        await select.callback(interaction)
+
+    return click
+
+
+async def press_anticipo_ask(client: BotClient, owner: MagicMock) -> Click:
+    panel = await anticipos_panel(client, owner)
+    button = child(panel, discord.ui.Button, "banco:anticipo_pedir")
+
+    async def click(interaction: MagicMock) -> None:
+        await button.callback(interaction)
+
+    return click
+
+
+async def anticipo_offer(client: BotClient, owner: MagicMock):  # noqa: ANN201
+    """El panel con la ficha de un anticipo a 12 meses enseñada."""
+    from bot.services import loans as lending
+
+    panel = await anticipos_panel(client, owner)
+    desk = await panel.cog.housing.advance_desk(GUILD_ID, OWNER_ID)
+    (found,) = desk.shares
+    panel.advance_offer = (lending.advance_quote(found.payment, 12, desk.rate), found.key, "Bajo")
+    await panel.screen()
+    return panel
+
+
+async def press_anticipo_sign(client: BotClient, owner: MagicMock) -> Click:
+    panel = await anticipo_offer(client, owner)
+    button = child(panel, discord.ui.Button, "banco:anticipo_firmar")
+
+    async def click(interaction: MagicMock) -> None:
+        await button.callback(interaction)
+
+    return click
+
+
+async def press_anticipo_back(client: BotClient, owner: MagicMock) -> Click:
+    panel = await anticipo_offer(client, owner)
+    button = child(panel, discord.ui.Button, "banco:anticipo_volver")
+
+    async def click(interaction: MagicMock) -> None:
+        await button.callback(interaction)
+
+    return click
+
+
+async def press_anticipo_list(client: BotClient, owner: MagicMock) -> Click:
+    panel = await anticipos_panel(client, owner, signed=True)
+    select = child(panel, discord.ui.Select, "banco:anticipo_lista")
+
+    async def click(interaction: MagicMock) -> None:
+        select._values = [select.options[0].value]
+        await select.callback(interaction)
+
+    return click
+
+
+async def press_anticipo_desist(client: BotClient, owner: MagicMock) -> Click:
+    panel = await anticipos_panel(client, owner, signed=True)
+    button = child(panel, discord.ui.Button, "banco:anticipo_desistir")
+
+    async def click(interaction: MagicMock) -> None:
+        await button.callback(interaction)
+
+    return click
+
+
+async def press_anticipo_repay(client: BotClient, owner: MagicMock) -> Click:
+    panel = await anticipos_panel(client, owner, signed=True)
+    button = child(panel, discord.ui.Button, "banco:anticipo_cancelar")
+
+    async def click(interaction: MagicMock) -> None:
+        await button.callback(interaction)
+
+    return click
+
+
 async def vender_panel(client: BotClient, owner: MagicMock, selected: int | None = None):  # noqa: ANN201
     """El panel de `vender` ya pintado, con `selected` elegido (leerlo no cuenta)."""
     panel = module_of(client, "Rastro").VenderPanel(client.get_cog("Rastro"), GUILD_ID, owner)
@@ -1786,6 +1906,18 @@ async def press_pisos_remortgage(client: BotClient, owner: MagicMock) -> Click:
 
     async def click(interaction: MagicMock) -> None:
         await panel._remortgage(interaction)
+
+    return click
+
+
+async def press_pisos_advance(client: BotClient, owner: MagicMock) -> Click:
+    await pisos_owned(client, "taco_bajo")
+    pisos_let(client, "taco_bajo")
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen = "taco_bajo", "gestion"
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._advance(interaction)
 
     return click
 
@@ -2310,6 +2442,15 @@ CASES: dict[str, Press] = {
     "banco: importe de la rehipoteca": press_garantia_amount,
     "banco: firmar la rehipoteca": press_garantia_sign,
     "pisos: rehipotecar": press_pisos_remortgage,
+    "banco: elegir inmueble para el anticipo": press_anticipo_pick,
+    "banco: meses del anticipo": press_anticipo_term,
+    "banco: adelantar rentas": press_anticipo_ask,
+    "banco: firmar el anticipo": press_anticipo_sign,
+    "banco: volver de la ficha del anticipo": press_anticipo_back,
+    "banco: elegir anticipo": press_anticipo_list,
+    "banco: desistir del anticipo": press_anticipo_desist,
+    "banco: cancelar el anticipo": press_anticipo_repay,
+    "pisos: adelantar rentas": press_pisos_advance,
     "vender: elegir objeto": press_vender_item,
     "vender: vender al Monte": press_vender_sell,
     "vender: empeñar": press_vender_pawn,

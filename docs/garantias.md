@@ -70,7 +70,7 @@ ficha del inmueble de `pisos`, que abre el banco con ese inmueble elegido.
 - **Amortizar:** como cualquier hipoteca (`pisos` y el mostrador), sin comisión (decisión del
   proyecto, como las demás).
 
-## 2. Anticipo de rentas (9.2.0)
+## 2. Anticipo de rentas (9.2.0) · hecho
 
 El banco te adelanta hoy varios meses de lo que te paga el inquilino de un inmueble y se cobra
 él esa renta hasta saldarlo (cesión de las rentas futuras, arts. 1526 y siguientes del CC). En
@@ -92,6 +92,27 @@ España lo ofrecen empresas, no bancos: aquí lo hace el banco del bot.
 - **IRPF:** la renta tributa cada noche como siempre, cuando se devenga (art. 14.1.a LIRPF), no
   al adelantarla; el coste del anticipo no deduce. Se guarda en `housing_loans` con
   `kind = 'rentas'` y `listing`.
+
+Hecho en la 9.2.0 (mostrador en `bot.cogs.banco_anticipos`, firma en
+`HousingRepository.advance`, reglas `loans.advance_quote`). Decisiones de la
+implementación:
+
+- **Lo adelantado** es el valor actual de las cuotas al tipo mensual (TIN / 12),
+  redondeado hacia abajo: así la última cuota siempre salda el saldo y el préstamo se
+  cierra en su plazo (lo comprueba una prueba).
+- **Cuota:** la renta por tus participaciones entre las de todos los dueños (las que
+  siguen en venta no cuentan), como reparte la renta el cierre de la noche.
+- **Contrato:** los días que faltan hasta el último del contrato tienen que ser al
+  menos los meses que pides; un inquilino en impago (o que debe algún mes) no vale.
+  El de los nómadas (8 meses) solo da para 3 o 6.
+- **Ventas forzosas:** además de la ejecución y la división (también la que acaba
+  sin pujas, que vende cada parte al mercado), la venta que aprueba la junta tampoco
+  se para: no la decide solo él.
+- **Cancelar** es amortizar: el 0,5 % de compensación (siempre quedan 12 cuotas o
+  menos). Desistir, hasta la primera cuota, devuelve la comisión.
+- **Mala suerte:** el logro secreto del inquilino que se va cuenta cada noche en que
+  se cobra una cuota del anticipo y el inmueble ya no está alquilado y al día
+  (`DayRun.advance_orphans`).
 
 ## 3. Avalista (9.3.0)
 

@@ -134,9 +134,9 @@ from bot.services.interest import (
     RESIST_BALANCE,
 )
 from bot.services.levels import TIMEZONE
+from bot.services.loans import ADVANCE_TERMS, REMORTGAGE_MIN, REMORTGAGE_TERMS
 from bot.services.loans import MAX_LOANS as LOAN_MAX_LOANS
 from bot.services.loans import MAX_PRINCIPAL as LOAN_MAX_PRINCIPAL
-from bot.services.loans import REMORTGAGE_MIN, REMORTGAGE_TERMS
 from bot.services.loans import TERMS as LOAN_TERMS
 from bot.services.lootboxes import COLLECTIONS as LOOTBOX_COLLECTIONS
 from bot.services.lottery import MAX_PER_DRAW as MAX_LOTTERY_PER_DRAW
@@ -9214,6 +9214,45 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("bizum", "remortgage_executed", [
         (1, "remortgage_executed", "Se pinchó la burbuja",
          "Que el banco ejecute un inmueble que habías rehipotecado.", R, True),
+    ])  # fmt: skip
+    # Anticipos de rentas (`banco`, 💸 Anticipos: advance_*_stats).
+    a += _tiers("bizum", "advances_signed", [
+        (1, "advance_1", "Pan para hoy", "Pide un anticipo de rentas.", C),
+        (5, "advance_5", "Casero con prisas", "Firma 5 anticipos de rentas.", R),
+        (20, "advance_20", "Regreso al cobro", "Firma 20 anticipos de rentas.", E),
+    ])  # fmt: skip
+    a += _tiers("bizum", "advance_longest", [
+        (1, "advance_12", "Un año en una noche",
+         f"Pide un anticipo de {max(ADVANCE_TERMS)} meses de renta.", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "advance_shortest", [
+        (1, "advance_3", "Para ir tirando",
+         f"Pide un anticipo de solo {min(ADVANCE_TERMS)} meses de renta.", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "advance_principal_max", [
+        (100_000, "advance_100k", "Más vale renta en mano",
+         "Consigue que el banco te adelante 100.000 Y$ o más de una vez.", R),
+        (500_000, "advance_500k", "Factoring de barrio",
+         "Consigue que el banco te adelante 500.000 Y$ o más de una vez.", E),
+        (1_000_000, "advance_1m", "El inquilino millonario",
+         "Consigue que el banco te adelante 1.000.000 Y$ o más de una vez.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("bizum", "advances_open_max", [
+        (3, "advance_open_3", "Tres casas y ni una renta",
+         "Ten anticipos de rentas sobre 3 inmuebles a la vez.", R),
+    ])  # fmt: skip
+    a += _tiers("bizum", "advance_repaid", [
+        (1, "advance_repaid", "Recompra de futuros",
+         "Cancela un anticipo de rentas antes de tiempo.", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "advance_desisted", [
+        (1, "advance_desisted", "Donde dije renta, digo Diego",
+         "Desiste de un anticipo de rentas antes de la primera cuota.", C, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "advance_orphan", [
+        (1, "advance_orphan", "El inquilino eres tú",
+         "Paga tú la cuota de un anticipo porque el inquilino se fue o dejó de pagar.", R,
+         True),
     ])  # fmt: skip
     a += _tiers("bizum", "bank_books", [
         (1, "bank_books_1", "Auditor por un día",
@@ -24261,6 +24300,35 @@ def remortgage_signed_stats(
         if hit:
             delta.add[stat] = 1
     return delta
+
+
+def advance_signed_stats(*, principal: int, months: int, open_count: int) -> StatDelta:
+    """Estadísticas de quien firma un anticipo de rentas (`banco`, 💸 Anticipos).
+
+    Args:
+        principal: Lo que adelanta el banco.
+        months: Meses de renta adelantados.
+        open_count: Anticipos vivos que tiene contando este (uno por inmueble).
+    """
+    delta = StatDelta(
+        add={"advances_signed": 1},
+        peak={"advance_principal_max": principal, "advances_open_max": open_count},
+    )
+    if months == max(ADVANCE_TERMS):
+        delta.add["advance_longest"] = 1
+    if months == min(ADVANCE_TERMS):
+        delta.add["advance_shortest"] = 1
+    return delta
+
+
+def advance_closed_stats(*, status: str) -> StatDelta:
+    """Estadísticas de quien cierra un anticipo a mano: cancelado (`pagado`) o desistido."""
+    return StatDelta(add={"advance_repaid" if status == "pagado" else "advance_desisted": 1})
+
+
+def advance_orphan_stats() -> StatDelta:
+    """Estadísticas de quien paga una cuota del anticipo sin inquilino que pague (la noche)."""
+    return StatDelta(add={"advance_orphan": 1})
 
 
 def remortgage_executed_stats() -> StatDelta:
