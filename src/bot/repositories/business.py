@@ -310,6 +310,11 @@ def companies_in(connection: sqlite3.Connection, guild_id: int) -> dict[int, int
     Lo que le debe al socio no se resta: es un crédito del propio dueño y se anulan.
     """
     out: dict[int, int] = {}
+    exists = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'business'"
+    ).fetchone()
+    if exists is None:  # sin el cog de los negocios (pruebas que no lo montan)
+        return out
     for row in connection.execute("SELECT * FROM business WHERE guild_id = ?", (guild_id,)):
         business = _load(row)
         if not business.is_company:
