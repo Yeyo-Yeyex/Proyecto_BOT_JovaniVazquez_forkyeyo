@@ -26,12 +26,15 @@ from bot.services.agenda import FRANJAS_DIA
 from bot.services.business import EVICTION_NIGHTS, nightly_bill, opening_quote
 from bot.services.business_catalog import SECTOR_BY_KEY
 from bot.services.business_games import COINS, TurnGame
+from bot.services.business_view import cliente_state
 from bot.services.economy import STARTING_BALANCE, EconomyService
 from bot.services.housing_catalog import BARRIO_BY_KEY
 from bot.services.loans import wage_garnish
 from bot.services.negocio import BusinessError, BusinessService
 from bot.services.pala import WorkError, WorkService
 from bot.services.work import (
+    BATTERY_MAX,
+    BATTERY_MIN,
     EXCEDENCIA_COOLDOWN_DAYS,
     EXCEDENCIA_MIN_DAYS,
     EXCEDENCIA_SENIORITY_DAYS,
@@ -39,6 +42,7 @@ from bot.services.work import (
     ORDINARY_SHIFTS,
     PERFORMANCE_START,
     SELF_EMPLOYED_FEE,
+    SHIFT_COST,
     Wish,
 )
 
@@ -261,6 +265,60 @@ async def test_un_turno_cobra_las_ventas_con_retencion_sobre_el_margen(tmp_path:
         )  # type: ignore[union-attr]
     total, balance = wallet(tmp_path, USER)
     assert total == balance == result.balance
+
+
+async def test_el_imv_y_el_banco_ven_lo_que_deja_el_negocio(tmp_path: Path) -> None:
+    clock = Clock()
+    service, _work = await make(tmp_path, clock)
+    await open_cafe(service)
+    for product in SECTOR_BY_KEY["cafeteria"].products:
+        await service.buy(GUILD, USER, product.key, 2)
+    # Montar y comprar son gasto de la actividad, pero no restan: solo cuenta la cuota.
+    assert await service.economy.work_week_net(GUILD, USER) == -FLAT_RATE_FEE
+    clock.now += 8 * DAY  # la apertura, las compras y la cuota quedan fuera de la semana
+    turn = await service.start_turn(GUILD, USER)
+    clock.now = play(turn.game, clock.now)
+    result = await service.finish_turn(GUILD, USER, turn)
+    net = result.summary.sales - result.withheld
+    assert net > 0
+    assert await service.economy.work_week_net(GUILD, USER) == net
+    # El banco mira 30 días: ahí la apertura aún pesa más que las ventas.
+    assert await service.economy.work_net_days(GUILD, USER, 30) == -FLAT_RATE_FEE
+
+
+async def test_el_turno_sorteado_antes_de_abrir_es_el_que_sale(tmp_path: Path) -> None:
+    service, _work = await make(tmp_path, Clock())
+    await open_cafe(service)
+    for product in SECTOR_BY_KEY["cafeteria"].products:
+        await service.buy(GUILD, USER, product.key, 2)
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    plan = service.plan()
+    ahead = service.preview(status, plan)
+    assert ahead is not None
+    turn = await service.start_turn(GUILD, USER, plan)
+    assert [c.seed for c in turn.game.clients] == [c.seed for c in ahead.clients]
+    assert cliente_state(turn.business, turn.game) == cliente_state(status.business, ahead)
+
+
+async def test_sin_curro_el_negocio_cansa_igual_y_la_bateria_pasa_al_contrato(
+    tmp_path: Path,
+) -> None:
+    clock = Clock()
+    service, work = await make(tmp_path, clock)
+    await open_cafe(service)
+    await service.buy(GUILD, USER, "cafe", 5)
+    turn = await service.start_turn(GUILD, USER)
+    assert turn.battery_before == BATTERY_MAX
+    assert await work.battery(GUILD, USER) == BATTERY_MAX - SHIFT_COST
+    turn.game.finish(clock.now)
+    await service.finish_turn(GUILD, USER, turn)
+    await work.repository.save_person_battery(GUILD, USER, BATTERY_MIN, clock.now)
+    with pytest.raises(BusinessError, match="reventado"):
+        await service.start_turn(GUILD, USER)
+    # Al firmar el primer curro no se estrena batería: sigue reventado.
+    await work.hire(GUILD, USER, "obra")
+    assert await work.battery(GUILD, USER) == pytest.approx(BATTERY_MIN)
 
 
 async def test_sin_stock_no_se_abre(tmp_path: Path) -> None:

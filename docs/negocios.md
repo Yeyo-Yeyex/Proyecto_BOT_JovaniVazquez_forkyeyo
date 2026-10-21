@@ -136,7 +136,10 @@ Es el art. 46.2 ET; en la escala de la `pala`, un año son 7 días (los trienios
 
 ### Un turno (los minijuegos, `services/business_games.py`)
 
-- Cada turno gasta 1 franja y, si el dueño tiene curro, batería (`SHIFT_COST`).
+- Cada turno gasta 1 franja y batería (`SHIFT_COST`), tenga curro o no: la batería es de la persona.
+  - Sin contrato se guarda aparte (`work_people`) y el inicio de `pala` la enseña.
+  - Al firmar el primer oficio pasa al contrato: quien llega reventado del negocio no estrena batería.
+  - Con la batería en `BATTERY_MIN` no se abre; por debajo de `TIRED`, los clientes esperan menos.
 - Llega una cola de clientes (los de la demanda). A cada uno se le atiende en su pantalla (una imagen por
   cliente) y tiene paciencia; si se agota, se va. El turno acaba al vaciarse la cola o a los `TURN_SECONDS`.
 - **Comandas** (cafetería):
@@ -164,23 +167,30 @@ Es el art. 46.2 ET; en la escala de la `pala`, un año son 7 días (los trienios
 Todo por `EconomyService.business`, en una transacción con lo que guarda el negocio, como `pisos`.
 
 - **Ventas:** las crea la demanda, que no existe; son el grifo.
-  - Son rendimiento de actividad económica (art. 27 LIRPF), con criterio de caja (art. 7.2 RIRPF): ingreso
-    al cobrar y gasto al pagar.
+  - Son rendimiento de actividad económica (art. 27 LIRPF). El autónomo del juego opta por el criterio de
+    cobros y pagos (art. 7.2 RIRPF, que es una opción y no la regla): ingreso al cobrar y gasto al pagar.
   - Retienen a cuenta con el tipo estable sobre el margen del turno (ventas menos el coste de lo vendido), en
-    lugar del 20 % del pago fraccionado (art. 110 RIRPF): una sola vara para toda la renta (Biblia).
+    lugar del 20 % del pago fraccionado (art. 110.1.a RIRPF): una sola vara para toda la renta (Biblia).
+  - Se integran con el resto de la base general (art. 48.a LIRPF): la Renta las suma a las nóminas.
   - El embargo del 30 % de quien debe a Hacienda alcanza a las ventas.
 - **Compras al mayorista:** la base desaparece y el IGIC va al Estado.
-  - El autónomo está en el régimen especial del pequeño empresario (Canarias, hasta 50.000 € al año desde
-    julio de 2026): no repercute IGIC en sus ventas y no deduce el soportado, que pasa a ser coste.
+  - El autónomo está en el régimen especial del pequeño empresario (arts. 89-91 del Decreto Legislativo
+    1/2025 de Canarias): sus ventas están exentas (art. 90.1), así que no repercute IGIC y no deduce el
+    soportado, que pasa a ser coste. El tipo general es el 7 % (art. 32.1).
+  - Simplificación: no se mira el tope del régimen (30.000 € de facturación al año; 50.000 € desde 2027, y en
+    julio de 2026 pudo optar quien no pasó de 50.000 € en 2025, DA 7.ª del Decreto-ley 3/2026).
   - Base más IGIC se apuntan como gasto de la actividad (`INCOME_BUSINESS` en negativo).
 - **Montar el negocio:**
-  - la tasa municipal de la apertura (comunicación previa) va al Estado, porque no hay ayuntamientos;
+  - la tasa municipal de la apertura va al Estado, porque no hay ayuntamientos. Es la de la comunicación
+    previa (art. 20.4.i TRLRHL): la Ley 7/2011 de Canarias para la cafetería y el taller, y la Ley 12/2012
+    para la tienda (pequeño comercio);
   - la fianza del local son 2 mensualidades (art. 36.1 LAU) y va al depósito de fianzas
     (`HOUSING_DEPOSIT_ACCOUNT_ID`, como la de los pisos); vuelve al cerrar, menos lo que se deba;
-  - el acondicionamiento lleva IGIC y se apunta entero como gasto de esa semana (elementos de poco valor,
-    art. 12.3.e LIS por remisión del art. 30 LIRPF; simplificación).
+  - el acondicionamiento lleva IGIC y se apunta entero como gasto de esa semana. Es una simplificación: la
+    libertad de amortización (art. 12.3.e LIS, por el art. 28.1 LIRPF) solo vale para elementos nuevos de
+    hasta 300 € cada uno y 25.000 € al año, y unas obras se amortizarían (fase 2).
 - **Cada noche, el alquiler y los suministros:**
-  - el alquiler del local lleva IGIC y la retención del 19 % del arrendador (art. 100 RIRPF), que el inquilino
+  - el alquiler del local lleva IGIC y la retención del 19 % del arrendador (arts. 100 RIRPF y 101.8 LIRPF), que el inquilino
     ingresa en el Estado; el resto desaparece (el casero no existe);
   - los suministros llevan IGIC;
   - se cobra lo que llegue del monedero y el resto queda como deuda del local;
@@ -188,6 +198,8 @@ Todo por `EconomyService.business`, en una transacción con lo que guarda el neg
     que pueda.
 - **Cuota de autónomo:** cada lunes, `SELF_EMPLOYED_FEE` (la tarifa plana `FLAT_RATE_FEE` la primera semana,
   art. 38 ter de la Ley 20/2007) por `charge_self_employed_fee`.
+  - La tarifa plana real fue de 80 € al mes de 2023 a 2025 (DT 5.ª del RDL 13/2022). Desde 2026 la fija cada
+    Ley de Presupuestos; con los de 2026 prorrogados (RDL 3/2026), no hay cifra oficial nueva.
   - Si su puesto de la `pala` ya es de autónomo (reparto, influencer), no paga dos.
   - Con curro por cuenta ajena es pluriactividad: paga las dos cotizaciones. El reintegro del art. 313 LGSS
     se deja para la fase 3.
@@ -196,6 +208,15 @@ Todo por `EconomyService.business`, en una transacción con lo que guarda el neg
   - el aviso de la Renta (`renta.remind`) y la mascota (`renta.hint`);
   - `hacienda` cuenta el IGIC, las tasas y la retención del alquiler (`economy_business_tax`);
   - `saldo` enseña el alquiler de esta noche, la deuda del local y la cuota de la semana (`pending`).
+- **El IMV y el banco ven el negocio** (`EconomyRepository.work_net`):
+  - a las nóminas se suma lo que deja el negocio: ventas menos su retención y menos los gastos de la
+    actividad (compras, local, apertura) de la misma ventana, 7 días para el IMV y 30 para el banco;
+  - el IMV real mira todos los ingresos, también los de actividades económicas (art. 18 de la Ley 19/2021),
+    y el banco los ve en la declaración;
+  - nunca resta: una semana en pérdidas, o de montar y comprar stock, cuenta como cero. Así comprar no sube
+    el IMV. La cuota de autónomo sí resta, como siempre;
+  - con eso, quien solo tiene negocio ya no es «sin nómina» para los préstamos, y el VPO, el Bono Alquiler
+    Joven y la garantía del alquiler lo cuentan como ingresos.
 
 ### Las pantallas (escena de Node, `assets/negocio/escena.html`)
 
@@ -237,6 +258,10 @@ El contrato de cada pantalla está en la docstring de `services/business_view.py
   - una confirmación con lo que cuesta (tasa, fianza, acondicionamiento y la cuota de la semana).
 - **Pintar antes del clic:** las pantallas vecinas (almacén, cuentas, portada) se pintan en segundo plano
   (`Painter` de `pisos`) y el siguiente cliente también, mientras atiendes al de ahora.
+  - El primer cliente de un turno también: en la portada y en el tique, el panel sortea ya el azar del
+    próximo turno (`TurnPlan`, `BusinessService.plan`) y pinta su primer cliente (`preview`). Al pulsar
+    🔑 Abrir, `start_turn` gasta ese mismo azar: si nada ha cambiado (la hora, el stock, la batería), la
+    imagen ya está pintada.
 
 ### Logros (categoría 🏪 Negocio, en el grupo 🪏 Trabajo)
 
@@ -284,7 +309,7 @@ asentadas. Neto al día, tras IRPF y cuota:
   La cafetería de Santa Cruz (centro) gana más que la de Puerto de Mogán (lujo), que paga
   casi el doble de local.
 - **Lo que no mira el simulador:**
-  - la batería (con curro, cada turno del negocio la gasta como un turno de la `pala`);
+  - la batería (cada turno del negocio la gasta como un turno de la `pala`, con curro o sin él);
   - la competencia en el barrio;
   - los niveles de precio distintos del normal;
   - el Falcon. En la fase 1 el negocio da lo de un P3-P5; los puestos altos de la `pala`
@@ -293,3 +318,37 @@ asentadas. Neto al día, tras IRPF y cuota:
   mucho 4 horas extra al día (8 turnos en total). Antes solo lo frenaban la batería y la
   familia, y quien ficha todo lo que puede sacaba unos 5 turnos al día (`docs/familia_pala.py`),
   así que el tope casi nunca se nota.
+
+### Medido (21/10/2026)
+
+- **Dibujo** (`docs/medir_dibujos.py`, 4 hilos de este PC, dos pasadas, ms con 1 proceso abierto / en caliente):
+  inicio 61 / 59, portada 64 / 63, cliente de la cafetería 61 / 63, cliente del taller 56 / 57 (la ficha de
+  `pisos`, 75 / 75). En el NAS, ~1,5 veces más.
+- **Node contra Chromium** (Chrome 155 de este PC, las 32 muestras): diferencia media de 0,9 a 2,2 sobre 255,
+  por debajo de 4 en todas. La prueba de `tests/unit/test_business_scene.py` sigue saltándose aquí porque busca
+  Chromium en `/opt/pw-browsers`.
+- **Memoria:** el proceso de Node que siempre está abierto pasa de 78 a 131 MB con la escena cargada (~53 MB),
+  lo que cuenta `docker-compose.yml` por escena. No sube el tope: cada proceso carga 3 escenas como mucho.
+
+### Normas comprobadas en fuente oficial (21/10/2026)
+
+En el BOE consolidado:
+
+| Norma | Qué dice | Estado |
+|---|---|---|
+| Art. 36.1 LAU | Fianza de dos mensualidades en el uso distinto de vivienda | Confirmado |
+| Art. 110.1.a RIRPF | Pago fraccionado del 20 % del rendimiento neto en estimación directa | Confirmado |
+| Art. 7.2 RIRPF | Criterio de cobros y pagos: es una opción, que dura 3 años | Corregido (antes se daba como regla) |
+| Art. 48.a LIRPF | Los rendimientos se integran y compensan sin límite en la base general | Confirmado |
+| Ley 7/2011 de Canarias, arts. 5.1, 34 y 35; Ley 12/2012, arts. 3-4; art. 20.4.i TRLRHL | Comunicación previa ante el ayuntamiento y su tasa municipal | Confirmado |
+| Decreto Legislativo 1/2025 de Canarias, arts. 32.1 y 89-91 | IGIC general del 7 %; pequeño empresario exento, tope de 30.000 € (50.000 € desde 2027) | Corregido (antes, 50.000 € desde julio de 2026) |
+| Ley 19/1994, arts. 29, 31, 43 y 44 | ZEC: IS al 4 %, 5 empleos en Gran Canaria y Tenerife (3 en el resto), inversión de 100.000 o 50.000 €, 1,8 M€ de base más 0,5 M€ por empleo de más | Confirmado. La inscripción acaba con el reglamento europeo de ayudas (31/12/2026, prorrogable); sus incentivos duran 6 años más |
+| Art. 38 ter Ley 20/2007 | Tarifa plana 12 meses (y 12 más con rendimientos bajo el SMI) | Confirmado. El importe de 2026 no tiene cifra oficial |
+| Arts. 100 RIRPF y 101.8 LIRPF | Retención del 19 % sobre el alquiler de un local | Confirmado (el 101.8 es de la ley, no del reglamento) |
+| Art. 12.3.e LIS, por el art. 28.1 LIRPF | Libertad de amortización hasta 300 € por elemento y 25.000 € al año | Corregida la remisión (no es el art. 30 LIRPF) |
+
+Para la fase 3: el RDL 3/2026 fija en 2026 el reintegro del 50 % de lo cotizado en pluriactividad por encima
+de 17.323,68 €. Para la fase 4: el anexo de la ZEC no admite el comercio minorista ni la hostelería, pero sí la
+reparación de vehículos (CNAE 45), así que solo el taller podría acogerse.
+
+Sin comprobar: el articulado del Decreto 86/2013 y la cuota reducida de 2026.

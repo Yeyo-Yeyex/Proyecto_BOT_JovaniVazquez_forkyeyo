@@ -123,6 +123,7 @@ def dia_state(
     agenda: Agenda,
     work: Any | None,
     business: Business | None,
+    battery_left: float | None = None,
 ) -> State:
     """El inicio de `pala`: las franjas del día y las tarjetas del curro y del negocio.
 
@@ -131,10 +132,13 @@ def dia_state(
         agenda: Sus franjas de hoy.
         work: El `pala.Status` de su contrato, o `None` sin curro.
         business: Su negocio (con los contadores de hoy al día), o `None`.
+        battery_left: Su batería sin curro (la que gasta en el negocio); con curro sale
+            de `work`. Sin curro no hay familia que enseñar.
     """
     job: State | None = None
     jornada = "Sin curro"
-    battery = family = None
+    family = None
+    battery = None if battery_left is None else max(0, min(100, round(battery_left)))
     if work is not None:
         contract = work.contract
         jornada = "Excedencia" if contract.on_excedencia else JORNADA_NAMES[contract.jornada]

@@ -18,6 +18,8 @@ guarda el estado laboral. Tablas:
   contar días en el puesto, el sueldo medio de la baja y los logros. Se
   borra lo que pase de `SHIFT_RETENTION_SECONDS`.
 - `work_settings`: canales donde se permite `pala` (vacío = cualquiera).
+- `work_people`: la batería de quien aún no tiene contrato y la gasta en su negocio
+  propio. Al firmar su primer oficio pasa al contrato.
 """
 
 from __future__ import annotations
@@ -140,6 +142,14 @@ class WorkRepository:
                     PRIMARY KEY (guild_id, user_id, job, branch)
                 );
 
+                CREATE TABLE IF NOT EXISTS work_people (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    battery REAL NOT NULL,
+                    battery_at REAL NOT NULL,
+                    PRIMARY KEY (guild_id, user_id)
+                );
+
                 CREATE TABLE IF NOT EXISTS work_pension_claims (
                     guild_id INTEGER NOT NULL,
                     user_id INTEGER NOT NULL,
@@ -227,6 +237,43 @@ class WorkRepository:
             """,
             (guild_id, user_id, contract.job, contract.level, contract.level, contract.branch),
         )
+
+    async def person_battery(self, guild_id: int, user_id: int) -> tuple[float, float] | None:
+        """`(batería, cuándo se apuntó)` de quien no tiene contrato, o `None` si no la gastó."""
+        return await self._run(self._person_battery_sync, guild_id, user_id)
+
+    def _person_battery_sync(self, guild_id: int, user_id: int) -> tuple[float, float] | None:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT battery, battery_at FROM work_people WHERE guild_id = ? AND user_id = ?",
+                (guild_id, user_id),
+            ).fetchone()
+        finally:
+            connection.close()
+        return None if row is None else (float(row[0]), float(row[1]))
+
+    async def save_person_battery(
+        self, guild_id: int, user_id: int, battery: float, at: float
+    ) -> None:
+        """Guarda la batería de quien no tiene contrato."""
+        await self._run(self._save_person_battery_sync, guild_id, user_id, battery, at)
+
+    def _save_person_battery_sync(
+        self, guild_id: int, user_id: int, battery: float, at: float
+    ) -> None:
+        connection = self._connect()
+        try:
+            connection.execute(
+                """
+                INSERT INTO work_people (guild_id, user_id, battery, battery_at) VALUES (?, ?, ?, ?)
+                ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                    battery = excluded.battery, battery_at = excluded.battery_at
+                """,
+                (guild_id, user_id, battery, at),
+            )
+        finally:
+            connection.close()
 
     async def history(self, guild_id: int, user_id: int) -> dict[str, Career]:
         """`{oficio: Career(puesto en el que se quedó, puesto máximo, rama)}`."""
@@ -611,6 +658,7 @@ class WorkRepository:
                 "work_settings",
                 "work_retirements",
                 "work_pension_claims",
+                "work_people",
             ):
                 # `table` sale de una tupla fija, nunca de entrada del usuario.
                 connection.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))

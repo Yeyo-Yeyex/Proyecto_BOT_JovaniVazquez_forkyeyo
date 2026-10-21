@@ -210,7 +210,8 @@ DAILY_MAX_BONUS = 1_000
 #: empleo de los arts. 3 y 4 del RD 789/2022 (redacción del RD 240/2026): no
 #: cuenta el 100 % del aumento de ingresos del trabajo hasta 6.000 € al año y
 #: sí la mitad de lo que pase. En el juego se mira el neto de las nóminas de
-#: los últimos 7 días (pensiones incluidas: el IMV real mira todos los ingresos): los
+#: los últimos 7 días (pensiones y lo que deja el negocio propio incluidos: el IMV real
+#: mira todos los ingresos, también los de actividades económicas, art. 18 Ley 19/2021): los
 #: primeros `IMV_WORK_EXEMPT` (6.000 € al año, a la escala de juego de las nóminas y
 #: pasados a una semana) no cuentan, y de lo que pase se quita del IMV la mitad de su
 #: valor en euros, repartida entre los 7 días. El IMV va a la escala de los precios (10
@@ -659,7 +660,7 @@ def imv_after_work(amount: int, weekly_net: int) -> int:
 
     Args:
         amount: Lo que toca por la racha (`daily_amount`).
-        weekly_net: Neto de las nóminas de los últimos 7 días (Y$ de nómina).
+        weekly_net: Neto de las nóminas y del negocio de los últimos 7 días (Y$ de nómina).
     """
     excess = max(0, weekly_net - IMV_WORK_EXEMPT)
     reduction = -(-round(round(excess * IMV_WORK_TAPER) / IMV_WAGE_RATIO) // 7)  # hacia arriba
@@ -1673,25 +1674,32 @@ class EconomyService:
         monedero de su dueño. Tratamiento fiscal:
 
         - **Las ventas** de cada turno son rendimiento de actividades económicas (art. 27
-          LIRPF), imputadas con criterio de caja (art. 7.2 RIRPF: ingreso al cobrar, gasto
-          al pagar). La demanda no existe: se crean de la nada. Retienen a cuenta con el
-          tipo estable de la semana sobre el margen del turno (ventas menos el coste de lo
-          vendido) en lugar del 20 % del pago fraccionado (art. 110 RIRPF): una sola vara
-          para toda la renta, como pide la Biblia. Les alcanza el embargo del 30 %.
-        - **Las compras al mayorista** pagan IGIC (tipo cero el pan y la leche, art. 52 de
-          la Ley 4/2012; el resto, el general del art. 51), que va al Estado; la base
-          desaparece. El autónomo está en el régimen especial del pequeño empresario de
-          Canarias: no repercute IGIC en sus ventas y no deduce el soportado, así que base
-          e IGIC son gasto de la actividad.
-        - **Montar el negocio:** la tasa de la apertura es una tasa municipal (va al
-          Estado: no hay ayuntamientos); la fianza del local, dos mensualidades (art. 36.1
-          de la Ley 29/1994), va al depósito de fianzas y vuelve al cerrar; el
-          acondicionamiento lleva IGIC y es gasto de esa semana (elementos de poco valor,
-          art. 12.3.e LIS, al que remite el art. 30 LIRPF; simplificación del proyecto).
+          LIRPF), imputadas con el criterio de cobros y pagos, por el que opta el autónomo
+          del juego (art. 7.2 RIRPF: ingreso al cobrar, gasto al pagar). La demanda no
+          existe: se crean de la nada. Retienen a cuenta con el tipo estable de la semana
+          sobre el margen del turno (ventas menos el coste de lo vendido) en lugar del 20 %
+          del pago fraccionado (art. 110.1.a RIRPF): una sola vara para toda la renta, como
+          pide la Biblia. Les alcanza el embargo del 30 %.
+        - **Las compras al mayorista** pagan IGIC (tipo cero el pan y la leche; el resto, el
+          general del 7 %, art. 32.1 del Decreto Legislativo 1/2025 de Canarias), que va al
+          Estado; la base desaparece. El autónomo está en el régimen especial del pequeño
+          empresario (arts. 89-91 del mismo decreto): sus ventas están exentas (art. 90.1),
+          así que no repercute IGIC ni deduce el soportado, y base e IGIC son gasto de la
+          actividad. Simplificación: no se mira su tope de facturación (30.000 € al año;
+          50.000 € desde 2027).
+        - **Montar el negocio:** la tasa de la apertura es la municipal de la comunicación
+          previa (art. 20.4.i TRLRHL; Ley 7/2011 de Canarias y, en la tienda, Ley 12/2012) y
+          va al Estado porque no hay ayuntamientos; la fianza del local, dos mensualidades
+          (art. 36.1 de la Ley 29/1994), va al depósito de fianzas y vuelve al cerrar; el
+          acondicionamiento lleva IGIC y es gasto entero de esa semana. Simplificación del
+          proyecto: la libertad de amortización (art. 12.3.e LIS, por el art. 28.1 LIRPF)
+          solo vale para elementos nuevos de hasta 300 € y 25.000 € al año; unas obras se
+          amortizarían.
         - **Cada noche,** el alquiler del local lleva IGIC y la retención del 19 % del IRPF
-          del casero (art. 100 RIRPF), que el inquilino ingresa en el Estado; el resto se
-          lo lleva el casero, que no existe. Los suministros llevan IGIC. Se cobra lo que
-          llegue y el resto queda como deuda del local. Todo es gasto de la actividad.
+          del casero (arts. 100 RIRPF y 101.8 LIRPF), que el inquilino ingresa en el
+          Estado; el resto se lo lleva el casero, que no existe. Los suministros llevan IGIC.
+          Se cobra lo que llegue y el resto queda como deuda del local. Todo es gasto de la
+          actividad.
 
         La cuota de autónomos va aparte (`charge_self_employed_fee`). Ver
         `EconomyRepository.business` para el orden de los movimientos.
@@ -2221,13 +2229,13 @@ class EconomyService:
         return until
 
     async def work_week_net(self, guild_id: int, user_id: int) -> int:
-        """Neto de las nóminas de los últimos 7 días (lo que mira el IMV)."""
+        """Neto de las nóminas y del negocio de los últimos 7 días (lo que mira el IMV)."""
         return await self.repository.work_net(
             guild_id, user_id, self._clock() - IMV_WORK_WINDOW_SECONDS
         )
 
     async def work_net_days(self, guild_id: int, user_id: int, days: int) -> int:
-        """Neto de las nóminas (y pensiones) de los últimos `days` días (lo que mira el banco)."""
+        """Neto de nóminas, pensiones y negocio de los últimos `days` días (lo mira el banco)."""
         return await self.repository.work_net(guild_id, user_id, self._clock() - days * 86_400)
 
     async def week_tax_burden(self, guild_id: int, user_id: int) -> tuple[int, int]:

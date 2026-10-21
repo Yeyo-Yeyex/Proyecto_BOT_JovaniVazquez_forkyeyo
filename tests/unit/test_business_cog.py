@@ -335,6 +335,20 @@ async def test_un_turno_entero_cobra_y_acaba_en_el_tique(tmp_path: Path) -> None
     check_limits(panel)
 
 
+async def test_el_primer_cliente_se_pinta_antes_de_abrir(tmp_path: Path) -> None:
+    _work_cog, business_cog, panel = await opened_business(tmp_path)
+    painter = business_cog.painter
+    assert painter._worker is not None
+    await painter._worker
+    scene: FakeScene = painter.scene  # type: ignore[assignment]
+    ahead = [s for s in scene.painted if s["screen"] == "cliente"]
+    assert len(ahead) == 1
+    await button(panel, "🔑 Abrir").callback(click())
+    # El cliente que sale es el que ya estaba pintado: no se vuelve a pintar.
+    assert panel.scene_state() == ahead[0]
+    assert scene.painted.count(ahead[0]) == 1
+
+
 async def test_un_clic_de_una_ronda_vieja_no_cuenta(tmp_path: Path) -> None:
     _work_cog, _business_cog, panel = await opened_business(tmp_path)
     await button(panel, "🔑 Abrir").callback(click())

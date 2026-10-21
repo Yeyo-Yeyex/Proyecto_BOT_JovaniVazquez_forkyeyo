@@ -181,8 +181,8 @@ def effort_text(rent: int, income: int) -> str:
     rate = rules.effort(rent, income)
     if rate is None:
         return (
-            "📉 Sin nómina de `pala` en 30 días: la renta te comería el 100 % de nada. El "
-            "Banco de España no tiene palabra para eso."
+            "📉 Sin nómina de `pala` ni negocio en 30 días: la renta te comería el 100 % de "
+            "nada. El Banco de España no tiene palabra para eso."
         )
     pct = round(rate * 100)
     if rate > 1:

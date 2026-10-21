@@ -56,7 +56,13 @@ from bot.services.business_catalog import (
     PRICE_BY_KEY,
     SECTOR_BY_KEY,
 )
-from bot.services.business_games import TurnGame, TurnSummary, apply_loyalty, make_clients
+from bot.services.business_games import (
+    Client,
+    TurnGame,
+    TurnSummary,
+    apply_loyalty,
+    make_clients,
+)
 from bot.services.economy import (
     BusinessCost,
     BusinessMove,
@@ -98,7 +104,7 @@ class BusinessStatus:
         bill: Lo que cuesta su noche.
         pool_left: Clientes que le quedan hoy al barrio para su sector.
         rivals: Otros negocios del mismo sector en su barrio.
-        battery: Batería del dueño, si tiene curro.
+        battery: Batería del dueño (es de la persona: la gasta aunque no tenga curro).
         now: Cuándo se hizo la foto.
     """
 
@@ -107,7 +113,7 @@ class BusinessStatus:
     bill: NightlyBill
     pool_left: float
     rivals: int
-    battery: float | None
+    battery: float
     now: float
 
     @property
@@ -117,13 +123,29 @@ class BusinessStatus:
             return (
                 "No te quedan franjas libres hoy: la jornada y las horas extra se las han comido."
             )
-        if self.battery is not None and self.battery <= BATTERY_MIN:
+        if self.battery <= BATTERY_MIN:
             return "Estás tan reventado que te quedas dormido de pie. Descansa un poco."
         if not any(self.business.stock.get(p.key, 0) for p in self.business.sector_info.products):
             return "No tienes nada que vender: pasa por el 📦 almacén."
         if self.pool_left < 1:
             return "Hoy el barrio ya no da más de sí: todos tus clientes ya han comprado."
         return None
+
+
+@dataclass(frozen=True, slots=True)
+class TurnPlan:
+    """El azar del próximo turno, sorteado antes de abrir (`BusinessService.plan`).
+
+    Con él, el panel pinta el primer cliente antes de que se pulse 🔑 Abrir
+    (`BusinessService.preview`) y `start_turn` saca la misma cola si nada ha cambiado.
+
+    Attributes:
+        luck: El redondeo de cuántos clientes vienen (`turn_clients`).
+        seed: La semilla de la cola (`make_clients`).
+    """
+
+    luck: float
+    seed: int
 
 
 @dataclass(slots=True)
@@ -133,17 +155,17 @@ class Turn:
     Attributes:
         business: El negocio al empezar (con el turno ya apuntado).
         game: El minijuego.
-        battery_before: Batería del dueño al empezar (`None` sin curro).
+        battery_before: Batería del dueño al empezar.
     """
 
     business: Business
     game: TurnGame
-    battery_before: float | None = None
+    battery_before: float
 
     @property
     def tired(self) -> bool:
         """Si empezó reventado."""
-        return self.battery_before is not None and self.battery_before < TIRED
+        return self.battery_before < TIRED
 
 
 @dataclass(frozen=True, slots=True)
@@ -524,11 +546,37 @@ class BusinessService:
 
     # -- Un turno -----------------------------------------------------------------------
 
-    async def start_turn(self, guild_id: int, user_id: int) -> Turn:
+    def plan(self) -> TurnPlan:
+        """Sortea el azar del próximo turno (lo gasta `start_turn`)."""
+        return TurnPlan(self.rng.random(), self.rng.randrange(2**31))
+
+    def preview(self, status: BusinessStatus, plan: TurnPlan) -> TurnGame | None:
+        """El turno que saldría abriendo ahora con `plan`, sin guardar nada.
+
+        `None` si ahora no se puede abrir. Es lo que pinta el panel antes del clic.
+        """
+        if status.blocker is not None:
+            return None
+        clients = self._queue(status, plan)
+        if not clients:
+            return None
+        return TurnGame(status.business, clients, now=status.now, tired=status.battery < TIRED)
+
+    @staticmethod
+    def _queue(status: BusinessStatus, plan: TurnPlan) -> list[Client]:
+        """La cola de un turno que empieza en el momento de `status`."""
+        business = status.business
+        hour = datetime.fromtimestamp(status.now, TIMEZONE).hour
+        count = min(turn_clients(business, hour, plan.luck), math.floor(status.pool_left))
+        return make_clients(business, count, plan.seed)
+
+    async def start_turn(self, guild_id: int, user_id: int, plan: TurnPlan | None = None) -> Turn:
         """Abre un turno: gasta una franja y batería, y sortea la cola de clientes.
 
-        No mueve dinero (se cobra al acabar, `finish_turn`). La franja y el cupo del barrio
-        se apuntan ya: abrir es abrir, aunque luego no venga nadie más.
+        Con `plan` (el que usó el panel para pintar el primer cliente) la cola sale de ese
+        azar; sin él, se sortea ahora. No mueve dinero (se cobra al acabar, `finish_turn`).
+        La franja y el cupo del barrio se apuntan ya: abrir es abrir, aunque luego no venga
+        nadie más.
 
         Raises:
             BusinessError: Sin negocio o si algo impide abrir (`BusinessStatus.blocker`).
@@ -540,10 +588,7 @@ class BusinessService:
             if (blocker := status.blocker) is not None:
                 raise BusinessError(blocker)
             business, now = status.business, status.now
-            hour = datetime.fromtimestamp(now, TIMEZONE).hour
-            wanted = turn_clients(business, hour, self.rng)
-            count = min(wanted, math.floor(status.pool_left))
-            clients = make_clients(business, count, self.rng.randrange(2**31))
+            clients = self._queue(status, plan or self.plan())
             if not clients:
                 raise BusinessError("No tienes nada que vender: pasa por el 📦 almacén.")
             today = local_day(now)
@@ -557,8 +602,7 @@ class BusinessService:
                 business.last_open_day = today.isoformat()
             await self.repository.begin_turn(guild_id, business, today, len(clients))
             before = await self.work.spend_battery(guild_id, user_id, SHIFT_COST)
-            tired = before is not None and before < TIRED
-            game = TurnGame(business, clients, now=now, tired=tired)
+            game = TurnGame(business, clients, now=now, tired=before < TIRED)
             return Turn(business=business, game=game, battery_before=before)
 
     async def finish_turn(self, guild_id: int, user_id: int, turn: Turn) -> TurnResult:

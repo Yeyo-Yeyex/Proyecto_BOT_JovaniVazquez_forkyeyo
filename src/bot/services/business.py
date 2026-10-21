@@ -407,11 +407,11 @@ def daily_pool(sector: Sector, barrio: Barrio) -> float:
     return DAILY_POOL_TURNS * sector.clients * sector.fit.get(barrio.theme, 1.0)
 
 
-def turn_clients(business: Business, hour: int, rng: random.Random) -> int:
+def turn_clients(business: Business, hour: int, luck: float) -> int:
     """Clientes que vendrían a un turno a esta hora (sin mirar el cupo del barrio).
 
     `base × tema del barrio × hora × reputación × precio`, redondeado con un poco de azar
-    para que dos turnos iguales no salgan clavados. Al menos uno.
+    (`luck`, de 0 a 1) para que dos turnos iguales no salgan clavados. Al menos uno.
     """
     sector, barrio = business.sector_info, business.barrio_info
     level = PRICE_BY_KEY[business.price]
@@ -423,7 +423,7 @@ def turn_clients(business: Business, hour: int, rng: random.Random) -> int:
         * reputation_factor(business.reputation)
         * price
     )
-    return max(1, math.floor(expected + rng.random()))
+    return max(1, math.floor(expected + luck))
 
 
 def stock_value(business: Business) -> int:

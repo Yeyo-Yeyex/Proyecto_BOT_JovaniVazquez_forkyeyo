@@ -307,7 +307,7 @@ def samples() -> dict[str, dict[str, Any]]:
     s["dia_solo_negocio"] = _dia(
         job=None,
         jornada="Sin curro",
-        battery=None,
+        battery=64,
         family=None,
         slots=_slots("negocio", "negocio", "negocio", "libre", "libre", "libre", "libre", "libre"),
         free="5 franjas libres",

@@ -26,7 +26,7 @@ class Product:
         price: Precio de venta con el nivel de precios normal (en el taller, el
             presupuesto justo: recambio y mano de obra).
         igic: Clave de `taxes.IGIC_BY_KEY` de la compra al mayorista (pan y leche, tipo
-            cero, art. 52 de la Ley 4/2012; el resto, el general).
+            cero; el resto, el general del 7 %, art. 32.1 del Decreto Legislativo 1/2025).
         pack: Unidades de un lote del mayorista.
         spoil: Parte del stock que se pierde cada noche (0 = no caduca; 1 = se tira entero).
         weight: Lo que se pide frente a los demás productos del sector.
