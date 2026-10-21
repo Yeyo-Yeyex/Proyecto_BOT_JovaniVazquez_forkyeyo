@@ -115,9 +115,10 @@ Modelo de datos:
   el IRPF de la ganancia de cada venta, a nombre de cada copropietario, para que
   `hacienda` los cuente. El IRPF de las rentas va en `economy_tax_records`
   (concepto `pisos:renta`).
-- `economy_business_tax`: el IGIC, la tasa de la apertura y la retención del alquiler del
-  local que paga cada negocio de `pala` (`business`), para que `hacienda` los cuente. El
-  IRPF a cuenta de sus ventas va en `economy_tax_records` (clase `actividad`).
+- `economy_business_tax`: el IGIC, las tasas (apertura, traslado y terraza), la retención
+  del alquiler del local y el IRPF de la ganancia de un traspaso (`plusvalia`) que paga cada
+  negocio de `pala` (`business`), para que `hacienda` los cuente. El IRPF a cuenta de sus
+  ventas va en `economy_tax_records` (clase `actividad`).
 - `economy_tax_debts` y `economy_debt_payments`: lo que se debe a Hacienda porque no
   llegó en efectivo (el Patrimonio de quien lo tiene todo en ladrillo, la declaración
   que sale a pagar) y lo que se ha ido cobrando: del monedero cada lunes, el 30 % de
@@ -3819,7 +3820,7 @@ class EconomyRepository:
             UNION ALL
             SELECT user_id,
                    CASE kind WHEN 'tasa' THEN 'tasas' WHEN 'retencion' THEN 'irpf_otros'
-                        ELSE 'igic' END,
+                        WHEN 'plusvalia' THEN 'irpf_ahorro' ELSE 'igic' END,
                    tax, created_at
             FROM economy_business_tax WHERE guild_id = :guild
             UNION ALL

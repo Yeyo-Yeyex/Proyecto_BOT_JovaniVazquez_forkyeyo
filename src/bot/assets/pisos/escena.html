@@ -224,7 +224,7 @@ const CHIP = {
   bug: [C.bug, "#fff"], turq: [C.turqDk, "#fff"], steel: ["#44546a", "#fff"],
 };
 const STATUS_COLOR = { venta: "green", tuyo: "blue", compartido: "blue", parcial: "amber", ajeno: "grey",
-  vacio: "grey", alquilado: "green", impago: "red", desahucio: "red", okupa: "red", habitual: "blue", obras: "amber" };
+  vacio: "grey", alquilado: "green", impago: "red", desahucio: "red", okupa: "red", habitual: "blue", obras: "amber", negocio: "blue" };
 // Una etiqueta de color, con brillo arriba y canto abajo. Devuelve su ancho. `align`: left | right | center.
 // `outline`: borde y sin relleno.
 function chip(text, x, y, kind, o = {}) {
@@ -1686,6 +1686,7 @@ const OVERLAY = {
 const RIBBON = {
   alquilado: ["ALQUILADO", "#1f9d55"], impago: ["NO PAGA", "#c9302c"], desahucio: ["DESAHUCIO", "#8a1c14"],
   okupa: ["OKUPADO", "#b3261e"], vacio: ["VACÍO", "#6b7a8a"], habitual: ["HOGAR", "#1f6fb2"], obras: ["EN OBRAS", "#c98a00"],
+  negocio: ["TU NEGOCIO", "#13867f"],
 };
 function ribbon(status, x, y) {
   const rb = RIBBON[status]; if (!rb) return;
@@ -2323,7 +2324,7 @@ const BARRIO_COLS = 5, CARD_W = 186, CARD_H = 278, CARD_GAP = 10, GRID_TOP = 162
 
 // Lo que no cabe a 19 px se dice más corto (la ficha lo lleva entero).
 const shortStatus = (s) => s.replace(/^Tienes el (\d+) %$/, "Tienes $1 %").replace(/^Queda el (\d+) % libre$/, "$1 % libre");
-const LEASE_SHORT = { alquilado: "Alquilado", impago: "No paga", desahucio: "Desahucio", okupa: "Okupado", vacio: "Vacío", habitual: "Hogar", obras: "En obras" };
+const LEASE_SHORT = { alquilado: "Alquilado", impago: "No paga", desahucio: "Desahucio", okupa: "Okupado", vacio: "Vacío", habitual: "Hogar", obras: "En obras", negocio: "Negocio" };
 function kindLabel(name, maxW) { return width(name, F.m(20)) > maxW ? name.replace("dormitorios", "dorm.") : name; }
 
 // El número de la tarjeta, el mismo que el de su botón (apagado si es un solar).
@@ -2618,7 +2619,7 @@ function sofaRoom(x, y, w, h) {
 }
 
 // Lo que cabe en la etiqueta de una fila: la frase entera y, si no entra, una más corta.
-const SHORT = { vacio: "Vacío", alquilado: "Alquilado", impago: "No paga", desahucio: "Desahucio", okupa: "Okupado", habitual: "Vives aquí", obras: "En obras" };
+const SHORT = { vacio: "Vacío", alquilado: "Alquilado", impago: "No paga", desahucio: "Desahucio", okupa: "Okupado", habitual: "Vives aquí", obras: "En obras", negocio: "Tu negocio" };
 // `compact`: dos líneas y la etiqueta a la derecha; con hipoteca lleva además una tercera con la deuda.
 function itemRow(it, x, y, w, h, compact) {
   card(x, y, w, h, { r: 12 });

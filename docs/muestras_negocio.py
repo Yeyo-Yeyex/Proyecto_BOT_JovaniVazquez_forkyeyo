@@ -561,7 +561,8 @@ def _phase2() -> dict[str, dict[str, Any]]:
         tip="Te quedan 2 franjas: la heladería vende más por la tarde.",
     )
     s["dia_ferreteria"] = _dia(
-        job=None, jornada="Sin curro", battery=46, family=None,
+        job=None, jornada="Sin curro", battery=46, family=None, free="6 franjas libres",
+        slots=_slots("negocio", "negocio", *["libre"] * 6),
         business=_business("ferreteria", barrio="Schamann", alert="Poco stock: herramientas"),
         tip="Sin curro también te cansas: cada turno en la ferretería gasta batería.",
     )  # fmt: skip

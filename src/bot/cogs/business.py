@@ -1404,6 +1404,7 @@ class NegocioPanel(ui.LayoutView):
             f"🛠️ **{item.name}** instalada: {format_amount(base)} + IGIC {format_amount(tax)}. "
             "Se amortiza cada noche."
         )
+        await self._pet_note()
         await self.show(interaction)
         await renta.remind(self.cog.bot, interaction)
         await self._track(
@@ -1429,6 +1430,7 @@ class NegocioPanel(ui.LayoutView):
             f"📣 **{campaign.name}** en marcha {campaign.days} días: "
             f"{format_amount(base)} + IGIC {format_amount(tax)}."
         )
+        await self._pet_note()
         await self.show(interaction)
         await renta.remind(self.cog.bot, interaction)
         await self._track(
@@ -1469,6 +1471,7 @@ class NegocioPanel(ui.LayoutView):
         )
         self.move = {"barrio": "", "size": 0, "own": ""}
         self.screen = PORTADA
+        await self._pet_note()
         await self.show(interaction)
         await renta.remind(self.cog.bot, interaction)
         place = business.barrio_info
@@ -1538,6 +1541,7 @@ class NegocioPanel(ui.LayoutView):
                 f"({TAX_COLLECTOR})"
             )
         self.screen = MONTAR
+        await self._pet_note(Mood.GOOD if traspaso else None)
         await self.show(interaction)
         await renta.remind(self.cog.bot, interaction)
         week = sum(closing.business.week_totals.values())
@@ -1670,6 +1674,12 @@ class NegocioPanel(ui.LayoutView):
         if interaction is not None:
             await renta.remind(self.cog.bot, interaction)
         await self._track(business_stats(result, tired=turn.tired))
+
+    async def _pet_note(self, feel: Mood | None = None) -> None:
+        """Lo que dice la mascota de lo que acaba de pasar en el negocio (y la Renta)."""
+        moment = Moment(PetEvent.BUSINESS, feel=feel)
+        if hint := await renta.hint(self.cog.bot, self.guild_id, self.owner.id, moment):
+            self.notes.append(hint)
 
     async def _track(self, delta: StatDelta) -> None:
         await logros.track(self.cog.bot, self.guild_id, self.owner, self.channel, delta)
