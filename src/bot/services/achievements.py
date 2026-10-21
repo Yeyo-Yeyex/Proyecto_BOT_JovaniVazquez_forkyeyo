@@ -7511,6 +7511,28 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "rastro_list_1", "Manta en el suelo", "Pon algo en un puesto del Rastro.", C),
         (25, "rastro_list_25", "Puesto fijo en el Rastro", "Pon 25 cosas en el Rastro.", R),
     ])  # fmt: skip
+    # 🤝 Ofertas directas a un miembro (`vender` con comprador o desde el panel).
+    a += _tiers("rastro", "market_offers", [
+        (1, "rastro_offer_1", "Una oferta que no podrás rechazar",
+         "Ofrece algo a un miembro con `vender`.", C),
+        (25, "rastro_offer_25", "Comercial a puerta fría", "Haz 25 ofertas a miembros.", R),
+    ])  # fmt: skip
+    a.append(
+        Achievement(
+            id="vender_four_ways",
+            name="Vendo Opel Corsa",
+            description=(
+                "Haz una oferta a un miembro, monta un puesto en el Rastro, vende algo al "
+                "Monte de Piedad y empeña algo."
+            ),
+            category="rastro",
+            rarity=R,
+            conditions=(
+                ("market_offers", 1), ("market_listings", 1), ("monte_sold", 1),
+                ("monte_pawned", 1),
+            ),
+        )
+    )  # fmt: skip
     a += _tiers("rastro", "market_bids", [
         (1, "rastro_bid_1", "A la una…", "Puja en una subasta del Rastro.", C),
         (25, "rastro_bid_25", "A las dos…", "Puja 25 veces.", R),
@@ -7608,7 +7630,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "trueque_titulos", "Cambio de cromos",
          "Cambia un título por otro en un trueque.", R),
     ])  # fmt: skip
-    # El Monte de Piedad de `banco` (cogs/banco.py: monte_*_stats).
+    # El Monte de Piedad del panel de `vender` (cogs/rastro.py: monte_*_stats).
     a += _tiers("rastro", "monte_sold", [
         (1, "monte_sold_1", "Compro oro", "Vende algo al Monte de Piedad.", C),
         (10, "monte_sold_10", "Vaciando el trastero", "Vende 10 cosas al Monte de Piedad.", R),
@@ -24094,7 +24116,7 @@ def saldo_peek_stats(*, own_balance: int, their_balance: int) -> StatDelta:
 
 
 def monte_sale_stats(*, amount: int, title: bool) -> StatDelta:
-    """Estadísticas de quien vende algo al Monte de Piedad (`banco`).
+    """Estadísticas de quien vende algo al Monte de Piedad (panel de `vender`).
 
     Args:
         amount: Lo que ha pagado el Monte.
@@ -24187,6 +24209,11 @@ def _sunday(when: datetime) -> dict[str, int]:
 def market_listing_stats(*, when: datetime) -> StatDelta:
     """Estadísticas de quien pone algo en un puesto del Rastro."""
     return StatDelta(add={"market_listings": 1, **_sunday(when)})
+
+
+def market_offer_stats() -> StatDelta:
+    """Estadísticas de quien publica una oferta de venta directa a un miembro."""
+    return StatDelta(add={"market_offers": 1})
 
 
 def market_withdraw_stats() -> StatDelta:

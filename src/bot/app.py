@@ -189,7 +189,7 @@ class BotClient(commands.Bot):
         # Puestos, pujas y ventas de segunda mano del Rastro (`vender`, `rastro`); el
         # dinero pasa por `economy` y el objeto, por la mochila de la tienda.
         self.rastro = MarketRepository(database_path)
-        # Papeletas y ventas del Monte de Piedad de `banco`; el dinero pasa por `economy`
+        # Papeletas y ventas del Monte de Piedad (panel de `vender`); el dinero pasa por `economy`
         # (con la caja de la tienda) y el objeto, por la mochila de la tienda.
         self.monte = MonteRepository(database_path)
         # Inmuebles, participaciones e inquilinos de `pisos`; el dinero pasa por `economy`.

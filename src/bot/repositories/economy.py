@@ -214,7 +214,7 @@ HOUSING_AUCTION_ACCOUNT_ID = -800
 #: hasta que se sabe el resultado (o se anula), así no desaparece del libro mientras tanto.
 SPORTS_ACCOUNT_ID = -900
 
-#: `user_id` del Monte de Piedad de `banco` en la mochila: lo que se le vende o se empeña
+#: `user_id` del Monte de Piedad (`vender`) en la mochila: lo que se le vende o se empeña
 #: queda a su nombre (no se usa, no se luce y no cuenta en el patrimonio de nadie). No
 #: tiene monedero: compra y presta con la caja de la tienda (`SHOP_ACCOUNT_ID`).
 PAWN_ACCOUNT_ID = -1000

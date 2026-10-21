@@ -2170,55 +2170,108 @@ async def test_saldo_junta_lo_pendiente_de_cada_cog_con_el_bot_real(tmp_path: Pa
         await client.close()
 
 
-async def test_el_banco_empena_vende_y_avisa_en_saldo_con_el_bot_real(tmp_path: Path) -> None:
-    """`banco` carga tras la tienda y `pisos`: el Monte quita el título (`shop.refresh_worn`),
-    apunta logros, su papeleta sale en `saldo` y el fichero de morosos sale en `perfil`."""
+async def test_vender_lleva_a_los_cuatro_sitios_y_avisa_en_saldo_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """El panel de `vender` (cog `Rastro`) carga con la tienda y el Monte: el Monte quita el
+    título (`shop.refresh_worn`), cada destino apunta sus logros (los cuatro dan «Vendo Opel
+    Corsa»), la papeleta sale en `saldo` y el puesto avisa a la lista de deseos."""
     from bot.services.shop import Kind, quote
 
     client = await load_bot(tmp_path)
     try:
-        banco = client.get_cog("Banco")
+        rastro = client.get_cog("Rastro")
         casino = client.get_cog("Casino")
-        module = importer("Banco", client)
+        module = importer("Rastro", client)
         assert module.logros._cog(client) is client.get_cog("Achievements")
         owner = MagicMock(spec=discord.Member)
         owner.id, owner.bot, owner.display_name = OWNER_ID, False, "Diego"
+        buyer = MagicMock(spec=discord.Member)
+        buyer.id, buyer.bot, buyer.display_name, buyer.mention = 77, False, "Ana", "<@77>"
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = GUILD_ID
         entries = []
-        for name in ("Guitarra", "Bandurria"):
+        for name in ("Guitarra", "Bandurria", "Laúd", "Timple"):
             item = await client.shop.create_item(
                 GUILD_ID, kind=Kind.TROPHY, name=name, emoji="🎸", description="",
-                price=10_000, igic="general", now=banco.clock(),
+                price=10_000, igic="general", now=rastro.clock(),
             )  # fmt: skip
-            price = quote(item, banco.clock())
+            price = quote(item, rastro.clock())
             await client.economy.repository.apply(
                 GUILD, OWNER_ID, [LedgerEntry(price.total, "test")]
             )
             await client.economy.purchase(
                 GUILD, OWNER_ID, base=price.base, tax=price.tax, concept="objeto",
                 reserve=client.shop.reserve(
-                    GUILD, OWNER_ID, item.id, expected=price, level=99, now=banco.clock()
+                    GUILD, OWNER_ID, item.id, expected=price, level=99, now=rastro.clock()
                 ),
             )  # fmt: skip
-            found = await client.shop.inventory(GUILD_ID, OWNER_ID, banco.clock())
+            found = await client.shop.inventory(GUILD_ID, OWNER_ID, rastro.clock())
             entries.append(next(e.id for e in found if e.item_id == item.id))
-        panel = module.BankPanel(banco, GUILD_ID, owner, "monte")
-        await panel.screen()
+        panel = module.VenderPanel(rastro, GUILD_ID, owner)
 
-        for entry, button in ((entries[0], module.PawnButton), (entries[1], module.SellButton)):
-            panel.selected_entry = entry
+        def clicked() -> MagicMock:
             interaction = fake_interaction(owner)
             interaction.client = client
+            interaction.guild = guild
             interaction.channel = None
-            await next(i for i in panel.children if isinstance(i, button)).callback(interaction)
+            return interaction
 
-        stats = (await client.achievements.profile(GUILD, OWNER_ID)).stats
+        for entry, button in (
+            (entries[0], module.PawnButton), (entries[1], module.MonteSellButton)
+        ):  # fmt: skip
+            panel.selected = entry
+            await panel.screen()
+            await next(i for i in panel.children if isinstance(i, button)).callback(clicked())
+        panel.selected = entries[2]
+        stall = module.StallForm(panel)
+        stall.price._value = "5000"
+        await stall.on_submit(clicked())
+        panel.selected = entries[3]
+        offer = module.MemberForm(panel)
+        offer.buyer._values = [buyer]
+        offer.price._value = "5000"
+        interaction = clicked()
+        await offer.on_submit(interaction)
+        sent = interaction.followup.send.await_args
+        assert sent.kwargs["allowed_mentions"].users == [buyer]
+        assert isinstance(sent.kwargs["view"], module.OfferView)
+
+        profile = await client.achievements.profile(GUILD, OWNER_ID)
+        stats = profile.stats
         assert stats["monte_pawned"] == 1 and stats["monte_sold"] == 1
+        assert stats["market_listings"] == 1 and stats["market_offers"] == 1
+        assert "vender_four_ways" in profile.unlocked
         kinds = {item.kind for item in await casino._pending(GUILD, OWNER_ID, 0, own=True)}
         assert "monte_ticket" in kinds
+    finally:
+        await client.close()
+
+
+async def test_el_banco_sin_monte_y_el_fichero_de_morosos_en_perfil_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """`banco` carga tras la tienda y `pisos`: sus dos mostradores se pintan, `.banco monte`
+    abre los préstamos con el aviso de la mudanza y el fichero de morosos sale en `perfil`."""
+    client = await load_bot(tmp_path)
+    try:
+        banco = client.get_cog("Banco")
+        module = importer("Banco", client)
+        owner = MagicMock(spec=discord.Member)
+        owner.id, owner.bot, owner.display_name = OWNER_ID, False, "Diego"
+        panel = module.BankPanel(banco, GUILD_ID, owner)
         for tab in ("loans", "books"):
             panel.tab = tab
             kwargs = await panel.screen()
             assert kwargs["embed"].fields
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = GUILD_ID
+        ctx = MagicMock()
+        ctx.guild, ctx.author, ctx.send = guild, owner, AsyncMock()
+        await banco.banco_text.callback(banco, ctx, "monte")
+        shown = ctx.send.await_args.kwargs
+        assert shown["content"] == module.MONTE_MOVED
+        assert shown["embed"].title == "🏦 Banco · Préstamos"
         connection = client.housing._connect()  # noqa: SLF001
         try:
             connection.execute(
@@ -2228,8 +2281,6 @@ async def test_el_banco_empena_vende_y_avisa_en_saldo_con_el_bot_real(tmp_path: 
             connection.commit()
         finally:
             connection.close()
-        guild = MagicMock(spec=discord.Guild)
-        guild.id = GUILD_ID
         embed = await client.get_cog("Patrimonio").patrimonio_embed(guild, owner, owner, None)
         assert "ASNEF" in embed.fields[0].value
     finally:

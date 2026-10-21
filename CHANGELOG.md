@@ -6,6 +6,14 @@ la sección «Versiones» de `Biblia.txt`. Las versiones anteriores a la 5.22.0
 se asignaron a posteriori, revisando cada PR y commit de `main` con el mismo
 criterio.
 
+## 9.x
+
+### 9.0.0 · 2026-10-21
+
+- Vender: `vender` sin nada abre un panel con tu mochila: a un miembro, al Rastro, al Monte de Piedad o empeñado
+- Rompe: el Monte de Piedad deja `banco` y se muda a `vender` (`/banco mostrador:Monte` ya no existe; `.banco monte` abre los préstamos con un aviso)
+- Logros: 2 de ofertas a miembros y «Vendo Opel Corsa» por usar los cuatro destinos de `vender`
+
 ## 8.x
 
 ### 8.15.1 · 2026-10-21

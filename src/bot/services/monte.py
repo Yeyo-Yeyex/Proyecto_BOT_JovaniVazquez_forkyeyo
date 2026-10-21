@@ -1,8 +1,9 @@
 """Reglas del Monte de Piedad: venderle un objeto o empeñarlo, sin Discord ni base de datos.
 
-El Monte es uno de los mostradores de `banco` (los Montes de Piedad eran de las cajas de
-ahorros). Compra y presta con el dinero de la caja de la tienda (`SHOP_ACCOUNT_ID`): lo que
-se gastó en la tienda vuelve a circular, y nunca más de lo que se gastó.
+El Monte está en el panel de `vender` (hasta la 9.0.0, en `banco`: los Montes de Piedad
+eran de las cajas de ahorros). Compra y presta con el dinero de la caja de la tienda
+(`SHOP_ACCOUNT_ID`): lo que se gastó en la tienda vuelve a circular, y nunca más de lo que
+se gastó.
 
 - **Vender** (`SELL_SHARE`): el Monte paga el 85 % de lo que se pagó por esa unidad en la
   tienda, sin IGIC y con la rebaja si la tuvo (`paid`). El objeto no vuelve.

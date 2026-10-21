@@ -1,11 +1,18 @@
-"""El Rastro: `vender`, `trueque` y `rastro`, la segunda mano entre miembros.
+"""El Rastro: `vender`, `trueque` y `rastro`, la segunda mano entre miembros, y el Monte de
+Piedad, que vive en el panel de `vender`.
 
-- `vender <objeto> <precio> [comprador]`: con comprador, le hace una oferta de venta
-  directa (botones 🤝 Aceptar y ✖️ Rechazar, solo para él; ↩️ Retirar, para quien
-  vende) que caduca a los diez minutos. El precio puede ser 0 («de regalo»). Sin
-  comprador, monta un puesto en el Rastro con ese precio de salida: el objeto sale
-  de la mochila y cualquiera puede pujar con 🔨 Pujar. Si dos o más lo quieren, es
-  una subasta: cada puja sube al menos un 5 % y da una hora más.
+- `vender` sin nada abre tu panel «🧺 Vender» (privado con `/`, en el canal con `.`; solo
+  lo maneja quien lo abre). Eliges algo de tu mochila y ves su valor de referencia del
+  Rastro y lo que da el Monte (o por qué no lo acepta), y lo mandas a uno de cuatro
+  sitios: 🤝 a un miembro (un formulario con el miembro y el precio), 🧺 al Rastro (un
+  formulario con el precio de salida), 💰 vendérselo al Monte o 🏷️ empeñarlo. Tus
+  papeletas se desempeñan con 🎟️. Con `/vender objeto:X` el panel abre con X elegido.
+- `vender <objeto> <precio> [comprador]` (el atajo, igual que antes del panel): con
+  comprador, le hace una oferta de venta directa (botones 🤝 Aceptar y ✖️ Rechazar,
+  solo para él; ↩️ Retirar, para quien vende) que caduca a los diez minutos. El precio
+  puede ser 0 («de regalo»). Sin comprador, monta un puesto en el Rastro con ese precio
+  de salida: el objeto sale de la mochila y cualquiera puede pujar con 🔨 Pujar. Si dos
+  o más lo quieren, es una subasta: cada puja sube al menos un 5 % y da una hora más.
 - `trueque <tu objeto> <miembro> <su objeto> [dinero]`: le propone cambiar un objeto
   de tu mochila por uno de la suya, con dinero encima si quieres. Botones 🤝 y ✖️
   para quien recibe la oferta y ↩️ para quien la hace; caduca a los diez minutos.
@@ -20,6 +27,12 @@ su límite por persona; paga el 5,5 % de ITP sobre el mayor entre precio y valor
 referencia; la parte regalada está exenta, como el Bizum; y quien vende paga el
 19 % de la plusvalía. El dinero pasa por `EconomyService.market`.
 
+El Monte de Piedad (reglas en `bot.services.monte`, persistencia en
+`bot.repositories.monte`) compra y presta con la caja de la tienda por
+`EconomyService.monte` (fiscalidad en su docstring). Sus papeletas abiertas se guardan
+en memoria (`tickets`) y una tarea mira cada `FORFEIT_EVERY` segundos las vencidas: el
+objeto se queda en el Monte. Una operación con dinero a la vez por miembro (`working`).
+
 Los puestos abiertos se guardan en memoria (`listings`) para que los botones de
 pujar abran su formulario sin leer la base de datos (Discord da 3 segundos). Una
 tarea mira cada `CLOSE_EVERY` segundos los que han llegado a su hora, los adjudica
@@ -30,9 +43,10 @@ Al montar un puesto, la tienda avisa por privado a quien tenga ese artículo en 
 lista de deseos (`shop.wish_listed`, aparte para no hacer esperar), y la ficha de la
 tienda enseña la puja más baja de cada artículo en venta (`floor`).
 
-Logros: categoría 🧺 Rastro. Pujar y comprar son acciones con dinero: llaman a
-`renta.remind` y su resultado lleva `renta.hint` con la mascota (`Event.TRADE`).
-Las pujas y los puestos con pujas salen en `saldo` (`pending`).
+Logros: categoría 🧺 Rastro, también los del Monte (`monte_*_stats`). Pujar, comprar,
+vender al Monte, empeñar y desempeñar son acciones con dinero: llaman a `renta.remind`
+y su resultado lleva `renta.hint` con la mascota (`Event.TRADE`). Las pujas, los puestos
+con pujas y las papeletas del Monte salen en `saldo` (`pending`).
 """
 
 from __future__ import annotations
@@ -40,8 +54,9 @@ from __future__ import annotations
 import logging
 import random
 import re
+import sqlite3
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -52,21 +67,42 @@ from discord.ext import commands, tasks
 from bot.cogs import achievements as logros
 from bot.cogs import renta
 from bot.cogs import shop as tienda
-from bot.repositories.economy import BalanceLimitError, InsufficientFundsError
+from bot.repositories.economy import (
+    SHOP_ACCOUNT_ID,
+    BalanceLimitError,
+    InsufficientFundsError,
+    TillEmptyError,
+)
+from bot.repositories.monte import Appraisal, MonteRepository, Ticket
 from bot.repositories.rastro import Listing, MarketRepository, Trade
 from bot.repositories.shop import InventoryEntry, ShopRepository
 from bot.services.achievements import (
+    StatDelta,
     market_bid_stats,
     market_expired_stats,
     market_listing_stats,
+    market_offer_stats,
     market_outbid_stats,
     market_purchase_stats,
     market_sale_stats,
     market_swap_stats,
     market_withdraw_stats,
+    monte_forfeit_stats,
+    monte_pawn_stats,
+    monte_redeem_stats,
+    monte_sale_stats,
 )
 from bot.services.economy import EconomyService, format_amount, parse_amount
 from bot.services.levels import TIMEZONE, calculate_level_progress
+from bot.services.monte import (
+    MAX_TICKETS,
+    MONTE_NAME,
+    PAWN_FEE,
+    PAWN_SECONDS,
+    PAWN_SHARE,
+    SELL_SHARE,
+    MonteError,
+)
 from bot.services.pending import Pending, Side
 from bot.services.pets import Event, Moment
 from bot.services.rastro import (
@@ -98,6 +134,12 @@ COLOR = discord.Color.from_rgb(196, 120, 64)
 COLOR_DONE = discord.Color.from_rgb(87, 242, 135)
 #: Cada cuánto se miran los puestos que han llegado a su hora.
 CLOSE_EVERY = 30
+#: Cada cuánto se miran las papeletas vencidas del Monte.
+FORFEIT_EVERY = 60
+#: Lo que sigue respondiendo el panel de `vender`.
+PANEL_TIMEOUT = 900
+#: Lo que cabe en el desplegable de la mochila (el máximo de Discord).
+MAX_OPTIONS = 25
 #: Puestos por página del tablón (una fila de botones 🔨 y otra de ↩️).
 PAGE_SIZE = 5
 
@@ -261,8 +303,20 @@ def listing_line(listing: Listing, seller: str) -> str:
     return f"**#{listing.id}** {listing.label} · de {seller}\n> {state} · {closes}"
 
 
+def ticket_line(ticket: Ticket) -> str:
+    """Una línea de una papeleta abierta del Monte."""
+    return (
+        f"**#{ticket.id}** {ticket.label} · devuelves **{format_amount(ticket.repay)}** · "
+        f"vence <t:{int(ticket.due_at)}:R>"
+    )
+
+
+#: Lo que devuelve una operación del Monte: el texto del resultado y sus logros (o `None`).
+Outcome = tuple[str, StatDelta | None]
+
+
 class Rastro(commands.Cog):
-    """Ventas de segunda mano entre miembros: ofertas directas y subastas."""
+    """Ventas de segunda mano entre miembros (ofertas directas y subastas) y el Monte."""
 
     def __init__(
         self,
@@ -270,6 +324,7 @@ class Rastro(commands.Cog):
         economy: EconomyService,
         repository: MarketRepository,
         shop: ShopRepository,
+        monte: MonteRepository,
         *,
         levels: MessageStatsRepository | None = None,
         clock: Callable[[], float] = time.time,
@@ -279,22 +334,31 @@ class Rastro(commands.Cog):
         self.economy = economy
         self.repository = repository
         self.shop = shop
+        self.monte = monte
         self.levels = levels
         self.clock = clock
         self.rng = rng or random.Random()
         #: Puestos abiertos de todos los servidores, por id.
         self.listings: dict[int, Listing] = {}
+        #: Papeletas abiertas del Monte de todos los servidores, por id (`saldo` y la tarea).
+        self.tickets: dict[int, Ticket] = {}
+        #: `(servidor, miembro)` con una operación del Monte en marcha: una a la vez.
+        self.working: set[tuple[int, int]] = set()
 
     async def cog_load(self) -> None:
-        """Carga los puestos abiertos, registra los botones y arranca el cierre."""
+        """Carga puestos y papeletas, registra los botones y arranca las dos tareas."""
         await self.repository.initialize()
+        await self.monte.initialize()
         self.listings = {listing.id: listing for listing in await self.repository.open_listings()}
+        self.tickets = {t.id: t for t in await self.monte.open_tickets()}
         self.bot.add_dynamic_items(BidButton, WithdrawButton, PageButton)
         self._closer.start()
+        self._forfeiter.start()
 
     async def cog_unload(self) -> None:
-        """Para el cierre de puestos y suelta los botones."""
+        """Para el cierre de puestos y el de papeletas y suelta los botones."""
         self._closer.cancel()
+        self._forfeiter.cancel()
         self.bot.remove_dynamic_items(BidButton, WithdrawButton, PageButton)
 
     async def member_level(self, guild_id: int, user_id: int) -> int:
@@ -363,6 +427,13 @@ class Rastro(commands.Cog):
         ]
         embed = discord.Embed(description="\n".join(lines), color=COLOR)
         return buyer.mention, embed, view
+
+    async def offered(
+        self, guild_id: int, seller: discord.abc.User, channel: object, view: ui.View | None
+    ) -> None:
+        """Logros de quien acaba de publicar una oferta directa (después de publicarla)."""
+        if isinstance(view, OfferView):
+            await logros.track(self.bot, guild_id, seller, channel, market_offer_stats())
 
     async def _open_stall(
         self,
@@ -866,6 +937,201 @@ class Rastro(commands.Cog):
                 ),
             )
 
+    # -- Monte de Piedad ---------------------------------------------------------------
+
+    @tasks.loop(seconds=FORFEIT_EVERY)
+    async def _forfeiter(self) -> None:
+        await self.forfeit_due()
+
+    @_forfeiter.before_loop
+    async def _before_forfeiter(self) -> None:
+        await self.bot.wait_until_ready()
+
+    async def forfeit_due(self) -> list[Ticket]:
+        """Cierra las papeletas vencidas (el objeto se queda en el Monte). Nunca lanza."""
+        try:
+            lost = await self.monte.forfeit_due(self.clock())
+        except (OSError, sqlite3.Error):
+            logger.exception("No se pudieron cerrar las papeletas vencidas del Monte")
+            return []
+        for ticket in lost:
+            self.tickets.pop(ticket.id, None)
+            logros.note(self.bot, ticket.guild_id, ticket.user_id, monte_forfeit_stats())
+        return lost
+
+    def tickets_of(self, guild_id: int, user_id: int) -> list[Ticket]:
+        """Las papeletas abiertas de alguien, de la que vence antes a la última."""
+        return sorted(
+            (t for t in self.tickets.values() if t.guild_id == guild_id and t.user_id == user_id),
+            key=lambda t: t.due_at,
+        )
+
+    async def monte_sell(
+        self, interaction: discord.Interaction, guild_id: int, entry_id: int
+    ) -> Outcome:
+        """Vende un objeto al Monte (ya con `ack`). Devuelve el resultado y sus logros."""
+        user = interaction.user
+        try:
+            sale, balance = await self.economy.monte(
+                guild_id, self.monte.sell(guild_id, user.id, entry_id, self.clock())
+            )
+        except MonteError as error:
+            return str(error), None
+        except TillEmptyError:
+            return "La caja de la tienda no llega para pagarte eso ahora mismo.", None
+        except BalanceLimitError:
+            return "No te cabe más dinero en la cuenta.", None
+        lines = [
+            f"💰 El Monte te compra **{sale.label}** por **{format_amount(sale.amount)}**. "
+            f"Te quedas con {format_amount(balance)}.",
+        ]
+        if (hint := await renta.hint(self.bot, guild_id, user.id, Moment(Event.TRADE))) is not None:
+            lines.append(hint)
+        await tienda.refresh_worn(self.bot, guild_id, user.id)
+        return "\n".join(lines), monte_sale_stats(
+            amount=sale.amount, title=is_title(sale.catalog_key)
+        )
+
+    async def monte_pawn(
+        self, interaction: discord.Interaction, guild_id: int, entry_id: int
+    ) -> Outcome:
+        """Empeña un objeto (ya con `ack`). Devuelve el resultado y sus logros."""
+        user = interaction.user
+        try:
+            ticket, balance = await self.economy.monte(
+                guild_id, self.monte.pawn(guild_id, user.id, entry_id, self.clock())
+            )
+        except MonteError as error:
+            return str(error), None
+        except TillEmptyError:
+            return "La caja de la tienda no llega para prestarte eso ahora mismo.", None
+        except BalanceLimitError:
+            return "No te cabe más dinero en la cuenta.", None
+        self.tickets[ticket.id] = ticket
+        lines = [
+            f"🏷️ Empeñas **{ticket.label}**: te prestan **{format_amount(ticket.loan)}** "
+            f"(te quedas con {format_amount(balance)}). Devuelve "
+            f"**{format_amount(ticket.repay)}** antes de <t:{int(ticket.due_at)}:f> para "
+            "recuperarlo; si no, se lo queda el Monte.",
+        ]
+        if (hint := await renta.hint(self.bot, guild_id, user.id, Moment(Event.TRADE))) is not None:
+            lines.append(hint)
+        await tienda.refresh_worn(self.bot, guild_id, user.id)
+        open_tickets = len(self.tickets_of(guild_id, user.id))
+        return "\n".join(lines), monte_pawn_stats(loan=ticket.loan, open_tickets=open_tickets)
+
+    async def monte_redeem(
+        self, interaction: discord.Interaction, guild_id: int, ticket_id: int
+    ) -> Outcome:
+        """Desempeña una papeleta (ya con `ack`). Devuelve el resultado y sus logros."""
+        user = interaction.user
+        now = self.clock()
+        try:
+            ticket, balance = await self.economy.monte(
+                guild_id, self.monte.redeem(guild_id, user.id, ticket_id, now)
+            )
+        except MonteError as error:
+            # Vencida o perdida: la memoria se pone al día (solo con las papeletas propias).
+            if (ticket := self.tickets.get(ticket_id)) is not None and ticket.user_id == user.id:
+                self.tickets.pop(ticket_id, None)
+            return str(error), None
+        except InsufficientFundsError as error:
+            return (
+                f"No te llega: tienes {format_amount(error.balance)} y para desempeñarlo hace "
+                "falta lo prestado más el interés."
+            ), None
+        self.tickets.pop(ticket.id, None)
+        lines = [
+            f"🎟️ Recuperas **{ticket.label}** por **{format_amount(ticket.repay)}**. Te "
+            f"quedas con {format_amount(balance)}.",
+        ]
+        if (hint := await renta.hint(self.bot, guild_id, user.id, Moment(Event.TRADE))) is not None:
+            lines.append(hint)
+        return "\n".join(lines), monte_redeem_stats(seconds_left=ticket.due_at - now)
+
+    # -- Panel de vender ---------------------------------------------------------------
+
+    async def panel_embed(
+        self, guild_id: int, user_id: int, selected: int | None
+    ) -> tuple[discord.Embed, list[Appraisal], list[Ticket]]:
+        """El panel «🧺 Vender»: lo vendible de la mochila, lo elegido y tus papeletas.
+
+        Returns:
+            `(embed, lo vendible por orden de nombre, papeletas abiertas)`. Lo que no se
+            vende ni en el Rastro (skins que no son tapetes) no sale.
+        """
+        found = await self.monte.appraisals(guild_id, user_id, self.clock())
+        goods = sorted(
+            (a for a in found if untradeable(a.entry.kind, a.entry.catalog_key) is None),
+            key=lambda a: (a.entry.name.casefold(), a.entry.serial or 0, a.entry.id),
+        )
+        tickets = self.tickets_of(guild_id, user_id)
+        till = (await self.economy.system_balances(guild_id, [SHOP_ACCOUNT_ID]))[SHOP_ACCOUNT_ID]
+        embed = discord.Embed(
+            title="🧺 Vender",
+            color=COLOR,
+            description=(
+                "Elige algo de tu mochila y a dónde va:\n"
+                "🤝 **A un miembro**: le ofreces un precio (o se lo regalas) y decide.\n"
+                f"🧺 **Al Rastro**: montas un puesto con un precio de salida y, si lo quieren "
+                f"varios, se subasta. Quien compra paga el ITP; tú, la plusvalía si ganas.\n"
+                f"💰 **Al {MONTE_NAME}**: te lo compra al **{round(SELL_SHARE * 100)} %** de "
+                "lo que pagaste en la tienda (sin IGIC).\n"
+                f"🏷️ **Empeñarlo**: el Monte te presta el **{round(PAWN_SHARE * 100)} %** y lo "
+                f"recuperas devolviendo un {round(PAWN_FEE * 100)} % más en "
+                f"{PAWN_SECONDS // 86_400} días; si no, se lo queda.\n"
+                f"-# El Monte paga con la caja de la tienda ({format_amount(till)}) y no acepta "
+                "lo que no salió de la tienda ni lo numerado."
+            ),
+        )
+        embed.add_field(
+            name=f"🎟️ Tus papeletas ({len(tickets)}/{MAX_TICKETS})",
+            value="\n".join(ticket_line(t) for t in tickets)[:1024] or "Ninguna.",
+            inline=False,
+        )
+        if not goods:
+            value = (
+                "No tienes nada que se pueda vender: solo coleccionables y tapetes. Pásate "
+                "por la `tienda`."
+            )
+        else:
+            value = f"Puedes vender **{len(goods)}** cosas."
+            if len(goods) > MAX_OPTIONS:
+                value += f" En la lista salen las {MAX_OPTIONS} primeras por orden de nombre."
+        choice = next((a for a in goods if a.entry.id == selected), None)
+        if choice is not None:
+            reference, _level, _per_user = await self.repository.reference(
+                guild_id, choice.entry.item_id
+            )
+            value += (
+                f"\n\n**{entry_label(choice.entry)}**\n> 🏷️ Valor de referencia en el Rastro: "
+                f"**{format_amount(reference)}**"
+            )
+            if (deal := choice.offer) is not None:
+                value += (
+                    f"\n> 💰 El Monte te lo compra por **{format_amount(deal.sale)}** (te costó "
+                    f"{format_amount(deal.paid)})\n> 🏷️ Te presta **{format_amount(deal.loan)}** "
+                    f"y devuelves **{format_amount(deal.repay)}**"
+                )
+            else:
+                value += f"\n> 🚫 El Monte no lo acepta: {choice.refusal}"
+        embed.add_field(name="🎒 Tu mochila", value=value[:1024], inline=False)
+        return embed, goods, tickets
+
+    async def open_panel(
+        self, guild: discord.Guild, owner: discord.abc.User, wanted: str | None
+    ) -> VenderPanel:
+        """Prepara el panel de `vender`, con `wanted` ya elegido si se encuentra."""
+        panel = VenderPanel(self, guild.id, owner)
+        if wanted:
+            found = await self.monte.appraisals(guild.id, owner.id, self.clock())
+            entry = pick_entry([a.entry for a in found], wanted)
+            if isinstance(entry, str):
+                panel.notice = entry
+            else:
+                panel.selected = entry.id
+        return panel
+
     # -- Tablón ------------------------------------------------------------------------
 
     def board(self, guild_id: int, viewer_id: int, page: int) -> dict[str, object]:
@@ -914,10 +1180,11 @@ class Rastro(commands.Cog):
     # -- Comandos ----------------------------------------------------------------------
 
     @app_commands.command(
-        name="vender", description="Vende un coleccionable o un tapete a alguien o en el Rastro."
+        name="vender",
+        description="Vende un coleccionable o un tapete: a alguien, en el Rastro o al Monte.",
     )
     @app_commands.describe(
-        objeto="Lo que vendes, de tu mochila.",
+        objeto="Lo que vendes, de tu mochila. Sin precio, abre el panel con esto elegido.",
         precio="Cuánto pides (5000, 5k…). A una persona, 0 o «regalo» para regalarlo.",
         comprador="A quién se lo vendes. Sin nadie, va a un puesto del Rastro y se subasta.",
     )
@@ -925,12 +1192,16 @@ class Rastro(commands.Cog):
     async def vender(
         self,
         interaction: discord.Interaction,
-        objeto: str,
-        precio: str,
+        objeto: str | None = None,
+        precio: str | None = None,
         comprador: discord.Member | None = None,
     ) -> None:
-        """Hace una oferta de venta directa o monta un puesto en el Rastro. Público."""
+        """Sin objeto o sin precio, abre tu panel privado de `vender`. Con los dos, hace
+        una oferta de venta directa o monta un puesto en el Rastro (público)."""
         assert interaction.guild is not None  # guild_only
+        if objeto is None or precio is None:
+            await self._open_panel_slash(interaction, objeto)
+            return
         content, embed, view = await self.sell(
             interaction.guild, interaction.channel, interaction.user, objeto, precio, comprador
         )
@@ -946,6 +1217,20 @@ class Rastro(commands.Cog):
         )
         if isinstance(view, OfferView):
             view.message = await interaction.original_response()
+        await self.offered(interaction.guild.id, interaction.user, interaction.channel, view)
+
+    async def _open_panel_slash(self, interaction: discord.Interaction, wanted: str | None) -> None:
+        """Abre el panel privado. Leer la mochila puede tardar: se difiere."""
+        assert interaction.guild is not None
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            panel = await self.open_panel(interaction.guild, interaction.user, wanted)
+            kwargs = await panel.screen()
+        except (OSError, sqlite3.Error):
+            logger.exception("No se pudo abrir el panel de vender en %s", interaction.guild.id)
+            await interaction.followup.send("No se puede vender ahora mismo.", ephemeral=True)
+            return
+        panel.message = await interaction.followup.send(ephemeral=True, wait=True, **kwargs)
 
     @vender.autocomplete("objeto")
     async def _objeto_autocomplete(
@@ -966,13 +1251,28 @@ class Rastro(commands.Cog):
     async def vender_text(
         self,
         ctx: commands.Context,
-        precio: str,
+        precio: str | None = None,
         comprador: discord.Member | None = None,
         *,
-        objeto: str,
+        objeto: str | None = None,
     ) -> None:
-        """Versión de texto: `.vender 5k @miembro Marquesado` o `.vender 5k Marquesado`."""
+        """Versión de texto: `.vender 5k @miembro Marquesado` o `.vender 5k Marquesado`.
+
+        `.vender` solo abre el panel en el canal (lo maneja quien lo pide), y
+        `.vender Marquesado`, con eso ya elegido.
+        """
         assert ctx.guild is not None
+        if objeto is None:
+            try:
+                panel = await self.open_panel(ctx.guild, ctx.author, precio)
+                kwargs = await panel.screen()
+            except (OSError, sqlite3.Error):
+                logger.exception("No se pudo abrir el panel de vender en %s", ctx.guild.id)
+                await ctx.reply("No se puede vender ahora mismo.", mention_author=False)
+                return
+            panel.message = await ctx.send(**kwargs)  # type: ignore[arg-type]
+            return
+        assert precio is not None  # con objeto, el precio ya llegó delante
         content, embed, view = await self.sell(
             ctx.guild, ctx.channel, ctx.author, objeto, precio, comprador
         )
@@ -988,6 +1288,7 @@ class Rastro(commands.Cog):
         )
         if isinstance(view, OfferView):
             view.message = message
+        await self.offered(ctx.guild.id, ctx.author, ctx.channel, view)
 
     @app_commands.command(
         name="trueque", description="Cambia un objeto de tu mochila por uno de la de otro."
@@ -1092,10 +1393,13 @@ class Rastro(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.Guild) -> None:
-        """Borra el Rastro del servidor que deja el bot."""
+        """Borra el Rastro y el Monte del servidor que deja el bot."""
         for listing_id in [i for i, item in self.listings.items() if item.guild_id == guild.id]:
             self.listings.pop(listing_id, None)
+        for ticket_id in [i for i, t in self.tickets.items() if t.guild_id == guild.id]:
+            self.tickets.pop(ticket_id, None)
         await self.repository.delete_guild_data(guild.id)
+        await self.monte.delete_guild_data(guild.id)
 
 
 def _bid_view(listing_id: int) -> ui.View:
@@ -1406,10 +1710,314 @@ class PageButton(ui.DynamicItem[ui.Button], template=r"rastro:pag:(?P<page>-?\d+
         )
 
 
-def pending(bot: commands.Bot, guild_id: int, user_id: int) -> list[Pending]:
-    """Pujas y puestos con pujas de alguien en el Rastro (para `saldo`), o `[]`.
+# -- Panel de vender -------------------------------------------------------------------
 
-    Sale de los puestos abiertos que el cog tiene en memoria: no toca la base de datos.
+
+class VenderPanel(ui.View):
+    """El panel «🧺 Vender» de un miembro: su mochila, cuatro destinos y sus papeletas."""
+
+    def __init__(self, cog: Rastro, guild_id: int, owner: discord.abc.User) -> None:
+        super().__init__(timeout=PANEL_TIMEOUT)
+        self.cog = cog
+        self.guild_id = guild_id
+        self.owner = owner
+        #: Objeto elegido de la mochila (id de la entrada).
+        self.selected: int | None = None
+        #: Lo que se acaba de hacer, encima del panel.
+        self.notice: str | None = None
+        self.message: discord.Message | None = None
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.owner.id:
+            await interaction.response.send_message(
+                "Este panel no es tuyo: abre el tuyo con `vender`.", ephemeral=True
+            )
+            return False
+        return True
+
+    async def on_timeout(self) -> None:
+        if self.message is None:
+            return
+        try:
+            await self.message.edit(view=None)
+        except discord.HTTPException:
+            pass
+
+    async def screen(self) -> dict[str, object]:
+        """El embed y los botones del panel, leídos de nuevo."""
+        embed, goods, tickets = await self.cog.panel_embed(
+            self.guild_id, self.owner.id, self.selected
+        )
+        choice = next((a for a in goods if a.entry.id == self.selected), None)
+        if choice is None:
+            self.selected = None
+        self.clear_items()
+        if goods:
+            shown = goods[:MAX_OPTIONS]
+            if choice is not None and choice not in shown:
+                shown = [*goods[: MAX_OPTIONS - 1], choice]
+            self.add_item(ItemSelect(shown, self.selected))
+        offer = choice.offer if choice is not None else None
+        self.add_item(MemberButton(disabled=choice is None))
+        self.add_item(StallButton(disabled=choice is None))
+        self.add_item(MonteSellButton(offer.sale if offer else None))
+        self.add_item(PawnButton(offer.loan if offer else None, len(tickets) >= MAX_TICKETS))
+        for ticket in tickets[:MAX_TICKETS]:
+            self.add_item(RedeemButton(ticket.id, ticket.repay))
+        content, self.notice = self.notice, None
+        return {
+            "content": content,
+            "embed": embed,
+            "view": self,
+            "allowed_mentions": discord.AllowedMentions.none(),
+        }
+
+    async def refresh(self, interaction: discord.Interaction) -> None:
+        """Vuelve a pintar el panel (ya con `ack`)."""
+        try:
+            kwargs = await self.screen()
+        except (OSError, sqlite3.Error):
+            logger.exception("No se pudo leer el panel de vender de %s", self.owner.id)
+            await notify(interaction, "No se puede vender ahora mismo. Prueba en un rato.")
+            return
+        await edit(interaction, **kwargs)
+
+    async def money(
+        self, interaction: discord.Interaction, run: Callable[[], Awaitable[Outcome]]
+    ) -> None:
+        """Hace una operación del Monte (una a la vez por miembro) y repinta con el
+        resultado. Los logros y el aviso de la Renta van después de contestar."""
+        key = (self.guild_id, self.owner.id)
+        if key in self.cog.working:
+            await interaction.response.send_message(
+                "Un momento, que el Monte está con lo anterior.", ephemeral=True
+            )
+            return
+        self.cog.working.add(key)
+        await ack(interaction)
+        try:
+            self.notice, delta = await run()
+        finally:
+            self.cog.working.discard(key)
+        await self.refresh(interaction)
+        await renta.remind(self.cog.bot, interaction)
+        if delta is not None:
+            await logros.track(self.cog.bot, self.guild_id, self.owner, interaction.channel, delta)
+
+    async def publish(
+        self, interaction: discord.Interaction, price_text: str, buyer: discord.abc.User | None
+    ) -> None:
+        """Desde un formulario: publica en el canal la oferta a `buyer` o, sin él, monta el
+        puesto, igual que el atajo de `vender`, y repinta el panel con un aviso."""
+        await ack(interaction)
+        guild = interaction.guild
+        if guild is None or self.selected is None:
+            await notify(interaction, "Elige antes algo de tu mochila.")
+            return
+        content, embed, view = await self.cog.sell(
+            guild, interaction.channel, interaction.user, str(self.selected), price_text, buyer
+        )
+        if embed is None:
+            self.notice = content or "No se pudo."
+            await self.refresh(interaction)
+            return
+        message = await interaction.followup.send(
+            content or discord.utils.MISSING,
+            embed=embed,
+            view=view or discord.utils.MISSING,
+            allowed_mentions=discord.AllowedMentions(
+                everyone=False, roles=False, users=[buyer] if buyer else []
+            ),
+            wait=True,
+        )
+        if isinstance(view, OfferView):
+            view.message = message
+        self.selected = None
+        self.notice = (
+            f"🤝 Oferta publicada en el canal para {_name(buyer)}."
+            if buyer is not None
+            else "🧺 Puesto montado: el anuncio está en el canal."
+        )
+        await self.refresh(interaction)
+        await self.cog.offered(guild.id, interaction.user, interaction.channel, view)
+
+
+class ItemSelect(ui.Select["VenderPanel"]):
+    """Elige un objeto de la mochila."""
+
+    def __init__(self, goods: list[Appraisal], selected: int | None) -> None:
+        options = []
+        for found in goods:
+            deal = found.offer
+            options.append(
+                discord.SelectOption(
+                    label=entry_label(found.entry)[:100],
+                    description=(
+                        f"Monte: vender {format_amount(deal.sale)} · empeñar "
+                        f"{format_amount(deal.loan)}"
+                        if deal is not None
+                        else "Solo a un miembro o en el Rastro"
+                    )[:100],
+                    value=str(found.entry.id),
+                    default=found.entry.id == selected,
+                )
+            )
+        super().__init__(
+            placeholder="Elige algo de tu mochila", options=options, custom_id="vender:objeto",
+            row=0,
+        )  # fmt: skip
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        panel = self.view
+        assert panel is not None
+        await ack(interaction)
+        panel.selected = int(self.values[0])
+        await panel.refresh(interaction)
+
+
+class MemberForm(ui.Modal):
+    """🤝 A quién y por cuánto (0 o «regalo» para regalarlo)."""
+
+    def __init__(self, panel: VenderPanel) -> None:
+        super().__init__(title="🤝 Vender a un miembro", timeout=PANEL_TIMEOUT)
+        self.panel = panel
+        self.buyer: ui.UserSelect = ui.UserSelect(
+            placeholder="Elige a quién", custom_id="vender:form:comprador", required=True
+        )
+        self.price: ui.TextInput = ui.TextInput(
+            placeholder="5000, 5k… o 0 para regalarlo", max_length=20, required=True
+        )
+        self.add_item(ui.Label(text="A quién", component=self.buyer))
+        self.add_item(ui.Label(text="Precio", component=self.price))
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        if not self.buyer.values:
+            await interaction.response.send_message("Elige a quién se lo vendes.", ephemeral=True)
+            return
+        await self.panel.publish(interaction, self.price.value, self.buyer.values[0])
+
+
+class StallForm(ui.Modal):
+    """🧺 El precio de salida del puesto."""
+
+    def __init__(self, panel: VenderPanel) -> None:
+        super().__init__(title="🧺 Poner en el Rastro", timeout=PANEL_TIMEOUT)
+        self.panel = panel
+        self.price: ui.TextInput = ui.TextInput(
+            placeholder="5000, 5k…", max_length=20, required=True
+        )
+        self.add_item(ui.Label(text="Precio de salida", component=self.price))
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        await self.panel.publish(interaction, self.price.value, None)
+
+
+class MemberButton(ui.Button["VenderPanel"]):
+    """🤝 A un miembro: abre el formulario (solo mira memoria antes)."""
+
+    def __init__(self, *, disabled: bool) -> None:
+        super().__init__(
+            label="A un miembro", emoji="🤝", style=discord.ButtonStyle.primary,
+            custom_id="vender:miembro", row=1, disabled=disabled,
+        )  # fmt: skip
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        panel = self.view
+        assert panel is not None
+        if panel.selected is None:
+            await interaction.response.send_message(
+                "Elige antes algo de tu mochila.", ephemeral=True
+            )
+            return
+        await interaction.response.send_modal(MemberForm(panel))
+
+
+class StallButton(ui.Button["VenderPanel"]):
+    """🧺 Al Rastro: abre el formulario del precio de salida."""
+
+    def __init__(self, *, disabled: bool) -> None:
+        super().__init__(
+            label="Al Rastro", emoji="🧺", style=discord.ButtonStyle.primary,
+            custom_id="vender:rastro", row=1, disabled=disabled,
+        )  # fmt: skip
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        panel = self.view
+        assert panel is not None
+        if panel.selected is None:
+            await interaction.response.send_message(
+                "Elige antes algo de tu mochila.", ephemeral=True
+            )
+            return
+        await interaction.response.send_modal(StallForm(panel))
+
+
+class MonteSellButton(ui.Button["VenderPanel"]):
+    """💰 Vender al Monte lo elegido."""
+
+    def __init__(self, amount: int | None) -> None:
+        label = f"Al Monte por {format_amount(amount)}" if amount is not None else "Al Monte"
+        super().__init__(
+            label=label[:80], emoji="💰", style=discord.ButtonStyle.danger,
+            custom_id="vender:monte", row=1, disabled=amount is None,
+        )  # fmt: skip
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        panel = self.view
+        assert panel is not None and panel.selected is not None
+        entry, panel.selected = panel.selected, None
+        await panel.money(
+            interaction, lambda: panel.cog.monte_sell(interaction, panel.guild_id, entry)
+        )
+
+
+class PawnButton(ui.Button["VenderPanel"]):
+    """🏷️ Empeñar lo elegido."""
+
+    def __init__(self, amount: int | None, full: bool) -> None:
+        label = f"Empeñar por {format_amount(amount)}" if amount is not None else "Empeñar"
+        super().__init__(
+            label=label[:80], emoji="🏷️", style=discord.ButtonStyle.secondary,
+            custom_id="vender:empenar", row=1, disabled=amount is None or full,
+        )  # fmt: skip
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        panel = self.view
+        assert panel is not None and panel.selected is not None
+        entry, panel.selected = panel.selected, None
+        await panel.money(
+            interaction, lambda: panel.cog.monte_pawn(interaction, panel.guild_id, entry)
+        )
+
+
+class RedeemButton(ui.Button["VenderPanel"]):
+    """🎟️ Desempeñar una papeleta."""
+
+    def __init__(self, ticket_id: int, repay: int) -> None:
+        super().__init__(
+            label=f"Desempeñar #{ticket_id} ({format_amount(repay)})"[:80],
+            emoji="🎟️",
+            style=discord.ButtonStyle.success,
+            custom_id=f"vender:desempenar:{ticket_id}",
+            row=2,
+        )
+        self.ticket_id = ticket_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        panel = self.view
+        assert panel is not None
+        await panel.money(
+            interaction,
+            lambda: panel.cog.monte_redeem(interaction, panel.guild_id, self.ticket_id),
+        )
+
+
+def pending(bot: commands.Bot, guild_id: int, user_id: int) -> list[Pending]:
+    """Pujas y puestos con pujas de alguien en el Rastro y sus papeletas del Monte (para
+    `saldo`), o `[]`.
+
+    Sale de los puestos y las papeletas que el cog tiene en memoria: no toca la base de
+    datos.
     """
     cog = find_cog(bot, Rastro)
     if cog is None:
@@ -1436,6 +2044,18 @@ def pending(bot: commands.Bot, guild_id: int, user_id: int) -> list[Pending]:
                     listing.top_bid, listing.close_at,
                 )
             )  # fmt: skip
+    items += [
+        Pending(
+            Side.PAY,
+            "monte_ticket",
+            "🏷️",
+            f"Papeleta del Monte ({ticket.label}): devuelve {format_amount(ticket.repay)} "
+            "para recuperarlo",
+            ticket.repay,
+            ticket.due_at,
+        )  # fmt: skip
+        for ticket in cog.tickets_of(guild_id, user_id)
+    ]
     return items
 
 
@@ -1460,5 +2080,7 @@ def floor(bot: commands.Bot, guild_id: int, item_id: int) -> tuple[int, float] |
 
 
 async def setup(bot: BotClient) -> None:  # type: ignore[override]
-    """Registra el cog con la economía, el Rastro, la tienda y los niveles del bot."""
-    await bot.add_cog(Rastro(bot, bot.economy, bot.rastro, bot.shop, levels=bot.message_stats))
+    """Registra el cog con la economía, el Rastro, la tienda, el Monte y los niveles del bot."""
+    await bot.add_cog(
+        Rastro(bot, bot.economy, bot.rastro, bot.shop, bot.monte, levels=bot.message_stats)
+    )
