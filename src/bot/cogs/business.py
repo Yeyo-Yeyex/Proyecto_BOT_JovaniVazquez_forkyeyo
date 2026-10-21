@@ -16,6 +16,9 @@ debajo, que también sirve de reserva si no hay Node ni Chromium. Pantallas:
   siguiente cliente se pinta mientras se atiende al de ahora, y una tarea despide al
   cliente al que se le acaba la paciencia.
 - **Tique** del turno, con la nómina del negocio: caja, IRPF a cuenta y embargo.
+- **Fase 2:** 🛠️ **Mejoras** (instalar mejoras del local y lanzar campañas), ⭐ **Reseñas**,
+  🚚 **Traslado** (a otro barrio, a un local mayor o a uno tuyo de `pisos`), el precio de cada
+  producto en el almacén y 🚪 cerrar traspasándolo o liquidando el stock y las mejoras.
 
 Cada noche, una tarea cada 10 minutos cobra el local de cada negocio
 (`BusinessService.close_nights`) y la cuota de autónomo de la semana.
@@ -53,37 +56,53 @@ from bot.cogs import renta
 from bot.services.achievements import StatDelta, business_stats
 from bot.services.business import (
     Business,
+    move_quote,
     nightly_bill,
     opening_quote,
+    rating,
+    recommended,
     sale_price,
 )
 from bot.services.business_catalog import (
+    CAMPAIGN_BY_KEY,
+    CAMPAIGNS,
     EMBLEMS,
+    EQUIPMENT_BY_KEY,
     PALETTES,
     PRICE_LEVELS,
+    REVIEW_LINES,
     SECTOR_BY_KEY,
     SECTORS,
+    SIZES,
+    equipment_for,
 )
 from bot.services.business_games import COINS, QUOTES, TurnGame
 from bot.services.business_scene import BusinessScene
 from bot.services.business_view import (
     almacen_state,
+    campaign_state,
     cierre_state,
     cliente_state,
     cuentas_state,
+    mejoras_state,
     montar_state,
     negocio_state,
     preview_state,
+    resenas_state,
     signed,
+    size_text,
+    traslado_state,
     turn_lines,
 )
 from bot.services.economy import format_amount, next_daily_at
 from bot.services.housing_catalog import BARRIO_BY_KEY, BARRIOS, ISLANDS, THEMES
+from bot.services.levels import local_day
 from bot.services.negocio import (
     MAX_LOTS,
     BusinessError,
     BusinessService,
     BusinessStatus,
+    OwnLocal,
     Turn,
     TurnPlan,
     TurnResult,
@@ -141,6 +160,9 @@ PREVIA = "previa"
 CONFIRMAR = "confirmar"
 TURNO = "turno"
 CIERRE = "cierre"
+MEJORAS = "mejoras"
+RESENAS = "resenas"
+TRASLADO = "traslado"
 
 
 def game_id(token: int, round_index: int, action: str) -> str:
@@ -266,6 +288,12 @@ class NegocioPanel(ui.LayoutView):
         self.result: TurnResult | None = None
         #: El azar del próximo turno, para pintar su primer cliente antes de 🔑 Abrir.
         self.plan: TurnPlan | None = None
+        #: Lo elegido en 🛠️ Mejoras: la mejora y la campaña.
+        self.equipment = ""
+        self.campaign = ""
+        #: El traslado que se mira: barrio y tamaño, o un local propio (`own`).
+        self.move: dict[str, Any] = {"barrio": "", "size": 0, "own": ""}
+        self.own_locals: list[OwnLocal] = []
         self.token = cog.new_token()
         self._shown = ""
         self._lock = TimedLock("negocio:NegocioPanel._lock")
@@ -306,6 +334,13 @@ class NegocioPanel(ui.LayoutView):
             return almacen_state(business, "Cada compra paga su IGIC. Lo perecedero se estropea.")
         if self.screen == CUENTAS:
             return cuentas_state(business)
+        if self.screen == MEJORAS:
+            return mejoras_state(business, self._today())
+        if self.screen == RESENAS:
+            return resenas_state(business, self._today())
+        if self.screen == TRASLADO and (target := self._move_target()) is not None:
+            barrio, size, quote, own = target
+            return traslado_state(business, barrio, size, quote, own=own)
         if self.screen == TURNO and self.turn is not None and self.turn.game.current is not None:
             return cliente_state(self.turn.business, self.turn.game)
         if self.screen == CIERRE and self.result is not None:
@@ -327,14 +362,32 @@ class NegocioPanel(ui.LayoutView):
             out.append(
                 almacen_state(business, "Cada compra paga su IGIC. Lo perecedero se estropea.")
             )
+            out.append(mejoras_state(business, self._today()))
             out.append(cuentas_state(business))
-        elif self.screen in (ALMACEN, CUENTAS, ROTULO, CERRAR):
+            out.append(resenas_state(business, self._today()))
+        elif self.screen in (ALMACEN, CUENTAS, ROTULO, CERRAR, MEJORAS, RESENAS, TRASLADO):
             out = [
                 negocio_state(
                     business, foot=self._foot(), rivals=self.status.rivals if self.status else 0
                 )
             ]
         return out
+
+    def _today(self) -> Any:
+        return local_day(self.service.now())
+
+    def _move_target(self) -> tuple[str, int, Any, bool] | None:
+        """El local que se mira en 🚚 Traslado: `(barrio, tamaño, presupuesto, propio)`."""
+        if self.status is None:
+            return None
+        business = self.status.business
+        own = next((o for o in self.own_locals if o.listing.key == self.move["own"]), None)
+        if own is not None and own.size is not None:
+            barrio = BARRIO_BY_KEY[own.listing.barrio]
+            return barrio.key, own.size, move_quote(business, barrio, own.size, own=True), True
+        barrio_key = self.move["barrio"] or business.barrio
+        size = self.move["size"]
+        return barrio_key, size, self.service.move_quote(business, barrio_key, size), False
 
     def _first_client(self) -> list[dict[str, Any]]:
         """El primer cliente del próximo turno, ya sorteado: 🔑 Abrir no espera al dibujo."""
@@ -413,11 +466,13 @@ class NegocioPanel(ui.LayoutView):
                         + (" · ".join(f"{k} {signed(v)}" for k, v in totals.items()) or "nada aún")
                     )
                 elif self.screen == CERRAR:
-                    refund = max(0, business.deposit - business.rent_debt)
-                    lines.append(
-                        f"🚪 **¿Cierras {business.name}?** Vuelven {format_amount(refund)} de la "
-                        "fianza; el stock se pierde y los habituales te echarán de menos."
-                    )
+                    lines.extend(self._close_lines(business))
+                elif self.screen == MEJORAS:
+                    lines.extend(self._mejoras_lines(business))
+                elif self.screen == RESENAS:
+                    lines.extend(self._resenas_lines(business))
+                elif self.screen == TRASLADO:
+                    lines.extend(self._traslado_lines(business))
                 else:
                     bill = nightly_bill(business)
                     lines.append(
@@ -434,6 +489,17 @@ class NegocioPanel(ui.LayoutView):
                             else ""
                         )
                     )
+                    extras = [size_text(business)]
+                    average, count = rating(business)
+                    if count:
+                        extras.append(
+                            f"⭐ {average:.1f}".replace(".", ",")
+                            + f" en {count} reseñas"
+                            + (" · recomendado" if recommended(business) else "")
+                        )
+                    if campaign := campaign_state(business, self._today()):
+                        extras.append(f"📣 {campaign['name']} ({campaign['left']})")
+                    lines.append("-# " + " · ".join(extras))
                     if blocker := status.blocker:
                         lines.append(f"-# ⚠️ {blocker}")
         notes, self.notes = self.notes, []
@@ -445,13 +511,100 @@ class NegocioPanel(ui.LayoutView):
         out = []
         for product in business.sector_info.products:
             units = business.stock.get(product.key, 0)
+            level = business.level(product.key)
             out.append(
                 f"{PRODUCT_EMOJI.get(product.key, '📦')} {product.name}: **{units}** · cuesta "
                 f"{format_amount(product.cost)} · se vende a "
-                f"{format_amount(sale_price(product, business.price))}"
+                f"{format_amount(sale_price(product, level.key))}"
+                + (
+                    f" ({level.name.split(' (')[0].lower()})"
+                    if product.key in business.prices
+                    else ""
+                )
                 + (f" · caduca un {round(product.spoil * 100)} %" if product.spoil else "")
             )
         return out
+
+    def _close_lines(self, business: Business) -> list[str]:
+        offer = self.service.offer(business)
+        refund = max(0, business.deposit - business.rent_debt)
+        lines = [f"🚪 **¿Cierras {business.name}?** Vuelven {format_amount(refund)} de la fianza."]
+        if offer.can_traspasar:
+            lines.append(
+                f"🤝 **Traspaso:** te dan {format_amount(offer.traspaso)}: el stock "
+                f"({format_amount(offer.stock)}), las mejoras y la obra "
+                f"({format_amount(offer.book)}) y la clientela ({format_amount(offer.goodwill)})."
+                " La clientela tributa al 19 % (ganancia patrimonial)."
+            )
+        else:
+            lines.append(
+                "-# 🤝 Nadie quiere traspasarlo: hace falta una semana abierto, 3 estrellas y un "
+                "local alquilado."
+            )
+        lines.append(
+            f"🧹 **Liquidar:** el mayorista te recompra el stock por "
+            f"{format_amount(offer.liquidation_stock)} y vendes las mejoras de segunda mano por "
+            f"{format_amount(offer.liquidation_equipment)}."
+        )
+        return lines
+
+    def _mejoras_lines(self, business: Business) -> list[str]:
+        lines = ["🛠️ **Mejoras del local** · se amortizan cada noche"]
+        for item in equipment_for(business.sector):
+            mark = "✅" if item.key in business.equipment else "▫️"
+            lines.append(f"{mark} {item.name}: {item.effect()} · {format_amount(item.cost)} + IGIC")
+        active = campaign_state(business, self._today())
+        lines.append(
+            "📣 **Publicidad** · "
+            + (f"en marcha: {active['name']} ({active['left']})" if active else "sin campaña")
+        )
+        for campaign in CAMPAIGNS:
+            lines.append(
+                f"- {campaign.name}: +{round(campaign.boost * 100)} % de clientes, "
+                f"{campaign.days} días · {format_amount(campaign.cost)} + IGIC"
+            )
+        return lines
+
+    @staticmethod
+    def _resenas_lines(business: Business) -> list[str]:
+        average, count = rating(business)
+        if not count:
+            return ["⭐ Aún no hay reseñas: las dejan algunos clientes al acabar cada turno."]
+        lines = [
+            f"⭐ **{average:.1f}**".replace(".", ",")
+            + f" de media en {count} reseñas"
+            + (" · 🏅 Recomendado" if recommended(business) else "")
+        ]
+        for _day, who, n, line in reversed(business.reviews[-5:]):
+            text = REVIEW_LINES[n][line % len(REVIEW_LINES[n])]
+            lines.append(f"{'★' * n}{'☆' * (5 - n)} **{who}**: {text}")
+        return lines
+
+    def _traslado_lines(self, business: Business) -> list[str]:
+        target = self._move_target()
+        assert target is not None
+        barrio, size, quote, own = target
+        place = BARRIO_BY_KEY[barrio]
+        lines = [
+            f"🚚 **Traslado** a {place.name}, local {SIZES[size].name.lower()}"
+            + (" (tuyo)" if own else ""),
+            f"🧾 Tasa {format_amount(quote.opening.license)} · acondicionamiento "
+            f"{format_amount(quote.opening.setup)} + IGIC · fianza nueva "
+            f"{format_amount(quote.opening.deposit)} · vuelve la de ahora: "
+            f"{format_amount(quote.refund)}",
+            (
+                "🔑 Sin alquiler: el local es tuyo (sus recibos siguen en `pisos`)."
+                if own
+                else f"🔑 Alquiler: {format_amount(quote.opening.rent)} cada noche, más IGIC."
+            ),
+        ]
+        if not quote.same_barrio:
+            lines.append("-# Cambias de barrio: la reputación y la fidelidad bajan a la mitad.")
+        if not self.own_locals:
+            lines.append(
+                "-# Si compras un local entero en `pisos`, podrás traerte aquí el negocio."
+            )
+        return lines
 
     def _turn_text(self) -> list[str]:
         assert self.turn is not None
@@ -531,6 +684,9 @@ class NegocioPanel(ui.LayoutView):
             f"{_stars_text(result.business.stars)}"
         )
         lines.extend(f"- {line}" for line in turn_lines(result))
+        for who, n, line in result.reviews[:3]:
+            text = REVIEW_LINES[n][line % len(REVIEW_LINES[n])]
+            lines.append(f"-# {'★' * n}{'☆' * (5 - n)} {who}: «{text}»")
         return lines
 
     # -- Componentes ------------------------------------------------------------------
@@ -662,6 +818,24 @@ class NegocioPanel(ui.LayoutView):
                 )
             ]
             if self.product:
+                current = business.prices.get(self.product, "")
+                levels = [
+                    discord.SelectOption(
+                        label="Como el resto", value="general", default=not current
+                    ),
+                    *(
+                        discord.SelectOption(label=p.name, value=p.key, default=p.key == current)
+                        for p in PRICE_LEVELS
+                    ),
+                ]
+                rows.append(
+                    ui.ActionRow(
+                        self._select(
+                            "🏷️ Precio de este producto", levels, "precio-producto",
+                            self._set_product_price,
+                        )
+                    )
+                )  # fmt: skip
                 buy = ui.ActionRow()
                 for lots in (1, 5, MAX_LOTS // 2):
                     buy.add_item(
@@ -677,6 +851,12 @@ class NegocioPanel(ui.LayoutView):
             return rows
         if self.screen == CUENTAS:
             return [ui.ActionRow(back, home)]
+        if self.screen == RESENAS:
+            return [ui.ActionRow(back, home)]
+        if self.screen == MEJORAS:
+            return self._mejoras_rows(business, back, home)
+        if self.screen == TRASLADO:
+            return self._traslado_rows(business, back)
         if self.screen == ROTULO:
             return [*self._style_rows(), ui.ActionRow(
                 self._button("✏️ Nombre", self._rename, "nombre"),
@@ -684,12 +864,27 @@ class NegocioPanel(ui.LayoutView):
                 back,
             )]  # fmt: skip
         if self.screen == CERRAR:
-            return [
-                ui.ActionRow(
-                    self._button("🚪 Sí, cerrarlo", self._close, "cerrar-si", style=red),
-                    self._button("⬅️ No", self._portada, "cerrar-no"),
+            offer = self.service.offer(business)
+            row = ui.ActionRow()
+            if offer.can_traspasar:
+                row.add_item(
+                    self._button(
+                        f"🤝 Traspasar · {format_amount(offer.traspaso)}",
+                        self._close_traspaso,
+                        "traspasar",
+                        style=green,
+                    )
                 )
-            ]
+            row.add_item(
+                self._button(
+                    f"🚪 Cerrar y liquidar · {format_amount(offer.liquidation)}",
+                    self._close,
+                    "cerrar-si",
+                    style=red,
+                )
+            )
+            row.add_item(self._button("⬅️ No", self._portada, "cerrar-no"))
+            return [row]
         if self.screen == CIERRE:
             return [
                 ui.ActionRow(
@@ -714,10 +909,13 @@ class NegocioPanel(ui.LayoutView):
                 disabled=self.status.blocker is not None,
             ),
             self._button("📦 Almacén", self._almacen, "almacen", style=blue),
+            self._button("🛠️ Mejoras", self._mejoras, "mejoras", style=blue),
             self._button("📊 Cuentas", self._cuentas, "cuentas"),
+            self._button("⭐ Reseñas", self._resenas, "resenas"),
         )
         more = ui.ActionRow(
             self._button("🎨 Rótulo", self._rotulo, "rotulo"),
+            self._button("🚚 Traslado", self._traslado, "traslado"),
             self._button("🚪 Cerrar el negocio", self._confirm_close, "cerrar"),
             home,
         )
@@ -727,6 +925,114 @@ class NegocioPanel(ui.LayoutView):
         ]
         price_row = ui.ActionRow(self._select("🏷️ Precios", prices, "precio", self._set_price))
         return [main, more, price_row]
+
+    def _mejoras_rows(
+        self, business: Business, back: ui.Button, home: ui.Button
+    ) -> list[ui.ActionRow]:
+        green = discord.ButtonStyle.success
+        rows = []
+        items = [e for e in equipment_for(business.sector) if e.key not in business.equipment]
+        if items:
+            options = [
+                discord.SelectOption(
+                    label=e.name, value=e.key, description=e.effect()[:100],
+                    default=e.key == self.equipment,
+                )
+                for e in items
+            ]  # fmt: skip
+            rows.append(
+                ui.ActionRow(
+                    self._select("Elige una mejora", options, "mejora", self._pick_equipment)
+                )
+            )
+        active = campaign_state(business, self._today())
+        if active is None:
+            options = [
+                discord.SelectOption(
+                    label=c.name, value=c.key, default=c.key == self.campaign,
+                    description=f"+{round(c.boost * 100)} % de clientes durante {c.days} días",
+                )
+                for c in CAMPAIGNS
+            ]  # fmt: skip
+            rows.append(
+                ui.ActionRow(
+                    self._select("Elige una campaña", options, "campana", self._pick_campaign)
+                )
+            )
+        last = ui.ActionRow()
+        if (item := EQUIPMENT_BY_KEY.get(self.equipment)) and item in items:
+            last.add_item(
+                self._button(
+                    f"🛒 Instalar · {format_amount(item.cost)} + IGIC",
+                    self._install, "instalar", style=green,
+                )
+            )  # fmt: skip
+        if active is None and (campaign := CAMPAIGN_BY_KEY.get(self.campaign)):
+            last.add_item(
+                self._button(
+                    f"📣 Lanzar · {format_amount(campaign.cost)} + IGIC",
+                    self._launch, "lanzar", style=green,
+                )
+            )  # fmt: skip
+        last.add_item(back)
+        last.add_item(home)
+        rows.append(last)
+        return rows
+
+    def _traslado_rows(self, business: Business, back: ui.Button) -> list[ui.ActionRow]:
+        target = self._move_target()
+        assert target is not None
+        barrio, size, quote, own = target
+        barrios = [
+            discord.SelectOption(
+                label=b.name, value=b.key, description=f"{b.town} · {THEMES[b.theme]}"[:100],
+                default=not own and b.key == barrio,
+            )
+            for b in BARRIOS
+        ]  # fmt: skip
+        sizes = [
+            discord.SelectOption(
+                label=f"Local {s.name.lower()}", value=str(i), default=not own and i == size,
+                description=f"{round(business.sector_info.m2 * s.m2)} m² · "
+                f"×{s.clients:.1f} clientes por turno".replace(".", ","),
+            )
+            for i, s in enumerate(SIZES)
+        ]  # fmt: skip
+        pick_barrio = self._select(
+            "Elige el barrio", barrios, "traslado-barrio", self._pick_move_barrio
+        )
+        pick_size = self._select("Elige el tamaño", sizes, "traslado-tamano", self._pick_move_size)
+        rows = [ui.ActionRow(pick_barrio), ui.ActionRow(pick_size)]
+        fit = [o for o in self.own_locals if o.fits]
+        if fit:
+            locals_ = [
+                discord.SelectOption(
+                    label=f"{o.listing.title}"[:100], value=o.listing.key,
+                    description=f"{BARRIO_BY_KEY[o.listing.barrio].name} · {o.listing.m2} m² · "
+                    f"local {SIZES[o.size or 0].name.lower()}"[:100],
+                    default=own and o.listing.key == self.move["own"],
+                )
+                for o in fit
+            ]  # fmt: skip
+            title = "🏠 A un local tuyo de pisos"
+            rows.append(
+                ui.ActionRow(self._select(title, locals_, "traslado-propio", self._pick_own))
+            )
+        # Donde ya está no se traslada (el servicio también lo comprueba).
+        here = (
+            business.own_listing == self.move["own"]
+            if own
+            else quote.same_barrio and size == business.size and not business.own_listing
+        )
+        go = self._button(
+            f"🚚 Trasladarse · {format_amount(quote.total)}",
+            self._do_move,
+            "trasladar",
+            style=discord.ButtonStyle.success,
+            disabled=here,
+        )
+        rows.append(ui.ActionRow(go, back))
+        return rows
 
     def _style_rows(self) -> list[ui.ActionRow]:
         palettes = [
@@ -914,6 +1220,48 @@ class NegocioPanel(ui.LayoutView):
     async def _confirm_close(self, interaction: discord.Interaction) -> None:
         await self._go(interaction, CERRAR)
 
+    async def _mejoras(self, interaction: discord.Interaction) -> None:
+        await self._go(interaction, MEJORAS)
+
+    async def _resenas(self, interaction: discord.Interaction) -> None:
+        await self._go(interaction, RESENAS)
+
+    async def _traslado(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
+        self.own_locals = await self.service.own_locals(self.guild_id, self.owner.id)
+        business = self.status.business if self.status else None
+        if business is not None and not self.move["barrio"]:
+            self.move = {
+                "barrio": business.barrio,
+                "size": min(len(SIZES) - 1, business.size + 1),
+                "own": "",
+            }
+        self.screen = TRASLADO
+        await self.show(interaction)
+
+    async def _pick_equipment(self, interaction: discord.Interaction, value: str) -> None:
+        self.equipment = value if value in EQUIPMENT_BY_KEY else ""
+        await self._go(interaction, MEJORAS)
+
+    async def _pick_campaign(self, interaction: discord.Interaction, value: str) -> None:
+        self.campaign = value if value in CAMPAIGN_BY_KEY else ""
+        await self._go(interaction, MEJORAS)
+
+    async def _pick_move_barrio(self, interaction: discord.Interaction, value: str) -> None:
+        if value in BARRIO_BY_KEY:
+            self.move.update(barrio=value, own="")
+        await self._go(interaction, TRASLADO)
+
+    async def _pick_move_size(self, interaction: discord.Interaction, value: str) -> None:
+        if value.isdigit() and int(value) < len(SIZES):
+            self.move.update(size=int(value), own="")
+        await self._go(interaction, TRASLADO)
+
+    async def _pick_own(self, interaction: discord.Interaction, value: str) -> None:
+        if any(o.listing.key == value for o in self.own_locals):
+            self.move["own"] = value
+        await self._go(interaction, TRASLADO)
+
     async def _rotulo(self, interaction: discord.Interaction) -> None:
         if self.status is not None:
             business = self.status.business
@@ -1028,6 +1376,114 @@ class NegocioPanel(ui.LayoutView):
         await self.show(interaction)
         await self._track(StatDelta(add={f"biz_price_{value}": 1}))
 
+    async def _set_product_price(self, interaction: discord.Interaction, value: str) -> None:
+        await ack(interaction)
+        level = None if value == "general" else value
+        try:
+            await self.service.set_price(self.guild_id, self.owner.id, self.product, level)
+        except BusinessError as error:
+            await notify(interaction, str(error))
+            return
+        await self.show(interaction)
+        if level is not None:
+            await self._track(StatDelta(add={"biz_price_product": 1}))
+
+    async def _install(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
+        key = self.equipment
+        try:
+            business, base, tax, _balance = await self.service.buy_equipment(
+                self.guild_id, self.owner.id, key
+            )
+        except BusinessError as error:
+            await notify(interaction, str(error))
+            return
+        item = EQUIPMENT_BY_KEY[key]
+        self.equipment = ""
+        self.notes.append(
+            f"🛠️ **{item.name}** instalada: {format_amount(base)} + IGIC {format_amount(tax)}. "
+            "Se amortiza cada noche."
+        )
+        await self.show(interaction)
+        await renta.remind(self.cog.bot, interaction)
+        await self._track(
+            StatDelta(
+                add={"biz_equipment": 1, "biz_spent_equipment": base + tax},
+                peak={"biz_equipment_max": len(business.equipment)},
+            )
+        )
+
+    async def _launch(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
+        key = self.campaign
+        try:
+            _business, base, tax, _balance = await self.service.start_campaign(
+                self.guild_id, self.owner.id, key
+            )
+        except BusinessError as error:
+            await notify(interaction, str(error))
+            return
+        campaign = CAMPAIGN_BY_KEY[key]
+        self.campaign = ""
+        self.notes.append(
+            f"📣 **{campaign.name}** en marcha {campaign.days} días: "
+            f"{format_amount(base)} + IGIC {format_amount(tax)}."
+        )
+        await self.show(interaction)
+        await renta.remind(self.cog.bot, interaction)
+        await self._track(
+            StatDelta(
+                add={
+                    "biz_campaigns": 1,
+                    f"biz_campaign_{key}": 1,
+                    "biz_spent_marketing": base + tax,
+                }
+            )
+        )
+
+    async def _do_move(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
+        if self.turn is not None:
+            await notify(interaction, "Acaba el turno antes de trasladarte.")
+            return
+        target = self._move_target()
+        if target is None:
+            return
+        barrio, size, _quote, own = target
+        try:
+            if own:
+                business, quote, _balance = await self.service.move_to_own(
+                    self.guild_id, self.owner.id, self.move["own"]
+                )
+            else:
+                business, quote, _balance = await self.service.move(
+                    self.guild_id, self.owner.id, barrio, size
+                )
+        except BusinessError as error:
+            await notify(interaction, str(error))
+            return
+        self.notes.append(
+            f"🚚 **{business.name}** ya está en {business.barrio_info.name}, en un "
+            f"{size_text(business).lower()}. Has pagado {format_amount(quote.total)}"
+            f" y te devuelven {format_amount(quote.refund)} de la fianza."
+        )
+        self.move = {"barrio": "", "size": 0, "own": ""}
+        self.screen = PORTADA
+        await self.show(interaction)
+        await renta.remind(self.cog.bot, interaction)
+        place = business.barrio_info
+        await self._track(
+            StatDelta(
+                add={
+                    "biz_moves": 1,
+                    "biz_own_local": int(own),
+                    f"biz_theme_{place.theme}": 1,
+                    f"biz_island_{place.island}": 1,
+                },
+                peak={"biz_size_max": business.size + 1},
+            )
+        )
+
     async def _pick_product(self, interaction: discord.Interaction, value: str) -> None:
         self.product = value
         await self._go(interaction, ALMACEN)
@@ -1054,21 +1510,48 @@ class NegocioPanel(ui.LayoutView):
         return callback
 
     async def _close(self, interaction: discord.Interaction) -> None:
+        await self._shut(interaction, traspaso=False)
+
+    async def _close_traspaso(self, interaction: discord.Interaction) -> None:
+        await self._shut(interaction, traspaso=True)
+
+    async def _shut(self, interaction: discord.Interaction, *, traspaso: bool) -> None:
         await ack(interaction)
+        if self.turn is not None:
+            await notify(interaction, "Acaba el turno antes de cerrar.")
+            return
         try:
-            closing = await self.service.close(self.guild_id, self.owner.id)
+            closing = await self.service.close(self.guild_id, self.owner.id, traspaso=traspaso)
         except BusinessError as error:
             await notify(interaction, str(error))
             return
+        verb = "traspasado" if traspaso else "cerrado"
+        got = closing.stock + closing.proceeds
         self.notes.append(
-            f"🚪 **{closing.business.name} ha cerrado.** Te devuelven "
-            f"{format_amount(closing.refund)} de la fianza."
+            f"🚪 **{closing.business.name} se ha {verb}.** Cobras {format_amount(got)} por el "
+            f"stock{', las mejoras y la clientela' if traspaso else ' y las mejoras'} y te "
+            f"devuelven {format_amount(closing.refund)} de la fianza."
         )
+        if closing.gain_tax:
+            self.notes.append(
+                f"-# 🐶 IRPF de la ganancia (19 %): −{format_amount(closing.gain_tax)} "
+                f"({TAX_COLLECTOR})"
+            )
         self.screen = MONTAR
         await self.show(interaction)
         await renta.remind(self.cog.bot, interaction)
         week = sum(closing.business.week_totals.values())
-        await self._track(StatDelta(add={"biz_closed": 1, "biz_closed_red": int(week < 0)}))
+        await self._track(
+            StatDelta(
+                add={
+                    "biz_closed": 1,
+                    "biz_closed_red": int(week < 0),
+                    "biz_traspasos": int(traspaso),
+                    "biz_traspaso_money": got if traspaso else 0,
+                },
+                peak={"biz_traspaso_max": got if traspaso else 0},
+            )
+        )
 
     # -- Turno ------------------------------------------------------------------------
 
