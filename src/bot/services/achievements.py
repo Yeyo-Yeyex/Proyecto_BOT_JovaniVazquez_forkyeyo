@@ -20035,6 +20035,111 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1_000_000, "biz_traspaso_1m", "Vender humo con factura",
          "Cobra 1.000.000 Y$ en total traspasando negocios.", L),
     ], unit="money")  # fmt: skip
+    # Fase 3: la sociedad limitada (constituir, aportar, prestar, sueldo, dividendo, Sociedades,
+    # liquidar y la pluriactividad). Un capital de 1 € no tiene escalón propio: cualquier
+    # sociedad llega a él, así que lo cubre la primera.
+    a += _tiers("negocio", "biz_sl_founded", [
+        (1, "biz_sl_founded_1", "Ese, ele, ¡olé!", "Convierte tu negocio en una sociedad limitada.",
+         C),
+        (3, "biz_sl_founded_3", "Matrioska de sociedades", "Constituye 3 sociedades limitadas.", R,
+         True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_sl_capital_max", [
+        (300_000, "biz_sl_capital_3k", "Tres mil del ala",
+         "Constituye una sociedad con 3.000 € (300.000 Y$) de capital.", R),
+        (1_000_000, "biz_sl_capital_10k", "Das Kapital escriturado",
+         "Constituye una sociedad con 10.000 € (1.000.000 Y$) de capital.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_sl_contributed", [
+        (100_000, "biz_sl_contrib_100k", "Business angel de andar por casa",
+         "Aporta 100.000 Y$ a tu sociedad.", C),
+        (1_000_000, "biz_sl_contrib_1m", "Respiración boca a caja",
+         "Aporta 1.000.000 Y$ a tu sociedad.", R),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_sl_lent", [
+        (100_000, "biz_sl_lent_100k", "Tú me prestas, yo me presto",
+         "Presta 100.000 Y$ a tu sociedad.", C),
+        (1_000_000, "biz_sl_lent_1m", "Shylock sin libra de carne",
+         "Presta 1.000.000 Y$ a tu sociedad.", R),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_sl_repaid", [
+        (100_000, "biz_sl_repaid_100k", "Devolución sin ticket",
+         "Que tu sociedad te devuelva 100.000 Y$ de lo prestado.", R),
+        (1_000_000, "biz_sl_repaid_1m", "Un Lannister siempre paga sus deudas",
+         "Que tu sociedad te devuelva 1.000.000 Y$ de lo prestado.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_sl_salaries", [
+        (1, "biz_sl_salary_1", "El jefe se paga la ronda",
+         "Cóbrate tu primer sueldo de administrador.", C),
+        (25, "biz_sl_salary_25", "Nómina de quita y pon",
+         "Cóbrate 25 sueldos de administrador.", R),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_sl_salary_paid", [
+        (100_000, "biz_sl_salary_100k", "Negociación colectiva de uno",
+         "Cóbrate 100.000 Y$ brutos en sueldos de administrador.", R),
+        (1_000_000, "biz_sl_salary_1m", "Mi jefe me adora",
+         "Cóbrate 1.000.000 Y$ brutos en sueldos de administrador.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_sl_dividends", [
+        (1, "biz_sl_dividend_1", "Dividendo y vencerás", "Reparte tu primer dividendo.", R),
+        (25, "biz_sl_dividend_25", "Cortando el cupón en lonchas", "Reparte 25 dividendos.", R,
+         True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_sl_dividend_paid", [
+        (100_000, "biz_sl_div_100k", "Cobrar sin fichar", "Reparte 100.000 Y$ en dividendos.", R),
+        (1_000_000, "biz_sl_div_1m", "El botín de los Botín",
+         "Reparte 1.000.000 Y$ en dividendos.", E),
+        (3_000_000, "biz_sl_div_3m", "El tesoro de Rackham el Rojo",
+         "Reparte 3.000.000 Y$ en dividendos.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_sl_weeks", [
+        (1, "biz_sl_weeks_1", "Santa Rita, lo que se declara no se quita",
+         "Declara una semana en el Impuesto sobre Sociedades.", R),
+        (4, "biz_sl_weeks_4", "Cuatro domingos y un funeral",
+         "Declara 4 semanas en el Impuesto sobre Sociedades.", E),
+        (52, "biz_sl_weeks_52", "Feliz año fiscal nuevo",
+         "Declara 52 semanas en el Impuesto sobre Sociedades.", M),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_sl_tax_paid", [
+        (10_000, "biz_sl_tax_10k", "Diecinueve, que no es poco",
+         "Paga 10.000 Y$ del Impuesto sobre Sociedades.", R),
+        (100_000, "biz_sl_tax_100k", "Tributo al Mencey",
+         "Paga 100.000 Y$ del Impuesto sobre Sociedades.", E),
+        (500_000, "biz_sl_tax_500k", "Montoro te manda una postal",
+         "Paga 500.000 Y$ del Impuesto sobre Sociedades.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_sl_loss", [
+        (1, "biz_sl_loss_1", "Pérdidas y ganancias (sin ganancias)",
+         "Cierra una semana de la sociedad en pérdidas.", R, True),
+        (4, "biz_sl_loss_4", "Los domingos al sol",
+         "Cierra 4 semanas de la sociedad en pérdidas.", E, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_sl_profit_max", [
+        (100_000, "biz_sl_profit_100k", "El beneficio de la duda",
+         "Gana 100.000 Y$ en una semana de la sociedad, después de Sociedades.", R),
+        (250_000, "biz_sl_profit_250k", "Semana de vacas gordas",
+         "Gana 250.000 Y$ en una semana de la sociedad, después de Sociedades.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_sl_liquidated", [
+        (1, "biz_sl_liquidated_1", "Descanse en paz, S.L.",
+         "Liquida tu sociedad al cerrar el negocio.", R),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_sl_sunk", [
+        (1, "biz_sl_sunk_1", "Sociedad Ilimitada",
+         "Liquida una sociedad que no llega para sus deudas y paga tú lo que falta.", R, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_sl_quota_max", [
+        (100_000, "biz_sl_quota_100k", "Liquidación total, todo debe salir",
+         "Cobra 100.000 Y$ de cuota de liquidación de una sociedad.", R),
+        (1_000_000, "biz_sl_quota_1m", "Cerrar con broche de oro",
+         "Cobra 1.000.000 Y$ de cuota de liquidación de una sociedad.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_pluri_refund", [
+        (1, "biz_pluri_1", "La Seguridad Social me debía una",
+         "Recibe la devolución de la pluriactividad por cotizar en una nómina y en el RETA.", R),
+        (20_000, "biz_pluri_20k", "Arlequín, servidor de dos cotizaciones",
+         "Recibe 20.000 Y$ en devoluciones de la pluriactividad.", E),
+    ], unit="money")  # fmt: skip
     # Reducción de jornada y excedencia (art. 37.6 y 46.2 ET), en 🪏 General.
     a.append(Achievement(
         id="work_jornada_3_1", name="Tres cuartos de lo mismo",

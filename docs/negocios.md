@@ -289,6 +289,12 @@ Salen de las estadísticas de `business_stats` y de las de la jornada. Familias:
   tres a la vez y lo gastado en ellas; campañas y lo gastado en publicidad; precio por
   producto; traslados, el local propio, el mediano y el grande; traspasos, el traspaso gordo
   y lo cobrado traspasando;
+- fase 3, la sociedad: la primera y tres constituidas (oculto), el capital de 3.000 € y el de
+  10.000 €; lo aportado, lo prestado y lo devuelto; los sueldos de administrador (cuántos y
+  cuánto) y los dividendos (cuántos, oculto el alto, y cuánto); semanas declaradas en
+  Sociedades y lo pagado; las semanas en pérdidas (ocultas); el mejor beneficio de una semana;
+  liquidarla, hundirse y pagar sus deudas (oculto) y la gran cuota de liquidación; lo devuelto
+  por la pluriactividad;
 - fechas: madrugada, domingo, Día de Canarias;
 - rachas de días abriendo;
 - las 8 franjas usadas;
