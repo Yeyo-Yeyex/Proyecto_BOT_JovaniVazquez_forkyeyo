@@ -102,6 +102,8 @@ def _points(points: float) -> str:
 def loan_line(loan: Loan) -> str:
     """Una línea de un préstamo activo."""
     insured = f" · 🛡️ {loan.covers_left} coberturas" if loan.insured else ""
+    if (guarantor := lending.guarantor_of(loan.aval)) is not None:
+        insured += f" · 🤝 te avala <@{guarantor}>"
     line = (
         f"**#{loan.id}** · quedan {format_amount(loan.balance)} de "
         f"{format_amount(loan.principal)} · {format_amount(loan.monthly)} al mes · "
@@ -238,6 +240,15 @@ class Banco(commands.Cog):
             value="\n".join(loan_line(loan) for loan in desk.loans)[:1024] or "Ninguno.",
             inline=False,
         )
+        if desk.guarantees:
+            embed.add_field(
+                name=f"🤝 Avalas ({len(desk.guarantees)}/{lending.MAX_GUARANTEES})",
+                value="\n".join(
+                    f"<@{debt.user_id}> · quedan {format_amount(debt.owed)} · cuenta en tu 35 %"
+                    for debt in desk.guarantees
+                )[:1024],
+                inline=False,
+            )
         embed.set_footer(
             text=(
                 f"Comisión de apertura {_pct(lending.OPENING_FEE)} · seguro: −1 punto, prima "

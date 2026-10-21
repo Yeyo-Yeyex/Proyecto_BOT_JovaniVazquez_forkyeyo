@@ -885,6 +885,7 @@ def _desk_in(
         asnef=asnef,
         bank_debt=market.bank_debts.get(user_id, 0),
         profile=profile,
+        guarantees=tuple(market.guaranteed_by(user_id)),
     )
 
 
@@ -1505,6 +1506,7 @@ class LoanDesk:
         asnef: Si está en el fichero de morosos.
         bank_debt: Lo que debe al banco tras un vencimiento o una ejecución.
         profile: Su perfil, para el tipo (`loans.profile_factors`).
+        guarantees: Lo que avala de otros (préstamos y rehipotecas).
     """
 
     euribor: float
@@ -1513,6 +1515,7 @@ class LoanDesk:
     asnef: bool
     bank_debt: int
     profile: lending.Profile
+    guarantees: tuple[Mortgage | Loan, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
