@@ -1062,6 +1062,26 @@ async def press_business_move(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def press_business_constitute(client: BotClient, owner: MagicMock) -> Click:
+    panel = await business_panel(client, owner)
+    panel.capital = 100
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._constitute(interaction)
+
+    return click
+
+
+async def press_business_company_money(client: BotClient, owner: MagicMock) -> Click:
+    panel = await business_panel(client, owner)
+    await client.get_cog("Negocio").service.constitute(GUILD_ID, owner.id, 100)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel.company_action(interaction, "aportar", "1000")
+
+    return click
+
+
 async def press_pala_hire(client: BotClient, owner: MagicMock) -> Click:
     panel = module_of(client, "Trabajo").PalaPanel(
         client.get_cog("Trabajo"), guild_id=GUILD_ID, owner=owner
@@ -2536,6 +2556,8 @@ CASES: dict[str, Press] = {
     "negocio: precio de un producto": press_business_product_price,
     "negocio: abrir el traslado": press_business_traslado,
     "negocio: trasladarse": press_business_move,
+    "negocio: constituir la sociedad": press_business_constitute,
+    "negocio: aportar a la sociedad": press_business_company_money,
     "tienda: comprar": press_checkout,
     "tienda: ver la ficha": press_shop_sheet,
     "tienda: pagar en la ficha": press_shop_sheet_pay,

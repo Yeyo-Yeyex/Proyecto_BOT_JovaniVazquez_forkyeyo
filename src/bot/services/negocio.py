@@ -33,7 +33,7 @@ import random
 import sqlite3
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -290,6 +290,7 @@ class NightRun:
         amortized: Lo amortizado esa noche.
         corporate: El Impuesto sobre Sociedades de la semana que se cerró esa noche (fase 3):
             `{"base", "compensated", "tax", "rate", "reserve", "profit"}`, o `None`.
+        refund: El reintegro de la pluriactividad que le llegó esa noche (fase 3).
     """
 
     user_id: int
@@ -301,6 +302,7 @@ class NightRun:
     evicted: bool = False
     amortized: int = 0
     corporate: dict[str, Any] | None = None
+    refund: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -1360,8 +1362,10 @@ class BusinessService:
                 runs.append(run)
                 if run.evicted:
                     return runs
-                if day.weekday() == 6:
-                    await self._pluriactivity(guild_id, user_id, day)
+                if day.weekday() == 6 and (
+                    back := await self._pluriactivity(guild_id, user_id, day)
+                ):
+                    runs[-1] = replace(run, refund=back)
                 day += timedelta(days=1)
             fresh = await self.repository.business(guild_id, user_id)
         if fresh is not None:
