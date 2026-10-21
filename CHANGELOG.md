@@ -8,6 +8,13 @@ criterio.
 
 ## 9.x
 
+### 9.3.0 · 2026-10-21
+
+- Banco: 🤝 avalista, otro miembro te avala un préstamo o una rehipoteca (suma su 35 % y baja el tipo medio punto)
+- Banco: si no pagas, el banco reclama al avalista y tú le debes lo que pague, que se cobra cada noche y se embarga de tus nóminas
+- Saldo: lo que avalas, lo que debes a tu avalista y lo que te debe tu avalado
+- Logros: 11 de avales en 🏦 Banco
+
 ### 9.1.0 · 2026-10-21
 
 - Banco: 🔐 Garantías, rehipotecar tus pisos: hasta el 80 % de lo que valen hoy (60 % si no es vivienda) menos lo que ya debes de ellos

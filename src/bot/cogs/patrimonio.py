@@ -325,11 +325,13 @@ class Patrimonio(commands.Cog):
             f"🎟️ Boletos de lotería por sortear: **{format_amount(worth.lottery)}**",
             f"📬 Renta por cobrar: **{format_amount(worth.renta)}**",
         ]
-        if worth.debts:
+        if worth.debts > 0:
             lines.append(
-                f"🏦 Deudas con el banco: **−{format_amount(worth.debts)}** (hipotecas, "
-                "préstamos y deuda)"
+                f"🏦 Deudas: **−{format_amount(worth.debts)}** (hipotecas, préstamos y lo que "
+                "debe al banco y a sus avalistas)"
             )
+        elif worth.debts < 0:
+            lines.append(f"🤝 Le deben sus avalados: **{format_amount(-worth.debts)}**")
         embed = discord.Embed(
             title=f"🏰 Patrimonio de {discord.utils.escape_markdown(target.display_name)}",
             description=(
@@ -424,7 +426,8 @@ class Patrimonio(commands.Cog):
             + (f" · 🏠 {format_amount(w.homes)}" if w.homes else "")
             + (f" · 🎟️ {format_amount(w.lottery)}" if w.lottery else "")
             + (f" · 📬 {format_amount(w.renta)}" if w.renta else "")
-            + (f" · 🏦 −{format_amount(w.debts)}" if w.debts else "")
+            + (f" · 🏦 −{format_amount(w.debts)}" if w.debts > 0 else "")
+            + (f" · 🤝 {format_amount(-w.debts)}" if w.debts < 0 else "")
             for i, w in enumerate(everyone[:FORTUNES_TOP])
         ]
         if len(everyone) > FORTUNES_TOP:

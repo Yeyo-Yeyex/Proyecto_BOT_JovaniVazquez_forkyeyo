@@ -134,8 +134,12 @@ class Factor:
     points: float
 
 
-def profile_factors(profile: Profile, *, insured: bool) -> list[Factor]:
-    """Lo que sube o baja el diferencial de un miembro, en el orden en que se enseña."""
+def profile_factors(profile: Profile, *, insured: bool, guaranteed: bool = False) -> list[Factor]:
+    """Lo que sube o baja el diferencial de un miembro, en el orden en que se enseña.
+
+    Args:
+        guaranteed: Si lo avala otro miembro (`GUARANTOR_DISCOUNT`).
+    """
     out = []
     if profile.paid_loans:
         n = profile.paid_loans
@@ -160,6 +164,8 @@ def profile_factors(profile: Profile, *, insured: bool) -> list[Factor]:
         out.append(Factor("Sin nómina: solo rentas", 0.01))
     if insured:
         out.append(Factor("Con el seguro de protección de pagos", -INSURANCE_DISCOUNT))
+    if guaranteed:
+        out.append(Factor("Con avalista", -GUARANTOR_DISCOUNT))
     return out
 
 
@@ -343,6 +349,11 @@ APPRAISAL_RATE = 0.002
 APPRAISAL_MIN = 2_500
 
 
+def remortgage_rate(euribor: float, *, guaranteed: bool = False) -> float:
+    """Tipo de una rehipoteca: Euríbor más el diferencial (medio punto menos con avalista)."""
+    return round(euribor + REMORTGAGE_SPREAD - (GUARANTOR_DISCOUNT if guaranteed else 0), 4)
+
+
 def remortgage_room(value: int, owed: int, *, home: bool) -> int:
     """Lo más que presta sobre unas participaciones que valen `value` y ya deben `owed`."""
     share = REMORTGAGE_LTV_HOME if home else REMORTGAGE_LTV_OTHER
@@ -421,3 +432,32 @@ def max_remortgage(ltv_room: int, dti_room: int, rate: float, months: int) -> in
     while guess > 0 and installment(guess, rate, months) > dti_room:
         guess -= max(1, guess // 1_000)
     return max(0, guess)
+
+
+# -- Avalista ------------------------------------------------------------------------------
+
+#: Cómo se apunta en el `aval` de un préstamo o una hipoteca que lo avala un miembro.
+GUARANTOR_PREFIX = "miembro:"
+#: Lo que baja el tipo con un avalista: el banco comparte el riesgo.
+GUARANTOR_DISCOUNT = 0.005
+#: Avales vivos a la vez por miembro (lo que deja ver la CIRBE a cualquier banco).
+MAX_GUARANTEES = 2
+#: Lo que espera la petición de aval a que el avalista conteste.
+GUARANTEE_SECONDS = 600
+
+
+def guarantor_tag(user_id: int) -> str:
+    """El `aval` de algo que avala el miembro `user_id`."""
+    return f"{GUARANTOR_PREFIX}{user_id}"
+
+
+def guarantor_of(aval: str | None) -> int | None:
+    """Quién avala algo (su `aval`), o `None` si no lo avala un miembro."""
+    if aval is None or not aval.startswith(GUARANTOR_PREFIX):
+        return None
+    return int(aval.removeprefix(GUARANTOR_PREFIX))
+
+
+def guaranteed_room(own: int, guarantor: int) -> int:
+    """Lo que cabe al mes con un avalista: lo tuyo en el 35 % más lo suyo en su 35 %."""
+    return max(0, own) + max(0, guarantor)

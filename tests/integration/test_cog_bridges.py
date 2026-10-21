@@ -2350,6 +2350,64 @@ async def test_pisos_abre_las_garantias_y_se_rehipoteca_con_el_bot_real(tmp_path
         await client.close()
 
 
+async def test_un_miembro_avala_un_prestamo_con_el_bot_real(tmp_path: Path) -> None:
+    """🤝 En `banco` se elige avalista, se pide el aval en el canal y, al avalar, se firma
+    el préstamo con el aval; los logros van a los dos y el aval sale en el `saldo` de Bea."""
+    client = await load_bot(tmp_path)
+    try:
+        banco = client.get_cog("Banco")
+        module = importer("Banco", client)
+        connection = client.housing._connect()  # noqa: SLF001
+        try:
+            for user_id, net in ((OWNER_ID, 30_000), (77, 600_000)):
+                connection.execute(
+                    "INSERT INTO economy_payroll (guild_id, user_id, concept, gross, ss_worker, "
+                    "ss_employer, irpf, net, created_at) VALUES (?, ?, 'pala:obra', ?, 0, 0, 0, "
+                    "?, ?)",
+                    (GUILD, user_id, net, net, banco.clock() - 86_400),
+                )
+            connection.commit()
+        finally:
+            connection.close()
+        owner = MagicMock(spec=discord.Member)
+        owner.id, owner.bot, owner.display_name = OWNER_ID, False, "Diego"
+        bea = MagicMock(spec=discord.Member)
+        bea.id, bea.bot, bea.display_name, bea.mention = 77, False, "Bea", "<@77>"
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = GUILD_ID
+
+        def clicked(user: MagicMock) -> MagicMock:
+            interaction = fake_interaction(user)
+            interaction.client, interaction.guild, interaction.channel = client, guild, None
+            return interaction
+
+        panel = module.BankPanel(banco, GUILD_ID, owner)
+        panel.guarantor = bea
+        await panel.screen()
+        assert panel.guarantor_problem is None and panel.guarantor_room > 0
+        form = module.AmountForm(panel, panel.most)
+        form.amount._value = str(panel.most)
+        await form.on_submit(clicked(owner))
+        await panel.screen()
+        sign = next(c for c in panel.children if getattr(c, "custom_id", "") == "banco:firmar")
+        asked = clicked(owner)
+        await sign.callback(asked)
+        view = asked.followup.send.await_args.kwargs["view"]
+        assert isinstance(view, module.avales.GuaranteeView)
+        await view.accept.callback(clicked(bea))
+        market = await client.get_cog("Pisos").service.market(GUILD)
+        (loan,) = market.loans_of(OWNER_ID)
+        assert market.guaranteed_by(77) == [loan]
+        profiles = [await client.achievements.profile(GUILD, who) for who in (OWNER_ID, 77)]
+        assert profiles[0].stats["guarantees_received"] == 1
+        assert profiles[1].stats["guarantees_given"] == 1
+        casino = client.get_cog("Casino")
+        kinds = {item.kind for item in await casino._pending(GUILD, 77, 0, own=True)}  # noqa: SLF001
+        assert "guarantee" in kinds
+    finally:
+        await client.close()
+
+
 async def test_pisos_ve_el_aval_de_los_padres_de_pala_con_el_bot_real(tmp_path: Path) -> None:
     """`pisos` carga antes que `pala`: sus puentes del aval tienen que encontrar el trabajo."""
     client = await load_bot(tmp_path)

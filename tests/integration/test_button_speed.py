@@ -1594,6 +1594,69 @@ async def press_garantia_sign(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+def guarantor_mock() -> MagicMock:
+    """Una avalista del servidor (no es el dueño del panel)."""
+    bea = MagicMock(spec=discord.Member)
+    bea.id, bea.bot, bea.display_name, bea.mention = 77, False, "Bea", "<@77>"
+    return bea
+
+
+async def press_aval_button(client: BotClient, owner: MagicMock) -> Click:
+    panel = await banco_panel(client, owner, "loans")
+    button = child(panel, discord.ui.Button, "banco:avalista")
+
+    async def click(interaction: MagicMock) -> None:
+        await button.callback(interaction)
+
+    return click
+
+
+async def press_aval_pick(client: BotClient, owner: MagicMock) -> Click:
+    panel = await banco_panel(client, owner, "loans")
+    panel.picking_guarantor = True
+    await panel.screen()
+    select = child(panel, discord.ui.UserSelect, "banco:avalista_elige")
+
+    async def click(interaction: MagicMock) -> None:
+        select._values = [guarantor_mock()]  # lo que Discord rellena al elegir
+        await select.callback(interaction)
+
+    return click
+
+
+async def press_aval_ask(client: BotClient, owner: MagicMock) -> Click:
+    from bot.services import loans as lending
+
+    banco_payroll(client)
+    panel = await banco_panel(client, owner, "loans")
+    panel.guarantor = guarantor_mock()
+    panel.quote = lending.quote(5_000, 12, 0.07, insured=False)
+    await panel.screen()
+    button = child(panel, discord.ui.Button, "banco:firmar")
+
+    async def click(interaction: MagicMock) -> None:
+        await button.callback(interaction)
+
+    return click
+
+
+async def press_aval_accept(client: BotClient, owner: MagicMock) -> Click:
+    from bot.services import loans as lending
+
+    banco_payroll(client)
+    module = module_of(client, "Banco")
+    panel = await banco_panel(client, owner, "loans")
+    request = module.avales.Request(loan=lending.quote(5_000, 12, 0.07, insured=False))
+    bea = guarantor_mock()
+    view = module.avales.GuaranteeView(panel, request, bea)
+
+    async def click(interaction: MagicMock) -> None:
+        interaction.user = bea
+        await view.accept.callback(interaction)
+
+    return click
+
+
 async def vender_panel(client: BotClient, owner: MagicMock, selected: int | None = None):  # noqa: ANN201
     """El panel de `vender` ya pintado, con `selected` elegido (leerlo no cuenta)."""
     panel = module_of(client, "Rastro").VenderPanel(client.get_cog("Rastro"), GUILD_ID, owner)
@@ -2310,6 +2373,10 @@ CASES: dict[str, Press] = {
     "banco: importe de la rehipoteca": press_garantia_amount,
     "banco: firmar la rehipoteca": press_garantia_sign,
     "pisos: rehipotecar": press_pisos_remortgage,
+    "banco: avalista": press_aval_button,
+    "banco: elegir avalista": press_aval_pick,
+    "banco: pedir el aval": press_aval_ask,
+    "aval: avalar": press_aval_accept,
     "vender: elegir objeto": press_vender_item,
     "vender: vender al Monte": press_vender_sell,
     "vender: empeñar": press_vender_pawn,

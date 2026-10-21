@@ -205,6 +205,7 @@ class Market:
         admins: Quién administra cada inmueble por acuerdo de su junta.
         reserves: El fondo de reserva de cada inmueble que tiene algo.
         loans: Préstamos personales activos (`banco`).
+        member_debts: `{(acreedor, deudor): importe}` de los reembolsos de los avales.
     """
 
     indexes: dict[str, float] = field(default_factory=dict)
@@ -231,6 +232,7 @@ class Market:
     admins: dict[str, int] = field(default_factory=dict)
     reserves: dict[str, int] = field(default_factory=dict)
     loans: tuple[Loan, ...] = ()
+    member_debts: dict[tuple[int, int], int] = field(default_factory=dict)
 
     def manager(self, key: str) -> int | None:
         """Quién decide en un inmueble: a quien eligió la junta o la mayoría (art. 398 CC).
@@ -342,17 +344,45 @@ class Market:
         """Préstamos personales activos de un miembro."""
         return [loan for loan in self.loans if loan.user_id == user_id]
 
+    def guaranteed_by(self, user_id: int) -> list[Mortgage | Loan]:
+        """Lo que avala un miembro: préstamos y rehipotecas de otros (su riesgo indirecto)."""
+        return [
+            debt
+            for debt in (*self.mortgages, *self.loans)
+            if lending.guarantor_of(debt.aval) == user_id
+        ]
+
     def installments_of(self, user_id: int) -> int:
-        """Lo que paga cada mes al banco: hipotecas y préstamos con su seguro (el 35 %)."""
-        return sum(m.payment for m in self.mortgages_of(user_id)) + sum(
+        """Lo que paga cada mes al banco: hipotecas y préstamos con su seguro (el 35 %).
+
+        Suma también las cuotas de lo que avala: es riesgo indirecto suyo en la CIRBE y el
+        banco lo cuenta como si lo pagara él.
+        """
+        own = sum(m.payment for m in self.mortgages_of(user_id)) + sum(
             loan.monthly for loan in self.loans_of(user_id)
+        )
+        guaranteed = sum(
+            debt.monthly if isinstance(debt, Loan) else debt.payment
+            for debt in self.guaranteed_by(user_id)
+        )
+        return own + guaranteed
+
+    def owed_to_members(self, user_id: int) -> int:
+        """Lo que debe a los avalistas que pagaron por él."""
+        return sum(
+            amount for (_c, debtor), amount in self.member_debts.items() if debtor == user_id
         )
 
     def in_asnef(self, user_id: int) -> bool:
-        """Si está en el fichero de morosos: cuotas sin pagar o deuda con el banco."""
+        """Si está en el fichero de morosos: cuotas sin pagar o deuda con el banco.
+
+        Quien dejó que el banco reclamara a su avalista sigue en el fichero mientras no le
+        devuelva lo pagado: el impago con el banco sigue sin saldar.
+        """
         counts = [m.unpaid_count for m in self.mortgages_of(user_id)]
         counts += [loan.unpaid_count for loan in self.loans_of(user_id)]
-        return lending.in_asnef(counts, self.bank_debts.get(user_id, 0))
+        owed = self.bank_debts.get(user_id, 0) + self.owed_to_members(user_id)
+        return lending.in_asnef(counts, owed)
 
     def whole_homes(self, user_id: int) -> int:
         """Viviendas que tiene enteras (para gran tenedor, fondo buitre y SOCIMI)."""
@@ -617,6 +647,7 @@ class AuctionRun:
     executions: list[tuple[int, str]] = field(default_factory=list)
     aval_executions: list[int] = field(default_factory=list)
     remortgage_executions: list[int] = field(default_factory=list)
+    guarantee_claims: list[tuple[int, int, int]] = field(default_factory=list)
     news: list[News] = field(default_factory=list)
 
 
@@ -704,6 +735,9 @@ class DayRun:
         loan_covered: Miembros a los que el seguro les ha pagado hoy una cuota.
         loans_finished: Miembros que hoy han terminado de pagar un préstamo.
         loan_defaults: `(miembro, deuda)` de cada préstamo vencido hoy.
+        guarantee_claims: `(avalista, avalado, importe)` que el banco reclama hoy a un
+            avalista (un préstamo vencido o una ejecución que no cubre su rehipoteca).
+        reimbursements: `(avalista, avalado, importe)` de lo que hoy le ha devuelto.
     """
 
     day: date
@@ -739,6 +773,8 @@ class DayRun:
     loan_covered: list[int] = field(default_factory=list)
     loans_finished: list[int] = field(default_factory=list)
     loan_defaults: list[tuple[int, int]] = field(default_factory=list)
+    guarantee_claims: list[tuple[int, int, int]] = field(default_factory=list)
+    reimbursements: list[tuple[int, int, int]] = field(default_factory=list)
 
 
 def _date(text: str | None) -> date | None:
@@ -885,6 +921,31 @@ def _remortgage_desk_in(market: Market, user_id: int) -> RemortgageDesk:
     )
 
 
+def guarantor_problem(market: Market, user_id: int, guarantor: int) -> str | None:
+    """Por qué `guarantor` no puede avalar a `user_id` ahora, o `None`."""
+    if guarantor == user_id:
+        return "No te puedes avalar a ti mismo: eso es firmar dos veces."
+    if market.in_asnef(guarantor):
+        return "Tu avalista está en el fichero de morosos (ASNEF): el banco no lo acepta."
+    if len(market.guaranteed_by(guarantor)) >= lending.MAX_GUARANTEES:
+        return (
+            f"Tu avalista ya avala {lending.MAX_GUARANTEES} cosas: el banco no le deja firmar "
+            "más avales."
+        )
+    return None
+
+
+def _room_with(
+    market: Market, income: int, installments: int, guarantor: int | None, guarantor_income: int
+) -> int:
+    """Lo que cabe al mes en el 35 %: lo tuyo y, con avalista, también lo suyo."""
+    room = lending.room_for(income, installments)
+    if guarantor is None:
+        return room
+    theirs = lending.room_for(guarantor_income, market.installments_of(guarantor))
+    return lending.guaranteed_room(room, theirs)
+
+
 def _own_loan_in(connection: sqlite3.Connection, guild_id: int, user_id: int, loan_id: int) -> Loan:
     """Un préstamo activo de `user_id`, o `HousingError`."""
     loan = finance.loan_in(connection, guild_id, loan_id)
@@ -973,6 +1034,7 @@ def _market_in(connection: sqlite3.Connection, guild_id: int) -> Market:
         leases=leases,
         mortgages=tuple(finance.mortgages_in(connection, guild_id)),
         loans=tuple(finance.loans_in(connection, guild_id)),
+        member_debts=finance.member_debts_in(connection, guild_id),
         vpo=finance.vpo_in(connection, guild_id),
         signups=tuple(finance.vpo_signups_in(connection, guild_id)),
         reservations=finance.vpo_reservations_in(connection, guild_id),
@@ -1109,6 +1171,12 @@ def assets_in(connection: sqlite3.Connection, guild_id: int) -> dict[int, int]:
         out[mortgage.user_id] = out.get(mortgage.user_id, 0) - int(mortgage.owed * share)
     for member, debt in finance.bank_debts_in(connection, guild_id).items():
         out[member] = out.get(member, 0) - debt
+    # Lo que se debe a un avalista resta al deudor y es un derecho de cobro del avalista. Lo
+    # avalado no resta al avalista hasta que se lo reclaman (art. 25.Dos.a): entonces es su
+    # deuda con el banco, que ya está arriba.
+    for (creditor, debtor), amount in finance.member_debts_in(connection, guild_id).items():
+        out[debtor] = out.get(debtor, 0) - amount
+        out[creditor] = out.get(creditor, 0) + amount
     for loan in finance.loans_in(connection, guild_id):
         out[loan.user_id] = out.get(loan.user_id, 0) - loan.owed
     return out
@@ -1873,11 +1941,17 @@ class HousingRepository:
         return values, fiscal
 
     async def member_debts(self, guild_id: int) -> dict[int, int]:
-        """Lo que debe al banco cada miembro: hipotecas, préstamos y deuda (`perfil`)."""
+        """Lo que debe cada miembro: al banco y a sus avalistas (`perfil`, `fortunas`).
+
+        Negativo si lo que le deben sus avalados pasa de lo que debe.
+        """
         market = await self.market(guild_id)
         out: dict[int, int] = dict(market.bank_debts)
         for debt in (*market.mortgages, *market.loans):
             out[debt.user_id] = out.get(debt.user_id, 0) + debt.owed
+        for (creditor, debtor), amount in market.member_debts.items():
+            out[debtor] = out.get(debtor, 0) + amount
+            out[creditor] = out.get(creditor, 0) - amount
         return {member: owed for member, owed in out.items() if owed}
 
     async def home_of(self, guild_id: int, user_id: int) -> tuple[str, str] | None:
@@ -1934,6 +2008,8 @@ class HousingRepository:
         payroll: bool,
         day: date,
         now: float,
+        guarantor: int | None = None,
+        guarantor_income: int = 0,
     ) -> Callable[[sqlite3.Connection], tuple[SignedLoan, HousingMove]]:
         """Firma un préstamo personal: lo prestado entra y la comisión de apertura sale.
 
@@ -1941,6 +2017,9 @@ class HousingRepository:
             rate: El tipo que enseñaba la oferta; si el perfil o el Euríbor han cambiado
                 entretanto, no se firma.
             income: Ingresos diarios que mira el banco (`housing.daily_income`).
+            guarantor: El miembro que lo avala, si lo hay: suma su hueco en el 35 % al de
+                quien pide y baja el tipo (`loans.GUARANTOR_DISCOUNT`).
+            guarantor_income: Lo que ingresa al día el avalista.
 
         Raises (dentro de la transacción):
             HousingError: Fichero de morosos, demasiados préstamos, cifras fuera de los
@@ -1948,11 +2027,15 @@ class HousingRepository:
         """
 
         def run(connection: sqlite3.Connection) -> tuple[SignedLoan, HousingMove]:
-            desk = _desk_in(
-                connection, guild_id, user_id, _market_in(connection, guild_id), payroll
-            )
+            market = _market_in(connection, guild_id)
+            desk = _desk_in(connection, guild_id, user_id, market, payroll)
             if desk.asnef:
                 raise HousingError(lending.ASNEF_REFUSAL)
+            if (
+                guarantor is not None
+                and (problem := guarantor_problem(market, user_id, guarantor)) is not None
+            ):
+                raise HousingError(problem)
             if len(desk.loans) >= lending.MAX_LOANS:
                 raise HousingError(
                     f"Ya tienes {lending.MAX_LOANS} préstamos abiertos: devuelve alguno antes."
@@ -1964,11 +2047,21 @@ class HousingRepository:
                     f"El banco presta de {format_amount(lending.MIN_PRINCIPAL)} a "
                     f"{format_amount(lending.MAX_PRINCIPAL)}."
                 )
-            factors = lending.profile_factors(desk.profile, insured=insured)
+            factors = lending.profile_factors(
+                desk.profile, insured=insured, guaranteed=guarantor is not None
+            )
             if lending.loan_rate(desk.euribor, factors) != rate:
                 raise HousingError("El tipo ha cambiado desde la oferta: vuelve a mirarla.")
             offer = lending.quote(principal, months, rate, insured=insured)
-            if not rules.affordable(income, desk.installments + offer.monthly):
+            if guarantor is not None:
+                room = _room_with(market, income, desk.installments, guarantor, guarantor_income)
+                if offer.monthly > room:
+                    raise HousingError(
+                        f"El banco te dice que no: lo de cada mes ({format_amount(offer.monthly)}) "
+                        f"no cabe ni sumando lo que le cabe a tu avalista ({format_amount(room)} "
+                        "al mes entre los dos)."
+                    )
+            elif not rules.affordable(income, desk.installments + offer.monthly):
                 raise HousingError(
                     f"El banco te dice que no: lo de cada mes ({format_amount(offer.monthly)}) "
                     f"más lo que ya pagas ({format_amount(desk.installments)}) pasa del 35 % "
@@ -1983,6 +2076,11 @@ class HousingRepository:
                 # La primera cuota, la noche siguiente a la de hoy: hasta entonces se desiste.
                 first_day=(day + timedelta(days=1)).isoformat(), now=now,
             )  # fmt: skip
+            if guarantor is not None:
+                connection.execute(
+                    "UPDATE housing_loans SET aval = ? WHERE id = ?",
+                    (lending.guarantor_tag(guarantor), loan_id),
+                )
             loan = finance.loan_in(connection, guild_id, loan_id)
             assert loan is not None
             entries = [(user_id, LedgerEntry(principal, "banco:prestamo"))]
@@ -2066,6 +2164,8 @@ class HousingRepository:
         income: int,
         day: date,
         now: float,
+        guarantor: int | None = None,
+        guarantor_income: int = 0,
     ) -> Callable[[sqlite3.Connection], tuple[SignedRemortgage, HousingMove]]:
         """Firma una rehipoteca: una hipoteca nueva sobre lo que ya se tiene de un inmueble.
 
@@ -2077,10 +2177,14 @@ class HousingRepository:
         Args:
             rate: El tipo que enseñaba la oferta; si el Euríbor ha cambiado, no se firma.
             income: Ingresos diarios que mira el banco (`housing.daily_income`).
+            guarantor: El miembro que la avala, si lo hay (suma su hueco en el 35 % y baja
+                el tipo).
+            guarantor_income: Lo que ingresa al día el avalista.
 
         Raises (dentro de la transacción):
             HousingError: Fichero de morosos, nada de ese inmueble, en subasta, cifras fuera
-                de los topes, otro tipo que el de la oferta o una cuota que no cabe en el 35 %.
+                de los topes, otro tipo que el de la oferta, una cuota que no cabe en el 35 %
+                o un avalista que no puede avalar.
         """
 
         def run(connection: sqlite3.Connection) -> tuple[SignedRemortgage, HousingMove]:
@@ -2088,6 +2192,11 @@ class HousingRepository:
             desk = _remortgage_desk_in(market, user_id)
             if desk.asnef:
                 raise HousingError(lending.ASNEF_REFUSAL)
+            if (
+                guarantor is not None
+                and (problem := guarantor_problem(market, user_id, guarantor)) is not None
+            ):
+                raise HousingError(problem)
             found = next((c for c in desk.collaterals if c.key == key), None)
             if found is None:
                 raise HousingError("No tienes nada en ese inmueble.")
@@ -2095,7 +2204,8 @@ class HousingRepository:
                 raise HousingError(found.blocked)
             if months not in lending.REMORTGAGE_TERMS:
                 raise HousingError("Ese plazo no lo ofrece el banco.")
-            if desk.rate != rate:
+            expected = lending.remortgage_rate(desk.euribor, guaranteed=guarantor is not None)
+            if expected != rate:
                 raise HousingError("El Euríbor ha cambiado desde la oferta: vuelve a mirarla.")
             if principal < lending.REMORTGAGE_MIN:
                 raise HousingError(
@@ -2110,7 +2220,15 @@ class HousingRepository:
             offer = lending.remortgage_quote(principal, months, rate, found.value)
             if offer.received <= 0:
                 raise HousingError("Con la comisión y la tasación no te llegaría nada.")
-            if not rules.affordable(income, desk.installments + offer.payment):
+            if guarantor is not None:
+                room = _room_with(market, income, desk.installments, guarantor, guarantor_income)
+                if offer.payment > room:
+                    raise HousingError(
+                        f"El banco te dice que no: la cuota ({format_amount(offer.payment)} al "
+                        f"mes) no cabe ni sumando lo que le cabe a tu avalista "
+                        f"({format_amount(room)} al mes entre los dos)."
+                    )
+            elif not rules.affordable(income, desk.installments + offer.payment):
                 raise HousingError(
                     f"El banco te dice que no: la cuota ({format_amount(offer.payment)} al mes) "
                     f"más lo que ya pagas ({format_amount(desk.installments)}) pasa del 35 % de "
@@ -2119,6 +2237,7 @@ class HousingRepository:
                 )
             mortgage_id = finance.add_mortgage_in(
                 connection, guild_id, user_id, key, principal, rate, offer.payment, now,
+                aval=lending.guarantor_tag(guarantor) if guarantor is not None else None,
                 months=months, kind=finance.MORTGAGE_REMORTGAGE,
             )  # fmt: skip
             mortgage = next(
@@ -2810,10 +2929,21 @@ class HousingRepository:
             entries.append((member, LedgerEntry(-debt_other, "pisos:comunidad")))
             entries.append((member, LedgerEntry(-to_bank, "pisos:banco")))
             taxes.append(HousingTax(member, "ibi", debt_ibi, debt_ibi))
-        for each in group:
+        left = to_bank
+        for each in sorted(group, key=lambda m: m.id):
             finance.close_mortgage_in(connection, each.id, "ejecutada")
-        if owed > to_bank:
-            finance.add_bank_debt_in(connection, guild_id, member, owed - to_bank)
+            # Lo cobrado paga por rango; lo que no cubre de cada una lo debe quien la avala
+            # (fianza solidaria: el avalado le debe a él) o, si no, el dueño.
+            covered = min(each.owed, left)
+            left -= covered
+            short = each.owed - covered
+            guarantor = lending.guarantor_of(each.aval)
+            if short and guarantor is not None:
+                finance.add_bank_debt_in(connection, guild_id, guarantor, short)
+                finance.add_member_debt_in(connection, guild_id, guarantor, member, short, now)
+                result.guarantee_claims.append((guarantor, member, short))
+            elif short:
+                finance.add_bank_debt_in(connection, guild_id, member, short)
         result.executions.append((member, mortgage.listing))
         if any(m.aval == rules.PARENTS_AVAL for m in group):
             result.aval_executions.append(member)
@@ -2930,6 +3060,14 @@ class HousingRepository:
                 )  # fmt: skip
         for member, amount in market.bank_debts.items():
             debits.append(HousingDebit(member, f"banco:{member}", 0, amount, "pisos:deuda_banco"))
+        # Después de su deuda con el banco, lo que debe a sus avalistas: llega a ellos.
+        for (creditor, debtor), amount in market.member_debts.items():
+            debits.append(
+                HousingDebit(
+                    debtor, f"reembolso:{creditor}:{debtor}", 0, amount, "banco:reembolso",
+                    to=creditor,
+                )
+            )  # fmt: skip
         for unit, owner in market.vpo.items():
             spec = VPO_BY_KEY[unit]
             costs = rules.vpo_costs(spec.price, spec.community)
@@ -2979,6 +3117,8 @@ class HousingRepository:
             for tag, (ibi, other) in unpaid.items():
                 if tag.startswith(("hipoteca:", "prestamo:")):
                     continue
+                if tag.startswith("reembolso:"):
+                    continue
                 if tag.startswith("banco:"):
                     member = int(tag.removeprefix("banco:"))
                     conn.execute(
@@ -3010,6 +3150,11 @@ class HousingRepository:
                         """,
                         (ibi + other, ibi, guild_id, tag),
                     )
+            for (creditor, debtor), amount in market.member_debts.items():
+                left = unpaid.get(f"reembolso:{creditor}:{debtor}", (0, 0))[1]
+                finance.set_member_debt_in(conn, guild_id, creditor, debtor, left)
+                if amount > left:
+                    result.reimbursements.append((creditor, debtor, amount - left))
             # Después de poner al día las deudas con el banco: un préstamo que vence hoy suma.
             for loan_id, plan in loan_plan.items():
                 self._settle_loan_in(conn, guild_id, now, loans[loan_id], plan, unpaid, result)
@@ -3068,7 +3213,15 @@ class HousingRepository:
             result.loans_finished.append(member)
         elif unpaid_count >= lending.DEFAULT_INSTALLMENTS:
             owed = balance + missing
-            finance.add_bank_debt_in(connection, guild_id, member, owed)
+            guarantor = lending.guarantor_of(loan.aval)
+            if guarantor is not None:
+                # Fianza solidaria (arts. 1822, 1831 y 1144 CC): el banco reclama al avalista y
+                # el avalado le debe lo que pague (acción de reembolso, art. 1838 CC).
+                finance.add_bank_debt_in(connection, guild_id, guarantor, owed)
+                finance.add_member_debt_in(connection, guild_id, guarantor, member, owed, now)
+                result.guarantee_claims.append((guarantor, member, owed))
+            else:
+                finance.add_bank_debt_in(connection, guild_id, member, owed)
             finance.close_loan_in(connection, loan.id, "vencido", now)
             result.loan_defaults.append((member, owed))
 

@@ -329,6 +329,9 @@ PRODUCED_STATS = {
     "remortgages_signed", "remortgage_principal_max", "remortgages_open_max", "remortgage_home",
     "remortgage_not_home", "remortgage_shortest", "remortgage_full", "remortgage_minimum",
     "remortgage_executed",
+    # cogs/banco_avales.py y el cierre de cogs/pisos.py: guarantee_*_stats
+    "guarantees_given", "guarantees_received", "guarantees_open_max", "guarantee_refused",
+    "guarantee_claimed", "guarantee_defaulted", "guarantee_repaid", "guarantee_recovered",
     # cogs/pisos.py: housing_panel_stats, housing_purchase_stats, housing_sale_stats y
     # housing_day_stats (los eventos salen de housing.EVENTS y de advance_day)
     "pisos_opened", "pisos_exit", "pisos_mortgages", "pisos_loan_max",

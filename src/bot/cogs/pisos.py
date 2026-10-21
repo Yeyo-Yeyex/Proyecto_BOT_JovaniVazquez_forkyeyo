@@ -92,6 +92,7 @@ from bot.services import housing as rules
 from bot.services import housing_view as view
 from bot.services.achievements import (
     StatDelta,
+    guarantee_night_stats,
     housing_action_stats,
     housing_day_stats,
     housing_panel_stats,
@@ -2739,6 +2740,7 @@ class Pisos(commands.Cog):
                 events.setdefault(member, []).append("ejecucion_aval")
             for member in run.remortgage_executions:
                 logros.note(self.bot, guild_id, member, remortgage_executed_stats())
+            self._note_guarantees(guild_id, run.guarantee_claims, run.reimbursements)
             everyone = (
                 set(run.members) | set(events) | set(run.bono) | set(run.installments) | set(stars)
             )
@@ -2820,7 +2822,23 @@ class Pisos(commands.Cog):
                         housing_day_stats(rent=0, ibi=0, events=("ejecucion_aval",)))  # fmt: skip
         for member in run.remortgage_executions:
             logros.note(self.bot, guild_id, member, remortgage_executed_stats())
+        self._note_guarantees(guild_id, run.guarantee_claims, [])
         return run
+
+    def _note_guarantees(
+        self,
+        guild_id: int,
+        claims: list[tuple[int, int, int]],
+        reimbursements: list[tuple[int, int, int]],
+    ) -> None:
+        """Logros de los avales de la noche: lo que el banco reclama a cada avalista (y por
+        quién) y lo que cada avalado devuelve a su avalista."""
+        for guarantor, debtor, amount in claims:
+            logros.note(self.bot, guild_id, guarantor, guarantee_night_stats(claimed=amount))
+            logros.note(self.bot, guild_id, debtor, guarantee_night_stats(defaulted=amount))
+        for guarantor, debtor, amount in reimbursements:
+            logros.note(self.bot, guild_id, debtor, guarantee_night_stats(repaid=amount))
+            logros.note(self.bot, guild_id, guarantor, guarantee_night_stats(recovered=amount))
 
     async def close_votes(self, guild_id: int) -> list[VoteResult]:
         """Cierra las votaciones de la junta que han acabado, lo anuncia y apunta los logros.

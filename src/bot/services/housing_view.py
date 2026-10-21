@@ -1435,6 +1435,35 @@ def pending_items(
                 f"{lending.DEFAULT_INSTALLMENTS}, vence entero"
             )
         items.append(Pending(Side.PAY, kind, "💳", text, due, when))
+    for debt in market.guaranteed_by(user_id):
+        # Lo que avala: no se paga, pero si el avalado deja de pagar, se lo reclaman.
+        items.append(
+            Pending(
+                Side.HELD, "guarantee", "🤝",
+                f"Avalas a <@{debt.user_id}>: si deja de pagar, el banco te reclama lo que "
+                f"quede ({format_amount(debt.owed)}). Su cuota cuenta en tu 35 %",
+                debt.owed, None,
+            )
+        )  # fmt: skip
+    for (creditor, debtor), amount in market.member_debts.items():
+        if debtor == user_id:
+            items.append(
+                Pending(
+                    Side.PAY, "guarantee_debt", "🤝",
+                    f"Debes {format_amount(amount)} a <@{creditor}>, que pagó por tu aval: se "
+                    "cobra cada noche de lo que tengas y se embarga de tus nóminas",
+                    amount, tonight,
+                )
+            )  # fmt: skip
+        elif creditor == user_id:
+            items.append(
+                Pending(
+                    Side.COLLECT, "guarantee_credit", "🤝",
+                    f"<@{debtor}> te debe {format_amount(amount)} de lo que pagaste por su aval: "
+                    "te lo devuelve cada noche de lo que tenga",
+                    amount, tonight,
+                )
+            )  # fmt: skip
     if debt := market.bank_debts.get(user_id, 0):
         items.append(
             Pending(

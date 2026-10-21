@@ -27,6 +27,9 @@ Tablas (en el mismo archivo SQLite que el resto del bot):
 - `housing_promotions`: la obra nueva de cada servidor (fase 5): las promociones que
   levanta cada lunes quien está en la rama Ladrillo de `pala`, una por barrio. Son
   inmuebles como los del catálogo, pero solo de ese servidor.
+- `housing_member_debts`: lo que un miembro debe a otro por haberle avalado: el avalista
+  al que reclamó el banco tiene la acción de reembolso contra el avalado (art. 1838 CC). Se
+  cobra cada noche del monedero del deudor y se embarga de lo que cobre (9.3.0).
 - `housing_deposits`: la fianza (y la garantía adicional) que deja un miembro al
   alquilar el piso de otro, mientras espera en el depósito de fianzas, y lo que se
   queda el casero si lo desahucian debiendo meses (`forfeit`).
@@ -58,6 +61,7 @@ TABLES = (
     "housing_deposits",
     "housing_promotions",
     "housing_loans",
+    "housing_member_debts",
 )
 
 SCHEMA = """
@@ -199,6 +203,15 @@ CREATE TABLE IF NOT EXISTS housing_loans (
 
 CREATE INDEX IF NOT EXISTS housing_loans_member
     ON housing_loans (guild_id, user_id, status);
+
+CREATE TABLE IF NOT EXISTS housing_member_debts (
+    guild_id INTEGER NOT NULL,
+    creditor_id INTEGER NOT NULL,
+    debtor_id INTEGER NOT NULL,
+    amount INTEGER NOT NULL CHECK (amount >= 0),
+    since REAL NOT NULL,
+    PRIMARY KEY (guild_id, creditor_id, debtor_id)
+);
 
 CREATE TABLE IF NOT EXISTS housing_deposits (
     guild_id INTEGER NOT NULL,
@@ -386,6 +399,58 @@ def set_euribor_in(connection: sqlite3.Connection, guild_id: int, week: date, va
         (guild_id, week.isoformat(), value),
     )
     return cursor.rowcount > 0
+
+
+def member_debts_in(connection: sqlite3.Connection, guild_id: int) -> dict[tuple[int, int], int]:
+    """`{(acreedor, deudor): importe}` de lo que se deben los miembros por los avales."""
+    return {
+        (int(r["creditor_id"]), int(r["debtor_id"])): int(r["amount"])
+        for r in connection.execute(
+            "SELECT creditor_id, debtor_id, amount FROM housing_member_debts "
+            "WHERE guild_id = ? AND amount > 0",
+            (guild_id,),
+        )
+    }
+
+
+def add_member_debt_in(
+    connection: sqlite3.Connection,
+    guild_id: int,
+    creditor: int,
+    debtor: int,
+    amount: int,
+    now: float,
+) -> None:
+    """Suma a lo que `debtor` debe a `creditor` (el avalista que pagó por él)."""
+    if amount <= 0:
+        return
+    connection.execute(
+        """
+        INSERT INTO housing_member_debts (guild_id, creditor_id, debtor_id, amount, since)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (guild_id, creditor_id, debtor_id) DO UPDATE SET
+            amount = amount + excluded.amount
+        """,
+        (guild_id, creditor, debtor, amount, now),
+    )
+
+
+def set_member_debt_in(
+    connection: sqlite3.Connection, guild_id: int, creditor: int, debtor: int, amount: int
+) -> None:
+    """Deja lo que se debe en `amount` (y borra la fila si ya no se debe nada)."""
+    if amount > 0:
+        connection.execute(
+            "UPDATE housing_member_debts SET amount = ? "
+            "WHERE guild_id = ? AND creditor_id = ? AND debtor_id = ?",
+            (amount, guild_id, creditor, debtor),
+        )
+    else:
+        connection.execute(
+            "DELETE FROM housing_member_debts "
+            "WHERE guild_id = ? AND creditor_id = ? AND debtor_id = ?",
+            (guild_id, creditor, debtor),
+        )
 
 
 def bank_debts_in(connection: sqlite3.Connection, guild_id: int) -> dict[int, int]:

@@ -963,6 +963,8 @@ class HousingDebit:
         taxes: `(clase, cuota)` de otros impuestos del día que van al Estado (el de primas
             de los seguros, el IGIC de las reparaciones): se cobran después del IBI y
             antes que `other`, y lo que no llegue se debe con el IBI.
+        to: Si `other` es lo que debe a otro miembro (el reembolso a su avalista), a quién
+            va lo cobrado; si no, desaparece.
     """
 
     user_id: int
@@ -972,6 +974,7 @@ class HousingDebit:
     reason: str = "pisos:comunidad"
     home: bool = False
     taxes: tuple[tuple[str, int], ...] = ()
+    to: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -6066,6 +6069,12 @@ class EconomyRepository:
                 balances[debit.user_id] = self._apply_in_transaction(
                     connection, guild_id, debit.user_id, charges
                 )
+            if other and debit.to is not None:
+                # El reembolso al avalista: lo que paga el deudor llega entero a quien le avaló.
+                touch(debit.to)
+                balances[debit.to] = self._apply_in_transaction(
+                    connection, guild_id, debit.to, (LedgerEntry(other, f"{debit.reason}:cobro"),)
+                )
             if ibi:
                 self._credit_state_in(connection, guild_id, ibi, "pisos:ibi")
                 connection.execute(
@@ -6463,10 +6472,12 @@ class EconomyRepository:
         también para lo que gana un autónomo (art. 607.6) y todo se acumula (art. 607.3):
         el día suma las nóminas y pensiones y las ventas de su negocio (lo cobrado ya
         apuntado, `net` incluido). El banco no existe: lo embargado desaparece y baja la
-        deuda.
+        deuda. Lo que quede de la escala después del banco va a lo que debe a los avalistas
+        que pagaron por él (`housing_member_debts`, la acción de reembolso del art. 1838
+        CC): eso sí llega a su monedero.
 
         Returns:
-            Lo embargado (0 si no debe nada al banco).
+            Lo embargado (0 si no debe nada al banco ni a sus avalistas).
         """
         try:
             row = connection.execute(
@@ -6476,8 +6487,17 @@ class EconomyRepository:
         except sqlite3.OperationalError:
             # Sin las tablas de `pisos` (una base solo con la economía) no hay deudas.
             return 0
+        try:
+            members = connection.execute(
+                "SELECT creditor_id, amount FROM housing_member_debts "
+                "WHERE guild_id = ? AND debtor_id = ? AND amount > 0 ORDER BY since, creditor_id",
+                (guild_id, user_id),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            # Una base de antes de la 9.3.0 que aún no ha abierto `pisos`.
+            members = []
         owed = int(row["amount"]) if row else 0
-        if owed <= 0 or net <= 0:
+        if (owed <= 0 and not members) or net <= 0:
             return 0
         start = datetime.combine(local_day(now), time.min, TIMEZONE).timestamp()
         (today,) = connection.execute(
@@ -6492,20 +6512,38 @@ class EconomyRepository:
         ).fetchone()
         today = int(today) + int(sales)
         # Lo de ahora (la nómina o las ventas del turno) ya está apuntado.
-        taken = min(
-            wage_garnish(int(today) - net, net),
-            owed,
-            self._ensure_wallet(connection, guild_id, user_id),
+        scale = min(
+            wage_garnish(int(today) - net, net), self._ensure_wallet(connection, guild_id, user_id)
         )
-        if taken <= 0:
-            return 0
-        self._apply_in_transaction(
-            connection, guild_id, user_id, (LedgerEntry(-taken, "embargo:banco"),)
-        )
-        connection.execute(
-            "UPDATE housing_bank_debts SET amount = amount - ? WHERE guild_id = ? AND user_id = ?",
-            (taken, guild_id, user_id),
-        )
+        taken = min(scale, owed)
+        if taken > 0:
+            self._apply_in_transaction(
+                connection, guild_id, user_id, (LedgerEntry(-taken, "embargo:banco"),)
+            )
+            connection.execute(
+                "UPDATE housing_bank_debts SET amount = amount - ? "
+                "WHERE guild_id = ? AND user_id = ?",
+                (taken, guild_id, user_id),
+            )
+        room = scale - taken
+        for member in members:
+            if room <= 0:
+                break
+            creditor, cut = int(member["creditor_id"]), min(room, int(member["amount"]))
+            room -= cut
+            taken += cut
+            self._apply_in_transaction(
+                connection, guild_id, user_id, (LedgerEntry(-cut, "embargo:reembolso"),)
+            )
+            self._ensure_wallet(connection, guild_id, creditor)
+            self._apply_in_transaction(
+                connection, guild_id, creditor, (LedgerEntry(cut, "embargo:reembolso:cobro"),)
+            )
+            connection.execute(
+                "UPDATE housing_member_debts SET amount = amount - ? "
+                "WHERE guild_id = ? AND creditor_id = ? AND debtor_id = ?",
+                (cut, guild_id, creditor, user_id),
+            )
         return taken
 
     async def charge_contribution(

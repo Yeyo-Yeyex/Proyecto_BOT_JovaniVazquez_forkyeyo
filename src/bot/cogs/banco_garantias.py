@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 import discord
 from discord import ui
 
+from bot.cogs import banco_avales as avales
 from bot.cogs import renta
 from bot.repositories.economy import BalanceLimitError
 from bot.repositories.housing import Collateral, HousingError, RemortgageDesk
@@ -88,15 +89,18 @@ async def screen(panel: BankPanel) -> discord.Embed:
     cog = panel.cog
     if panel.remortgage_offer is not None:
         quote, _key, title = panel.remortgage_offer
-        panel.add_item(SignButton())
+        lines = remortgage_lines(quote, title)
+        if avales.guaranteed(panel):
+            assert panel.guarantor is not None
+            lines.insert(0, f"> 🤝 Con el aval de {panel.guarantor.mention}, si lo acepta")
+        panel.add_item(SignButton(guaranteed=avales.guaranteed(panel)))
         panel.add_item(BackButton())
         return discord.Embed(
-            title="🔐 Banco · Tu rehipoteca",
-            color=COLOR,
-            description="\n".join(remortgage_lines(quote, title)),
+            title="🔐 Banco · Tu rehipoteca", color=COLOR, description="\n".join(lines)
         )
     desk, income = await cog.housing.remortgage_desk(panel.guild_id, panel.owner.id)
-    room = lending.room_for(income, desk.installments)
+    room = lending.room_for(income, desk.installments) + avales.extra_room(panel)
+    rate = lending.remortgage_rate(desk.euribor, guaranteed=avales.guaranteed(panel))
     embed = discord.Embed(
         title="🔐 Banco · Garantías",
         color=COLOR,
@@ -116,8 +120,9 @@ async def screen(panel: BankPanel) -> discord.Embed:
         value=(
             f"Ingresas **{format_amount(income)}** al día · ya pagas "
             f"**{format_amount(desk.installments)}** al mes en cuotas · te caben "
-            f"**{format_amount(room)}** al mes más\nTipo de hoy: **{_pct(desk.rate)} TIN** "
-            f"fijo (Euríbor {_pct(desk.euribor)} + {_pct(lending.REMORTGAGE_SPREAD)})"
+            f"**{format_amount(room)}** al mes más\nTipo de hoy: **{_pct(rate)} TIN** "
+            f"fijo (Euríbor {_pct(desk.euribor)} + {_pct(lending.REMORTGAGE_SPREAD)}"
+            + (", −0,5 con avalista)" if avales.guaranteed(panel) else ")")
         ),
         inline=False,
     )
@@ -152,18 +157,22 @@ async def screen(panel: BankPanel) -> discord.Embed:
             f"{_pct(lending.REMORTGAGE_FEE)} · desde {format_amount(lending.REMORTGAGE_MIN)}"
         )
     )
-    _items(panel, desk, ranked, room)
+    if (found := avales.field(panel)) is not None:
+        embed.insert_field_at(1, name=found[0], value=found[1], inline=False)
+    _items(panel, desk, ranked, room, rate)
     return embed
 
 
-def _items(panel: BankPanel, desk: RemortgageDesk, ranked: list[Collateral], room: int) -> None:
-    """El desplegable de inmuebles, el de plazos y el botón de pedir."""
+def _items(
+    panel: BankPanel, desk: RemortgageDesk, ranked: list[Collateral], room: int, rate: float
+) -> None:
+    """El desplegable de inmuebles, el de plazos, el botón de pedir y el del avalista."""
     usable = [c for c in ranked if c.blocked is None and c.room >= lending.REMORTGAGE_MIN]
     if panel.collateral not in {c.key for c in usable}:
         panel.collateral = usable[0].key if usable else None
     chosen = next((c for c in usable if c.key == panel.collateral), None)
     panel.remortgage_most = (
-        lending.max_remortgage(chosen.room, room, desk.rate, panel.remortgage_months)
+        lending.max_remortgage(chosen.room, room, rate, panel.remortgage_months)
         if chosen is not None and not desk.asnef
         else 0
     )
@@ -172,6 +181,7 @@ def _items(panel: BankPanel, desk: RemortgageDesk, ranked: list[Collateral], roo
         panel.add_item(CollateralSelect(usable[:25], panel.collateral))
     panel.add_item(TermSelect(panel.remortgage_months))
     panel.add_item(AskButton(disabled=panel.remortgage_most < lending.REMORTGAGE_MIN))
+    avales.add_items(panel, button_row=3, select_row=4)
 
 
 async def sign(panel: BankPanel, interaction: discord.Interaction) -> tuple[str, StatDelta | None]:
@@ -247,7 +257,8 @@ class AmountForm(ui.Modal):
         if found is None:
             await notify(interaction, "Ya no tienes nada en ese inmueble.")
             return
-        quote = lending.remortgage_quote(amount, panel.remortgage_months, desk.rate, found.value)
+        rate = lending.remortgage_rate(desk.euribor, guaranteed=avales.guaranteed(panel))
+        quote = lending.remortgage_quote(amount, panel.remortgage_months, rate, found.value)
         panel.remortgage_offer = (quote, found.key, found.title)
         await panel.refresh(interaction)
 
@@ -332,19 +343,30 @@ class AskButton(ui.Button["BankPanel"]):
 
 
 class SignButton(ui.Button["BankPanel"]):
-    """✍️ Firmar la rehipoteca."""
+    """✍️ Firmar la rehipoteca (o, con avalista, pedirle el aval)."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, guaranteed: bool = False) -> None:
         super().__init__(
-            label="Firmar", emoji="✍️", style=discord.ButtonStyle.success,
-            custom_id="banco:garantia_firmar", row=1,
+            label="Pedir el aval" if guaranteed else "Firmar", emoji="✍️",
+            style=discord.ButtonStyle.success, custom_id="banco:garantia_firmar", row=1,
         )  # fmt: skip
+        self.guaranteed = guaranteed
 
     async def callback(self, interaction: discord.Interaction) -> None:
         panel = self.view
         assert panel is not None
         if panel.remortgage_offer is None:
             await interaction.response.send_message("Esa oferta ya no vale.", ephemeral=True)
+            return
+        if self.guaranteed:
+            quote, key, title = panel.remortgage_offer
+            await ack(interaction)
+            await avales.ask(
+                panel, interaction,
+                avales.Request(
+                    remortgage=quote, key=key, title=title, room=panel.remortgage_room
+                ),
+            )  # fmt: skip
             return
         await panel.money(interaction, lambda: sign(panel, interaction))
 

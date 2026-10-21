@@ -41,6 +41,7 @@ from discord import app_commands, ui
 from discord.ext import commands
 
 from bot.cogs import achievements as logros
+from bot.cogs import banco_avales as avales
 from bot.cogs import banco_garantias as garantias
 from bot.cogs import renta
 from bot.repositories.economy import (
@@ -162,16 +163,27 @@ class Banco(commands.Cog):
     # -- Pantallas ---------------------------------------------------------------------
 
     async def loans_embed(
-        self, guild_id: int, user_id: int, *, months: int, insured: bool
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        months: int,
+        insured: bool,
+        extra_room: int = 0,
+        guaranteed: bool = False,
     ) -> tuple[discord.Embed, LoanDesk, int]:
         """El mostrador de préstamos: lo que ve el banco, tu tipo y tus préstamos.
 
+        Args:
+            extra_room: Lo que suma al mes el avalista elegido (su hueco en su 35 %).
+            guaranteed: Si hay un avalista que vale (baja el tipo).
+
         Returns:
-            `(embed, lo que ve el banco, lo que te cabe al mes)`.
+            `(embed, lo que ve el banco, lo que te cabe al mes con el avalista)`.
         """
         desk, income = await self.housing.loan_desk(guild_id, user_id)
-        room = lending.room_for(income, desk.installments)
-        factors = lending.profile_factors(desk.profile, insured=insured)
+        room = lending.room_for(income, desk.installments) + extra_room
+        factors = lending.profile_factors(desk.profile, insured=insured, guaranteed=guaranteed)
         rate = lending.loan_rate(desk.euribor, factors)
         embed = discord.Embed(title="🏦 Banco · Préstamos", color=COLOR)
         warnings = []
@@ -198,7 +210,8 @@ class Banco(commands.Cog):
             value=(
                 f"Ingresas **{format_amount(income)}** al día (nóminas de 30 días y el 70 % de "
                 f"tus alquileres)\nYa pagas **{format_amount(desk.installments)}** al mes en "
-                f"cuotas\nTe caben **{format_amount(room)}** al mes más"
+                f"cuotas\nTe caben **{format_amount(room - extra_room)}** al mes más"
+                + (f" (con tu avalista, {format_amount(room)})" if extra_room else "")
             ),
             inline=False,
         )
@@ -498,6 +511,12 @@ class BankPanel(ui.View):
         self.asnef = False
         #: Lo más que presta al plazo y seguro elegidos, de la última lectura.
         self.most: int | None = None
+        #: 🤝 El avalista elegido (`banco_avales`): si se está eligiendo, lo que le cabe en su
+        #: 35 % y por qué no vale, si no vale.
+        self.guarantor: discord.abc.User | None = None
+        self.picking_guarantor = False
+        self.guarantor_room = 0
+        self.guarantor_problem: str | None = None
         #: 🔐 Garantías: el inmueble y el plazo elegidos, lo más que presta (de la última
         #: lectura), lo que dejaba la tasación y la oferta enseñada `(oferta, clave, titular)`.
         self.collateral: str | None = None
@@ -539,22 +558,29 @@ class BankPanel(ui.View):
             self.add_item(TabButton(key, label, active=key == self.tab))
         content = self.notice
         self.notice = None
+        if self.tab in ("loans", garantias.TAB):
+            await avales.load(self)
         if self.tab == "books":
             embed = await self.cog.books_embed(self.guild_id)
         elif self.tab == garantias.TAB:
             embed = await garantias.screen(self)
         elif self.quote is not None:
+            lines = quote_lines(self.quote)
+            if avales.guaranteed(self):
+                assert self.guarantor is not None
+                lines.insert(0, f"> 🤝 Con el aval de {self.guarantor.mention}, si lo acepta")
             embed = discord.Embed(
-                title="🏦 Banco · Tu oferta",
-                color=COLOR,
-                description="\n".join(quote_lines(self.quote)),
+                title="🏦 Banco · Tu oferta", color=COLOR, description="\n".join(lines)
             )
-            self.add_item(SignButton())
+            self.add_item(SignButton(guaranteed=avales.guaranteed(self)))
             self.add_item(BackButton())
         else:
             embed, desk, room = await self.cog.loans_embed(
-                self.guild_id, self.owner.id, months=self.months, insured=self.insured
-            )
+                self.guild_id, self.owner.id, months=self.months, insured=self.insured,
+                extra_room=avales.extra_room(self), guaranteed=avales.guaranteed(self),
+            )  # fmt: skip
+            if (found := avales.field(self)) is not None:
+                embed.insert_field_at(1, name=found[0], value=found[1], inline=False)
             self.asnef = desk.asnef
             self._loan_items(desk, room)
         return {
@@ -566,7 +592,10 @@ class BankPanel(ui.View):
 
     def _loan_items(self, desk: LoanDesk, room: int) -> None:
         rate = lending.loan_rate(
-            desk.euribor, lending.profile_factors(desk.profile, insured=self.insured)
+            desk.euribor,
+            lending.profile_factors(
+                desk.profile, insured=self.insured, guaranteed=avales.guaranteed(self)
+            ),
         )
         self.most = lending.max_principal(room, rate, self.months, insured=self.insured)
         self.add_item(TermSelect(self.months))
@@ -575,7 +604,8 @@ class BankPanel(ui.View):
         )
         self.add_item(InsuranceButton(self.insured))
         self.add_item(AskButton(disabled=closed))
-        if desk.loans:
+        avales.add_items(self, button_row=2, select_row=3)
+        if desk.loans and not self.picking_guarantor:
             self.add_item(LoanSelect(desk.loans, self.selected_loan))
             loan = next((x for x in desk.loans if x.id == self.selected_loan), None)
             if loan is not None:
@@ -638,7 +668,10 @@ class BankPanel(ui.View):
             return
         desk, _income = await self.cog.housing.loan_desk(self.guild_id, self.owner.id)
         rate = lending.loan_rate(
-            desk.euribor, lending.profile_factors(desk.profile, insured=self.insured)
+            desk.euribor,
+            lending.profile_factors(
+                desk.profile, insured=self.insured, guaranteed=avales.guaranteed(self)
+            ),
         )
         self.quote = lending.quote(amount, self.months, rate, insured=self.insured)
         await self.refresh(interaction)
@@ -663,6 +696,7 @@ class TabButton(ui.Button["BankPanel"]):
         panel.tab = self.key
         panel.quote = None
         panel.remortgage_offer = None
+        panel.picking_guarantor = False
         await panel.refresh(interaction)
         if self.key == "books":
             await panel.track_open(interaction.channel)
@@ -740,18 +774,23 @@ class AskButton(ui.Button["BankPanel"]):
 
 
 class SignButton(ui.Button["BankPanel"]):
-    """✍️ Firmar la oferta."""
+    """✍️ Firmar la oferta (o, con avalista, pedirle el aval)."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, guaranteed: bool = False) -> None:
         super().__init__(
-            label="Firmar", emoji="✍️", style=discord.ButtonStyle.success,
-            custom_id="banco:firmar", row=1,
+            label="Pedir el aval" if guaranteed else "Firmar", emoji="✍️",
+            style=discord.ButtonStyle.success, custom_id="banco:firmar", row=1,
         )  # fmt: skip
+        self.guaranteed = guaranteed
 
     async def callback(self, interaction: discord.Interaction) -> None:
         panel = self.view
         assert panel is not None and panel.quote is not None
         quote, insured = panel.quote, panel.insured
+        if self.guaranteed:
+            await ack(interaction)
+            await avales.ask(panel, interaction, avales.Request(loan=quote, insured=insured))
+            return
         panel.quote = None
         await panel.money(
             interaction, lambda: panel.cog.sign(interaction, panel.guild_id, quote, insured)

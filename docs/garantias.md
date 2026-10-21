@@ -93,7 +93,14 @@ España lo ofrecen empresas, no bancos: aquí lo hace el banco del bot.
   al adelantarla; el coste del anticipo no deduce. Se guarda en `housing_loans` con
   `kind = 'rentas'` y `listing`.
 
-## 3. Avalista (9.3.0)
+## 3. Avalista (9.3.0) · hecho
+
+Código: `cogs/banco_avales.py` (botón, desplegable y la petición pública), `guarantor_problem`
+y `_room_with` en `repositories/housing.py`, `housing_member_debts` en
+`repositories/housing_finance.py` y el cobro en `EconomyRepository` (`HousingDebit.to` y
+`_bank_garnish_in`). Decidido al hacerlo: quien deja que reclamen a su avalista sigue en el
+fichero de morosos mientras le deba (el impago con el banco sigue sin saldar); el reembolso se
+embarga de las nóminas después de la deuda con el banco, con la misma escala del 607 LEC.
 
 Al pedir un préstamo personal o una rehipoteca, puedes poner a otro miembro de avalista.
 

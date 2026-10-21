@@ -134,6 +134,7 @@ from bot.services.interest import (
     RESIST_BALANCE,
 )
 from bot.services.levels import TIMEZONE
+from bot.services.loans import MAX_GUARANTEES as LOAN_MAX_GUARANTEES
 from bot.services.loans import MAX_LOANS as LOAN_MAX_LOANS
 from bot.services.loans import MAX_PRINCIPAL as LOAN_MAX_PRINCIPAL
 from bot.services.loans import REMORTGAGE_MIN, REMORTGAGE_TERMS
@@ -9215,6 +9216,41 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "remortgage_executed", "Se pinchó la burbuja",
          "Que el banco ejecute un inmueble que habías rehipotecado.", R, True),
     ])  # fmt: skip
+    # Avales entre miembros (`banco`, cogs/banco_avales.py y el cierre de `pisos`:
+    # guarantee_*_stats).
+    a += _tiers("bizum", "guarantees_given", [
+        (1, "guarantee_1", "Pongo la mano en el fuego", "Avala a otro miembro.", C),
+        (5, "guarantee_5", "Fiador de confianza", "Avala 5 préstamos o rehipotecas.", R),
+        (20, "guarantee_20", "El aval del barrio", "Avala 20 préstamos o rehipotecas.", E),
+    ])  # fmt: skip
+    a += _tiers("bizum", "guarantees_received", [
+        (1, "guaranteed_1", "Tengo un amigo que firma", "Consigue que alguien te avale.", C),
+        (5, "guaranteed_5", "Agenda de avalistas", "Consigue 5 avales.", R),
+    ])  # fmt: skip
+    a += _tiers("bizum", "guarantees_open_max", [
+        (LOAN_MAX_GUARANTEES, "guarantee_open_max", "Firmo por partida doble",
+         f"Ten {LOAN_MAX_GUARANTEES} avales vivos a la vez, el máximo.", R),
+    ])  # fmt: skip
+    a += _tiers("bizum", "guarantee_refused", [
+        (1, "guarantee_refused", "Antes muerto que fiador",
+         "Di que no a una petición de aval.", C, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "guarantee_claimed", [
+        (1, "guarantee_claimed", "Me quemé la mano",
+         "Que el banco te reclame lo que avalaste.", R, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "guarantee_defaulted", [
+        (1, "guarantee_defaulted", "Con amigos así…",
+         "Que el banco reclame a tu avalista porque no pagaste.", R, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "guarantee_repaid", [
+        (10_000, "guarantee_repaid_10k", "Las cuentas claras",
+         "Devuelve 10.000 Y$ a un avalista que pagó por ti.", R),
+    ], unit="money")  # fmt: skip
+    a += _tiers("bizum", "guarantee_recovered", [
+        (10_000, "guarantee_recovered_10k", "Recuperando la fe",
+         "Recupera 10.000 Y$ de alguien a quien avalaste.", R),
+    ], unit="money")  # fmt: skip
     a += _tiers("bizum", "bank_books", [
         (1, "bank_books_1", "Auditor por un día",
          "Mira las cuentas de la tienda, el banco y el casino.", C),
@@ -24260,6 +24296,45 @@ def remortgage_signed_stats(
     ):
         if hit:
             delta.add[stat] = 1
+    return delta
+
+
+def guarantee_signed_stats(*, given: bool, open_count: int = 0) -> StatDelta:
+    """Estadísticas de un aval firmado: de quien avala (`given`) o de quien recibe el aval.
+
+    Args:
+        open_count: Avales vivos de quien avala, contando este.
+    """
+    if not given:
+        return StatDelta(add={"guarantees_received": 1})
+    return StatDelta(add={"guarantees_given": 1}, peak={"guarantees_open_max": open_count})
+
+
+def guarantee_refused_stats() -> StatDelta:
+    """Estadísticas de quien dice que no a una petición de aval."""
+    return StatDelta(add={"guarantee_refused": 1})
+
+
+def guarantee_night_stats(
+    *, claimed: int = 0, defaulted: int = 0, repaid: int = 0, recovered: int = 0
+) -> StatDelta:
+    """Estadísticas de los avales de un miembro en el cierre de una noche de `pisos`.
+
+    Args:
+        claimed: Lo que el banco le reclama hoy como avalista.
+        defaulted: Lo que el banco reclama hoy a su avalista por él.
+        repaid: Lo que hoy ha devuelto a su avalista.
+        recovered: Lo que hoy le ha devuelto su avalado.
+    """
+    delta = StatDelta()
+    for stat, amount in (
+        ("guarantee_claimed", claimed),
+        ("guarantee_defaulted", defaulted),
+        ("guarantee_repaid", repaid),
+        ("guarantee_recovered", recovered),
+    ):
+        if amount:
+            delta.add[stat] = 1 if stat in ("guarantee_claimed", "guarantee_defaulted") else amount
     return delta
 
 

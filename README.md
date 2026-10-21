@@ -448,7 +448,9 @@ python -m bot
   quieres: cada uno paga el ITP de lo que recibe y la plusvalía de lo que da.
 - **Banco** (`banco`): un panel con tres mostradores. **Garantías**: rehipotecar
   tus pisos (hasta el 80 % de lo que valen hoy si son vivienda, el 60 % si no, menos
-  lo que ya debes de ellos; sus intereses no desgravan). **Préstamos** personales para
+  lo que ya debes de ellos; sus intereses no desgravan). **Avalista**: otro miembro
+  puede avalarte un préstamo o una rehipoteca; si no pagas, el banco le reclama a él y
+  tú le debes lo que pague. **Préstamos** personales para
   lo que quieras (también la entrada de un piso): todas tus cuotas juntas,
   hipotecas incluidas, no pasan del 35 % de lo que ingresas; el tipo es el Euríbor
   más un diferencial que depende de tu perfil (préstamos devueltos, inmuebles,
