@@ -22,15 +22,16 @@ Este documento recoge el sistema entero, sus cinco fases y la fase 1 al detalle;
 | Fase | Qué trae | Versión |
 |---|---|---|
 | 1 | Franjas, reducción de jornada, excedencia, local en un barrio, 3 sectores con su minijuego, stock y precios, gastos fijos, cierre de cada noche y renta de actividad | 8.14.0 |
-| 2 | Crecer el local: equipamiento (capacidad, amortización), traslado a un local mayor o a uno tuyo de `pisos`, marketing, reseñas, más sectores, precio por producto | 8.x |
+| 2 | Crecer el local: mejoras que se amortizan, traslado a un local mayor o a uno tuyo de `pisos`, campañas de publicidad, reseñas, dos sectores más, precio por producto, traspasar o liquidar al cerrar | 9.5.0 |
 | 3 | Sociedad limitada: caja propia, Impuesto de Sociedades, sueldo de administrador o dividendos, quiebra limitada, compatibilidades por oficio | 8.x |
 | 4 | Empleados artificiales estilo inquilinos (rasgos, habilidades, formación, humor, contrato y despido), turnos pasivos, nómina completa con la cotización de la empresa (`compute_payslip`), ZEC y RIC | 8.x |
 | 5 | Cadenas: varios locales, importar con nave, gerentes que automatizan, vender la empresa | 8.x |
 
 Dónde engancha cada fase con lo de la 1:
 
-- **Fase 2.** `Business.size` y `Business.equipment` se suman a la capacidad (`clients_per_turn`).
-  El traslado cambia `barrio` y `size`, y las reseñas salen de `Business.reputation`.
+- **Fase 2 (hecha).** `Business.size`, `equipment`, `campaign` y las reseñas multiplican los clientes de
+  un turno (`turn_clients`); el traslado cambia `barrio`, `size` y `own_listing`. Detalle en «Fase 2 al
+  detalle».
 - **Fase 3.** `Business.form` pasa de `"autonomo"` a `"sl"`. Con `"sl"`, el dinero va a una cuenta propia del
   negocio y no al monedero. Las rentas se apuntan en el Impuesto de Sociedades, no en `INCOME_BUSINESS`.
 - **Fase 4.** Un turno pasivo es `settle_turn` con la nota que sale de las habilidades del empleado. Su
@@ -280,7 +281,13 @@ Salen de las estadísticas de `business_stats` y de las de la jornada. Familias:
 - habituales fieles y «lo de siempre» acertado;
 - fracasos: la acusación falsa, el cambio de más o de menos, el presupuesto rechazado, el
   desahucio, cerrar en números rojos;
-- colecciones: los tres sectores, todos los temas de barrio, las dos islas;
+- colecciones: tres sectores y los cinco, todos los temas de barrio, las dos islas, las tres
+  campañas de publicidad;
+- fase 2: escalones de turnos en la heladería y la ferretería; reseñas (en total, de cinco
+  estrellas y, ocultas las altas, de una), el distintivo de «recomendado»; mejoras instaladas,
+  tres a la vez y lo gastado en ellas; campañas y lo gastado en publicidad; precio por
+  producto; traslados, el local propio, el mediano y el grande; traspasos, el traspaso gordo
+  y lo cobrado traspasando;
 - fechas: madrugada, domingo, Día de Canarias;
 - rachas de días abriendo;
 - las 8 franjas usadas;
@@ -356,3 +363,201 @@ de 17.323,68 €. Para la fase 4: el anexo de la ZEC no admite el comercio minor
 reparación de vehículos (CNAE 45), así que solo el taller podría acogerse.
 
 Sin comprobar: el articulado del Decreto 86/2013 y la cuota reducida de 2026.
+
+## Fase 2 al detalle: crecer el local (9.5.0)
+
+Lo que trae, en `business.py` (reglas), `business_catalog.py` (cifras), `negocio.py` (casos de uso),
+`business_view.py` (pantallas) y `cogs/business.py` (panel). Decidido por Claude, como la fase 1; todo se
+puede cambiar.
+
+### Dos sectores más
+
+- 🍦 **Heladería** (minijuego «Comandas»): helados de vainilla, chocolate y gofio, sorbete de mango,
+  granizado de limón y batido. Es un local de 40 m². Las tardes y la playa mandan.
+- 🔩 **Ferretería** (minijuego «La caja»): tornillería, bombillas, pintura, herramientas, fontanería y
+  cerraduras. Es un local de 70 m², con pocos clientes y tiques caros. Mandan los barrios obreros y rurales.
+
+### El tamaño del local (`SIZES`)
+
+| Tamaño | Metros | Clientes por turno | Cupo del barrio | Suministros y obra |
+|---|---|---|---|---|
+| Pequeño | ×1 | ×1 | ×1 | ×1 |
+| Mediano | ×1,6 | ×1,3 | ×1,25 | ×1,4 |
+| Grande | ×2,4 | ×1,6 | ×1,5 | ×1,8 |
+
+- El alquiler sale de los metros, como en la fase 1.
+- Un local mayor llega a más clientes y saca más del cupo del barrio, que siguen compartiendo los negocios
+  del mismo sector.
+
+### Mejoras (`EQUIPMENT`) y amortización
+
+- **Lo que hacen:** dos o tres por sector. Suben los clientes por turno, la paciencia o la propina, o bajan
+  la merma.
+- **La terraza** (cafetería y heladería) paga además una tasa municipal cada noche por ocupar la vía pública
+  (art. 20.3.l TRLRHL). Va al Estado.
+- **Comprarlas no es gasto:** base más IGIC (el pequeño empresario no lo deduce y forma parte del precio de
+  adquisición, norma 2.ª del PGC) se amortizan cada noche (`amortize`).
+  - Se usa la tabla simplificada (Orden de 27 de marzo de 1998, art. 30.1.ª RIRPF): instalaciones y
+    mobiliario 10 %, maquinaria 12 %, equipos informáticos 26 %, útiles y herramientas 30 %.
+  - El año fiscal es la semana: cada noche se amortiza la séptima parte del coeficiente.
+  - La amortización es gasto de la actividad sin pago (`economy_tax_records`, `negocio:amortizacion`).
+  - Interpretación del proyecto: con el criterio de cobros y pagos se sigue amortizando por la dotación,
+    porque la amortización no es un pago (el art. 7.2 RIRPF no lo dice expresamente).
+- **El acondicionamiento** de montar o trasladarse tampoco es ya gasto entero de la semana: es una
+  instalación al 10 %.
+  - Los negocios abiertos antes de la 9.5.0 ya lo apuntaron entero y no cambian.
+  - La obra del local que se deja al trasladarse se queda allí, y su pérdida no se apunta (simplificación).
+
+### Campañas de publicidad (`CAMPAIGNS`)
+
+| Campaña | Coste (sin IGIC) | Días | Clientes y cupo |
+|---|---|---|---|
+| Buzoneo y carteles | 4.000 Y$ | 3 | +10 % |
+| Anuncios en redes | 15.000 Y$ | 5 | +20 % |
+| Cuña en la radio local | 45.000 Y$ | 7 | +30 % |
+
+- Una a la vez.
+- Es gasto entero de la actividad (art. 15.e LIS, por el art. 28.1 LIRPF: sin límite).
+- Lleva el IGIC general.
+
+### Precio por producto
+
+Cada producto puede tener su propio nivel de precios (`Business.prices`), y los que no lo tienen siguen el
+general:
+
+- en el almacén, el desplegable «🏷️ Precio de este producto»;
+- los clientes de un turno y lo que suma a la reputación son la media de los niveles, pesada por lo que se
+  pide de cada producto (`price_clients`, `price_reputation`).
+
+### Reseñas (`review_of`)
+
+- **Quién escribe:** al acabar cada turno, un 25 % de los clientes atendidos y la mitad de los que se fueron
+  sin atender (el enfadado escribe más).
+- **Las estrellas** salen de la nota del cliente, con algo de azar, y un habitual es un poco más generoso.
+- **El azar es propio del turno** (la semilla es la del negocio y la hora del turno): no gasta el de las
+  colas.
+- **Se guardan las 20 últimas.** Con 4,5 de media y 10 reseñas o más, el negocio sale **recomendado**: un
+  10 % más de clientes.
+- **Las frases** (`REVIEW_LINES`) son al menos la mitad normales.
+- Inventar o encargar reseñas sería práctica desleal (art. 27.8 de la Ley 3/1991): el juego no deja.
+
+### Trasladarse (`move`, `move_to_own`)
+
+- **A un local alquilado:** de otro barrio, de otro tamaño o los dos.
+  - Se paga de nuevo la tasa (el traslado necesita su comunicación previa, art. 34.2 de la Ley 7/2011 de
+    Canarias), el acondicionamiento del local nuevo y su fianza.
+  - Vuelve la fianza de ahora, menos lo que se deba al casero; lo que no cubra se paga antes de irse.
+- **Cambiar de barrio** cuesta clientela: la reputación se acerca a la de partida a la mitad y los
+  habituales pierden la mitad de su fidelidad.
+- **A un local propio de `pisos`:** un local o una nave entera tuya (local para la cafetería, la tienda, la
+  heladería y la ferretería; nave para el taller), vacía y sin anticipo de rentas.
+  - El tamaño sale de sus metros (`size_for`): desde 0,75 veces los del sector cabe un pequeño, desde 1,3
+    un mediano y desde 2 un grande.
+  - Sin alquiler y sin fianza. Sus recibos (IBI, comunidad, seguro) los sigue pagando `pisos`.
+    Simplificación: en la vida real serían gasto de la actividad, y la construcción se amortizaría al 3 %.
+  - El inmueble pasa al estado `negocio` (`housing.OWN_BUSINESS`): no se alquila, no se vende (la venta
+    voluntaria se para) y no imputa renta (art. 85.1 LIRPF, porque está afecto a la actividad, art.
+    29.1.a).
+  - Si deja de ser entero tuyo (una ejecución, una división), esa noche el negocio cierra («sin local») y se
+    liquida.
+
+### Cerrar: traspasar o liquidar (`closing_offer`)
+
+- **Traspasar:** hace falta llevar 7 días abierto, 3 estrellas y estar en un local alquilado (quien se lo
+  queda se subroga en el alquiler, art. 32 LAU).
+  - Paga el stock al coste, las mejoras y la obra por lo que queda por amortizar (su valor neto contable,
+    art. 40 RIRPF) y un **fondo de comercio**: tres días de lo que dejó de media la semana pasada, por las
+    estrellas sobre cinco.
+  - El stock es venta de la actividad (art. 27 LIRPF).
+  - Lo demás es ganancia patrimonial de elementos afectos (art. 28.2 LIRPF), en la base del ahorro (art.
+    46.b). La ganancia es el fondo de comercio (lo demás se cobra por su valor contable) y paga el 19 % en
+    el momento, como el Rastro.
+  - Sin IGIC: es una unidad económica autónoma (art. 9.1.º de la Ley 20/1991).
+- **Liquidar** (cerrar sin traspaso, o por desahucio o sin local): el mayorista recompra el stock al 50 % y
+  las mejoras se venden de segunda mano al 40 % de lo que queda por amortizar. La obra se pierde.
+- En los dos casos vuelve la fianza, menos lo que se deba al casero.
+
+### El IGIC de lo que se compra al mayorista
+
+Comprobado en el Decreto Legislativo 1/2025 de Canarias (21/10/2026). La 9.5.0 corrige los productos de la
+fase 1 que iban al 7 %:
+
+- **Tipo cero (art. 33.Uno):** el pan, la leche, la fruta fresca, el café tostado (café solo y cortado) y el
+  agua.
+- **3 % (art. 34.Uno.e y a):** los demás alimentos (zumo, dulce, conservas, helados, sorbete y batido), los
+  detergentes (limpieza) y la pintura.
+- **7 % (art. 32.1):** la comida preparada (el bocadillo), los refrescos con azúcar (bebidas, granizado) y
+  el resto (ferretería, salvo la pintura).
+- **Interpretaciones del proyecto:**
+  - el barraquito (café, leche condensada y licor, que iría al 15 %) va al general;
+  - el zumo y el batido, al 3 %;
+  - el granizado, como un refresco con azúcar.
+
+### Pantallas nuevas
+
+| `screen` | Para qué |
+|---|---|
+| `mejoras` | Las mejoras del sector (instaladas o no, con su amortización) y las tres campañas, con la que está en marcha |
+| `resenas` | La media, el distintivo de recomendado y las seis últimas reseñas |
+
+- **La portada** gana la media de las reseñas, la campaña en marcha, los iconos de las mejoras (la terraza se
+  ve en la fachada) y el tamaño del local.
+- **El almacén** gana el nivel de precio de cada producto.
+- **`montar`** enseña los cinco sectores.
+- **El traslado** se enseña con la vista previa de `negocio` en el barrio nuevo (`traslado_state`).
+- **El panel:** 🛠️ **Mejoras** y ⭐ **Reseñas** en la fila de arriba, 🚚 **Traslado** en la de abajo, y en
+  🚪 **Cerrar**, 🤝 **Traspasar** (si hay quien lo compre) o 🚪 **Cerrar y liquidar**.
+- **Pintar antes del clic:** desde la portada y el tique se pintan las mejoras y las reseñas, además del
+  almacén, las cuentas y el primer cliente.
+- **Medido** (21/10/2026, este PC atado a 4 hilos): mejoras 61/65 ms y reseñas 59/62 ms (1 abierto /
+  caliente); `montar`, con cinco fachadas, 98 ms. Node contra Chrome, peor diferencia 2,47/255. Con todas
+  las pantallas, la escena suma ~74 MB al proceso de Node (eran ~53 en la fase 1).
+
+### Equilibrio de la fase 2
+
+`python docs/negocio_sim.py --fase2`: un jugador bueno en el barrio del medio de cada sector, con el cupo del
+barrio y la amortización, media de 6 semillas y días 15 a 28. Neto al día y en cuántos días se paga lo
+invertido (las campañas ya restan lo que cuestan):
+
+| Sector | Sin nada (4 / 8 turnos) | Mejoras (4 turnos) | Local mediano | Local grande | Campañas (al día) |
+|---|---|---|---|---|---|
+| Cafetería | 16.800 / 23.900 | 11-18 días | 15-17 días | 37-39 días | +1.100 a +3.800 |
+| Tienda | 14.000 / 18.300 | 12-32 días | 24-27 días | 28-33 días | +700 a +2.700 |
+| Taller | 5.900 / 16.700 | 13-19 días | 26-82 días | 33-98 días | −1.000 a +1.700 |
+| Heladería | 12.800 / 16.200 | 14-19 días | 13-15 días | 19 días | +800 a +2.100 |
+| Ferretería | 17.100 / 23.800 | 13-20 días | 17-27 días | 18-30 días | +900 a +4.000 |
+
+- **Las mejoras que suben los clientes** rinden a quien abre pocos turnos (4 al día, con curro). A 8 turnos el
+  cupo del barrio ya se agota y suman poco: ahorran franjas, no dan más dinero.
+- **El local mayor** sube el techo, porque le toca más cupo. Es la mejora de quien abre 8 turnos.
+- **Las mejoras de paciencia** (TPV, diagnosis) cuestan menos porque al jugador rápido le sirven poco. A quien
+  tarda en atender, le sirven más.
+- **El taller con 4 turnos** gana poco y las campañas no le compensan: tiene pocos clientes y caros.
+- Las cifras de los sectores de la fase 1 cambian un poco por el IGIC corregido y por el cupo del barrio, que
+  la tabla de la fase 1 no miraba.
+
+### Normas de la fase 2 comprobadas (21/10/2026)
+
+En el BOE consolidado:
+
+| Norma | Qué dice | Uso |
+|---|---|---|
+| Orden de 27-3-1998; art. 30.1.ª RIRPF | Tabla simplificada: 10 / 12 / 26 / 30 % (y 3 % los edificios) | Amortización de mejoras y obra |
+| Norma 2.ª del PGC (RD 1514/2007); art. 35.1.b LIRPF | El impuesto indirecto no recuperable va al precio de adquisición | El IGIC del pequeño empresario se amortiza |
+| Art. 7.2 RIRPF | El criterio de cobros y pagos es para ingresos y gastos; no dice nada de amortizar | Interpretación: se amortiza igual |
+| Art. 20.3.l TRLRHL | Tasa por mesas y sillas en la vía pública | La terraza |
+| Art. 15.e LIS (art. 28.1 LIRPF) | Lo que promociona las ventas es deducible | Publicidad, entera |
+| Art. 32 LAU | Cesión del local al transmitir el negocio, sin consentimiento, con un 20 % más de renta y aviso en un mes | El traspaso (la renta del comprador no nos toca) |
+| Arts. 27, 28.2, 33.1, 35.1, 46.b LIRPF; art. 40 RIRPF | Las existencias son rendimiento; los elementos afectos, ganancia del ahorro sobre el valor contable | Tributación del traspaso |
+| Art. 9.1.º Ley 20/1991 | No sujeta la transmisión de una unidad económica autónoma | Traspaso sin IGIC |
+| Arts. 29.1.a y 85.1 LIRPF; art. 22 RIRPF | El inmueble donde se ejerce la actividad está afecto y no imputa renta | Local propio |
+| Art. 27.8 Ley 3/1991 | Encargar o inventar reseñas es práctica engañosa | Las reseñas no se compran |
+| Art. 34.2 Ley 7/2011 de Canarias | El traslado necesita nueva comunicación previa | La tasa del traslado |
+| DL 1/2025 de Canarias, arts. 32-36 | Tipos del IGIC | Tabla de arriba |
+
+Sin comprobar:
+
+- si una tienda o una heladería entran en la Ley 7/2011 o solo en la declaración responsable municipal;
+- qué es «modificación sustancial» al ampliar el local;
+- las consultas de la DGT y de la Agencia Tributaria Canaria sobre helados y bocadillos.
+

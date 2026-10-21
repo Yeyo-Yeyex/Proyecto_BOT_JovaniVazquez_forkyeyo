@@ -972,9 +972,9 @@ def advance_day(
             events.append(Event("obra_terminada"))
         return DayOutcome(lease=lease, rent=0, costs=monthly_costs(listing), extra=extra,
                           events=tuple(events))  # fmt: skip
-    if status == HABITUAL or lease.member is not None:
-        # Vive su dueño, o un miembro de alquiler: no hay inquilinos ficticios que entren,
-        # se vayan o dejen de pagar (lo del miembro lo decide su monedero).
+    if status in (HABITUAL, OWN_BUSINESS) or lease.member is not None:
+        # Vive su dueño, tiene ahí su negocio o un miembro de alquiler: no hay inquilinos
+        # ficticios que entren, se vayan o dejen de pagar (lo del miembro lo decide su monedero).
         return DayOutcome(lease=lease, rent=0, costs=monthly_costs(listing), extra=extra,
                           events=tuple(events))  # fmt: skip
     if status == EVICTING and lease.eviction_at is not None and day >= lease.eviction_at:
@@ -1195,6 +1195,12 @@ def manager(holders: dict[int, int]) -> int | None:
 
 #: Estado de un inmueble en el que vive su dueño: no se alquila, paga sus recibos.
 HABITUAL = "habitual"
+#: Estado de un local o una nave en la que su dueño tiene su negocio de `pala` (fase 2 de
+#: los negocios): no se alquila ni se vende, paga sus recibos y no imputa renta, porque está
+#: afecto a una actividad (art. 85.1 LIRPF y art. 29.1.a LIRPF).
+OWN_BUSINESS = "negocio"
+#: Tipos de inmueble en los que cabe un negocio propio.
+BUSINESS_SPACE_KINDS = frozenset({"local", "nave"})
 #: Tipos de inmueble que son vivienda (un trastero o un garaje no lo son).
 HOME_KINDS = frozenset(
     {"estudio", "bajo", "piso2", "piso3", "atico", "chalet", "edificio", "terrera", "cueva"}

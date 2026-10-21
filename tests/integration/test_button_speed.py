@@ -1013,6 +1013,55 @@ async def press_business_screen(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def press_business_equipment(client: BotClient, owner: MagicMock) -> Click:
+    panel = await business_panel(client, owner)
+    panel.equipment = "cafetera2"
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._install(interaction)
+
+    return click
+
+
+async def press_business_campaign(client: BotClient, owner: MagicMock) -> Click:
+    panel = await business_panel(client, owner)
+    panel.campaign = "buzoneo"
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._launch(interaction)
+
+    return click
+
+
+async def press_business_product_price(client: BotClient, owner: MagicMock) -> Click:
+    panel = await business_panel(client, owner)
+    panel.product = "cafe"
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._set_product_price(interaction, "caro")
+
+    return click
+
+
+async def press_business_traslado(client: BotClient, owner: MagicMock) -> Click:
+    panel = await business_panel(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._traslado(interaction)
+
+    return click
+
+
+async def press_business_move(client: BotClient, owner: MagicMock) -> Click:
+    panel = await business_panel(client, owner)
+    panel.move = {"barrio": "schamann", "size": 1, "own": ""}
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._do_move(interaction)
+
+    return click
+
+
 async def press_pala_hire(client: BotClient, owner: MagicMock) -> Click:
     panel = module_of(client, "Trabajo").PalaPanel(
         client.get_cog("Trabajo"), guild_id=GUILD_ID, owner=owner
@@ -2482,6 +2531,11 @@ CASES: dict[str, Press] = {
     "negocio: precios": press_business_price,
     "negocio: cerrarlo": press_business_close,
     "negocio: ir al almacén": press_business_screen,
+    "negocio: instalar una mejora": press_business_equipment,
+    "negocio: lanzar una campaña": press_business_campaign,
+    "negocio: precio de un producto": press_business_product_price,
+    "negocio: abrir el traslado": press_business_traslado,
+    "negocio: trasladarse": press_business_move,
     "tienda: comprar": press_checkout,
     "tienda: ver la ficha": press_shop_sheet,
     "tienda: pagar en la ficha": press_shop_sheet_pay,

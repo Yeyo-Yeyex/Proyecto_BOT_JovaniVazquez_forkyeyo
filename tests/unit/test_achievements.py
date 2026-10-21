@@ -213,6 +213,11 @@ PRODUCED_STATS = {
     "biz_nights_unpaid", "biz_closed_red", "biz_evicted", "work_jornada_4", "work_jornada_2",
     "biz_sunday", "biz_fast", "biz_left", "biz_rejected", "biz_over", "biz_short",
     "biz_spent_stock", "biz_nights", "biz_closed",
+    "biz_turns_heladeria", "biz_turns_ferreteria", "biz_reviews", "biz_reviews_5",
+    "biz_reviews_1", "biz_recommended", "biz_equipment", "biz_spent_equipment",
+    "biz_equipment_max", "biz_campaigns", "biz_campaign_buzoneo", "biz_campaign_redes",
+    "biz_campaign_radio", "biz_spent_marketing", "biz_price_product", "biz_moves",
+    "biz_own_local", "biz_size_max", "biz_traspasos", "biz_traspaso_money", "biz_traspaso_max",
     "work_jornada_3",
     "work_excedencia", "work_excedencia_back",
     # cogs/achievements.py: mensajes, voz, reacciones y la siembra del historial

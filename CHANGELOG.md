@@ -8,6 +8,20 @@ criterio.
 
 ## 9.x
 
+### 9.5.0 · 2026-10-21
+
+- Negocios: dos sectores nuevos, 🍦 heladería (comandas) y 🔩 ferretería (la caja)
+- Negocios: 🛠️ Mejoras, dos o tres por sector (la terraza, la cafetera de dos grupos, el elevador…), que suben los clientes, la paciencia o la propina, o bajan la merma; se amortizan cada noche y la terraza paga su tasa
+- Negocios: 📣 campañas de publicidad (buzoneo, redes y radio) que suben los clientes y tu parte del cupo del barrio unos días
+- Negocios: ⭐ reseñas de los clientes al acabar cada turno; con 4,5 de media y 10 reseñas, el negocio sale recomendado (un 10 % más de clientes)
+- Negocios: 🚚 Traslado a otro barrio o a un local mediano o grande, o a un local o nave entera tuya de `pisos` (sin alquiler ni fianza; mientras esté tu negocio, no se alquila ni se vende)
+- Negocios: el precio de cada producto se puede poner aparte en el almacén
+- Negocios: al cerrar, 🤝 traspasarlo (te pagan el stock, las mejoras y la clientela, que tributa al 19 %) o liquidarlo (el stock al 50 % y las mejoras al 40 %); antes el stock se perdía
+- Negocios: el acondicionamiento del local ya no es gasto entero de la semana: se amortiza al 10 % como instalación
+- Negocios: el IGIC de lo que se compra al mayorista sigue al Decreto Legislativo 1/2025 (el café y la fruta van al tipo cero; zumo, dulce, conservas y limpieza, al 3 %)
+- Pisos: un local con tu negocio dentro sale como «Tu negocio» y no se puede vender hasta trasladarlo o cerrarlo
+- Logros: 44 nuevos en 🏪 Negocio (reseñas, mejoras, publicidad, traslados, traspasos y los sectores nuevos); «Cafetería, tienda y taller: el trío calavera» pasa a llamarse «Tres tristes trastiendas»
+
 ### 9.4.0 · 2026-10-21
 
 - Negocios: el IMV y el banco cuentan lo que deja tu negocio (ventas menos su IRPF y sus gastos, nunca en negativo): quien vive de su negocio ya no es «sin nómina» para los préstamos, y el IMV baja como con una nómina

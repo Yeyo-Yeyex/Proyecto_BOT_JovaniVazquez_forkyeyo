@@ -272,11 +272,60 @@ async def test_cada_pantalla_del_negocio_cabe_en_discord(tmp_path: Path) -> None
     _work_cog, _business_cog, panel = await opened_business(tmp_path)
     assert panel.screen == PORTADA
     check_limits(panel)
-    for name in ("📦 Almacén", "⬅️ Volver", "📊 Cuentas", "⬅️ Volver", "🎨 Rótulo"):
+    for name in (
+        "📦 Almacén", "⬅️ Volver", "📊 Cuentas", "⬅️ Volver", "🛠️ Mejoras", "⬅️ Volver",
+        "⭐ Reseñas", "⬅️ Volver", "🚚 Traslado", "⬅️ Volver", "🚪 Cerrar", "⬅️ No", "🎨 Rótulo",
+    ):  # fmt: skip
         await button(panel, name).callback(click())
         check_limits(panel)
+    await button(panel, "⬅️ Volver").callback(click())
+    await button(panel, "📦 Almacén").callback(click())
     await panel._pick_product(click(), "bocadillo")
     check_limits(panel)
+    await button(panel, "⬅️ Volver").callback(click())
+    await button(panel, "🛠️ Mejoras").callback(click())
+    await panel._pick_equipment(click(), "terraza")
+    await panel._pick_campaign(click(), "radio")
+    check_limits(panel)
+    assert any(label.startswith("🛒 Instalar") for label in labels(panel))
+    assert any(label.startswith("📣 Lanzar") for label in labels(panel))
+
+
+async def test_mejorar_el_local_y_trasladarlo_desde_el_panel(tmp_path: Path) -> None:
+    _work_cog, business_cog, panel = await opened_business(tmp_path)
+    await button(panel, "🛠️ Mejoras").callback(click())
+    await panel._pick_equipment(click(), "cafetera2")
+    await button(panel, "🛒 Instalar").callback(click())
+    business = await business_cog.service.business(GUILD, OWNER)
+    assert business is not None and business.equipment == ["cafetera2"]
+    assert not any(label.startswith("🛒 Instalar") for label in labels(panel))
+    await panel._pick_campaign(click(), "buzoneo")
+    await button(panel, "📣 Lanzar").callback(click())
+    business = await business_cog.service.business(GUILD, OWNER)
+    assert business is not None and business.campaign == "buzoneo"
+    await button(panel, "⬅️ Volver").callback(click())
+    await button(panel, "🚚 Traslado").callback(click())
+    await panel._pick_move_barrio(click(), "schamann")
+    await panel._pick_move_size(click(), "0")
+    await button(panel, "🚚 Trasladarse").callback(click())
+    business = await business_cog.service.business(GUILD, OWNER)
+    assert business is not None and business.barrio == "schamann" and business.size == 0
+    assert panel.screen == PORTADA
+    # El precio de un producto desde el almacén.
+    await button(panel, "📦 Almacén").callback(click())
+    await panel._pick_product(click(), "cafe")
+    await panel._set_product_price(click(), "barato")
+    business = await business_cog.service.business(GUILD, OWNER)
+    assert business is not None and business.prices == {"cafe": "barato"}
+
+
+async def test_cerrar_liquidando_desde_el_panel(tmp_path: Path) -> None:
+    _work_cog, business_cog, panel = await opened_business(tmp_path)
+    await button(panel, "🚪 Cerrar el negocio").callback(click())
+    assert not any(label.startswith("🤝 Traspasar") for label in labels(panel))
+    await button(panel, "🚪 Cerrar y liquidar").callback(click())
+    assert await business_cog.service.business(GUILD, OWNER) is None
+    assert panel.screen == MONTAR
 
 
 async def test_comprar_desde_el_almacen(tmp_path: Path) -> None:

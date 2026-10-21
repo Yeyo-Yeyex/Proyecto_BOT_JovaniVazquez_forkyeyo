@@ -14,6 +14,11 @@ Uso, desde la raíz del repo (`PYTHONIOENCODING=utf-8` en la consola de Windows)
 
     python docs/negocio_sim.py               # la tabla completa
     python docs/negocio_sim.py --dias 42     # más días
+    python docs/negocio_sim.py --fase2       # mejoras, tamaños y campañas (fase 2)
+
+Con `--fase2`, un jugador `bueno` en el barrio del medio de cada sector, con el cupo del
+barrio (`daily_pool`) y la amortización en el IRPF: lo que suma al día cada mejora, cada
+tamaño de local y cada campaña frente al negocio sin nada, y en cuántos días se paga.
 
 Jugadores: `perfecto` (todo bien y rápido), `bueno` (falla 1 de cada 8 clientes) y
 `flojo` (falla 1 de cada 3). Dedicación: 4 turnos al día (con curro a jornada completa) u
@@ -25,9 +30,11 @@ turnos de la `pala` en P1, P3 y P5 de obra.
 from __future__ import annotations
 
 import argparse
+import math
 import random
 import sys
 from dataclasses import dataclass
+from datetime import date, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -36,15 +43,29 @@ sys.path.insert(0, str(ROOT / "src"))
 from bot.services.business import (  # noqa: E402
     REPUTATION_MAX,
     Business,
+    add_asset,
+    amortize,
+    daily_pool,
     drift,
     nightly_bill,
     opening_quote,
+    pool_factor,
+    price_reputation,
+    setup_asset,
     spoil,
     turn_clients,
     turn_reputation,
     wholesale,
 )
-from bot.services.business_catalog import SECTORS, Sector  # noqa: E402
+from bot.services.business_catalog import (  # noqa: E402
+    CAMPAIGN_BY_KEY,
+    CAMPAIGNS,
+    EQUIPMENT_BY_KEY,
+    SECTORS,
+    SIZES,
+    Sector,
+    equipment_for,
+)
 from bot.services.business_games import (  # noqa: E402
     COINS,
     TurnGame,
@@ -55,6 +76,7 @@ from bot.services.housing_catalog import BARRIOS, Barrio  # noqa: E402
 from bot.services.taxes import (  # noqa: E402
     SS_WORKER_RATE,
     WeekIncome,
+    igic,
     week_tax,
 )
 from bot.services.work import FLAT_RATE_FEE, SELF_EMPLOYED_FEE  # noqa: E402
@@ -132,21 +154,55 @@ class Run:
     payback: float
 
 
-def simulate(sector: Sector, barrio: Barrio, turns: int, miss: float, days: int, seed: int) -> Run:
+#: El día 0 de la simulación (un lunes), para las campañas.
+DAY0 = date(2026, 10, 5)
+
+
+def simulate(
+    sector: Sector,
+    barrio: Barrio,
+    turns: int,
+    miss: float,
+    days: int,
+    seed: int,
+    *,
+    size: int = 0,
+    equipment: tuple[str, ...] = (),
+    campaign: str = "",
+    pool: bool = False,
+) -> Run:
+    """Juega `days` días. Con la fase 2: tamaño, mejoras, una campaña que se repite y el cupo."""
     rng = random.Random(seed)
-    business = Business(1, sector.key, barrio.key, "Sim", seed=seed)
-    quote = opening_quote(sector, barrio)
+    business = Business(1, sector.key, barrio.key, "Sim", seed=seed, size=size)
+    quote = opening_quote(sector, barrio, SIZES[size])
+    setup_asset(business, quote.setup + quote.setup_igic)
+    invested = 0
+    for key in equipment:
+        item = EQUIPMENT_BY_KEY[key]
+        business.equipment.append(key)
+        add_asset(business, key, item.cost + igic(item.cost), item.kind)
+        invested += item.cost + igic(item.cost)
     need = {p.key: float(p.pack) for p in sector.products}
     nets: list[float] = []
     week_net = 0
-    cash = -quote.total + quote.deposit  # la fianza vuelve al cerrar: no es gasto
+    cash = -quote.total + quote.deposit - invested  # la fianza vuelve al cerrar: no es gasto
     payback = float("nan")
     for day in range(days):
+        today = DAY0 + timedelta(days=day)
         spent = restock(business, need)
+        if campaign and (
+            not business.campaign_until or business.campaign_until < today.isoformat()
+        ):
+            item = CAMPAIGN_BY_KEY[campaign]
+            business.campaign = campaign
+            business.campaign_until = (today + timedelta(days=item.days - 1)).isoformat()
+            spent += item.cost + igic(item.cost)
+        left = daily_pool(sector, barrio) * pool_factor(business, today) if pool else math.inf
         used: dict[str, int] = {}
         sales = 0
         for hour in HOURS[turns]:
-            count = turn_clients(business, hour, rng.random())
+            count = min(turn_clients(business, hour, rng.random(), today), math.floor(left))
+            left -= count
             clients = make_clients(business, count, rng.randrange(2**31))
             if not clients:
                 continue
@@ -158,7 +214,9 @@ def simulate(sector: Sector, barrio: Barrio, turns: int, miss: float, days: int,
             for key, units in summary.units.items():
                 business.stock[key] = max(0, business.stock.get(key, 0) - units)
                 used[key] = used.get(key, 0) + units
-            change = turn_reputation(sector, summary.reputation, summary.served, business.price)
+            change = turn_reputation(
+                sector, summary.reputation, summary.served, price_reputation(business)
+            )
             business.reputation = max(0.0, min(REPUTATION_MAX, business.reputation + change))
             business.regulars = apply_loyalty(business.regulars, summary.loyalty)
             sales += summary.sales
@@ -169,10 +227,10 @@ def simulate(sector: Sector, barrio: Barrio, turns: int, miss: float, days: int,
             drift(business)
         fee = (FLAT_RATE_FEE if day < 7 else SELF_EMPLOYED_FEE) if day % 7 == 0 else 0
         day_net = sales - spent - bill - fee
-        week_net += day_net
+        week_net += day_net - amortize(business)  # la amortización baja la base, no la caja
         tax = 0
         if day % 7 == 6:  # la declaración del lunes: la actividad es toda su renta
-            tax = week_tax(WeekIncome(business=week_net)).quota
+            tax = week_tax(WeekIncome(business=max(0, week_net))).quota
             week_net = 0
         cash += day_net - tax
         if payback != payback and cash >= 0:  # el primer día que recupera lo invertido
@@ -203,10 +261,71 @@ def barrios_for(sector: Sector) -> list[Barrio]:
     return [ranked[0], ranked[len(ranked) // 2], ranked[-1]]
 
 
+#: Semillas que se promedian en la fase 2: con una sola, la suerte de las colas pesa más
+#: que una mejora.
+SEEDS = (7, 8, 9, 10, 11, 12)
+
+
+def mean_run(sector: Sector, barrio: Barrio, turns: int, miss: float, days: int, **extra) -> Run:  # noqa: ANN003
+    """La media de `simulate` con el cupo del barrio en `SEEDS`."""
+    runs = [simulate(sector, barrio, turns, miss, days, seed, pool=True, **extra) for seed in SEEDS]
+    return Run(
+        net_day=sum(r.net_day for r in runs) / len(runs),
+        stars=sum(r.stars for r in runs) / len(runs),
+        opening=runs[0].opening,
+        payback=float("nan"),
+    )
+
+
+def phase2(days: int) -> None:
+    """Lo que suma cada mejora, tamaño y campaña a un jugador bueno, y en cuánto se paga."""
+    miss = PLAYERS["bueno"]
+    print(f"{'sector':<10} {'variante':<28} {'t':>2} {'neto/día':>9} {'suma/día':>9} "
+          f"{'cuesta':>8} {'se paga':>9}")  # fmt: skip
+    for sector in SECTORS:
+        barrio = barrios_for(sector)[1]
+        for turns in (4, 8):
+            base = mean_run(sector, barrio, turns, miss, days)
+            variants: list[tuple[str, dict, int]] = []
+            for item in equipment_for(sector.key):
+                variants.append(
+                    (item.name, {"equipment": (item.key,)}, item.cost + igic(item.cost))
+                )
+            for size in (1, 2):
+                extra = (
+                    opening_quote(sector, barrio, SIZES[size]).total
+                    - opening_quote(sector, barrio).total
+                )
+                variants.append((f"Local {SIZES[size].name.lower()}", {"size": size}, extra))
+            for campaign in CAMPAIGNS:
+                variants.append((campaign.name, {"campaign": campaign.key}, 0))
+            print(
+                f"{sector.key:<10} {'(sin nada)':<28} {turns:>2} {base.net_day:>9,.0f}".replace(
+                    ",", "."
+                )
+            )
+            for name, extra, cost in variants:
+                run = mean_run(sector, barrio, turns, miss, days, **extra)
+                gain = run.net_day - base.net_day
+                pays = (
+                    f"{cost / gain:.0f} días"
+                    if cost and gain > 0
+                    else ("—" if not cost else "nunca")
+                )
+                print(
+                    f"{'':<10} {name:<28} {turns:>2} {run.net_day:>9,.0f} {gain:>+9,.0f} "
+                    f"{cost:>8,} {pays:>9}".replace(",", ".")
+                )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--dias", type=int, default=28)
+    parser.add_argument("--fase2", action="store_true", help="Mejoras, tamaños y campañas.")
     args = parser.parse_args()
+    if args.fase2:
+        phase2(args.dias)
+        return
     print("Pala (obra), neto diario a 4 turnos:")
     for level in (1, 3, 5):
         print(f"  P{level}: {pala_net(level):>8,.0f} Y$".replace(",", "."))

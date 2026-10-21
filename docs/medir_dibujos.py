@@ -228,6 +228,8 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
                 "negocio": "negocio_cafeteria_centro",
                 "negocio_cliente": "cliente_comandas",
                 "negocio_taller": "cliente_diagnostico",
+                "negocio_mejoras": "mejoras_cafeteria",
+                "negocio_resenas": "resenas",
             }.items()
         },
         # Cada una de las otras pantallas del panel de `pisos`.

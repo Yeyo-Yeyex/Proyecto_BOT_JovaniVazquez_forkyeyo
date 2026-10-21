@@ -115,9 +115,10 @@ Modelo de datos:
   el IRPF de la ganancia de cada venta, a nombre de cada copropietario, para que
   `hacienda` los cuente. El IRPF de las rentas va en `economy_tax_records`
   (concepto `pisos:renta`).
-- `economy_business_tax`: el IGIC, la tasa de la apertura y la retención del alquiler del
-  local que paga cada negocio de `pala` (`business`), para que `hacienda` los cuente. El
-  IRPF a cuenta de sus ventas va en `economy_tax_records` (clase `actividad`).
+- `economy_business_tax`: el IGIC, las tasas (apertura, traslado y terraza), la retención
+  del alquiler del local y el IRPF de la ganancia de un traspaso (`plusvalia`) que paga cada
+  negocio de `pala` (`business`), para que `hacienda` los cuente. El IRPF a cuenta de sus
+  ventas va en `economy_tax_records` (clase `actividad`).
 - `economy_tax_debts` y `economy_debt_payments`: lo que se debe a Hacienda porque no
   llegó en efectivo (el Patrimonio de quien lo tiene todo en ladrillo, la declaración
   que sale a pagar) y lo que se ha ido cobrando: del monedero cada lunes, el 30 % de
@@ -159,6 +160,7 @@ from bot.services.taxes import (
     Pace,
     PropertyWeek,
     WeekIncome,
+    capital_gain_tax,
     garnish,
     second_installment,
     week_tax,
@@ -1059,6 +1061,11 @@ class BusinessMove:
             `sales - sold_cost`.
         bills: Recibos de la noche: se cobran por orden hasta donde llegue el monedero.
         settle: Recibe, dentro de la transacción, lo que no llegó de `bills`.
+        amortization: Amortización de la noche: gasto de la actividad sin pago (fase 2).
+        proceeds: Lo que paga quien se queda las mejoras y la clientela al traspasar o
+            liquidar (fase 2): lo crea quien no existe.
+        gain: La ganancia patrimonial de `proceeds` (lo cobrado menos lo que quedaba por
+            amortizar): tributa al 19 % en el momento, como el Rastro.
     """
 
     user_id: int
@@ -1070,6 +1077,9 @@ class BusinessMove:
     sold_cost: int = 0
     bills: tuple[BusinessCost, ...] = ()
     settle: Callable[[sqlite3.Connection, int], None] | None = None
+    amortization: int = 0
+    proceeds: int = 0
+    gain: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -1082,6 +1092,7 @@ class BusinessPaid:
         garnished: Lo embargado de las ventas por deudas con Hacienda.
         bank_garnished: Lo embargado de las ventas por deudas con el banco (art. 607 LEC).
         unpaid: Lo que no llegó de los recibos.
+        gain_tax: IRPF de la ganancia patrimonial de un traspaso.
     """
 
     balance: int
@@ -1089,6 +1100,7 @@ class BusinessPaid:
     garnished: int = 0
     unpaid: int = 0
     bank_garnished: int = 0
+    gain_tax: int = 0
 
 
 class EconomyRepository:
@@ -3808,7 +3820,7 @@ class EconomyRepository:
             UNION ALL
             SELECT user_id,
                    CASE kind WHEN 'tasa' THEN 'tasas' WHEN 'retencion' THEN 'irpf_otros'
-                        ELSE 'igic' END,
+                        WHEN 'plusvalia' THEN 'irpf_ahorro' ELSE 'igic' END,
                    tax, created_at
             FROM economy_business_tax WHERE guild_id = :guild
             UNION ALL
@@ -5863,6 +5875,28 @@ class EconomyRepository:
                 bank = self._bank_garnish_in(
                     connection, guild_id, user, move.sales - tax - garnished, now
                 )
+            gain_tax = 0
+            if move.proceeds > 0:
+                gain_tax = min(move.proceeds, capital_gain_tax(move.gain))
+                entries = [LedgerEntry(move.proceeds, "negocio:traspaso")]
+                if gain_tax:
+                    entries.append(LedgerEntry(-gain_tax, "irpf:negocio:traspaso"))
+                    self._credit_state_in(connection, guild_id, gain_tax, "irpf:negocio:traspaso")
+                    connection.execute(
+                        "INSERT INTO economy_business_tax (guild_id, user_id, kind, tax, "
+                        "created_at) VALUES (?, ?, 'plusvalia', ?, ?)",
+                        (guild_id, user, gain_tax, now),
+                    )
+                self._apply_in_transaction(connection, guild_id, user, entries)
+                left = move.proceeds - gain_tax
+                got = self._garnish_in(connection, guild_id, user, left, now)
+                garnished += got
+                bank += self._bank_garnish_in(connection, guild_id, user, left - got, now)
+            if move.amortization > 0:
+                self._record_in(
+                    connection, guild_id, user, now=now, concept="negocio:amortizacion",
+                    kind=INCOME_BUSINESS, gross=-move.amortization, withheld=0,
+                )  # fmt: skip
             unpaid = 0
             for cost in move.bills:
                 if cost.total <= 0:
@@ -5874,7 +5908,7 @@ class EconomyRepository:
             if move.settle is not None:
                 move.settle(connection, unpaid)
             balance = self._ensure_wallet(connection, guild_id, user)
-            return result, BusinessPaid(balance, tax, garnished, unpaid, bank)
+            return result, BusinessPaid(balance, tax, garnished, unpaid, bank, gain_tax)
 
     def _business_cost_in(
         self,

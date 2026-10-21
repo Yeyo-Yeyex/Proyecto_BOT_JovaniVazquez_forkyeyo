@@ -77,6 +77,7 @@ from bot.services.bus import Pick as BusPick
 from bot.services.bus import Status as BusStatus
 from bot.services.bus import chance as bus_chance
 from bot.services.bus import picks_for as bus_picks_for
+from bot.services.business import recommended as business_recommended
 from bot.services.casino_stats import GAMES as CASINO_GAMES
 from bot.services.chicken import ChickenGame
 from bot.services.chicken import Status as ChickenStatus
@@ -676,7 +677,7 @@ PISOS_BROKE_BELOW = 1_000
 
 
 #: Sectores y temas de local del negocio propio (`biz_opened_<sector>`, `biz_theme_<tema>`).
-BIZ_SECTORS = ("cafeteria", "tienda", "taller")
+BIZ_SECTORS = ("cafeteria", "tienda", "taller", "heladeria", "ferreteria")
 BIZ_THEMES = ("marinero", "historico", "centro", "obrero", "playa", "lujo", "rural")
 
 #: Tipos de vehículo del Pollo (`chicken_render.VEHICLES`), uno por logro de atropello.
@@ -19668,6 +19669,20 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (100, "biz_taller_100", "Aceite de motor y sangre", "Haz 100 turnos en un taller.", E),
         (500, "biz_taller_500", "Box, box, box para siempre", "Haz 500 turnos en un taller.", L),
     ])  # fmt: skip
+    a += _tiers("negocio", "biz_turns_heladeria", [
+        (10, "biz_helado_10", "Hielo, luego existo", "Haz 10 turnos en una heladería.", C),
+        (100, "biz_helado_100", "Ice Ice Baby, vainilla incluida",
+         "Haz 100 turnos en una heladería.", E),
+        (500, "biz_helado_500", "El Rey Helado de la barquilla",
+         "Haz 500 turnos en una heladería.", L),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_turns_ferreteria", [
+        (10, "biz_ferre_10", "De tornillos y hombres", "Haz 10 turnos en una ferretería.", C),
+        (100, "biz_ferre_100", "Pepe Gotera y Otilio, a domicilio",
+         "Haz 100 turnos en una ferretería.", E),
+        (500, "biz_ferre_500", "Mjölnir en el pasillo tres",
+         "Haz 500 turnos en una ferretería.", L),
+    ])  # fmt: skip
     a += _tiers("negocio", "biz_clients", [
         (1, "biz_clients_1", "Bienvenido, Mr. Marshall", "Atiende a tu primer cliente.", C),
         (100, "biz_clients_100", "Un, dos, tres, atienda otra vez",
@@ -19815,8 +19830,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (8, "biz_day_8", "Jornada de 24 horas, pero con gracia", "Haz 8 turnos en un solo día.", R),
     ])  # fmt: skip
     a += _tiers("negocio", "biz_sectors_tried", [
-        (3, "biz_sectors_3", "Cafetería, tienda y taller: el trío calavera",
-         "Abre un negocio de cada sector.", E),
+        (3, "biz_sectors_3", "Tres tristes trastiendas",
+         "Abre negocios de 3 sectores distintos.", E),
+        (5, "biz_sectors_5", "Cinco lobitos tiene el polígono",
+         "Abre un negocio de cada uno de los 5 sectores.", L),
     ])  # fmt: skip
     a += _tiers("negocio", "biz_themes_tried", [
         (7, "biz_themes_7", "Pasaporte de interiorista", "Prueba los 7 temas de local.", L),
@@ -19916,6 +19933,108 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (3, "biz_closed_3", "Más cierres que Blockbuster", "Cierra 3 negocios.", R),
         (10, "biz_closed_10", "Atrapado en el día del traspaso", "Cierra 10 negocios.", E, True),
     ])  # fmt: skip
+    # Fase 2: reseñas, mejoras, publicidad, precio por producto, traslados y traspasos.
+    a += _tiers("negocio", "biz_reviews", [
+        (1, "biz_resena_1", "Con la crítica hemos topado", "Recibe tu primera reseña.", C),
+        (100, "biz_resena_100", "Anton Ego hace cola", "Recibe 100 reseñas.", R),
+        (500, "biz_resena_500", "El Rotten Tomatoes del barrio", "Recibe 500 reseñas.", E),
+        (1000, "biz_resena_1000", "Crítica de la razón pura", "Recibe 1.000 reseñas.", L),
+        (5000, "biz_resena_5000", "Guerra y paz en reseñas", "Recibe 5.000 reseñas.", M),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_reviews_5", [
+        (1, "biz_resena5_1", "Twinkle, twinkle, little bar",
+         "Recibe una reseña de cinco estrellas.", C),
+        (50, "biz_resena5_50", "Pentakill de clientes contentos",
+         "Recibe 50 reseñas de cinco estrellas.", R),
+        (500, "biz_resena5_500", "Las Perseidas caen en tu barra",
+         "Recibe 500 reseñas de cinco estrellas.", L),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_reviews_1", [
+        (1, "biz_resena1_1", "Un hater con wifi y tiempo libre",
+         "Recibe una reseña de una estrella.", C, True),
+        (25, "biz_resena1_25", "Chicote ya viene de camino",
+         "Recibe 25 reseñas de una estrella.", R, True),
+        (100, "biz_resena1_100", "El Hindenburg de la hostelería",
+         "Recibe 100 reseñas de una estrella.", E, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_recommended", [
+        (1, "biz_recommended_1", "Nueve de cada diez dentistas lo recomiendan",
+         "Consigue el distintivo de recomendado: media de 4,5 estrellas o más con 10 "
+         "reseñas o más.", R),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_equipment", [
+        (1, "biz_equip_1", "Pimp my local", "Instala una mejora en el local.", C),
+        (5, "biz_equip_5", "Reformas Juan Palomo", "Instala 5 mejoras en total.", E, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_equipment_max", [
+        (3, "biz_equip_max_3", "Más equipado que el Inspector Gadget",
+         "Ten 3 mejoras instaladas a la vez.", R),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_spent_equipment", [
+        (100_000, "biz_equip_100k", "Amortizando, que es gerundio",
+         "Gasta 100.000 Y$ en mejoras del local.", R),
+        (300_000, "biz_equip_300k", "La Estrella de la Muerte a plazos",
+         "Gasta 300.000 Y$ en mejoras del local.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_campaigns", [
+        (1, "biz_campaign_1", "Llame ya, llame ya", "Lanza tu primera campaña de publicidad.", C),
+        (10, "biz_campaign_10", "Don Draper con chanclas", "Lanza 10 campañas de publicidad.", E),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_campaign_buzoneo", [
+        (1, "biz_campaign_buzoneo_1", "Spam analógico", "Lanza una campaña de buzoneo.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_campaign_redes", [
+        (1, "biz_campaign_redes_1", "Likes con factura", "Lanza una campaña en redes.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_campaign_radio", [
+        (1, "biz_campaign_radio_1", "Radio Ga Ga de la emisora municipal",
+         "Lanza una campaña en la radio.", R),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="biz_campaigns_all", name="Por tierra, mar y aire",
+        description="Lanza una campaña de buzoneo, otra en redes y otra en la radio.",
+        category="negocio", rarity=R,
+        conditions=(("biz_campaign_buzoneo", 1), ("biz_campaign_redes", 1),
+                    ("biz_campaign_radio", 1)),
+    ))  # fmt: skip
+    a += _tiers("negocio", "biz_spent_marketing", [
+        (100_000, "biz_marketing_100k", "Publicidad engañosa (para tu cartera)",
+         "Gasta 100.000 Y$ en publicidad.", R),
+        (250_000, "biz_marketing_250k", "Super Bowl de calle",
+         "Gasta 250.000 Y$ en publicidad.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_price_product", [
+        (1, "biz_price_product_1", "El precio justo sin Joaquín Prat",
+         "Ponle un precio propio a un producto.", C),
+        (25, "biz_price_product_25", "Etiquetadora de pistolero",
+         "Ponles un precio propio a productos 25 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_moves", [
+        (1, "biz_moves_1", "Con la casa a cuestas", "Traslada tu negocio.", R),
+        (3, "biz_moves_3", "Trotamundos de la persiana", "Traslada tu negocio 3 veces.", E,
+         True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_own_local", [
+        (1, "biz_own_local_1", "Casero de mí mismo", "Traslada tu negocio a un local propio.", E),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_size_max", [
+        (2, "biz_size_2", "Local in the Middle", "Ten un negocio en un local mediano.", R),
+        (3, "biz_size_3", "El tamaño sí importa", "Ten un negocio en un local grande.", E),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_traspasos", [
+        (1, "biz_traspaso_1", "El pase de la muerte", "Cierra un negocio traspasándolo.", R),
+        (3, "biz_traspaso_3", "Flipper de persianas", "Traspasa 3 negocios.", E, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_traspaso_max", [
+        (100_000, "biz_traspaso_100k", "Fondo de comercio con piscina",
+         "Cobra 100.000 Y$ en un solo traspaso.", R),
+        (250_000, "biz_traspaso_250k", "El traspaso de Figo",
+         "Cobra 250.000 Y$ en un solo traspaso.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_traspaso_money", [
+        (1_000_000, "biz_traspaso_1m", "Vender humo con factura",
+         "Cobra 1.000.000 Y$ en total traspasando negocios.", L),
+    ], unit="money")  # fmt: skip
     # Reducción de jornada y excedencia (art. 37.6 y 46.2 ET), en 🪏 General.
     a.append(Achievement(
         id="work_jornada_3_1", name="Tres cuartos de lo mismo",
@@ -25484,6 +25603,9 @@ def business_stats(result: TurnResult, *, tired: bool = False) -> StatDelta:
         "biz_withheld": int(result.withheld > 0),
         "biz_garnished": int(result.garnished > 0),
         "biz_empty_turn": int(summary.served == 0),
+        "biz_reviews": len(result.reviews),
+        "biz_reviews_5": sum(1 for _, stars, _ in result.reviews if stars == 5),
+        "biz_reviews_1": sum(1 for _, stars, _ in result.reviews if stars == 1),
     }
     return StatDelta(
         add={stat: value for stat, value in add.items() if value},
@@ -25494,6 +25616,7 @@ def business_stats(result: TurnResult, *, tired: bool = False) -> StatDelta:
             "biz_loyalty_max": max(business.regulars.values(), default=0),
             "biz_streak_max": business.open_streak,
             "biz_turns_day_max": business.turns_today,
+            "biz_recommended": int(business_recommended(business)),
             "balance_max": result.balance,
         },
     )

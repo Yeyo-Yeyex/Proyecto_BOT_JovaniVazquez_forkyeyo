@@ -63,6 +63,17 @@ class BusinessRepository:
         """Ejecuta una operación SQLite fuera del event loop."""
         return await asyncio.to_thread(operation, *args)
 
+    async def read(self, operation: Callable[[sqlite3.Connection], T]) -> T:
+        """Una lectura con una conexión propia (para mirar otras tablas, como las de `pisos`)."""
+        return await self._run(self._read_sync, operation)
+
+    def _read_sync(self, operation: Callable[[sqlite3.Connection], T]) -> T:
+        connection = self._connect()
+        try:
+            return operation(connection)
+        finally:
+            connection.close()
+
     async def initialize(self) -> None:
         """Crea las tablas si no existen."""
         await self._run(self._initialize_sync)

@@ -8,28 +8,50 @@ contrato completo de cada pantalla está en `docs/negocios.md` («Las pantallas�
 cabecera de la escena.
 
 Pantallas: `dia` (el inicio de `pala`), `montar`, `negocio` (portada y vista previa),
-`almacen`, `cuentas`, `cliente` (el minijuego) y `cierre` (el resumen del turno).
+`almacen`, `cuentas`, `cliente` (el minijuego) y `cierre` (el resumen del turno). Desde la
+fase 2, también `mejoras` (las mejoras del local y las campañas) y `resenas`; el traslado
+se enseña con la vista previa de `negocio` (`traslado_state`).
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from bot.services.agenda import JORNADA_NAMES, Agenda
 from bot.services.business import (
+    RECOMMENDED_RATING,
+    RECOMMENDED_REVIEWS,
     Business,
+    MoveQuote,
+    book_value,
+    campaign_boost,
     nightly_bill,
     opening_quote,
+    rating,
+    recommended,
     regular_names,
     sale_price,
     stars,
 )
-from bot.services.business_catalog import EMBLEMS, PALETTES, PRICE_BY_KEY, SECTOR_BY_KEY, SECTORS
+from bot.services.business_catalog import (
+    AMORTIZATION,
+    CAMPAIGN_BY_KEY,
+    CAMPAIGNS,
+    EMBLEMS,
+    PALETTES,
+    PRICE_BY_KEY,
+    REVIEW_LINES,
+    SECTOR_BY_KEY,
+    SECTORS,
+    SIZES,
+    equipment_for,
+)
 from bot.services.business_games import TurnGame
 from bot.services.economy import format_amount
 from bot.services.housing_catalog import BARRIO_BY_KEY, BARRIOS
 from bot.services.levels import TIMEZONE
+from bot.services.taxes import igic
 
 State = dict[str, Any]
 
@@ -44,7 +66,9 @@ ACCOUNT_ROWS: tuple[tuple[str, str, str], ...] = (
     ("ventas", "Ventas y propinas", "in"),
     ("compras", "Compras al mayorista", "out"),
     ("local", "Local (alquiler y suministros)", "out"),
-    ("apertura", "Apertura del negocio", "out"),
+    ("marketing", "Publicidad", "out"),
+    ("amortizacion", "Amortización", "out"),
+    ("apertura", "Tasas de apertura y traslado", "out"),
     ("cuota", "Cuota de autónomo", "tax"),
     ("irpf", "IRPF a cuenta", "tax"),
 )
@@ -268,7 +292,12 @@ def hash_seed(text: str) -> int:
 
 
 def negocio_state(business: Business, *, foot: str, rivals: int = 0) -> State:
-    """La portada del negocio con las cifras de hoy."""
+    """La portada del negocio con las cifras de hoy.
+
+    Fase 2: `rating` (media de las reseñas, cuántas y si sale recomendado), `campaign` (la
+    campaña de hoy y lo que le queda), `equipment` (las claves de las mejoras instaladas) y
+    `size` (el tamaño del local y si es propio).
+    """
     bill = nightly_bill(business)
     week = sum(business.week_totals.values())
     tags = [PRICE_BY_KEY[business.price].name.split(" (")[0] + " de precio"]
@@ -276,6 +305,7 @@ def negocio_state(business: Business, *, foot: str, rivals: int = 0) -> State:
         tags.append(alert)
     if rivals:
         tags.append(plural(rivals, "competidor en el barrio", "competidores en el barrio"))
+    today = date.fromisoformat(business.day) if business.day else None
     return {
         "screen": "negocio",
         "mode": "portada",
@@ -298,7 +328,44 @@ def negocio_state(business: Business, *, foot: str, rivals: int = 0) -> State:
             {"name": name, "loyalty": business.regulars.get(name, 0)}
             for name in regular_names(business.seed)
         ],
+        "rating": rating_state(business),
+        "campaign": campaign_state(business, today) if today else None,
+        "equipment": list(business.equipment),
+        "size": size_text(business),
         "foot": foot,
+    }
+
+
+def size_text(business: Business) -> str:
+    """`Local mediano · propio` o `Local pequeño`."""
+    name = f"Local {business.size_info.name.lower()}"
+    return f"{name} · propio" if business.own_listing else name
+
+
+def rating_state(business: Business) -> State | None:
+    """La media de las reseñas para la escena (`None` si aún no hay ninguna)."""
+    average, count = rating(business)
+    if not count:
+        return None
+    return {
+        "avg": f"{average:.1f}".replace(".", ","),
+        "value": round(average, 2),
+        "count": plural(count, "reseña", "reseñas"),
+        "badge": recommended(business),
+    }
+
+
+def campaign_state(business: Business, today: date) -> State | None:
+    """La campaña de hoy (`None` si no hay)."""
+    if not campaign_boost(business, today):
+        return None
+    campaign = CAMPAIGN_BY_KEY[business.campaign]
+    left = (date.fromisoformat(business.campaign_until) - today).days + 1
+    return {
+        "key": campaign.key,
+        "name": campaign.name,
+        "left": plural(left, "día", "días"),
+        "boost": f"+{round(campaign.boost * 100)} % de clientes",
     }
 
 
@@ -313,7 +380,13 @@ def almacen_state(business: Business, foot: str) -> State:
                 "name": product.name,
                 "units": str(business.stock.get(product.key, 0)),
                 "cost": format_amount(product.cost),
-                "price": format_amount(sale_price(product, business.price)),
+                "price": format_amount(sale_price(product, business.level(product.key).key)),
+                # Fase 2: el nivel de precios si no es el general (`None` si va con el resto).
+                "level": (
+                    business.level(product.key).name.split(" (")[0]
+                    if product.key in business.prices
+                    else None
+                ),
                 "spoil": (
                     f"Caduca un {round(product.spoil * 100)} % cada noche"
                     if product.spoil
@@ -348,8 +421,124 @@ def cuentas_state(business: Business) -> State:
         "screen": "cuentas",
         **_style(business),
         "weeks": weeks,
-        "foot": "Criterio de caja: cada cosa cuenta el día que se cobra o se paga. "
-        "La Renta del lunes ajusta el IRPF.",
+        "foot": "Criterio de caja: cada cosa cuenta el día que se cobra o se paga, salvo las "
+        "mejoras y la obra, que se amortizan cada noche. La Renta del lunes ajusta el IRPF.",
+    }
+
+
+# -- Fase 2: mejoras, reseñas y traslado ------------------------------------------------
+
+
+def mejoras_state(business: Business, today: date, foot: str = "") -> State:
+    """Las mejoras del sector (instaladas o no) y las campañas de publicidad.
+
+    Cada mejora: `key`, `name`, `effect`, `price` (con IGIC), `class` (su amortización) y
+    `owned`; si está instalada, `book` (lo que queda por amortizar). Cada campaña: `key`,
+    `name`, `effect`, `price` y `days`. `active` es la campaña en marcha (`None` si no hay).
+    """
+    left = {a["key"]: a["left"] for a in business.assets}
+    items = []
+    for item in equipment_for(business.sector):
+        name, rate = AMORTIZATION[item.kind]
+        owned = item.key in business.equipment
+        items.append(
+            {
+                "key": item.key,
+                "name": item.name,
+                "effect": item.effect(),
+                "price": format_amount(item.cost + igic(item.cost)),
+                "class": f"{name} · {round(rate * 100)} % al año",
+                "owned": owned,
+                "book": (
+                    f"Por amortizar: {format_amount(left.get(item.key, 0))}" if owned else None
+                ),
+            }
+        )
+    campaigns = [
+        {
+            "key": c.key,
+            "name": c.name,
+            "effect": f"+{round(c.boost * 100)} % de clientes y de cupo",
+            "price": format_amount(c.cost + igic(c.cost)),
+            "days": plural(c.days, "día", "días"),
+        }
+        for c in CAMPAIGNS
+    ]
+    return {
+        "screen": "mejoras",
+        **_style(business),
+        "items": items,
+        "campaigns": campaigns,
+        "active": campaign_state(business, today),
+        "book": f"Por amortizar en total: {format_amount(book_value(business))}",
+        "foot": foot
+        or "Las mejoras se amortizan cada noche: su gasto se reparte, no se paga dos veces.",
+    }
+
+
+def _when(day: str, today: date) -> str:
+    days = (today - date.fromisoformat(day)).days
+    return "hoy" if days <= 0 else "ayer" if days == 1 else f"hace {days} días"
+
+
+def resenas_state(business: Business, today: date) -> State:
+    """Las reseñas: la media, cuántas, si sale recomendado y las seis últimas."""
+    average, count = rating(business)
+    reviews = [
+        {
+            "name": who,
+            "stars": n,
+            "line": REVIEW_LINES[n][line % len(REVIEW_LINES[n])],
+            "day": _when(day, today),
+        }
+        for day, who, n, line in reversed(business.reviews[-6:])
+    ]
+    badge = recommended(business)
+    need = (
+        f"Con {RECOMMENDED_REVIEWS} reseñas y {str(RECOMMENDED_RATING).replace('.', ',')} de "
+        "media, sales recomendado: un 10 % más de clientes."
+    )
+    return {
+        "screen": "resenas",
+        **_style(business),
+        "avg": f"{average:.1f}".replace(".", ",") if count else "—",
+        "value": round(average, 2),
+        "count": plural(count, "reseña", "reseñas"),
+        "badge": badge,
+        "reviews": reviews,
+        "foot": "Recomendado en la guía del barrio." if badge else need,
+    }
+
+
+def traslado_state(
+    business: Business, barrio: str, size: int, quote: MoveQuote, *, own: bool = False
+) -> State:
+    """La fachada del local al que se trasladaría (vista previa de `negocio`)."""
+    main, accent = business.colors
+    place = BARRIO_BY_KEY[barrio]
+    rent = (
+        "Local propio: sin alquiler"
+        if own
+        else f"Alquiler: {format_amount(quote.opening.rent)} al día"
+    )
+    lose = "" if quote.same_barrio else " Cambias de barrio: pierdes media clientela."
+    return {
+        "screen": "negocio",
+        "mode": "preview",
+        "name": business.name,
+        "sector": business.sector,
+        "barrio": place.name,
+        "theme": place.theme,
+        "main": main,
+        "accent": accent,
+        "emblem": business.emblem_key,
+        "open": False,
+        "stars": business.stars,
+        "seed": business.seed,
+        "stats": [],
+        "tags": [place.town, f"Local {SIZES[size].name.lower()}", rent],
+        "regulars": [],
+        "foot": f"Trasladarte cuesta {format_amount(quote.total)}.{lose}",
     }
 
 
