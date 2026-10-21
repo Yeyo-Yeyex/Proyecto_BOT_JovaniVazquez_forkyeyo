@@ -19951,7 +19951,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("negocio", "biz_reviews_1", [
         (1, "biz_resena1_1", "Un hater con wifi y tiempo libre",
-         "Recibe una reseña de una estrella.", C),
+         "Recibe una reseña de una estrella.", C, True),
         (25, "biz_resena1_25", "Chicote ya viene de camino",
          "Recibe 25 reseñas de una estrella.", R, True),
         (100, "biz_resena1_100", "El Hindenburg de la hostelería",
@@ -19964,7 +19964,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("negocio", "biz_equipment", [
         (1, "biz_equip_1", "Pimp my local", "Instala una mejora en el local.", C),
-        (5, "biz_equip_5", "Reformas Juan Palomo", "Instala 5 mejoras en total.", E),
+        (5, "biz_equip_5", "Reformas Juan Palomo", "Instala 5 mejoras en total.", E, True),
     ])  # fmt: skip
     a += _tiers("negocio", "biz_equipment_max", [
         (3, "biz_equip_max_3", "Más equipado que el Inspector Gadget",
@@ -20011,7 +20011,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("negocio", "biz_moves", [
         (1, "biz_moves_1", "Con la casa a cuestas", "Traslada tu negocio.", R),
-        (3, "biz_moves_3", "Trotamundos de la persiana", "Traslada tu negocio 3 veces.", E),
+        (3, "biz_moves_3", "Trotamundos de la persiana", "Traslada tu negocio 3 veces.", E,
+         True),
     ])  # fmt: skip
     a += _tiers("negocio", "biz_own_local", [
         (1, "biz_own_local_1", "Casero de mí mismo", "Traslada tu negocio a un local propio.", E),
@@ -20022,7 +20023,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("negocio", "biz_traspasos", [
         (1, "biz_traspaso_1", "El pase de la muerte", "Cierra un negocio traspasándolo.", R),
-        (3, "biz_traspaso_3", "Flipper de persianas", "Traspasa 3 negocios.", E),
+        (3, "biz_traspaso_3", "Flipper de persianas", "Traspasa 3 negocios.", E, True),
     ])  # fmt: skip
     a += _tiers("negocio", "biz_traspaso_max", [
         (100_000, "biz_traspaso_100k", "Fondo de comercio con piscina",

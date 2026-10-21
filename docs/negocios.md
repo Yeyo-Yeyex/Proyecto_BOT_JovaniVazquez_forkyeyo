@@ -509,6 +509,9 @@ fase 1 que iban al 7 %:
   🚪 **Cerrar**, 🤝 **Traspasar** (si hay quien lo compre) o 🚪 **Cerrar y liquidar**.
 - **Pintar antes del clic:** desde la portada y el tique se pintan las mejoras y las reseñas, además del
   almacén, las cuentas y el primer cliente.
+- **Medido** (21/10/2026, este PC atado a 4 hilos): mejoras 61/65 ms y reseñas 59/62 ms (1 abierto /
+  caliente); `montar`, con cinco fachadas, 98 ms. Node contra Chrome, peor diferencia 2,47/255. Con todas
+  las pantallas, la escena suma ~74 MB al proceso de Node (eran ~53 en la fase 1).
 
 ### Equilibrio de la fase 2
 
