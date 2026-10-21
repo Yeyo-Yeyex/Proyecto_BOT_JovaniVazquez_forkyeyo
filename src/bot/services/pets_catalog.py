@@ -628,7 +628,7 @@ SPECIES: tuple[Species, ...] = (
          "Te sigue por la calle hasta tu casa. Ya no hay vuelta atrás.",
          "Lleva un mensaje a otra persona del canal. Llega con migas."),
         favourites=("barra_pan", "bocata_calamares"), talk=1.0,
-        spawn=Spawn(frozenset({Event.WORK}), chance=0.04,
+        spawn=Spawn(frozenset({Event.WORK, Event.BUSINESS}), chance=0.04,
                     hint="Se te posa, a veces, al salir de un turno de trabajo."),
     ),
     Species(

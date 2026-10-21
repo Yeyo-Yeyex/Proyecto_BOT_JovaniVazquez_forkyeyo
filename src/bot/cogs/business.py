@@ -90,7 +90,7 @@ from bot.services.negocio import (
 )
 from bot.services.pending import Pending, Side
 from bot.services.pets import Event as PetEvent
-from bot.services.pets import Moment
+from bot.services.pets import Moment, Mood
 from bot.services.taxes import TAX_COLLECTOR
 from bot.services.telemetry import LISTENER_ITEM, TimedLock
 from bot.utils.cogs import find_cog
@@ -1176,7 +1176,10 @@ class NegocioPanel(ui.LayoutView):
             self.cog.working.discard((self.guild_id, self.owner.id))
         self.turn, self.result = None, result
         self.screen = CIERRE
-        hint = await renta.hint(self.cog.bot, self.guild_id, self.owner.id, Moment(PetEvent.WORK))
+        grade = result.summary.grade
+        feel = Mood.GOOD if grade in ("S", "A") else Mood.BAD if grade == "D" else None
+        moment = Moment(PetEvent.BUSINESS, feel=feel)
+        hint = await renta.hint(self.cog.bot, self.guild_id, self.owner.id, moment)
         if hint:
             self.notes.append(hint)
         async with self._render_lock:

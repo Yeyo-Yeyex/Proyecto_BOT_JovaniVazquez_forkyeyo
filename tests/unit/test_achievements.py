@@ -211,6 +211,8 @@ PRODUCED_STATS = {
     "biz_themes_tried", "biz_islands_tried", "biz_restyled", "biz_purchases",
     "biz_price_barato", "biz_price_normal", "biz_price_caro", "biz_price_carisimo",
     "biz_nights_unpaid", "biz_closed_red", "biz_evicted", "work_jornada_4", "work_jornada_2",
+    "biz_sunday", "biz_fast", "biz_left", "biz_rejected", "biz_over", "biz_short",
+    "biz_spent_stock", "biz_nights", "biz_closed",
     "work_jornada_3",
     "work_excedencia", "work_excedencia_back",
     # cogs/achievements.py: mensajes, voz, reacciones y la siembra del historial
