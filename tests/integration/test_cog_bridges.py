@@ -903,6 +903,27 @@ async def test_un_turno_del_negocio_llega_a_logros_saldo_y_perfil_con_el_bot_rea
         await client.close()
 
 
+async def test_la_sociedad_del_negocio_sale_en_el_patrimonio_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """`patrimonio` encuentra el cog del negocio y suma el valor de la sociedad."""
+    client = await load_bot(tmp_path)
+    try:
+        cog = client.get_cog("Negocio")
+        patrimonio = client.get_cog("Patrimonio")
+        assert cog is not None and patrimonio is not None
+        await client.economy.repository.apply(GUILD, OWNER_ID, [LedgerEntry(2_000_000, "x")])
+        await cog.service.open(
+            GUILD, OWNER_ID, sector="tienda", barrio="triana", name="Pino", palette=0,
+            emblem=0,
+        )  # fmt: skip
+        await cog.service.constitute(GUILD, OWNER_ID, 300_000)
+        worth = next(w for w in await patrimonio.fortunes(GUILD) if w.user_id == OWNER_ID)
+        assert worth.companies >= 300_000  # la caja (el capital) más la obra por amortizar
+    finally:
+        await client.close()
+
+
 async def test_los_intereses_encuentran_los_logros_con_el_bot_real(tmp_path: Path) -> None:
     """`Intereses` carga antes que los logros: sus avisos deben llegar al cog real."""
     client = await load_bot(tmp_path)
