@@ -193,7 +193,8 @@ Todo por `EconomyService.business`, en una transacción con lo que guarda el neg
     se deja para la fase 3.
 - **Mostrar la mordida:**
   - cada resultado con dinero lleva su línea de impuestos (🐶 IRPF a cuenta, IGIC);
-  - el aviso de la Renta (`renta.remind`) y la mascota (`renta.hint`);
+  - el aviso de la Renta (`renta.remind`) y la mascota (`renta.hint` con el momento
+    `Event.BUSINESS`: contenta con una S o una A, de bajón con una D);
   - `hacienda` cuenta el IGIC, las tasas y la retención del alquiler (`economy_business_tax`);
   - `saldo` enseña el alquiler de esta noche, la deuda del local y la cuota de la semana (`pending`).
 
@@ -242,7 +243,9 @@ El contrato de cada pantalla está en la docstring de `services/business_view.py
 
 Salen de las estadísticas de `business_stats` y de las de la jornada. Familias:
 
-- escalones de turnos, clientes y ventas;
+- escalones de turnos (también por sector), clientes, ventas y propinas;
+- lo gastado en el mayorista, las compras, las noches con el negocio y los negocios cerrados;
+- los clientes servidos rápido y los que se van sin atender;
 - el mejor turno;
 - el turno perfecto;
 - la caja exacta y el ladrón pillado;
@@ -250,7 +253,8 @@ Salen de las estadísticas de `business_stats` y de las de la jornada. Familias:
 - los presupuestos caros aceptados;
 - las 5 estrellas;
 - habituales fieles y «lo de siempre» acertado;
-- fracasos: la acusación falsa, el cambio de más, el desahucio, cerrar en números rojos;
+- fracasos: la acusación falsa, el cambio de más o de menos, el presupuesto rechazado, el
+  desahucio, cerrar en números rojos;
 - colecciones: los tres sectores, todos los temas de barrio, las dos islas;
 - fechas: madrugada, domingo, Día de Canarias;
 - rachas de días abriendo;

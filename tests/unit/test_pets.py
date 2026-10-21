@@ -47,6 +47,7 @@ from bot.services.pets import (
     Care,
     Event,
     Moment,
+    Mood,
     PetState,
     apply_care,
     bet_moment,
@@ -195,6 +196,12 @@ def test_los_momentos_sonados_siempre_y_los_demas_a_veces() -> None:
     # Las de madrugada salen el doble de 0:00 a 6:00.
     assert wants_cameo(1.0, normal, Rigged(0.2), hour=3, night_owl=True)
     assert not wants_cameo(1.0, normal, Rigged(0.2), hour=15, night_owl=True)
+
+
+def test_el_turno_del_negocio_lleva_el_animo_de_su_nota() -> None:
+    assert Moment(Event.BUSINESS).mood == Mood.NEUTRAL
+    assert Moment(Event.BUSINESS, feel=Mood.GOOD).mood == Mood.GOOD
+    assert Moment(Event.BUSINESS, feel=Mood.BAD).mood == Mood.BAD
 
 
 @pytest.mark.parametrize("species", SPECIES, ids=lambda s: s.key)
