@@ -6,6 +6,37 @@ la sección «Versiones» de `Biblia.txt`. Las versiones anteriores a la 5.22.0
 se asignaron a posteriori, revisando cada PR y commit de `main` con el mismo
 criterio.
 
+## 9.x
+
+### 9.3.0 · 2026-10-21
+
+- Banco: 🤝 avalista, otro miembro te avala un préstamo o una rehipoteca (suma su 35 % y baja el tipo medio punto)
+- Banco: si no pagas, el banco reclama al avalista y tú le debes lo que pague, que se cobra cada noche y se embarga de tus nóminas
+- Saldo: lo que avalas, lo que debes a tu avalista y lo que te debe tu avalado
+- Logros: 11 de avales en 🏦 Banco
+
+### 9.2.0 · 2026-10-21
+
+- Banco: 💸 Anticipos, el banco te adelanta 3, 6 o 12 meses de la renta de un piso alquilado y se la cobra cada noche
+- Pisos: 💸 Adelantar rentas en 🧰 Gestionar abre el banco con el inmueble elegido; con un anticipo vivo no se puede vender
+- Saldo: la cuota del anticipo sale como «Anticipo de rentas de…»
+- Logros: 12 de anticipos de rentas en 🏦 Banco
+
+### 9.1.0 · 2026-10-21
+
+- Banco: 🔐 Garantías, rehipotecar tus pisos: hasta el 80 % de lo que valen hoy (60 % si no es vivienda) menos lo que ya debes de ellos
+- Pisos: 🏦 Rehipotecar en 🧰 Gestionar abre el banco con el inmueble elegido
+- Pisos: las hipotecas de un mismo inmueble se ejecutan juntas, con una sola subasta (antes podía quedar una viva sin inmueble)
+- Perfil: el patrimonio y `fortunas` restan las deudas con el banco
+- Patrimonio: las hipotecas de la vivienda habitual restan en la parte que no está exenta
+- Logros: 11 de rehipotecas en 🏦 Banco
+
+### 9.0.0 · 2026-10-21
+
+- Vender: `vender` sin nada abre un panel con tu mochila: a un miembro, al Rastro, al Monte de Piedad o empeñado
+- Rompe: el Monte de Piedad deja `banco` y se muda a `vender` (`/banco mostrador:Monte` ya no existe; `.banco monte` abre los préstamos con un aviso)
+- Logros: 2 de ofertas a miembros y «Vendo Opel Corsa» por usar los cuatro destinos de `vender`
+
 ## 8.x
 
 ### 8.15.1 · 2026-10-21

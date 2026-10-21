@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from bot.repositories.housing import (
+    AdvanceDesk,
     AuctionRun,
     Bid,
     DayRun,
@@ -30,16 +31,21 @@ from bot.repositories.housing import (
     News,
     Purchase,
     ReformDone,
+    RemortgageDesk,
     Sale,
+    SignedAdvance,
     SignedLoan,
+    SignedRemortgage,
     Signing,
     TenantDeal,
     VoteResult,
     VpoDeal,
+    guarantor_problem,
 )
 from bot.repositories.housing_junta import Vote
 from bot.repositories.housing_trade import Auction
 from bot.services import housing as rules
+from bot.services import loans as lending
 from bot.services.economy import EconomyService
 from bot.services.housing import Lease
 from bot.services.levels import local_day
@@ -131,8 +137,9 @@ class HousingService:
         months: int,
         insured: bool,
         rate: float,
+        guarantor: int | None = None,
     ) -> tuple[SignedLoan, int]:
-        """Firma un préstamo personal (ver `EconomyService.housing`).
+        """Firma un préstamo personal (ver `EconomyService.housing`), con avalista si lo hay.
 
         Raises:
             HousingError: Si debe a Hacienda o el banco no presta (ver `take_loan` del
@@ -145,10 +152,12 @@ class HousingService:
                 "Liquida la deuda en `renta`."
             )
         desk, income = await self.loan_desk(guild_id, user_id)
+        guarantor_income = await self._guarantor_income(guild_id, guarantor)
         now = self._clock()
         run = self.repository.take_loan(
             guild_id, user_id, principal=principal, months=months, insured=insured, rate=rate,
             income=income, payroll=desk.profile.payroll, day=local_day(now), now=now,
+            guarantor=guarantor, guarantor_income=guarantor_income,
         )  # fmt: skip
         signed, balances = await self.economy.housing(guild_id, run)
         return signed, balances[user_id]
@@ -176,6 +185,98 @@ class HousingService:
         run = self.repository.desist_loan(guild_id, user_id, loan_id, self._clock())
         closed, balances = await self.economy.housing(guild_id, run)
         return closed, balances[user_id]
+
+    async def _guarantor_income(self, guild_id: int, guarantor: int | None) -> int:
+        """Lo que ingresa al día un avalista (0 sin avalista).
+
+        Raises:
+            HousingError: Si el avalista debe a Hacienda: el banco no lo acepta.
+        """
+        if guarantor is None:
+            return 0
+        if await self.economy.tax_debt(guild_id, guarantor) > 0:
+            raise HousingError(
+                "Tu avalista debe dinero a Hacienda y tiene la cuenta embargada: el banco no "
+                "lo acepta."
+            )
+        return await self.income(guild_id, guarantor)
+
+    async def guarantor_room(
+        self, guild_id: int, user_id: int, guarantor: int
+    ) -> tuple[int, str | None]:
+        """Lo que le cabe al mes a un posible avalista en su 35 % y por qué no vale, si no vale."""
+        market = await self.repository.market(guild_id)
+        problem = guarantor_problem(market, user_id, guarantor)
+        if problem is None and await self.economy.tax_debt(guild_id, guarantor) > 0:
+            problem = "Debe dinero a Hacienda: el banco no lo acepta de avalista."
+        income = await self.income(guild_id, guarantor)
+        return lending.room_for(income, market.installments_of(guarantor)), problem
+
+    async def remortgage_desk(self, guild_id: int, user_id: int) -> tuple[RemortgageDesk, int]:
+        """Lo que ve el banco de alguien para rehipotecar y lo que ingresa al día."""
+        desk = await self.repository.remortgage_desk(guild_id, user_id)
+        return desk, await self.income(guild_id, user_id)
+
+    async def remortgage(
+        self,
+        guild_id: int,
+        user_id: int,
+        key: str,
+        *,
+        principal: int,
+        months: int,
+        rate: float,
+        guarantor: int | None = None,
+    ) -> tuple[SignedRemortgage, int]:
+        """Firma una rehipoteca (ver `EconomyService.housing` y `docs/garantias.md`).
+
+        Raises:
+            HousingError: Si debe a Hacienda o el banco no presta (ver `remortgage` del
+                repositorio).
+        """
+        if await self.economy.tax_debt(guild_id, user_id) > 0:
+            raise HousingError(
+                "Debes dinero a Hacienda y tendrías la cuenta embargada: el banco no presta. "
+                "Liquida la deuda en `renta`."
+            )
+        income = await self.income(guild_id, user_id)
+        guarantor_income = await self._guarantor_income(guild_id, guarantor)
+        now = self._clock()
+        run = self.repository.remortgage(
+            guild_id, user_id, key, principal=principal, months=months, rate=rate,
+            income=income, day=local_day(now), now=now, guarantor=guarantor,
+            guarantor_income=guarantor_income,
+        )  # fmt: skip
+        signed, balances = await self.economy.housing(guild_id, run)
+        return signed, balances[user_id]
+
+    async def advance_desk(self, guild_id: int, user_id: int) -> AdvanceDesk:
+        """Lo que ve el banco de alguien para adelantarle rentas (💸 Anticipos)."""
+        return await self.repository.advance_desk(guild_id, user_id, self.today())
+
+    async def advance(
+        self, guild_id: int, user_id: int, key: str, *, months: int, rate: float
+    ) -> tuple[SignedAdvance, int]:
+        """Firma un anticipo de rentas (fiscalidad en `HousingRepository.advance`).
+
+        No mira el 35 %: la cuota la paga el inquilino (pero cuenta para lo siguiente).
+
+        Raises:
+            HousingError: Si debe a Hacienda o el banco no adelanta (ver `advance` del
+                repositorio).
+        """
+        if await self.economy.tax_debt(guild_id, user_id) > 0:
+            # Lo adelantado se embargaría al entrar, como un préstamo.
+            raise HousingError(
+                "Debes dinero a Hacienda y tendrías la cuenta embargada: el banco no adelanta "
+                "rentas. Liquida la deuda en `renta`."
+            )
+        now = self._clock()
+        run = self.repository.advance(
+            guild_id, user_id, key, months=months, rate=rate, day=local_day(now), now=now
+        )
+        signed, balances = await self.economy.housing(guild_id, run)
+        return signed, balances[user_id]
 
     async def buy(
         self,

@@ -431,7 +431,10 @@ python -m bot
   (0,50 €). Los máximos de Bizum (10.000 Y$ por operación y 20.000 Y$ al día)
   no se aplican: el bot avisa de que te has pasado y te da el logro
   *A espaldas de Sánchez*. El resultado es público y menciona a quien recibe.
-- **Rastro** (`vender`, `trueque`, `rastro`): segunda mano entre miembros. Con
+- **Rastro** (`vender`, `trueque`, `rastro`): segunda mano entre miembros.
+  `vender` sin nada abre tu panel 🧺 Vender: eliges algo de tu mochila, ves su
+  valor de referencia y lo que da el Monte de Piedad, y lo mandas a un miembro,
+  al Rastro, al Monte o lo empeñas (tus papeletas se desempeñan desde ahí). Con
   `vender <objeto> <precio> <comprador>` le haces una oferta (o se lo regalas
   con precio 0); sin comprador, lo pones en un puesto con precio de salida y,
   si lo quieren varios, se subasta: cada puja sube al menos un 5 % y da una
@@ -443,7 +446,13 @@ python -m bot
   paga el 19 % de la plusvalía. Con `trueque <tu objeto> <miembro> <su objeto>
   [dinero]` le propones cambiar un objeto por otro, con dinero encima si
   quieres: cada uno paga el ITP de lo que recibe y la plusvalía de lo que da.
-- **Banco** (`banco`): un panel con tres mostradores. **Préstamos** personales para
+- **Banco** (`banco`): un panel con cuatro mostradores. **Garantías**: rehipotecar
+  tus pisos (hasta el 80 % de lo que valen hoy si son vivienda, el 60 % si no, menos
+  lo que ya debes de ellos; sus intereses no desgravan). **Anticipos**: el banco te
+  adelanta 3, 6 o 12 meses de la renta de un piso alquilado y se la cobra cada noche
+  (si el inquilino no paga, pagas tú; no se vende con el anticipo vivo). **Avalista**:
+  otro miembro puede avalarte un préstamo o una rehipoteca; si no pagas, el banco le
+  reclama a él y tú le debes lo que pague. **Préstamos** personales para
   lo que quieras (también la entrada de un piso): todas tus cuotas juntas,
   hipotecas incluidas, no pasan del 35 % de lo que ingresas; el tipo es el Euríbor
   más un diferencial que depende de tu perfil (préstamos devueltos, inmuebles,
@@ -451,11 +460,12 @@ python -m bot
   protección de pagos opcional. Se puede desistir hasta la primera cuota y
   amortizar antes con la compensación legal (1 % o 0,5 %). Quien no paga entra en
   el fichero de morosos (ni préstamos ni hipotecas) y la deuda se embarga de la
-  nómina por tramos del salario mínimo. El **Monte de Piedad** compra lo que
-  compraste en la tienda al 85 % de lo que pagaste o te presta el 55 % por
-  empeñarlo (lo recuperas devolviendo un 5 % más en 3 días); paga con la caja de
-  la tienda y no acepta lo regalado ni lo numerado. **Cuentas**: lo que ha cobrado
-  la tienda, lo que ha prestado y cobrado el banco y lo que ha ganado el casino.
+  nómina por tramos del salario mínimo. **Cuentas**: lo que ha cobrado la tienda,
+  lo que ha prestado y cobrado el banco y lo que ha ganado el casino.
+- **Monte de Piedad** (en el panel de `vender`): compra lo que compraste en la
+  tienda al 85 % de lo que pagaste o te presta el 55 % por empeñarlo (lo
+  recuperas devolviendo un 5 % más en 3 días); paga con la caja de la tienda y no
+  acepta lo regalado ni lo numerado. Hasta la 9.0.0 era un mostrador de `banco`.
 - **Donativos** (`donar`): cuatro ONGs de broma que hacen lo contrario de lo
   que dicen. Donar es gastar (el dinero se queda en la ONG), pero desgrava en
   la renta del lunes: 80 % de los primeros 250 € al año (unos 1.202 Y$ a la
@@ -1285,8 +1295,8 @@ src/bot/
 │   ├── donations.py     # donar: ONGs de broma y donativos deducibles
 │   ├── bizum.py         # bizum: transferencias entre miembros, exentas
 │   ├── shop.py          # tienda y mochila: compras y carrito con IGIC, deseos, alquileres
-│   ├── rastro.py        # vender y rastro: ofertas, puestos y subastas de segunda mano
-│   ├── banco.py         # banco: préstamos, Monte de Piedad y cuentas del servidor
+│   ├── rastro.py        # vender (panel y atajo), trueque, rastro y el Monte de Piedad
+│   ├── banco.py         # banco: préstamos y cuentas del servidor
 │   ├── pieles.py        # pieles: panel de skins e imágenes del tapete propio
 │   ├── shop_admin.py    # Trastienda de `catalogo`: panel y formularios
 │   ├── shop_front.py    # escaparate compacto, ficha, carrito y lista de deseos

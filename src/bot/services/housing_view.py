@@ -90,6 +90,8 @@ NEWS_TEXT = {
     "cerradura": "Cambio de cerradura: {amount}",
     "hipoteca": "{who} firma una hipoteca de {amount}",
     "amortiza": "{who} cancela la hipoteca: {amount}",
+    "rehipoteca": "{who} rehipoteca su parte por {amount}",
+    "anticipo": "{who} cede sus rentas al banco por un anticipo de {amount}",
     "ejecucion": "El banco ejecuta la hipoteca de {who}: subasta por {amount}",
     "se_muda": "{who} se muda aquí",
     "firma_miembro": "{who} firma el alquiler por {amount} al mes",
@@ -1408,7 +1410,8 @@ def pending_items(
         due = (mortgage.payment if mortgage.months_left > 0 else 0) + mortgage.unpaid_amount
         if not due:
             continue
-        text = f"Hipoteca de {_place(market, mortgage.listing)}: {format_amount(due)}"
+        what = "Rehipoteca" if mortgage.remortgage else "Hipoteca"
+        text = f"{what} de {_place(market, mortgage.listing)}: {format_amount(due)}"
         kind = "mortgage"
         if mortgage.unpaid_count:
             kind = "mortgage_unpaid"
@@ -1424,7 +1427,12 @@ def pending_items(
         # La primera cuota se cobra la noche siguiente a firmar (`Loan.first_day`).
         first = date.fromisoformat(loan.first_day)
         when = tonight if today >= first else _midnight(first + timedelta(days=1))
-        text = f"Préstamo #{loan.id} del banco: {format_amount(due)}"
+        what = (
+            f"Anticipo de rentas de {_place(market, loan.listing)}"
+            if loan.advance and loan.listing
+            else f"Préstamo #{loan.id} del banco"
+        )
+        text = f"{what}: {format_amount(due)}"
         kind = "loan"
         if loan.unpaid_count:
             kind = "loan_unpaid"
@@ -1433,6 +1441,35 @@ def pending_items(
                 f"{lending.DEFAULT_INSTALLMENTS}, vence entero"
             )
         items.append(Pending(Side.PAY, kind, "💳", text, due, when))
+    for debt in market.guaranteed_by(user_id):
+        # Lo que avala: no se paga, pero si el avalado deja de pagar, se lo reclaman.
+        items.append(
+            Pending(
+                Side.HELD, "guarantee", "🤝",
+                f"Avalas a <@{debt.user_id}>: si deja de pagar, el banco te reclama lo que "
+                f"quede ({format_amount(debt.owed)}). Su cuota cuenta en tu 35 %",
+                debt.owed, None,
+            )
+        )  # fmt: skip
+    for (creditor, debtor), amount in market.member_debts.items():
+        if debtor == user_id:
+            items.append(
+                Pending(
+                    Side.PAY, "guarantee_debt", "🤝",
+                    f"Debes {format_amount(amount)} a <@{creditor}>, que pagó por tu aval: se "
+                    "cobra cada noche de lo que tengas y se embarga de tus nóminas",
+                    amount, tonight,
+                )
+            )  # fmt: skip
+        elif creditor == user_id:
+            items.append(
+                Pending(
+                    Side.COLLECT, "guarantee_credit", "🤝",
+                    f"<@{debtor}> te debe {format_amount(amount)} de lo que pagaste por su aval: "
+                    "te lo devuelve cada noche de lo que tenga",
+                    amount, tonight,
+                )
+            )  # fmt: skip
     if debt := market.bank_debts.get(user_id, 0):
         items.append(
             Pending(

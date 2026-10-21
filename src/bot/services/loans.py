@@ -35,6 +35,17 @@ y el 0,5 % si queda menos.
   salario mínimo, como el art. 607 LEC** (`wage_garnish`). El IMV no se embarga.
 
 Con deuda con Hacienda, el banco no presta (`EconomyService.housing` embargaría lo prestado).
+
+**Rehipotecar** (🔐 Garantías, `remortgage_quote`): una hipoteca nueva sobre participaciones
+que ya se tienen, para sacar dinero de lo que valen. Presta sobre lo que valen hoy en el
+mercado (la tasación, que paga quien pide) hasta el 80 % si es vivienda y el 60 % si no, menos
+lo que ya se debe de ese inmueble. Diseño entero en `docs/garantias.md`.
+
+**Anticipo de rentas** (💸 Anticipos, `advance_quote`): el banco te adelanta hoy 3, 6 o 12
+meses de tu parte de la renta de un inmueble alquilado (el valor actual de esas cuotas al
+Euríbor + 3 %, menos un 1 % de apertura) y se los cobra cada noche como un préstamo. No mira
+el 35 % al firmar (lo paga el inquilino), pero la cuota cuenta después. Uno por inmueble, no
+cuenta en `MAX_LOANS` y, si el inquilino no paga, la pones tú.
 """
 
 from __future__ import annotations
@@ -42,8 +53,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from bot.services.housing import DTI_MAX, IPS_RATE, installment
-from bot.services.taxes import WAGE_YAPDOLLARS_PER_EURO
+from bot.services.housing import DTI_MAX, IPS_RATE, MORTGAGE_SPREAD, installment
+from bot.services.taxes import WAGE_YAPDOLLARS_PER_EURO, igic
 
 #: Diferencial sobre el Euríbor de un cliente sin historial (los préstamos personales van
 #: del 6 al 9 % en 2026).
@@ -57,7 +68,7 @@ TERMS = (12, 24, 48, 96)
 #: 10 Y$ = 1 €, como un préstamo personal grande). Lo que de verdad limita es el 35 %.
 MIN_PRINCIPAL = 1_000
 MAX_PRINCIPAL = 750_000
-#: Préstamos abiertos a la vez por persona.
+#: Préstamos personales abiertos a la vez por persona (los anticipos de rentas van aparte).
 MAX_LOANS = 3
 #: Comisión de apertura, sobre lo prestado.
 OPENING_FEE = 0.01
@@ -129,8 +140,12 @@ class Factor:
     points: float
 
 
-def profile_factors(profile: Profile, *, insured: bool) -> list[Factor]:
-    """Lo que sube o baja el diferencial de un miembro, en el orden en que se enseña."""
+def profile_factors(profile: Profile, *, insured: bool, guaranteed: bool = False) -> list[Factor]:
+    """Lo que sube o baja el diferencial de un miembro, en el orden en que se enseña.
+
+    Args:
+        guaranteed: Si lo avala otro miembro (`GUARANTOR_DISCOUNT`).
+    """
     out = []
     if profile.paid_loans:
         n = profile.paid_loans
@@ -155,6 +170,8 @@ def profile_factors(profile: Profile, *, insured: bool) -> list[Factor]:
         out.append(Factor("Sin nómina: solo rentas", 0.01))
     if insured:
         out.append(Factor("Con el seguro de protección de pagos", -INSURANCE_DISCOUNT))
+    if guaranteed:
+        out.append(Factor("Con avalista", -GUARANTOR_DISCOUNT))
     return out
 
 
@@ -308,3 +325,210 @@ def wage_garnish(earlier_today: int, net: int) -> int:
     """
     before = max(0, earlier_today)
     return max(0, int(_scaled(before + max(0, net))) - int(_scaled(before)))
+
+
+# -- Rehipotecar ---------------------------------------------------------------------------
+
+#: Lo más que presta sobre lo tasado: el 80 % si es vivienda y el 60 % si no (locales,
+#: garajes, trasteros, naves), los límites de los préstamos que respaldan los bonos
+#: garantizados (art. 23.2 del RDL 24/2021; antes, art. 5 del RD 716/2009). De ahí se resta lo
+#: que ya se debe de ese inmueble.
+REMORTGAGE_LTV_HOME = 0.8
+REMORTGAGE_LTV_OTHER = 0.6
+#: Diferencial sobre el Euríbor: medio punto más que la hipoteca de compra (va detrás en el
+#: rango y no compra nada). Fijo al firmar, como las demás hipotecas.
+REMORTGAGE_SPREAD = MORTGAGE_SPREAD + 0.005
+#: Plazos que se ofrecen, en meses (días del bot): 10, 20 y 30 años.
+REMORTGAGE_TERMS = (120, 240, 360)
+#: Lo menos que presta (1.000 € a la escala general).
+REMORTGAGE_MIN = 10_000
+#: Comisión de apertura, sobre lo prestado (art. 14.4 de la Ley 5/2019: una sola vez).
+#: Desaparece. Es un préstamo hipotecario: va por la Ley 5/2019 y no por la de crédito al
+#: consumo (art. 3.a de la Ley 16/2011), así que no hay desistimiento.
+REMORTGAGE_FEE = 0.005
+#: La tasación la paga quien pide (art. 14.1.e.i de la Ley 5/2019): el 0,2 % de lo tasado,
+#: con un mínimo de 250 € a la escala general (las tasadoras cobran de 250 a 600 € por una
+#: vivienda). Es un servicio profesional: lleva el IGIC general, que va al Estado. Notaría,
+#: registro y gestoría (art. 14.1.e.ii-iii) y el AJD (art. 29 del RDL 1/1993, tras el RDL
+#: 17/2018) los paga el banco, que no existe.
+APPRAISAL_RATE = 0.002
+APPRAISAL_MIN = 2_500
+
+
+def remortgage_rate(euribor: float, *, guaranteed: bool = False) -> float:
+    """Tipo de una rehipoteca: Euríbor más el diferencial (medio punto menos con avalista)."""
+    return round(euribor + REMORTGAGE_SPREAD - (GUARANTOR_DISCOUNT if guaranteed else 0), 4)
+
+
+def remortgage_room(value: int, owed: int, *, home: bool) -> int:
+    """Lo más que presta sobre unas participaciones que valen `value` y ya deben `owed`."""
+    share = REMORTGAGE_LTV_HOME if home else REMORTGAGE_LTV_OTHER
+    return max(0, math.floor(value * share) - owed)
+
+
+def appraisal_fee(value: int) -> int:
+    """Lo que cuesta tasar algo que vale `value` (sin su IGIC)."""
+    return max(APPRAISAL_MIN, math.ceil(max(0, value) * APPRAISAL_RATE))
+
+
+@dataclass(frozen=True, slots=True)
+class RemortgageQuote:
+    """La oferta de una rehipoteca, como la ficha europea de información normalizada.
+
+    Attributes:
+        principal: Lo que se presta.
+        months: Plazo en meses (días del bot).
+        rate: TIN anual fijo.
+        payment: Cuota de cada mes.
+        fee: Comisión de apertura (desaparece).
+        appraisal: La tasación (desaparece).
+        appraisal_igic: Su IGIC (al Estado).
+    """
+
+    principal: int
+    months: int
+    rate: float
+    payment: int
+    fee: int
+    appraisal: int
+    appraisal_igic: int
+
+    @property
+    def received(self) -> int:
+        """Lo que llega al monedero al firmar: lo prestado menos comisión y tasación."""
+        return self.principal - self.fee - self.appraisal - self.appraisal_igic
+
+    @property
+    def total(self) -> int:
+        """Lo que se paga en cuotas si se lleva hasta el final."""
+        return self.payment * self.months
+
+    @property
+    def cost(self) -> int:
+        """Lo que cuesta: todo lo que se paga de más sobre lo recibido."""
+        return self.total - self.received
+
+    @property
+    def tae(self) -> float:
+        """TAE con la comisión y la tasación dentro."""
+        return annual_equivalent(self.received, self.payment, self.months)
+
+
+def remortgage_quote(principal: int, months: int, rate: float, value: int) -> RemortgageQuote:
+    """La oferta de prestar `principal` a `months` meses sobre algo tasado en `value`."""
+    appraisal = appraisal_fee(value)
+    return RemortgageQuote(
+        principal=principal,
+        months=months,
+        rate=rate,
+        payment=installment(principal, rate, months),
+        fee=math.ceil(principal * REMORTGAGE_FEE),
+        appraisal=appraisal,
+        appraisal_igic=igic(appraisal),
+    )
+
+
+def max_remortgage(ltv_room: int, dti_room: int, rate: float, months: int) -> int:
+    """Lo más que se puede pedir: lo que deja la tasación y que la cuota quepa en el 35 %."""
+    if ltv_room <= 0 or dti_room <= 0:
+        return 0
+    monthly_rate = rate / 12
+    factor = months if monthly_rate <= 0 else (1 - (1 + monthly_rate) ** -months) / monthly_rate
+    guess = min(ltv_room, int(dti_room * factor))
+    while guess > 0 and installment(guess, rate, months) > dti_room:
+        guess -= max(1, guess // 1_000)
+    return max(0, guess)
+
+
+# -- Avalista ------------------------------------------------------------------------------
+
+#: Cómo se apunta en el `aval` de un préstamo o una hipoteca que lo avala un miembro.
+GUARANTOR_PREFIX = "miembro:"
+#: Lo que baja el tipo con un avalista: el banco comparte el riesgo.
+GUARANTOR_DISCOUNT = 0.005
+#: Avales vivos a la vez por miembro (lo que deja ver la CIRBE a cualquier banco).
+MAX_GUARANTEES = 2
+#: Lo que espera la petición de aval a que el avalista conteste.
+GUARANTEE_SECONDS = 600
+
+
+def guarantor_tag(user_id: int) -> str:
+    """El `aval` de algo que avala el miembro `user_id`."""
+    return f"{GUARANTOR_PREFIX}{user_id}"
+
+
+def guarantor_of(aval: str | None) -> int | None:
+    """Quién avala algo (su `aval`), o `None` si no lo avala un miembro."""
+    if aval is None or not aval.startswith(GUARANTOR_PREFIX):
+        return None
+    return int(aval.removeprefix(GUARANTOR_PREFIX))
+
+
+def guaranteed_room(own: int, guarantor: int) -> int:
+    """Lo que cabe al mes con un avalista: lo tuyo en el 35 % más lo suyo en su 35 %."""
+    return max(0, own) + max(0, guarantor)
+
+
+# -- Anticipo de rentas --------------------------------------------------------------------
+
+#: Meses de renta que adelanta el banco (días del bot).
+ADVANCE_TERMS = (3, 6, 12)
+#: Diferencial sobre el Euríbor: tres puntos, porque cobra de una renta que puede faltar
+#: (en España lo hacen empresas de factoring de alquileres, más caras que una hipoteca).
+ADVANCE_SPREAD = 0.03
+#: Comisión de apertura, sobre lo adelantado. Desaparece, como la de los préstamos.
+ADVANCE_FEE = 0.01
+
+
+@dataclass(frozen=True, slots=True)
+class AdvanceQuote:
+    """La oferta de un anticipo de rentas: el banco compra `months` cuotas de tu renta.
+
+    Attributes:
+        payment: La cuota: tu parte de la renta de hoy, que el banco se cobra cada noche.
+        months: Cuántas cuotas (meses, días del bot).
+        rate: TIN anual fijo con el que se descuentan.
+        principal: Lo que adelanta: el valor actual de las cuotas al tipo mensual `rate / 12`,
+            redondeado hacia abajo (así la última cuota siempre salda lo que queda).
+        fee: Comisión de apertura (desaparece).
+    """
+
+    payment: int
+    months: int
+    rate: float
+    principal: int
+    fee: int
+
+    @property
+    def received(self) -> int:
+        """Lo que llega al monedero al firmar: lo adelantado menos la comisión."""
+        return self.principal - self.fee
+
+    @property
+    def total(self) -> int:
+        """Lo que se paga en cuotas si se lleva hasta el final."""
+        return self.payment * self.months
+
+    @property
+    def cost(self) -> int:
+        """Lo que cuesta: las rentas que cedes menos lo que recibes hoy."""
+        return self.total - self.received
+
+    @property
+    def tae(self) -> float:
+        """TAE con la comisión dentro."""
+        return annual_equivalent(self.received, self.payment, self.months)
+
+
+def advance_quote(payment: int, months: int, rate: float) -> AdvanceQuote:
+    """La oferta de adelantar `months` cuotas de `payment` al tipo `rate`."""
+    monthly_rate = rate / 12
+    factor = months if monthly_rate <= 0 else (1 - (1 + monthly_rate) ** -months) / monthly_rate
+    principal = math.floor(max(0, payment) * factor)
+    return AdvanceQuote(
+        payment=payment,
+        months=months,
+        rate=rate,
+        principal=principal,
+        fee=math.ceil(principal * ADVANCE_FEE),
+    )

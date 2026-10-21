@@ -1,4 +1,4 @@
-"""Persistencia del Monte de Piedad (`banco`): papeletas de empeño y lo que se le ha vendido.
+"""Persistencia del Monte de Piedad (`vender`): papeletas de empeño y lo que se le ha vendido.
 
 Tablas (en el mismo archivo SQLite que el resto del bot):
 

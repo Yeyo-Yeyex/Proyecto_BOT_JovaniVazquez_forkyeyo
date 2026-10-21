@@ -134,6 +134,8 @@ from bot.services.interest import (
     RESIST_BALANCE,
 )
 from bot.services.levels import TIMEZONE
+from bot.services.loans import ADVANCE_TERMS, REMORTGAGE_MIN, REMORTGAGE_TERMS
+from bot.services.loans import MAX_GUARANTEES as LOAN_MAX_GUARANTEES
 from bot.services.loans import MAX_LOANS as LOAN_MAX_LOANS
 from bot.services.loans import MAX_PRINCIPAL as LOAN_MAX_PRINCIPAL
 from bot.services.loans import TERMS as LOAN_TERMS
@@ -7511,6 +7513,28 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "rastro_list_1", "Manta en el suelo", "Pon algo en un puesto del Rastro.", C),
         (25, "rastro_list_25", "Puesto fijo en el Rastro", "Pon 25 cosas en el Rastro.", R),
     ])  # fmt: skip
+    # 🤝 Ofertas directas a un miembro (`vender` con comprador o desde el panel).
+    a += _tiers("rastro", "market_offers", [
+        (1, "rastro_offer_1", "Una oferta que no podrás rechazar",
+         "Ofrece algo a un miembro con `vender`.", C),
+        (25, "rastro_offer_25", "Comercial a puerta fría", "Haz 25 ofertas a miembros.", R),
+    ])  # fmt: skip
+    a.append(
+        Achievement(
+            id="vender_four_ways",
+            name="Vendo Opel Corsa",
+            description=(
+                "Haz una oferta a un miembro, monta un puesto en el Rastro, vende algo al "
+                "Monte de Piedad y empeña algo."
+            ),
+            category="rastro",
+            rarity=R,
+            conditions=(
+                ("market_offers", 1), ("market_listings", 1), ("monte_sold", 1),
+                ("monte_pawned", 1),
+            ),
+        )
+    )  # fmt: skip
     a += _tiers("rastro", "market_bids", [
         (1, "rastro_bid_1", "A la una…", "Puja en una subasta del Rastro.", C),
         (25, "rastro_bid_25", "A las dos…", "Puja 25 veces.", R),
@@ -7608,7 +7632,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "trueque_titulos", "Cambio de cromos",
          "Cambia un título por otro en un trueque.", R),
     ])  # fmt: skip
-    # El Monte de Piedad de `banco` (cogs/banco.py: monte_*_stats).
+    # El Monte de Piedad del panel de `vender` (cogs/rastro.py: monte_*_stats).
     a += _tiers("rastro", "monte_sold", [
         (1, "monte_sold_1", "Compro oro", "Vende algo al Monte de Piedad.", C),
         (10, "monte_sold_10", "Vaciando el trastero", "Vende 10 cosas al Monte de Piedad.", R),
@@ -9147,6 +9171,124 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("bizum", "asnef_seen", [
         (1, "asnef_seen", "En la lista negra", "Abre el banco estando en el fichero de morosos.",
          C, True),
+    ])  # fmt: skip
+    # Rehipotecas (`banco`, 🔐 Garantías: remortgage_*_stats).
+    a += _tiers("bizum", "remortgages_signed", [
+        (1, "remortgage_1", "Ladrillo líquido", "Rehipoteca un inmueble.", C),
+        (5, "remortgage_5", "Exprimir el ladrillo", "Firma 5 rehipotecas.", R),
+        (20, "remortgage_20", "Volver a 2006", "Firma 20 rehipotecas.", E),
+    ])  # fmt: skip
+    a += _tiers("bizum", "remortgage_principal_max", [
+        (500_000, "remortgage_500k", "Jugo de pared",
+         "Saca 500.000 Y$ o más de una sola rehipoteca.", R),
+        (2_000_000, "remortgage_2m", "Cajero de hormigón",
+         "Saca 2.000.000 Y$ o más de una sola rehipoteca.", E),
+        (10_000_000, "remortgage_10m", "Pelotazo con escrituras",
+         "Saca 10.000.000 Y$ o más de una sola rehipoteca.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("bizum", "remortgages_open_max", [
+        (3, "remortgage_open_3", "Ladrillos de Jenga",
+         "Ten 3 rehipotecas abiertas a la vez.", R),
+        (10, "remortgage_open_10", "Tetris de escrituras",
+         "Ten 10 rehipotecas abiertas a la vez.", E),
+    ])  # fmt: skip
+    a += _tiers("bizum", "remortgage_home", [
+        (1, "remortgage_home", "Mi casa, mi cajero",
+         "Rehipoteca la casa en la que vives.", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "remortgage_not_home", [
+        (1, "remortgage_garage", "Avalado por un trastero",
+         "Rehipoteca algo que no es vivienda: un local, un garaje, un trastero o una nave.", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "remortgage_shortest", [
+        (1, "remortgage_120", "Prisa por desatarse",
+         f"Rehipoteca al plazo más corto ({min(REMORTGAGE_TERMS)} meses).", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "remortgage_full", [
+        (1, "remortgage_full", "Hasta el último ladrillo",
+         "Pide en una rehipoteca todo lo que deja la tasación.", R),
+    ])  # fmt: skip
+    a += _tiers("bizum", "remortgage_minimum", [
+        (1, "remortgage_min", "Para pipas y una caña",
+         f"Rehipoteca por el mínimo, {_thousands(REMORTGAGE_MIN)} Y$.", C, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "remortgage_executed", [
+        (1, "remortgage_executed", "Se pinchó la burbuja",
+         "Que el banco ejecute un inmueble que habías rehipotecado.", R, True),
+    ])  # fmt: skip
+    # Avales entre miembros (`banco`, cogs/banco_avales.py y el cierre de `pisos`:
+    # guarantee_*_stats).
+    a += _tiers("bizum", "guarantees_given", [
+        (1, "guarantee_1", "Pongo la mano en el fuego", "Avala a otro miembro.", C),
+        (5, "guarantee_5", "Fiador de confianza", "Avala 5 préstamos o rehipotecas.", R),
+        (20, "guarantee_20", "El aval del barrio", "Avala 20 préstamos o rehipotecas.", E),
+    ])  # fmt: skip
+    a += _tiers("bizum", "guarantees_received", [
+        (1, "guaranteed_1", "Tengo un amigo que firma", "Consigue que alguien te avale.", C),
+        (5, "guaranteed_5", "Agenda de avalistas", "Consigue 5 avales.", R),
+    ])  # fmt: skip
+    a += _tiers("bizum", "guarantees_open_max", [
+        (LOAN_MAX_GUARANTEES, "guarantee_open_max", "Firmo por partida doble",
+         f"Ten {LOAN_MAX_GUARANTEES} avales vivos a la vez, el máximo.", R),
+    ])  # fmt: skip
+    a += _tiers("bizum", "guarantee_refused", [
+        (1, "guarantee_refused", "Antes muerto que fiador",
+         "Di que no a una petición de aval.", C, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "guarantee_claimed", [
+        (1, "guarantee_claimed", "Me quemé la mano",
+         "Que el banco te reclame lo que avalaste.", R, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "guarantee_defaulted", [
+        (1, "guarantee_defaulted", "Con amigos así…",
+         "Que el banco reclame a tu avalista porque no pagaste.", R, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "guarantee_repaid", [
+        (10_000, "guarantee_repaid_10k", "Las cuentas claras",
+         "Devuelve 10.000 Y$ a un avalista que pagó por ti.", R),
+    ], unit="money")  # fmt: skip
+    a += _tiers("bizum", "guarantee_recovered", [
+        (10_000, "guarantee_recovered_10k", "Recuperando la fe",
+         "Recupera 10.000 Y$ de alguien a quien avalaste.", R),
+    ], unit="money")  # fmt: skip
+    # Anticipos de rentas (`banco`, 💸 Anticipos: advance_*_stats).
+    a += _tiers("bizum", "advances_signed", [
+        (1, "advance_1", "Pan para hoy", "Pide un anticipo de rentas.", C),
+        (5, "advance_5", "Casero con prisas", "Firma 5 anticipos de rentas.", R),
+        (20, "advance_20", "Regreso al cobro", "Firma 20 anticipos de rentas.", E),
+    ])  # fmt: skip
+    a += _tiers("bizum", "advance_longest", [
+        (1, "advance_12", "Un año en una noche",
+         f"Pide un anticipo de {max(ADVANCE_TERMS)} meses de renta.", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "advance_shortest", [
+        (1, "advance_3", "Para ir tirando",
+         f"Pide un anticipo de solo {min(ADVANCE_TERMS)} meses de renta.", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "advance_principal_max", [
+        (100_000, "advance_100k", "Más vale renta en mano",
+         "Consigue que el banco te adelante 100.000 Y$ o más de una vez.", R),
+        (500_000, "advance_500k", "Factoring de barrio",
+         "Consigue que el banco te adelante 500.000 Y$ o más de una vez.", E),
+        (1_000_000, "advance_1m", "El inquilino millonario",
+         "Consigue que el banco te adelante 1.000.000 Y$ o más de una vez.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("bizum", "advances_open_max", [
+        (3, "advance_open_3", "Tres casas y ni una renta",
+         "Ten anticipos de rentas sobre 3 inmuebles a la vez.", R),
+    ])  # fmt: skip
+    a += _tiers("bizum", "advance_repaid", [
+        (1, "advance_repaid", "Recompra de futuros",
+         "Cancela un anticipo de rentas antes de tiempo.", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "advance_desisted", [
+        (1, "advance_desisted", "Donde dije renta, digo Diego",
+         "Desiste de un anticipo de rentas antes de la primera cuota.", C, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "advance_orphan", [
+        (1, "advance_orphan", "El inquilino eres tú",
+         "Paga tú la cuota de un anticipo porque el inquilino se fue o dejó de pagar.", R,
+         True),
     ])  # fmt: skip
     a += _tiers("bizum", "bank_books", [
         (1, "bank_books_1", "Auditor por un día",
@@ -24094,7 +24236,7 @@ def saldo_peek_stats(*, own_balance: int, their_balance: int) -> StatDelta:
 
 
 def monte_sale_stats(*, amount: int, title: bool) -> StatDelta:
-    """Estadísticas de quien vende algo al Monte de Piedad (`banco`).
+    """Estadísticas de quien vende algo al Monte de Piedad (panel de `vender`).
 
     Args:
         amount: Lo que ha pagado el Monte.
@@ -24169,6 +24311,106 @@ def loan_night_stats(*, finished: int, covered: int, unpaid: int, defaulted: int
     return delta
 
 
+def remortgage_signed_stats(
+    *, principal: int, months: int, room: int, habitual: bool, dwelling: bool, open_count: int
+) -> StatDelta:
+    """Estadísticas de quien firma una rehipoteca (`banco`, 🔐 Garantías).
+
+    Args:
+        room: Lo más que le prestaba la tasación (pedirlo entero es «hasta el último ladrillo»).
+        habitual: Si es la casa en la que vive.
+        dwelling: Si es vivienda (si no, un local, un garaje, un trastero…).
+        open_count: Rehipotecas que tiene abiertas contando esta.
+    """
+    delta = StatDelta(
+        add={"remortgages_signed": 1},
+        peak={"remortgage_principal_max": principal, "remortgages_open_max": open_count},
+    )
+    for stat, hit in (
+        ("remortgage_home", habitual),
+        ("remortgage_not_home", not dwelling),
+        ("remortgage_shortest", months == min(REMORTGAGE_TERMS)),
+        ("remortgage_full", principal >= room),
+        ("remortgage_minimum", principal == REMORTGAGE_MIN),
+    ):
+        if hit:
+            delta.add[stat] = 1
+    return delta
+
+
+def guarantee_signed_stats(*, given: bool, open_count: int = 0) -> StatDelta:
+    """Estadísticas de un aval firmado: de quien avala (`given`) o de quien recibe el aval.
+
+    Args:
+        open_count: Avales vivos de quien avala, contando este.
+    """
+    if not given:
+        return StatDelta(add={"guarantees_received": 1})
+    return StatDelta(add={"guarantees_given": 1}, peak={"guarantees_open_max": open_count})
+
+
+def guarantee_refused_stats() -> StatDelta:
+    """Estadísticas de quien dice que no a una petición de aval."""
+    return StatDelta(add={"guarantee_refused": 1})
+
+
+def guarantee_night_stats(
+    *, claimed: int = 0, defaulted: int = 0, repaid: int = 0, recovered: int = 0
+) -> StatDelta:
+    """Estadísticas de los avales de un miembro en el cierre de una noche de `pisos`.
+
+    Args:
+        claimed: Lo que el banco le reclama hoy como avalista.
+        defaulted: Lo que el banco reclama hoy a su avalista por él.
+        repaid: Lo que hoy ha devuelto a su avalista.
+        recovered: Lo que hoy le ha devuelto su avalado.
+    """
+    delta = StatDelta()
+    for stat, amount in (
+        ("guarantee_claimed", claimed),
+        ("guarantee_defaulted", defaulted),
+        ("guarantee_repaid", repaid),
+        ("guarantee_recovered", recovered),
+    ):
+        if amount:
+            delta.add[stat] = 1 if stat in ("guarantee_claimed", "guarantee_defaulted") else amount
+    return delta
+
+
+def advance_signed_stats(*, principal: int, months: int, open_count: int) -> StatDelta:
+    """Estadísticas de quien firma un anticipo de rentas (`banco`, 💸 Anticipos).
+
+    Args:
+        principal: Lo que adelanta el banco.
+        months: Meses de renta adelantados.
+        open_count: Anticipos vivos que tiene contando este (uno por inmueble).
+    """
+    delta = StatDelta(
+        add={"advances_signed": 1},
+        peak={"advance_principal_max": principal, "advances_open_max": open_count},
+    )
+    if months == max(ADVANCE_TERMS):
+        delta.add["advance_longest"] = 1
+    if months == min(ADVANCE_TERMS):
+        delta.add["advance_shortest"] = 1
+    return delta
+
+
+def advance_closed_stats(*, status: str) -> StatDelta:
+    """Estadísticas de quien cierra un anticipo a mano: cancelado (`pagado`) o desistido."""
+    return StatDelta(add={"advance_repaid" if status == "pagado" else "advance_desisted": 1})
+
+
+def advance_orphan_stats() -> StatDelta:
+    """Estadísticas de quien paga una cuota del anticipo sin inquilino que pague (la noche)."""
+    return StatDelta(add={"advance_orphan": 1})
+
+
+def remortgage_executed_stats() -> StatDelta:
+    """Estadísticas de quien pierde en una ejecución un inmueble que había rehipotecado."""
+    return StatDelta(add={"remortgage_executed": 1})
+
+
 def bank_panel_stats(*, asnef: bool = False, books: bool = False) -> StatDelta:
     """Estadísticas de quien abre `banco` (en el fichero de morosos) o mira las cuentas."""
     delta = StatDelta()
@@ -24187,6 +24429,11 @@ def _sunday(when: datetime) -> dict[str, int]:
 def market_listing_stats(*, when: datetime) -> StatDelta:
     """Estadísticas de quien pone algo en un puesto del Rastro."""
     return StatDelta(add={"market_listings": 1, **_sunday(when)})
+
+
+def market_offer_stats() -> StatDelta:
+    """Estadísticas de quien publica una oferta de venta directa a un miembro."""
+    return StatDelta(add={"market_offers": 1})
 
 
 def market_withdraw_stats() -> StatDelta:

@@ -68,8 +68,8 @@ from discord import app_commands, ui
 from discord.ext import commands, tasks
 
 from bot.cogs import achievements as logros
+from bot.cogs import banco, renta
 from bot.cogs import pets as mascotas
-from bot.cogs import renta
 from bot.cogs import shop as tienda
 from bot.cogs import work as curro
 from bot.repositories.economy import BalanceLimitError, InsufficientFundsError
@@ -92,6 +92,8 @@ from bot.services import housing as rules
 from bot.services import housing_view as view
 from bot.services.achievements import (
     StatDelta,
+    advance_orphan_stats,
+    guarantee_night_stats,
     housing_action_stats,
     housing_day_stats,
     housing_panel_stats,
@@ -99,6 +101,7 @@ from bot.services.achievements import (
     housing_sale_stats,
     housing_tax_stats,
     loan_night_stats,
+    remortgage_executed_stats,
 )
 from bot.services.economy import EconomyService, format_amount
 from bot.services.housing_catalog import (
@@ -1109,6 +1112,8 @@ class Panel(ui.View):
                 self._button("🤝 Vender a un miembro", "vender_miembro", self._sell_member, row=3)
                 self._button("🔨 Subastar", "subastar", self._auction_form, row=3)
                 self._button("🏗️ Reformas", "reformas", self._go_reforms, row=3)
+                self._button("🏦 Rehipotecar", "rehipotecar", self._remortgage, row=3)
+                self._button("💸 Adelantar rentas", "anticipo", self._advance, row=3)
 
     def _reform_buttons(self) -> None:
         """🏗️ Reformas: una por botón, con dos clics porque cuesta dinero."""
@@ -1310,6 +1315,20 @@ class Panel(ui.View):
 
     async def _go_reforms(self, interaction: discord.Interaction) -> None:
         await self._go(interaction, REFORMAS)
+
+    async def _remortgage(self, interaction: discord.Interaction) -> None:
+        """🏦 Rehipotecar: abre `banco` en 🔐 Garantías con este inmueble, en privado."""
+        if not await banco.open_guarantees(self.cog.bot, interaction, self.listing):
+            await interaction.response.send_message(
+                "El banco está cerrado ahora mismo.", ephemeral=True
+            )
+
+    async def _advance(self, interaction: discord.Interaction) -> None:
+        """💸 Adelantar rentas: abre `banco` en 💸 Anticipos con este inmueble, en privado."""
+        if not await banco.open_advances(self.cog.bot, interaction, self.listing):
+            await interaction.response.send_message(
+                "El banco está cerrado ahora mismo.", ephemeral=True
+            )
 
     async def _go_decisions(self, interaction: discord.Interaction) -> None:
         await self._go(interaction, IMPREVISTOS)
@@ -2728,6 +2747,11 @@ class Pisos(commands.Cog):
             for member in run.aval_executions:
                 await curro.parents_lose_home(self.bot, guild_id, member)
                 events.setdefault(member, []).append("ejecucion_aval")
+            for member in run.remortgage_executions:
+                logros.note(self.bot, guild_id, member, remortgage_executed_stats())
+            self._note_guarantees(guild_id, run.guarantee_claims, run.reimbursements)
+            for member in set(run.advance_orphans):
+                logros.note(self.bot, guild_id, member, advance_orphan_stats())
             everyone = (
                 set(run.members) | set(events) | set(run.bono) | set(run.installments) | set(stars)
             )
@@ -2807,7 +2831,25 @@ class Pisos(commands.Cog):
             await curro.parents_lose_home(self.bot, guild_id, member)
             logros.note(self.bot, guild_id, member,
                         housing_day_stats(rent=0, ibi=0, events=("ejecucion_aval",)))  # fmt: skip
+        for member in run.remortgage_executions:
+            logros.note(self.bot, guild_id, member, remortgage_executed_stats())
+        self._note_guarantees(guild_id, run.guarantee_claims, [])
         return run
+
+    def _note_guarantees(
+        self,
+        guild_id: int,
+        claims: list[tuple[int, int, int]],
+        reimbursements: list[tuple[int, int, int]],
+    ) -> None:
+        """Logros de los avales de la noche: lo que el banco reclama a cada avalista (y por
+        quién) y lo que cada avalado devuelve a su avalista."""
+        for guarantor, debtor, amount in claims:
+            logros.note(self.bot, guild_id, guarantor, guarantee_night_stats(claimed=amount))
+            logros.note(self.bot, guild_id, debtor, guarantee_night_stats(defaulted=amount))
+        for guarantor, debtor, amount in reimbursements:
+            logros.note(self.bot, guild_id, debtor, guarantee_night_stats(repaid=amount))
+            logros.note(self.bot, guild_id, guarantor, guarantee_night_stats(recovered=amount))
 
     async def close_votes(self, guild_id: int) -> list[VoteResult]:
         """Cierra las votaciones de la junta que han acabado, lo anuncia y apunta los logros.
