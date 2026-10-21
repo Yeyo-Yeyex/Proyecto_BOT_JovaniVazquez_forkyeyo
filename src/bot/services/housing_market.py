@@ -107,7 +107,7 @@ class HousingService:
         return await self.repository.income(guild_id, user_id, self.today() - timedelta(days=7))
 
     async def income(self, guild_id: int, user_id: int) -> int:
-        """Lo que el banco cree que gana alguien al día (nóminas y el 70 % de las rentas)."""
+        """Lo que el banco cree que gana alguien al día (nóminas, negocio y 70 % de las rentas)."""
         work = await self.economy.work_net_days(guild_id, user_id, rules.INCOME_DAYS)
         rent = await self.repository.income(
             guild_id, user_id, self.today() - timedelta(days=rules.INCOME_DAYS)
@@ -115,7 +115,7 @@ class HousingService:
         return rules.daily_income(work, rent.rent)
 
     async def work_income(self, guild_id: int, user_id: int) -> int:
-        """Neto medio de nómina al día de los últimos 30 días (lo que miran VPO y bono)."""
+        """Neto medio de nómina y negocio al día de los últimos 30 días (lo miran VPO y bono)."""
         work = await self.economy.work_net_days(guild_id, user_id, rules.INCOME_DAYS)
         return work // rules.INCOME_DAYS
 

@@ -639,14 +639,35 @@ class WorkService:
         vez, aunque se mudara después.
         """
         contract = await self.repository.contract(guild_id, user_id)
-        if contract is not None and self.housing is not None:
-            try:
-                home = await self.housing.home_of(guild_id, user_id)
-            except (OSError, sqlite3.Error):
-                logger.warning("No se pudo mirar la casa de %s en pisos", user_id, exc_info=True)
-                home = None
-            contract.home_regen = HOME_REGEN if home is not None else 1.0
+        if contract is not None:
+            contract.home_regen = await self._home_regen(guild_id, user_id)
         return contract
+
+    async def _home_regen(self, guild_id: int, user_id: int) -> float:
+        """Lo que multiplica la recarga: `HOME_REGEN` si vive en su casa de `pisos`."""
+        if self.housing is None:
+            return 1.0
+        try:
+            home = await self.housing.home_of(guild_id, user_id)
+        except (OSError, sqlite3.Error):
+            logger.warning("No se pudo mirar la casa de %s en pisos", user_id, exc_info=True)
+            return 1.0
+        return HOME_REGEN if home is not None else 1.0
+
+    async def _person(self, guild_id: int, user_id: int) -> Contract:
+        """Quien no tiene contrato: uno sin oficio que solo lleva su batería (`work_people`).
+
+        La familia sale entera: sin curro no hay nada que se la gaste.
+        """
+        saved = await self.repository.person_battery(guild_id, user_id)
+        battery, at = saved or (float(BATTERY_MAX), 0.0)
+        return Contract(
+            job="",
+            level=0,
+            battery=battery,
+            battery_at=at,
+            home_regen=await self._home_regen(guild_id, user_id),
+        )
 
     def _lock(self, guild_id: int, user_id: int) -> asyncio.Lock:
         key = (guild_id, user_id)
@@ -758,7 +779,8 @@ class WorkService:
     async def hire(self, guild_id: int, user_id: int, job_key: str) -> Status:
         """Firma (o cambia de) oficio. Se entra en el puesto en el que se dejó.
 
-        La batería y la familia son de la persona, no del oficio: se conservan.
+        La batería y la familia son de la persona, no del oficio: se conservan. En el primer
+        oficio, la batería gastada en el negocio propio (`work_people`) pasa al contrato.
 
         Raises:
             WorkError: Si el oficio no existe o ya trabaja en él.
@@ -785,6 +807,9 @@ class WorkService:
                 job_since=now,
             )
             settle_branch(contract, job)
+            person = None if current else await self.repository.person_battery(guild_id, user_id)
+            if person is not None:
+                contract.battery, contract.battery_at = person
             if current is not None:
                 settle(current, now)
                 for name in (
@@ -1852,27 +1877,30 @@ class WorkService:
             await self.repository.save_contract(guild_id, user_id, contract)
             return await self._status(guild_id, user_id, contract)
 
-    async def spend_battery(self, guild_id: int, user_id: int, cost: float) -> float | None:
+    async def spend_battery(self, guild_id: int, user_id: int, cost: float) -> float:
         """Gasta batería por un turno en el negocio propio: la batería es de la persona.
 
-        Sin contrato no hay batería que gastar (`None`). Devuelve la batería de antes del
-        turno (para saber si iba reventado). No mueve dinero.
+        Sin contrato se gasta la de `work_people`, que pasa al contrato al firmar el primer
+        oficio. Devuelve la batería de antes del turno (para saber si iba reventado). No
+        mueve dinero.
         """
         async with self._lock(guild_id, user_id):
             now = self._clock()
             contract = await self._contract(guild_id, user_id)
             if contract is None:
-                return None
+                before = battery_now(await self._person(guild_id, user_id), now)
+                await self.repository.save_person_battery(guild_id, user_id, before - cost, now)
+                return before
             before = battery_now(contract, now)
             settle(contract, now)
             contract.battery = before - cost
             await self.repository.save_contract(guild_id, user_id, contract)
             return before
 
-    async def battery(self, guild_id: int, user_id: int) -> float | None:
-        """Batería de ahora (con la recarga), o `None` sin contrato. Solo lee."""
+    async def battery(self, guild_id: int, user_id: int) -> float:
+        """Batería de ahora (con la recarga), tenga contrato o no. Solo lee."""
         contract = await self._contract(guild_id, user_id)
-        return None if contract is None else battery_now(contract, self._clock())
+        return battery_now(contract or await self._person(guild_id, user_id), self._clock())
 
     async def decline_promotion(self, guild_id: int, user_id: int) -> None:
         """Rechaza el ascenso de hoy (mañana te lo vuelven a ofrecer)."""

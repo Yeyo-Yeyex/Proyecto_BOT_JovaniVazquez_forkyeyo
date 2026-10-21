@@ -85,11 +85,12 @@ from bot.services.negocio import (
     BusinessService,
     BusinessStatus,
     Turn,
+    TurnPlan,
     TurnResult,
 )
 from bot.services.pending import Pending, Side
 from bot.services.pets import Event as PetEvent
-from bot.services.pets import Moment
+from bot.services.pets import Moment, Mood
 from bot.services.taxes import TAX_COLLECTOR
 from bot.services.telemetry import LISTENER_ITEM, TimedLock
 from bot.utils.cogs import find_cog
@@ -263,6 +264,8 @@ class NegocioPanel(ui.LayoutView):
         }  # fmt: skip
         self.turn: Turn | None = None
         self.result: TurnResult | None = None
+        #: El azar del próximo turno, para pintar su primer cliente antes de 🔑 Abrir.
+        self.plan: TurnPlan | None = None
         self.token = cog.new_token()
         self._shown = ""
         self._lock = TimedLock("negocio:NegocioPanel._lock")
@@ -320,7 +323,10 @@ class NegocioPanel(ui.LayoutView):
             return []
         out = []
         if self.screen in (PORTADA, CIERRE):
-            out = [almacen_state(business, "Cada compra paga su IGIC. Lo perecedero se estropea.")]
+            out = self._first_client()
+            out.append(
+                almacen_state(business, "Cada compra paga su IGIC. Lo perecedero se estropea.")
+            )
             out.append(cuentas_state(business))
         elif self.screen in (ALMACEN, CUENTAS, ROTULO, CERRAR):
             out = [
@@ -329,6 +335,13 @@ class NegocioPanel(ui.LayoutView):
                 )
             ]
         return out
+
+    def _first_client(self) -> list[dict[str, Any]]:
+        """El primer cliente del próximo turno, ya sorteado: 🔑 Abrir no espera al dibujo."""
+        assert self.status is not None
+        self.plan = self.plan or self.service.plan()
+        game = self.service.preview(self.status, self.plan)
+        return [] if game is None else [cliente_state(self.status.business, game)]
 
     def _next_clients(self) -> list[dict[str, Any]]:
         """El presupuesto del cliente de ahora (taller) y el siguiente cliente."""
@@ -1071,10 +1084,11 @@ class NegocioPanel(ui.LayoutView):
                 await notify(interaction, "Ya estás currando en otro panel. Una cosa cada vez.")
                 return
             try:
-                turn = await self.service.start_turn(self.guild_id, self.owner.id)
+                turn = await self.service.start_turn(self.guild_id, self.owner.id, self.plan)
             except BusinessError as error:
                 await notify(interaction, str(error))
                 return
+            self.plan = None
             self.cog.working.add(key)
             self.turn, self.result, self._finishing = turn, None, False
             self.screen = TURNO
@@ -1162,7 +1176,10 @@ class NegocioPanel(ui.LayoutView):
             self.cog.working.discard((self.guild_id, self.owner.id))
         self.turn, self.result = None, result
         self.screen = CIERRE
-        hint = await renta.hint(self.cog.bot, self.guild_id, self.owner.id, Moment(PetEvent.WORK))
+        grade = result.summary.grade
+        feel = Mood.GOOD if grade in ("S", "A") else Mood.BAD if grade == "D" else None
+        moment = Moment(PetEvent.BUSINESS, feel=feel)
+        hint = await renta.hint(self.cog.bot, self.guild_id, self.owner.id, moment)
         if hint:
             self.notes.append(hint)
         async with self._render_lock:

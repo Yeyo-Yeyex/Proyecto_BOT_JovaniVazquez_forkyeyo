@@ -63,6 +63,7 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
     from test_backgammon_scene import typical_turn
     from test_blackjack_scene import c, dealt, standing
     from test_bus_scene import CARDS
+    from test_business_scene import samples as negocio_samples
     from test_coin_scene import lost_game
     from test_hold_win_scene import STAKE as BOTES_STAKE
     from test_hold_win_scene import bonus_step, find_spin, is_rescue_miss
@@ -83,6 +84,7 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
     from bot.services.backgammon_scene import BackgammonScene
     from bot.services.blackjack_scene import BlackjackScene
     from bot.services.bus_scene import BusScene
+    from bot.services.business_scene import BusinessScene
     from bot.services.coin import Side
     from bot.services.coin_scene import CoinScene
     from bot.services.craps_scene import CrapsScene
@@ -214,7 +216,21 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
                 [housing_view.barrio_state(housing_market(), b.key, 10, NAMES) for b in BARRIOS]
             ),
         ),
-        # Cada una de las otras pantallas del panel.
+        # El negocio de `pala`: el inicio, la portada y un cliente del minijuego (este se
+        # pinta mientras se atiende al de antes, y el primero antes de pulsar 🔑 Abrir).
+        **{
+            name: (
+                lambda: BusinessScene(executable_path=no),
+                lambda s, sample=sample: s.still(negocio_samples()[sample]),
+            )
+            for name, sample in {
+                "negocio_dia": "dia_curro_y_negocio",
+                "negocio": "negocio_cafeteria_centro",
+                "negocio_cliente": "cliente_comandas",
+                "negocio_taller": "cliente_diagnostico",
+            }.items()
+        },
+        # Cada una de las otras pantallas del panel de `pisos`.
         **{
             f"pisos_{screen}": (
                 lambda: HousingScene(executable_path=no),

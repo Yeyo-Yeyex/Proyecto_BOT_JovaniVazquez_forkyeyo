@@ -19654,19 +19654,32 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Haz 1.000 turnos en el negocio.", L),
     ])  # fmt: skip
     a += _tiers("negocio", "biz_turns_cafeteria", [
+        (10, "biz_cafe_10", "El cafelito de las diez", "Haz 10 turnos en una cafetería.", C),
         (100, "biz_cafe_100", "Cortado de tanto trabajar", "Haz 100 turnos en una cafetería.", E),
+        (500, "biz_cafe_500", "Breaking Barista", "Haz 500 turnos en una cafetería.", L),
     ])  # fmt: skip
     a += _tiers("negocio", "biz_turns_tienda", [
+        (10, "biz_tienda_10", "Becario de Tom Nook", "Haz 10 turnos en una tienda.", C),
         (100, "biz_tienda_100", "Vuelva usted mañana", "Haz 100 turnos en una tienda.", E),
+        (500, "biz_tienda_500", "Abierto 25 horas al día", "Haz 500 turnos en una tienda.", L),
     ])  # fmt: skip
     a += _tiers("negocio", "biz_turns_taller", [
+        (10, "biz_taller_10", "Pit stop de Mario Kart", "Haz 10 turnos en un taller.", C),
         (100, "biz_taller_100", "Aceite de motor y sangre", "Haz 100 turnos en un taller.", E),
+        (500, "biz_taller_500", "Box, box, box para siempre", "Haz 500 turnos en un taller.", L),
     ])  # fmt: skip
     a += _tiers("negocio", "biz_clients", [
+        (1, "biz_clients_1", "Bienvenido, Mr. Marshall", "Atiende a tu primer cliente.", C),
+        (100, "biz_clients_100", "Un, dos, tres, atienda otra vez",
+         "Atiende a 100 clientes.", C),
         (1000, "biz_clients_1000", "Pase usted, que hay cola", "Atiende a 1.000 clientes.", E),
         (5000, "biz_clients_5000", "Turno de tarde en la Gran Vía", "Atiende a 5.000 clientes.", L),
+        (20_000, "biz_clients_20k", "Más romería que en el Pino",
+         "Atiende a 20.000 clientes.", M),
     ])  # fmt: skip
     a += _tiers("negocio", "biz_sales", [
+        (100_000, "biz_sales_100k", "Pase por la salida y cobre",
+         "Vende 100.000 Y$ en total.", C),
         (1_000_000, "biz_sales_1m", "Caja registradora de Hacienda",
          "Vende 1.000.000 Y$ en total.", R),
         (10_000_000, "biz_sales_10m", "Más facturas que el Corte Inglés",
@@ -19674,9 +19687,13 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (100_000_000, "biz_sales_100m", "Inditex de barrio", "Vende 100.000.000 Y$ en total.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("negocio", "biz_tips", [
+        (10_000, "biz_tips_10k", "Sin bote no hay paraíso", "Reúne 10.000 Y$ en propinas.", C),
         (100_000, "biz_tips_100k", "Quédese con el cambio", "Reúne 100.000 Y$ en propinas.", R),
+        (1_000_000, "biz_tips_1m", "Smaug duerme sobre tus propinas",
+         "Reúne 1.000.000 Y$ en propinas.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("negocio", "biz_best_turn", [
+        (10_000, "biz_best_10k", "High score de barrio", "Vende 10.000 Y$ en un solo turno.", C),
         (20_000, "biz_best_20k", "Turno de récord Guinness",
          "Vende 20.000 Y$ en un solo turno.", R),
         (40_000, "biz_best_40k", "Black Friday un martes cualquiera",
@@ -19695,11 +19712,16 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("negocio", "biz_usual_hit", [
         (1, "biz_usual_1", "Lo de siempre, Manolo", "Acierta «lo de siempre» de un habitual.", C),
+        (10, "biz_usual_10", "El Google de los cortados",
+         "Acierta «lo de siempre» de habituales 10 veces.", C),
         (50, "biz_usual_50", "Camarero de Cheers",
          "Acierta «lo de siempre» de habituales 50 veces.", E),
+        (1000, "biz_usual_1000", "Te conozco, bacalao, aunque vengas disfrazao",
+         "Acierta «lo de siempre» de habituales 1.000 veces.", L),
     ])  # fmt: skip
     a += _tiers("negocio", "biz_perfect", [
         (1, "biz_perfect_1", "Matrícula de honor en barra", "Saca una S en un turno.", C),
+        (10, "biz_perfect_10", "El diez de Nadia Comaneci", "Saca una S en 10 turnos.", R),
         (50, "biz_perfect_50", "Ni una mancha en el mandil", "Saca una S en 50 turnos.", E),
         (250, "biz_perfect_250", "El Messi del mostrador", "Saca una S en 250 turnos.", L),
     ])  # fmt: skip
@@ -19714,13 +19736,22 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("negocio", "biz_exact", [
         (1, "biz_exact_1", "Cuentas claras, chocolate espeso",
          "Da un cambio exacto en la tienda.", C),
+        (10, "biz_exact_10", "Cuadrar la caja sin Excel", "Da 10 cambios exactos en la tienda.", C),
         (100, "biz_exact_100", "El cambio que quieres ver en el mundo",
          "Da 100 cambios exactos en la tienda.", R),
+        (1000, "biz_exact_1000", "Pitágoras del suelto",
+         "Da 1.000 cambios exactos en la tienda.", E),
+        (10_000, "biz_exact_10k", "Hasta la vista, calderilla",
+         "Da 10.000 cambios exactos en la tienda.", L),
     ])  # fmt: skip
     a += _tiers("negocio", "biz_caught", [
         (1, "biz_caught_1", "Al ladrón, al ladrón", "Pilla a un ladrón en la tienda.", C),
         (25, "biz_caught_25", "Se te escapa menos que a Casillas",
          "Pilla a 25 ladrones en la tienda.", R),
+        (100, "biz_caught_100", "Elemental, querido chorizo",
+         "Pilla a 100 ladrones en la tienda.", E),
+        (500, "biz_caught_500", "Robocop del ultramarinos",
+         "Pilla a 500 ladrones en la tienda.", L),
     ])  # fmt: skip
     a += _tiers("negocio", "biz_missed_thief", [
         (1, "biz_missed_1", "Ojos que no ven, chocolate que vuela",
@@ -19733,7 +19764,12 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("negocio", "biz_diag_ok", [
         (1, "biz_diag_1", "Dr. House de los carburadores", "Arregla un coche en el taller.", C),
+        (10, "biz_diag_10", "KITT pasa la revisión", "Arregla 10 coches en el taller.", C),
         (100, "biz_diag_100", "Mecánico de Fórmula Bar", "Arregla 100 coches en el taller.", E),
+        (1000, "biz_diag_1000", "El Equipo A del carburador",
+         "Arregla 1.000 coches en el taller.", E),
+        (5000, "biz_diag_5000", "Hefesto con mono de trabajo",
+         "Arregla 5.000 coches en el taller.", L),
     ])  # fmt: skip
     a += _tiers("negocio", "biz_bad_diag", [
         (1, "biz_bad_diag_1", "Tiene arreglo, pero otro",
@@ -19795,6 +19831,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("negocio", "biz_purchases", [
         (1, "biz_buy_1", "Vamos de mayoristas", "Haz una compra al mayorista.", C),
+        (10, "biz_buy_10", "La furgoneta ya se sabe el camino",
+         "Haz 10 compras al mayorista.", C),
+        (100, "biz_buy_100", "Inventario de Resident Evil",
+         "Haz 100 compras al mayorista.", E),
     ])  # fmt: skip
     a.append(Achievement(
         id="biz_prices_all", name="Rebajas, ofertas y atracos",
@@ -19813,6 +19853,68 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("negocio", "biz_evicted", [
         (1, "biz_evicted_1", "Lanzamiento sin cohete",
          "Sufre el desahucio del local.", R, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_sunday", [
+        (1, "biz_sunday_1", "Dominguero de la caja registradora", "Haz un turno en domingo.", C),
+        (10, "biz_sunday_10", "La siesta del domingo, en diferido",
+         "Haz 10 turnos en domingo.", R),
+        (50, "biz_sunday_50", "Domingos sin paella de la abuela", "Haz 50 turnos en domingo.", E),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_fast", [
+        (1, "biz_fast_1", "Sirve más rápido que su sombra",
+         "Atiende bien y rápido a un cliente.", C),
+        (100, "biz_fast_100", "Speedrun de comandas", "Atiende bien y rápido a 100 clientes.", C),
+        (1000, "biz_fast_1000", "Usain Bolt del cortado",
+         "Atiende bien y rápido a 1.000 clientes.", E),
+        (10_000, "biz_fast_10k", "Sonic con delantal",
+         "Atiende bien y rápido a 10.000 clientes.", L),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_left", [
+        (1, "biz_left_1", "Se fue a por tabaco", "Que se vaya un cliente sin que le atiendas.", C),
+        (100, "biz_left_100", "Más plantones que en Tinder",
+         "Que se vayan 100 clientes sin que les atiendas.", R, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_rejected", [
+        (1, "biz_rejected_1", "Ya si eso te llamo",
+         "Que te rechacen un presupuesto en el taller.", C),
+        (25, "biz_rejected_25", "Tengo un cuñado que lo hace más barato",
+         "Que te rechacen 25 presupuestos en el taller.", R, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_over", [
+        (1, "biz_over_1", "Robin Hood de la caja registradora",
+         "Da cambio de más en la tienda.", C),
+        (50, "biz_over_50", "Papá Noel fuera de temporada",
+         "Da cambio de más 50 veces en la tienda.", R, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_short", [
+        (1, "biz_short_1", "Te debo cinco duros", "Da cambio de menos en la tienda.", C),
+        (50, "biz_short_50", "Caja B de calderilla",
+         "Da cambio de menos 50 veces en la tienda.", R, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_spent_stock", [
+        (100_000, "biz_stock_100k", "Carné de socio del Makro",
+         "Gasta 100.000 Y$ en el mayorista.", C),
+        (1_000_000, "biz_stock_1m", "Marco Polo de los palés",
+         "Gasta 1.000.000 Y$ en el mayorista.", E),
+        (10_000_000, "biz_stock_10m", "El mayorista te pone una calle",
+         "Gasta 10.000.000 Y$ en el mayorista.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_nights", [
+        (1, "biz_nights_1", "Noche de paz, noche de caja",
+         "Llega con el negocio abierto al cierre de una noche.", C),
+        (7, "biz_nights_7", "Los siete cierres magníficos",
+         "Llega con el negocio abierto al cierre de 7 noches.", R),
+        (30, "biz_nights_30", "Luna de miel con el local",
+         "Llega con el negocio abierto al cierre de 30 noches.", E),
+        (100, "biz_nights_100", "Guardia de la Noche del local",
+         "Llega con el negocio abierto al cierre de 100 noches.", L),
+        (365, "biz_nights_365", "Mil y una noches menos 636",
+         "Llega con el negocio abierto al cierre de 365 noches.", M),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_closed", [
+        (1, "biz_closed_1", "Se traspasa, razón aquí", "Cierra un negocio.", C),
+        (3, "biz_closed_3", "Más cierres que Blockbuster", "Cierra 3 negocios.", R),
+        (10, "biz_closed_10", "Atrapado en el día del traspaso", "Cierra 10 negocios.", E, True),
     ])  # fmt: skip
     # Reducción de jornada y excedencia (art. 37.6 y 46.2 ET), en 🪏 General.
     a.append(Achievement(

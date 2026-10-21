@@ -71,7 +71,8 @@ Modelo de datos:
 - `economy_payroll`: cada nómina de `pala` con su desglose (bruto,
   cotizaciones del trabajador y de la empresa, IRPF y neto). Las
   cotizaciones cuentan como recaudación en `hacienda`, a nombre de quien
-  cobró la nómina; el neto de la última semana reduce el IMV.
+  cobró la nómina; el neto de la última semana (con lo que deja el negocio)
+  reduce el IMV.
 - `economy_sanctions`: multas y regularizaciones (p. ej. la Inspección de
   Trabajo que pilla un turno en negro). Van al Estado y cuentan en `hacienda`.
 - `economy_imv_suspensions`: hasta cuándo no se puede cobrar el IMV de un
@@ -6605,7 +6606,12 @@ class EconomyRepository:
         return row is not None
 
     async def work_net(self, guild_id: int, user_id: int, since: float) -> int:
-        """Neto cobrado en nóminas desde `since` (lo cobrado en negro no cuenta)."""
+        """Neto cobrado trabajando desde `since`: nóminas más lo que deja el negocio propio.
+
+        El negocio cuenta con sus ventas menos la retención y los gastos de la actividad
+        (`economy_tax_records`, concepto `negocio:`), nunca en negativo: comprar stock no
+        sube el IMV ni el banco lo resta de la nómina. Lo cobrado en negro no cuenta.
+        """
         return await self._run(self._work_net_sync, guild_id, user_id, since)
 
     def _work_net_sync(self, guild_id: int, user_id: int, since: float) -> int:
@@ -6618,7 +6624,15 @@ class EconomyRepository:
                 """,
                 (guild_id, user_id, since),
             ).fetchone()
-            return int(net)
+            (business,) = connection.execute(
+                """
+                SELECT COALESCE(SUM(gross - withheld), 0) FROM economy_tax_records
+                WHERE guild_id = ? AND user_id = ? AND created_at > ? AND kind = ?
+                  AND concept LIKE 'negocio:%'
+                """,
+                (guild_id, user_id, since, INCOME_BUSINESS),
+            ).fetchone()
+            return int(net) + max(0, int(business))
         finally:
             connection.close()
 

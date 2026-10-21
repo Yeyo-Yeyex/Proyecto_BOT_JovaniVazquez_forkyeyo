@@ -146,7 +146,7 @@ def simulate(sector: Sector, barrio: Barrio, turns: int, miss: float, days: int,
         used: dict[str, int] = {}
         sales = 0
         for hour in HOURS[turns]:
-            count = turn_clients(business, hour, rng)
+            count = turn_clients(business, hour, rng.random())
             clients = make_clients(business, count, rng.randrange(2**31))
             if not clients:
                 continue

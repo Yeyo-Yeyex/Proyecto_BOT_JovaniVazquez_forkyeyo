@@ -121,7 +121,8 @@ class Profile:
         owns_property: Si tiene algún inmueble o una VPO a su nombre.
         mortgage_current: Si tiene hipoteca y la paga al día.
         late: Si va con retraso en alguna cuota (sin llegar al fichero de morosos).
-        payroll: Si cobra nómina (o pensión); si no, sus ingresos son solo rentas.
+        payroll: Si cobra nómina, pensión o lo que deja su negocio; si no, sus ingresos
+            son solo rentas.
     """
 
     paid_loans: int = 0

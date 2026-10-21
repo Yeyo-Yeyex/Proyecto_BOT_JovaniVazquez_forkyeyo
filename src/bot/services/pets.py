@@ -67,6 +67,8 @@ class Event(StrEnum):
     LOOTBOX = "lootbox"
     #: Algo de tus pisos que no es comprar ni vender: firmar con un inquilino, desahuciar.
     HOME = "home"
+    #: El cierre de un turno en tu negocio de `pala` (el ánimo sale de la nota del turno).
+    BUSINESS = "business"
 
 
 class Mood(StrEnum):
@@ -107,15 +109,17 @@ class Moment:
     Attributes:
         event: Qué ha pasado.
         notable: Si la mascota debe salir sí o sí (un all-in, un pelotazo).
+        feel: El ánimo, si no es el de siempre del momento (un turno bueno o malo).
     """
 
     event: Event = Event.MONEY
     notable: bool = False
+    feel: Mood | None = None
 
     @property
     def mood(self) -> Mood:
         """Cómo le sienta a la mascota."""
-        return MOOD.get(self.event, Mood.NEUTRAL)
+        return self.feel or MOOD.get(self.event, Mood.NEUTRAL)
 
     @property
     def loud(self) -> bool:
@@ -566,6 +570,16 @@ GENERIC_LINES: dict[Event, tuple[str, ...]] = {
         "{pet} gruñe al edificio de enfrente: la competencia.",
         "{pet} te recuerda que el IBI no se paga solo.",
         "{pet} revisa los grifos del piso. Ninguno gotea, de momento.",
+    ),
+    Event.BUSINESS: (
+        "{pet} te espera detrás del mostrador hasta que echas el cierre.",
+        "{pet} se ha comido una magdalena del expositor. Apúntala como merma.",
+        "{pet} vigila la puerta mientras cuentas la caja.",
+        "{pet} se tumba en el escaparate y atrae más clientes que el rótulo.",
+        "{pet} saluda a los habituales desde la puerta con un {sound}.",
+        "{pet} se asoma a la barra: «Hazme un cortado… ¡quiero cortado!».",
+        "{pet} te acompaña a bajar la persiana.",
+        "{pet} pide entrar en la plantilla. Cobraría en chuches y sin contrato.",
     ),
     Event.BIRTHDAY: (
         "{pet} te canta el cumpleaños a su manera: {sound}.",
