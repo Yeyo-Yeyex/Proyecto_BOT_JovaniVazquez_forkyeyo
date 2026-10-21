@@ -281,7 +281,13 @@ Salen de las estadísticas de `business_stats` y de las de la jornada. Familias:
 - habituales fieles y «lo de siempre» acertado;
 - fracasos: la acusación falsa, el cambio de más o de menos, el presupuesto rechazado, el
   desahucio, cerrar en números rojos;
-- colecciones: los tres sectores, todos los temas de barrio, las dos islas;
+- colecciones: tres sectores y los cinco, todos los temas de barrio, las dos islas, las tres
+  campañas de publicidad;
+- fase 2: escalones de turnos en la heladería y la ferretería; reseñas (en total, de cinco
+  estrellas y, ocultas las altas, de una), el distintivo de «recomendado»; mejoras instaladas,
+  tres a la vez y lo gastado en ellas; campañas y lo gastado en publicidad; precio por
+  producto; traslados, el local propio, el mediano y el grande; traspasos, el traspaso gordo
+  y lo cobrado traspasando;
 - fechas: madrugada, domingo, Día de Canarias;
 - rachas de días abriendo;
 - las 8 franjas usadas;
