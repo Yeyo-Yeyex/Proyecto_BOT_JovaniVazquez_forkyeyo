@@ -616,6 +616,7 @@ class AuctionRun:
     results: list[AuctionResult] = field(default_factory=list)
     executions: list[tuple[int, str]] = field(default_factory=list)
     aval_executions: list[int] = field(default_factory=list)
+    remortgage_executions: list[int] = field(default_factory=list)
     news: list[News] = field(default_factory=list)
 
 
@@ -680,6 +681,7 @@ class DayRun:
         bono_unpaid: Miembros a los que no se pudo pagar el bono (partida agotada).
         mortgage_unpaid: Miembros que no pudieron pagar entera la cuota.
         installments: Cuotas de hipoteca pagadas enteras por cada miembro.
+        remortgage_executions: Miembros a los que han ejecutado un inmueble rehipotecado.
         aval_executions: Miembros a los que han ejecutado una hipoteca avalada por sus
             padres (la familia de `pala` lo paga).
         promotions: `(promotor, inmueble)` de la obra nueva que ha salido hoy (los lunes).
@@ -717,6 +719,7 @@ class DayRun:
     mortgage_unpaid: list[int] = field(default_factory=list)
     installments: dict[int, int] = field(default_factory=dict)
     aval_executions: list[int] = field(default_factory=list)
+    remortgage_executions: list[int] = field(default_factory=list)
     promotions: list[tuple[int, str]] = field(default_factory=list)
     euribor: tuple[float, float] | None = None
     barrio_news: list[tuple[str, str]] = field(default_factory=list)
@@ -846,6 +849,38 @@ def _desk_in(
         asnef=asnef,
         bank_debt=market.bank_debts.get(user_id, 0),
         profile=profile,
+    )
+
+
+def _remortgage_desk_in(market: Market, user_id: int) -> RemortgageDesk:
+    """Lo que ve el banco de alguien para rehipotecar, con el mercado ya leído."""
+    found = []
+    for key in market.keys():
+        held = market.holdings.get(key, {}).get(user_id)
+        listing = market.listing(key)
+        if held is None or listing is None:
+            continue
+        value = market.value(held)
+        owed = sum(m.owed for m in market.mortgages_of(user_id, key))
+        dwelling = listing.kind in rules.HOME_KINDS
+        blocked = None
+        try:
+            _check_free(market, key, user_id, date.min)
+        except HousingError as error:
+            blocked = str(error)
+        found.append(
+            Collateral(
+                key=key, title=listing.title, shares=held.shares, value=value, owed=owed, dwelling=dwelling,
+                habitual=market.homes.get(user_id) == (finance.HOME_OWN, key),
+                room=lending.remortgage_room(value, owed, home=dwelling), blocked=blocked,
+            )
+        )  # fmt: skip
+    return RemortgageDesk(
+        euribor=market.euribor,
+        installments=market.installments_of(user_id),
+        asnef=market.in_asnef(user_id),
+        collaterals=tuple(found),
+        remortgages=tuple(m for m in market.mortgages_of(user_id) if m.remortgage),
     )
 
 
@@ -1041,13 +1076,17 @@ def assets_in(connection: sqlite3.Connection, guild_id: int) -> dict[int, int]:
     - Cada inmueble a su valor fiscal (`housing.fiscal_value`, art. 10 de la Ley 19/1991).
     - La vivienda habitual está exenta hasta 3.000.000 Y$ (art. 4.Nueve): el piso en el
       que vive su dueño y la VPO (que nunca llega a ese valor: no cuenta).
-    - Las deudas restan (art. 25): las hipotecas, los préstamos personales y lo que se debe
-      al banco, salvo las hipotecas de la vivienda habitual, que no son deducibles porque el
-      bien está exento (art. 25.2).
+    - Las deudas restan (arts. 9.Dos.b y 25.Uno): las hipotecas (también las rehipotecas),
+      los préstamos y lo que se debe al banco. Las hipotecas de la vivienda habitual solo
+      restan en la parte de la casa que no está exenta: no se restan las cargas de un bien
+      exento ni las deudas para comprarlo, y con una exención parcial, la parte proporcional
+      (arts. 9.Tres y 25.Tres). La VPO nunca pasa del límite: sus hipotecas no restan.
     """
     homes = finance.homes_in(connection, guild_id)
     market = Market(promotions=finance.promotions_in(connection, guild_id))
     out: dict[int, int] = {}
+    #: Parte que tributa de la vivienda habitual de cada miembro, por su clave.
+    taxed: dict[tuple[int, str], float] = {}
     for r in connection.execute(
         "SELECT listing, user_id, shares, paid FROM housing_holdings WHERE guild_id = ?",
         (guild_id,),
@@ -1058,15 +1097,15 @@ def assets_in(connection: sqlite3.Connection, guild_id: int) -> dict[int, int]:
         member = int(r["user_id"])
         value = rules.fiscal_value(listing, int(r["shares"]), int(r["paid"]))
         if homes.get(member) == (finance.HOME_OWN, listing.key):
-            value -= min(value, rules.HOME_WEALTH_EXEMPT)
+            exempt = min(value, rules.HOME_WEALTH_EXEMPT)
+            taxed[(member, listing.key)] = (value - exempt) / value if value else 0.0
+            value -= exempt
         out[member] = out.get(member, 0) + value
     for mortgage in finance.mortgages_in(connection, guild_id):
-        habitual = mortgage.listing.startswith("vpo:") or homes.get(mortgage.user_id) == (
-            finance.HOME_OWN,
-            mortgage.listing,
-        )
-        if not habitual:
-            out[mortgage.user_id] = out.get(mortgage.user_id, 0) - mortgage.owed
+        if mortgage.listing.startswith("vpo:"):
+            continue
+        share = taxed.get((mortgage.user_id, mortgage.listing), 1.0)
+        out[mortgage.user_id] = out.get(mortgage.user_id, 0) - int(mortgage.owed * share)
     for member, debt in finance.bank_debts_in(connection, guild_id).items():
         out[member] = out.get(member, 0) - debt
     for loan in finance.loans_in(connection, guild_id):
@@ -1408,6 +1447,65 @@ class LoanDesk:
 
 
 @dataclass(frozen=True, slots=True)
+class Collateral:
+    """Lo que vale para el banco lo que alguien tiene de un inmueble (🔐 Garantías).
+
+    Attributes:
+        key: El inmueble.
+        title: Su titular (también el de la obra nueva, que no está en el catálogo).
+        shares: Sus participaciones.
+        value: Lo que valen hoy en el mercado (la tasación).
+        owed: Lo que ya debe de sus hipotecas de ese inmueble.
+        dwelling: Si es vivienda (presta el 80 % y no el 60 %).
+        habitual: Si vive en él.
+        room: Lo más que le prestaría rehipotecándolo, sin mirar el 35 %.
+        blocked: Por qué no se puede rehipotecar ahora, o `None`.
+    """
+
+    key: str
+    title: str
+    shares: int
+    value: int
+    owed: int
+    dwelling: bool
+    habitual: bool
+    room: int
+    blocked: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RemortgageDesk:
+    """Lo que ve el banco de alguien para rehipotecar.
+
+    Attributes:
+        euribor: El Euríbor de esta semana.
+        installments: Lo que ya paga cada mes al banco (el 35 %).
+        asnef: Si está en el fichero de morosos.
+        collaterals: Sus inmuebles, en el orden del catálogo.
+        remortgages: Sus rehipotecas activas.
+    """
+
+    euribor: float
+    installments: int
+    asnef: bool
+    collaterals: tuple[Collateral, ...]
+    remortgages: tuple[Mortgage, ...]
+
+    @property
+    def rate(self) -> float:
+        """El tipo de una rehipoteca hoy: Euríbor más el diferencial, fijo al firmar."""
+        return round(self.euribor + lending.REMORTGAGE_SPREAD, 4)
+
+
+@dataclass(frozen=True, slots=True)
+class SignedRemortgage:
+    """Una rehipoteca recién firmada, con su oferta."""
+
+    mortgage: Mortgage
+    quote: lending.RemortgageQuote
+
+
+@dataclass(frozen=True, slots=True)
 class SignedLoan:
     """Un préstamo recién firmado, con la oferta y lo que movió el tipo."""
 
@@ -1685,6 +1783,11 @@ class HousingRepository:
                 connection.execute(
                     "ALTER TABLE housing_auctions ADD COLUMN division INTEGER NOT NULL DEFAULT 0"
                 )
+            # 9.1.0: rehipotecas, anticipos de rentas y avalistas (`docs/garantias.md`).
+            for table, name, ddl in finance.LATER_COLUMNS:
+                found = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+                if name not in found:
+                    connection.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
         finally:
             connection.close()
 
@@ -1922,6 +2025,104 @@ class HousingRepository:
                 entries.insert(0, (user_id, LedgerEntry(loan.fee, "banco:apertura_devuelta")))
             closed = LoanClosed(loan, "desistido", loan.principal - loan.fee)
             return closed, HousingMove(entries=tuple(entries))
+
+        return run
+
+    # -- Rehipotecar (`banco`, 🔐 Garantías) --------------------------------------------
+
+    async def remortgage_desk(self, guild_id: int, user_id: int) -> RemortgageDesk:
+        """Lo que ve el banco de alguien para rehipotecar sus inmuebles."""
+        return await self._run(self._remortgage_desk_sync, guild_id, user_id)
+
+    def _remortgage_desk_sync(self, guild_id: int, user_id: int) -> RemortgageDesk:
+        connection = self._connect()
+        try:
+            return _remortgage_desk_in(_market_in(connection, guild_id), user_id)
+        finally:
+            connection.close()
+
+    def remortgage(
+        self,
+        guild_id: int,
+        user_id: int,
+        key: str,
+        *,
+        principal: int,
+        months: int,
+        rate: float,
+        income: int,
+        day: date,
+        now: float,
+    ) -> Callable[[sqlite3.Connection], tuple[SignedRemortgage, HousingMove]]:
+        """Firma una rehipoteca: una hipoteca nueva sobre lo que ya se tiene de un inmueble.
+
+        Lo prestado entra (se crea: el banco no existe) y salen la comisión de apertura y la
+        tasación (desaparecen) con el IGIC de la tasación (al Estado). La tasación es lo que
+        valen hoy sus participaciones (`Market.value`); presta hasta el 80 % si es vivienda y
+        el 60 % si no, menos lo que ya debe de ese inmueble (`loans.remortgage_room`).
+
+        Args:
+            rate: El tipo que enseñaba la oferta; si el Euríbor ha cambiado, no se firma.
+            income: Ingresos diarios que mira el banco (`housing.daily_income`).
+
+        Raises (dentro de la transacción):
+            HousingError: Fichero de morosos, nada de ese inmueble, en subasta, cifras fuera
+                de los topes, otro tipo que el de la oferta o una cuota que no cabe en el 35 %.
+        """
+
+        def run(connection: sqlite3.Connection) -> tuple[SignedRemortgage, HousingMove]:
+            market = _market_in(connection, guild_id)
+            desk = _remortgage_desk_in(market, user_id)
+            if desk.asnef:
+                raise HousingError(lending.ASNEF_REFUSAL)
+            found = next((c for c in desk.collaterals if c.key == key), None)
+            if found is None:
+                raise HousingError("No tienes nada en ese inmueble.")
+            if found.blocked is not None:
+                raise HousingError(found.blocked)
+            if months not in lending.REMORTGAGE_TERMS:
+                raise HousingError("Ese plazo no lo ofrece el banco.")
+            if desk.rate != rate:
+                raise HousingError("El Euríbor ha cambiado desde la oferta: vuelve a mirarla.")
+            if principal < lending.REMORTGAGE_MIN:
+                raise HousingError(
+                    f"El banco rehipoteca desde {format_amount(lending.REMORTGAGE_MIN)}."
+                )
+            if principal > found.room:
+                raise HousingError(
+                    f"Sobre eso el banco presta como mucho {format_amount(found.room)}: el "
+                    f"{'80' if found.dwelling else '60'} % de lo que vale hoy menos lo que ya "
+                    "debes de él."
+                )
+            offer = lending.remortgage_quote(principal, months, rate, found.value)
+            if offer.received <= 0:
+                raise HousingError("Con la comisión y la tasación no te llegaría nada.")
+            if not rules.affordable(income, desk.installments + offer.payment):
+                raise HousingError(
+                    f"El banco te dice que no: la cuota ({format_amount(offer.payment)} al mes) "
+                    f"más lo que ya pagas ({format_amount(desk.installments)}) pasa del 35 % de "
+                    f"lo que ingresas ({format_amount(income)} al día, nóminas y el 70 % de tus "
+                    "alquileres)."
+                )
+            mortgage_id = finance.add_mortgage_in(
+                connection, guild_id, user_id, key, principal, rate, offer.payment, now,
+                months=months, kind=finance.MORTGAGE_REMORTGAGE,
+            )  # fmt: skip
+            mortgage = next(
+                m for m in finance.mortgages_in(connection, guild_id, user_id)
+                if m.id == mortgage_id
+            )  # fmt: skip
+            _news_in(
+                connection, guild_id, News(key, day, "rehipoteca", principal, user_id, None), now
+            )
+            entries = [
+                (user_id, LedgerEntry(principal, "banco:rehipoteca")),
+                (user_id, LedgerEntry(-offer.fee, "banco:apertura")),
+                (user_id, LedgerEntry(-offer.appraisal, "banco:tasacion")),
+            ]
+            taxes = (HousingTax(user_id, "igic_gastos", offer.appraisal, offer.appraisal_igic),)
+            signed = SignedRemortgage(mortgage, offer)
+            return signed, HousingMove(entries=tuple(entries), taxes=taxes)
 
         return run
 
@@ -2517,7 +2718,8 @@ class HousingRepository:
         banco se las queda al 70 % y vuelven al mercado. Lo que da la subasta paga primero
         las deudas del piso (el IBI, al Estado) y luego al banco; si sobra, para el dueño. No
         hay dación en pago: lo que no cubre queda como deuda con el banco y se cobra de lo
-        que vaya entrando.
+        que vaya entrando. Se cierran todas las hipotecas del dueño sobre ese inmueble (la de
+        compra y las rehipotecas), de la más antigua a la más nueva: el banco es el mismo.
 
         Args:
             winner_cost: Lo que le cuesta al ganador, con ITP y notaría (lo paga él aparte).
@@ -2584,19 +2786,24 @@ class HousingRepository:
                 )  # fmt: skip
         debt_ibi = min(debt_ibi, proceeds)
         debt_other = min(debt_other, proceeds - debt_ibi)
+        group = market.mortgages_of(member, mortgage.listing) or [mortgage]
+        owed = sum(m.owed for m in group)
         # Lo que sobre de la subasta se queda en su monedero.
-        to_bank = min(mortgage.owed, proceeds - debt_ibi - debt_other)
+        to_bank = min(owed, proceeds - debt_ibi - debt_other)
         if proceeds:
             entries.append((member, LedgerEntry(proceeds, "pisos:subasta")))
             entries.append((member, LedgerEntry(-debt_other, "pisos:comunidad")))
             entries.append((member, LedgerEntry(-to_bank, "pisos:banco")))
             taxes.append(HousingTax(member, "ibi", debt_ibi, debt_ibi))
-        finance.close_mortgage_in(connection, mortgage.id, "ejecutada")
-        if mortgage.owed > to_bank:
-            finance.add_bank_debt_in(connection, guild_id, member, mortgage.owed - to_bank)
+        for each in group:
+            finance.close_mortgage_in(connection, each.id, "ejecutada")
+        if owed > to_bank:
+            finance.add_bank_debt_in(connection, guild_id, member, owed - to_bank)
         result.executions.append((member, mortgage.listing))
-        if mortgage.aval == rules.PARENTS_AVAL:
+        if any(m.aval == rules.PARENTS_AVAL for m in group):
             result.aval_executions.append(member)
+        if any(m.remortgage for m in group):
+            result.remortgage_executions.append(member)
         kind = "ejecucion_subasta" if winner is not None else "ejecucion"
         item = News(mortgage.listing, day, kind, proceeds, member, None)
         result.news.append(item)
@@ -2624,12 +2831,20 @@ class HousingRepository:
         # Ejecuciones hipotecarias: con lo que se debía al empezar el día.
         executed = set()
         judicial = {a.mortgage_id for a in market.auctions if a.judicial}
+        # Todas las hipotecas de alguien sobre un inmueble van juntas (la de compra y las
+        # rehipotecas): es el mismo banco, el vencimiento de una arrastra a las demás y la
+        # subasta, una sola, las paga por rango (`_execute_in`).
+        handled: set[tuple[int, str]] = set()
         for mortgage in market.mortgages:
             if not rules.must_execute(
                 mortgage.unpaid_count, mortgage.unpaid_amount, mortgage.principal
             ):
                 continue
-            if mortgage.id in judicial:
+            group = (mortgage.user_id, mortgage.listing)
+            if group in handled:
+                continue
+            handled.add(group)
+            if any(m.id in judicial for m in market.mortgages_of(*group)):
                 continue  # ya está en subasta: la cierra `close_auctions`
             held = market.holdings.get(mortgage.listing, {}).get(mortgage.user_id)
             if held is not None and market.listing(mortgage.listing) is not None:
@@ -2653,6 +2868,8 @@ class HousingRepository:
         if executed:
             market = _market_in(connection, guild_id)
         # Intereses de hoy de cada hipoteca: lo que se deduce de la renta (art. 23.1.a LIRPF).
+        # Los de una rehipoteca no: solo deducen los del dinero invertido en comprar o mejorar
+        # el inmueble (art. 23.1.a.1.º), y una rehipoteca no compra nada.
         interest: dict[tuple[int, str], int] = {}
         schedule: dict[int, tuple[int, int]] = {}
         for mortgage in market.mortgages:
@@ -2660,17 +2877,22 @@ class HousingRepository:
             owed_interest, principal = rules.mortgage_month(mortgage.balance, mortgage.rate, pay)
             schedule[mortgage.id] = (mortgage.balance - principal, pay)
             key = (mortgage.user_id, mortgage.listing)
-            interest[key] = interest.get(key, 0) + owed_interest
+            if not mortgage.remortgage:
+                interest[key] = interest.get(key, 0) + owed_interest
             due = pay + mortgage.unpaid_amount
             if due:
                 # La cuota de la hipoteca de la vivienda habitual cuenta para la deducción
                 # canaria por inversión en vivienda habitual (art. 14 del DL 1/2009).
                 # También la de una VPO (`vpo:<unidad>`), que es vivienda habitual a la fuerza.
+                # La de una rehipoteca no: no se invirtió en la vivienda.
                 place = market.homes.get(mortgage.user_id)
-                home = place == (finance.HOME_OWN, mortgage.listing) or (
-                    place is not None
-                    and place[0] == finance.HOME_VPO
-                    and finance.vpo_ref(place[1]) == mortgage.listing
+                home = not mortgage.remortgage and (
+                    place == (finance.HOME_OWN, mortgage.listing)
+                    or (
+                        place is not None
+                        and place[0] == finance.HOME_VPO
+                        and finance.vpo_ref(place[1]) == mortgage.listing
+                    )
                 )
                 debits.append(HousingDebit(mortgage.user_id, f"hipoteca:{mortgage.id}", 0, due,
                                            "pisos:hipoteca", home=home))  # fmt: skip
@@ -4233,7 +4455,9 @@ class HousingRepository:
         if auction.judicial and mortgage is not None:
             lease = market.leases.get(auction.listing, rules.Lease())
             pool = sum(market.shares_of(auction.listing).values())
-            owed = mortgage.owed + lease.arrears * held.shares // max(1, pool)
+            # Lo que se debe: todas sus hipotecas de ese inmueble (`_execute_in` las cierra).
+            mortgages = market.mortgages_of(auction.seller, auction.listing)
+            owed = sum(m.owed for m in mortgages) + lease.arrears * held.shares // max(1, pool)
             habitual = market.homes.get(auction.seller) == (finance.HOME_OWN, auction.listing)
             valid = winner is not None and rules.judicial_ok(
                 price, market.value(held), owed, habitual=habitual

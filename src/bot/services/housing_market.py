@@ -30,8 +30,10 @@ from bot.repositories.housing import (
     News,
     Purchase,
     ReformDone,
+    RemortgageDesk,
     Sale,
     SignedLoan,
+    SignedRemortgage,
     Signing,
     TenantDeal,
     VoteResult,
@@ -176,6 +178,41 @@ class HousingService:
         run = self.repository.desist_loan(guild_id, user_id, loan_id, self._clock())
         closed, balances = await self.economy.housing(guild_id, run)
         return closed, balances[user_id]
+
+    async def remortgage_desk(self, guild_id: int, user_id: int) -> tuple[RemortgageDesk, int]:
+        """Lo que ve el banco de alguien para rehipotecar y lo que ingresa al día."""
+        desk = await self.repository.remortgage_desk(guild_id, user_id)
+        return desk, await self.income(guild_id, user_id)
+
+    async def remortgage(
+        self,
+        guild_id: int,
+        user_id: int,
+        key: str,
+        *,
+        principal: int,
+        months: int,
+        rate: float,
+    ) -> tuple[SignedRemortgage, int]:
+        """Firma una rehipoteca (ver `EconomyService.housing` y `docs/garantias.md`).
+
+        Raises:
+            HousingError: Si debe a Hacienda o el banco no presta (ver `remortgage` del
+                repositorio).
+        """
+        if await self.economy.tax_debt(guild_id, user_id) > 0:
+            raise HousingError(
+                "Debes dinero a Hacienda y tendrías la cuenta embargada: el banco no presta. "
+                "Liquida la deuda en `renta`."
+            )
+        income = await self.income(guild_id, user_id)
+        now = self._clock()
+        run = self.repository.remortgage(
+            guild_id, user_id, key, principal=principal, months=months, rate=rate,
+            income=income, day=local_day(now), now=now,
+        )  # fmt: skip
+        signed, balances = await self.economy.housing(guild_id, run)
+        return signed, balances[user_id]
 
     async def buy(
         self,

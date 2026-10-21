@@ -136,6 +136,8 @@ from bot.services.interest import (
 from bot.services.levels import TIMEZONE
 from bot.services.loans import MAX_LOANS as LOAN_MAX_LOANS
 from bot.services.loans import MAX_PRINCIPAL as LOAN_MAX_PRINCIPAL
+from bot.services.loans import REMORTGAGE_MIN
+from bot.services.loans import REMORTGAGE_TERMS
 from bot.services.loans import TERMS as LOAN_TERMS
 from bot.services.lootboxes import COLLECTIONS as LOOTBOX_COLLECTIONS
 from bot.services.lottery import MAX_PER_DRAW as MAX_LOTTERY_PER_DRAW
@@ -9147,6 +9149,50 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("bizum", "asnef_seen", [
         (1, "asnef_seen", "En la lista negra", "Abre el banco estando en el fichero de morosos.",
          C, True),
+    ])  # fmt: skip
+    # Rehipotecas (`banco`, 🔐 Garantías: remortgage_*_stats).
+    a += _tiers("bizum", "remortgages_signed", [
+        (1, "remortgage_1", "Ladrillo líquido", "Rehipoteca un inmueble.", C),
+        (5, "remortgage_5", "Exprimir el ladrillo", "Firma 5 rehipotecas.", R),
+        (20, "remortgage_20", "Volver a 2006", "Firma 20 rehipotecas.", E),
+    ])  # fmt: skip
+    a += _tiers("bizum", "remortgage_principal_max", [
+        (500_000, "remortgage_500k", "Jugo de pared",
+         "Saca 500.000 Y$ o más de una sola rehipoteca.", R),
+        (2_000_000, "remortgage_2m", "Cajero de hormigón",
+         "Saca 2.000.000 Y$ o más de una sola rehipoteca.", E),
+        (10_000_000, "remortgage_10m", "Pelotazo con escrituras",
+         "Saca 10.000.000 Y$ o más de una sola rehipoteca.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("bizum", "remortgages_open_max", [
+        (3, "remortgage_open_3", "Hipotecado hasta las cejas",
+         "Ten 3 rehipotecas abiertas a la vez.", R),
+        (10, "remortgage_open_10", "Castillo de naipes",
+         "Ten 10 rehipotecas abiertas a la vez.", E),
+    ])  # fmt: skip
+    a += _tiers("bizum", "remortgage_home", [
+        (1, "remortgage_home", "Mi casa, mi cajero",
+         "Rehipoteca la casa en la que vives.", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "remortgage_not_home", [
+        (1, "remortgage_garage", "Avalado por un trastero",
+         "Rehipoteca algo que no es vivienda: un local, un garaje, un trastero o una nave.", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "remortgage_shortest", [
+        (1, "remortgage_120", "Prisa por desatarse",
+         f"Rehipoteca al plazo más corto ({min(REMORTGAGE_TERMS)} meses).", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "remortgage_full", [
+        (1, "remortgage_full", "Hasta el último ladrillo",
+         "Pide en una rehipoteca todo lo que deja la tasación.", R),
+    ])  # fmt: skip
+    a += _tiers("bizum", "remortgage_minimum", [
+        (1, "remortgage_min", "Para pipas y una caña",
+         f"Rehipoteca por el mínimo, {_thousands(REMORTGAGE_MIN)} Y$.", C, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "remortgage_executed", [
+        (1, "remortgage_executed", "Se pinchó la burbuja",
+         "Que el banco ejecute un inmueble que habías rehipotecado.", R, True),
     ])  # fmt: skip
     a += _tiers("bizum", "bank_books", [
         (1, "bank_books_1", "Auditor por un día",
@@ -24167,6 +24213,38 @@ def loan_night_stats(*, finished: int, covered: int, unpaid: int, defaulted: int
         if count:
             delta.add[stat] = count
     return delta
+
+
+def remortgage_signed_stats(
+    *, principal: int, months: int, room: int, habitual: bool, dwelling: bool, open_count: int
+) -> StatDelta:
+    """Estadísticas de quien firma una rehipoteca (`banco`, 🔐 Garantías).
+
+    Args:
+        room: Lo más que le prestaba la tasación (pedirlo entero es «hasta el último ladrillo»).
+        habitual: Si es la casa en la que vive.
+        dwelling: Si es vivienda (si no, un local, un garaje, un trastero…).
+        open_count: Rehipotecas que tiene abiertas contando esta.
+    """
+    delta = StatDelta(
+        add={"remortgages_signed": 1},
+        peak={"remortgage_principal_max": principal, "remortgages_open_max": open_count},
+    )
+    for stat, hit in (
+        ("remortgage_home", habitual),
+        ("remortgage_not_home", not dwelling),
+        ("remortgage_shortest", months == min(REMORTGAGE_TERMS)),
+        ("remortgage_full", principal >= room),
+        ("remortgage_minimum", principal == REMORTGAGE_MIN),
+    ):
+        if hit:
+            delta.add[stat] = 1
+    return delta
+
+
+def remortgage_executed_stats() -> StatDelta:
+    """Estadísticas de quien pierde en una ejecución un inmueble que había rehipotecado."""
+    return StatDelta(add={"remortgage_executed": 1})
 
 
 def bank_panel_stats(*, asnef: bool = False, books: bool = False) -> StatDelta:

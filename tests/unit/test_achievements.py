@@ -324,6 +324,10 @@ PRODUCED_STATS = {
     "loans_signed", "loan_principal_max", "loans_open_max", "loan_longest", "loan_insured",
     "loan_preferred", "loans_finished", "loans_repaid_early", "loans_desisted", "loan_covered",
     "loan_unpaid", "loan_defaults", "asnef_seen", "bank_books",
+    # cogs/banco.py (🔐 Garantías) y las ejecuciones de cogs/pisos.py: remortgage_*_stats
+    "remortgages_signed", "remortgage_principal_max", "remortgages_open_max", "remortgage_home",
+    "remortgage_not_home", "remortgage_shortest", "remortgage_full", "remortgage_minimum",
+    "remortgage_executed",
     # cogs/pisos.py: housing_panel_stats, housing_purchase_stats, housing_sale_stats y
     # housing_day_stats (los eventos salen de housing.EVENTS y de advance_day)
     "pisos_opened", "pisos_exit", "pisos_mortgages", "pisos_loan_max",

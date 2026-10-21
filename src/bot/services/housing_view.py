@@ -90,6 +90,7 @@ NEWS_TEXT = {
     "cerradura": "Cambio de cerradura: {amount}",
     "hipoteca": "{who} firma una hipoteca de {amount}",
     "amortiza": "{who} cancela la hipoteca: {amount}",
+    "rehipoteca": "{who} rehipoteca su parte por {amount}",
     "ejecucion": "El banco ejecuta la hipoteca de {who}: subasta por {amount}",
     "se_muda": "{who} se muda aquí",
     "firma_miembro": "{who} firma el alquiler por {amount} al mes",

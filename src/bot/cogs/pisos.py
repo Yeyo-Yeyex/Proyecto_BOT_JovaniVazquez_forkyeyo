@@ -99,6 +99,7 @@ from bot.services.achievements import (
     housing_sale_stats,
     housing_tax_stats,
     loan_night_stats,
+    remortgage_executed_stats,
 )
 from bot.services.economy import EconomyService, format_amount
 from bot.services.housing_catalog import (
@@ -2728,6 +2729,8 @@ class Pisos(commands.Cog):
             for member in run.aval_executions:
                 await curro.parents_lose_home(self.bot, guild_id, member)
                 events.setdefault(member, []).append("ejecucion_aval")
+            for member in run.remortgage_executions:
+                logros.note(self.bot, guild_id, member, remortgage_executed_stats())
             everyone = (
                 set(run.members) | set(events) | set(run.bono) | set(run.installments) | set(stars)
             )
@@ -2807,6 +2810,8 @@ class Pisos(commands.Cog):
             await curro.parents_lose_home(self.bot, guild_id, member)
             logros.note(self.bot, guild_id, member,
                         housing_day_stats(rent=0, ibi=0, events=("ejecucion_aval",)))  # fmt: skip
+        for member in run.remortgage_executions:
+            logros.note(self.bot, guild_id, member, remortgage_executed_stats())
         return run
 
     async def close_votes(self, guild_id: int) -> list[VoteResult]:
