@@ -1195,9 +1195,9 @@ class NegocioPanel(ui.LayoutView):
 def _advanced(game: TurnGame) -> TurnGame:
     """Una copia ligera del juego con el siguiente cliente delante (para pintarlo antes)."""
     ahead = object.__new__(TurnGame)
-    for name in ("sector", "price", "luxury", "stars", "loyalty", "clients", "stock",
-                 "started", "deadline", "patience", "since", "outcomes", "last", "tray",
-                 "given", "accused", "diagnosis", "extra", "round"):  # fmt: skip
+    for name in ("sector", "levels", "luxury", "stars", "loyalty", "clients", "stock",
+                 "started", "deadline", "patience", "tip_bonus", "since", "outcomes", "last",
+                 "tray", "given", "accused", "diagnosis", "extra", "round"):  # fmt: skip
         setattr(ahead, name, getattr(game, name))
     ahead.index = game.index + 1
     ahead.step = "diagnostico"

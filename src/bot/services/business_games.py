@@ -261,7 +261,10 @@ def make_clients(business: Business, count: int, seed: int) -> list[Client]:
                 if hidden is not None:
                     client.hidden = hidden.key
                     stock[hidden.key] -= 1
-            total = sum(sale_price(sector.product(k), business.price) * n for k, n in order.items())  # type: ignore[arg-type]
+            total = sum(
+                sale_price(sector.product(k), business.level(k).key) * n  # type: ignore[arg-type]
+                for k, n in order.items()
+            )
             client.paid = _paid(total, rng)
         clients.append(client)
     return clients
@@ -282,7 +285,8 @@ class TurnGame:
         self, business: Business, clients: list[Client], *, now: float, tired: bool = False
     ) -> None:
         self.sector = business.sector_info
-        self.price = business.price
+        #: Nivel de precios de cada producto (el general o el suyo, `Business.prices`).
+        self.levels = {p.key: business.level(p.key).key for p in business.sector_info.products}
         self.luxury = business.barrio_info.theme == "lujo"
         self.stars = stars(business.reputation)
         self.loyalty = dict(business.regulars)
@@ -290,7 +294,14 @@ class TurnGame:
         self.stock = dict(business.stock)
         self.started = now
         self.deadline = now + TURN_SECONDS
-        self.patience = self.sector.patience * (TIRED_PATIENCE if tired else 1.0)
+        installed = business.installed
+        self.patience = (
+            self.sector.patience
+            * (TIRED_PATIENCE if tired else 1.0)
+            * (1 + sum(e.patience for e in installed))
+        )
+        #: Lo que suman las mejoras a la propina de quien se atiende rápido.
+        self.tip_bonus = sum(e.tips for e in installed)
         self.index = 0
         #: Cambia con cada cliente y cada paso del taller: los clics de antes no cuentan.
         self.round = 0
@@ -327,7 +338,7 @@ class TurnGame:
         """Precio de venta de una unidad."""
         product = self.sector.product(key)
         assert product is not None
-        return sale_price(product, self.price)
+        return sale_price(product, self.levels[key])
 
     def total(self) -> int:
         """Lo que cuesta la cesta del cliente de ahora (con lo pillado al listillo)."""
@@ -413,7 +424,8 @@ class TurnGame:
         if speed != "fast":
             return 0
         loyalty = self.loyalty.get(client.regular, 0) if client.regular else 0
-        return round(revenue * (TIP_SHARE[self.sector.game] + LOYALTY_TIP * loyalty))
+        share = TIP_SHARE[self.sector.game] + self.tip_bonus + LOYALTY_TIP * loyalty
+        return round(revenue * share)
 
     def _comandas(self, verb: str, arg: str, now: float) -> None:
         client = self.current

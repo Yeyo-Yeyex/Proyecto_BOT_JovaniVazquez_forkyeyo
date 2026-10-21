@@ -176,11 +176,13 @@ async def test_montar_cobra_tasa_acondicionamiento_y_fianza_y_el_estado_cobra_lo
     state_gain = wallet(tmp_path, STATE_ACCOUNT_ID)[1] - state_before
     assert state_gain == quote.license + quote.setup_igic + fee
     assert business_taxes(tmp_path) == {"tasa": quote.license, "igic": quote.setup_igic}
-    # Tasa y acondicionamiento son gasto de la actividad; la fianza, no.
+    # La tasa es gasto de la actividad; el acondicionamiento se amortiza (fase 2) y la
+    # fianza no es gasto.
     assert [(c, g) for c, g, _w in activity_records(tmp_path)] == [
         ("negocio:apertura", -quote.license),
-        ("negocio:acondicionamiento", -(quote.setup + quote.setup_igic)),
     ]
+    cost = quote.setup + quote.setup_igic
+    assert business.assets == [{"key": "obra", "cost": cost, "rate": 0.1, "left": cost}]
 
 
 async def test_sin_dinero_no_se_monta_ni_se_guarda_nada(tmp_path: Path) -> None:

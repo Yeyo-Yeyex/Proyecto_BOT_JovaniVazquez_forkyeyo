@@ -1,5 +1,9 @@
 """Catálogo de los negocios de `pala`: sectores, productos, paletas, emblemas y habituales.
 
+Desde la fase 2 (9.5.0), también los tamaños del local (`SIZES`), las mejoras que se
+amortizan (`EQUIPMENT`, `AMORTIZATION`), las campañas de publicidad (`CAMPAIGNS`) y las
+reseñas de los clientes (`REVIEW_LINES`, `REVIEWERS`).
+
 Solo datos. Las reglas que los usan están en `bot.services.business` y los minijuegos, en
 `bot.services.business_games`. Las claves (`Sector.key`, `Product.key`, los índices de
 `PALETTES` y `EMBLEMS`, `REGULAR_NAMES`) se guardan en la base de datos y las lee la escena
@@ -25,8 +29,13 @@ class Product:
         cost: Base del mayorista por unidad, sin IGIC.
         price: Precio de venta con el nivel de precios normal (en el taller, el
             presupuesto justo: recambio y mano de obra).
-        igic: Clave de `taxes.IGIC_BY_KEY` de la compra al mayorista (pan y leche, tipo
-            cero; el resto, el general del 7 %, art. 32.1 del Decreto Legislativo 1/2025).
+        igic: Clave de `taxes.IGIC_BY_KEY` de la compra al mayorista, por el Decreto
+            Legislativo 1/2025 de Canarias: tipo cero el pan, la leche, la fruta fresca y el
+            café tostado (art. 33.Uno); el 3 % (`reducido`) los demás alimentos, los helados,
+            los detergentes y la pintura (art. 34.Uno.a y e); el general del 7 % (art. 32.1)
+            la comida preparada, los refrescos con azúcar y el resto. Interpretaciones del
+            proyecto: el barraquito (café, leche condensada y licor) va al general, el zumo y
+            el batido al 3 % y el granizado, como un refresco, al general.
         pack: Unidades de un lote del mayorista.
         spoil: Parte del stock que se pierde cada noche (0 = no caduca; 1 = se tira entero).
         weight: Lo que se pide frente a los demás productos del sector.
@@ -97,12 +106,13 @@ CAFETERIA = Sector(
     m2=50,
     kind="local",
     products=(
-        Product("cafe", "Café solo", 40, 150, pack=40, weight=1.4),
-        Product("cortado", "Cortado", 50, 180, pack=40, weight=1.6),
+        Product("cafe", "Café solo", 40, 150, igic="cero", pack=40, weight=1.4),
+        Product("cortado", "Cortado", 50, 180, igic="cero", pack=40, weight=1.6),
         Product("barraquito", "Barraquito", 85, 280, pack=30, weight=1.0),
-        Product("zumo", "Zumo natural", 110, 350, pack=20, spoil=0.4, weight=0.7),
+        Product("zumo", "Zumo natural", 110, 350, igic="reducido", pack=20, spoil=0.4,
+                weight=0.7),
         Product("bocadillo", "Bocadillo", 160, 550, pack=20, spoil=0.5, weight=1.0),
-        Product("dulce", "Dulce", 70, 250, pack=20, spoil=0.5, weight=0.8),
+        Product("dulce", "Dulce", 70, 250, igic="reducido", pack=20, spoil=0.5, weight=0.8),
     ),
     clients=8,
     patience=25,
@@ -132,9 +142,9 @@ TIENDA = Sector(
     products=(
         Product("pan", "Pan", 90, 150, igic="cero", pack=30, spoil=1.0, weight=1.5),
         Product("leche", "Leche", 120, 190, igic="cero", pack=24, spoil=0.1, weight=1.3),
-        Product("fruta", "Fruta", 260, 420, pack=20, spoil=0.3, weight=1.0),
-        Product("conservas", "Conservas", 320, 520, pack=24, weight=0.9),
-        Product("limpieza", "Limpieza", 500, 800, pack=12, weight=0.6),
+        Product("fruta", "Fruta", 260, 420, igic="cero", pack=20, spoil=0.3, weight=1.0),
+        Product("conservas", "Conservas", 320, 520, igic="reducido", pack=24, weight=0.9),
+        Product("limpieza", "Limpieza", 500, 800, igic="reducido", pack=12, weight=0.6),
         Product("bebidas", "Bebidas", 430, 700, pack=24, weight=1.0),
     ),
     clients=7,
@@ -187,7 +197,77 @@ TALLER = Sector(
     },
 )  # fmt: skip
 
-SECTORS: tuple[Sector, ...] = (CAFETERIA, TIENDA, TALLER)
+HELADERIA = Sector(
+    key="heladeria",
+    name="Heladería",
+    emoji="🍦",
+    game="comandas",
+    blurb="Helado de gofio, granizados y colas de guiris al sol. Cada cliente es un pedido.",
+    m2=40,
+    kind="local",
+    products=(
+        Product("vainilla", "Helado de vainilla", 60, 250, igic="reducido", pack=30, spoil=0.1,
+                weight=1.2),
+        Product("chocolate", "Helado de chocolate", 60, 250, igic="reducido", pack=30,
+                spoil=0.1, weight=1.3),
+        Product("gofio", "Helado de gofio", 70, 280, igic="reducido", pack=20, spoil=0.1,
+                weight=1.0),
+        Product("mango", "Sorbete de mango", 80, 300, igic="reducido", pack=20, spoil=0.15,
+                weight=0.9),
+        Product("granizado", "Granizado de limón", 30, 180, pack=40, weight=1.0),
+        Product("batido", "Batido", 70, 320, igic="reducido", pack=20, spoil=0.3, weight=0.7),
+    ),
+    clients=7,
+    patience=22,
+    setup=90_000,
+    license=12_000,
+    utilities=1_100,
+    order=(1, 4),
+    # Las tardes, el paseo y la playa; por la mañana, casi nadie.
+    curve=(
+        0.3, 0.15, 0.1, 0.1, 0.1, 0.1, 0.1, 0.2, 0.4, 0.6, 0.8, 1.0,
+        1.2, 1.4, 1.4, 1.5, 1.6, 1.6, 1.5, 1.4, 1.2, 0.9, 0.6, 0.4,
+    ),
+    fit={
+        "marinero": 1.05, "historico": 1.05, "centro": 1.1, "obrero": 0.85,
+        "playa": 1.3, "lujo": 1.1, "rural": 0.75,
+    },
+)  # fmt: skip
+
+FERRETERIA = Sector(
+    key="ferreteria",
+    name="Ferretería",
+    emoji="🔩",
+    game="caja",
+    blurb="Tornillos sueltos, la llave de paso y el consejo gratis. Tiques caros y pocos.",
+    m2=70,
+    kind="local",
+    products=(
+        Product("tornillos", "Tornillería", 120, 300, pack=50, weight=1.4),
+        Product("bombillas", "Bombillas", 250, 600, pack=20, weight=1.1),
+        Product("pintura", "Pintura", 900, 1_900, igic="reducido", pack=10, weight=0.8),
+        Product("herramientas", "Herramientas", 1_100, 2_400, pack=6, weight=0.6),
+        Product("fontaneria", "Fontanería", 450, 1_000, pack=12, weight=0.9),
+        Product("cerraduras", "Cerraduras", 800, 1_700, pack=8, weight=0.5),
+    ),
+    clients=5,
+    patience=35,
+    setup=110_000,
+    license=10_000,
+    utilities=800,
+    order=(1, 4),
+    # Primera hora de los profesionales y la tarde de los manitas.
+    curve=(
+        0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.2, 0.9, 1.4, 1.4, 1.3, 1.2,
+        1.0, 0.6, 0.5, 0.8, 1.1, 1.2, 1.2, 1.0, 0.6, 0.3, 0.15, 0.1,
+    ),
+    fit={
+        "marinero": 1.05, "historico": 0.9, "centro": 0.95, "obrero": 1.25,
+        "playa": 0.8, "lujo": 0.85, "rural": 1.2,
+    },
+)  # fmt: skip
+
+SECTORS: tuple[Sector, ...] = (CAFETERIA, TIENDA, TALLER, HELADERIA, FERRETERIA)
 SECTOR_BY_KEY: dict[str, Sector] = {s.key: s for s in SECTORS}
 
 
@@ -329,5 +409,201 @@ GREETINGS: dict[str, tuple[str, ...]] = {
         "Me lo dejó así mi cuñado, que entiende de motores.",
         "Necesito el coche para el lunes, ¿puede ser?",
         "No sé lo que es, pero suena a caro.",
+    ),
+}
+
+
+# -- Fase 2: crecer el local ----------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Size:
+    """Un tamaño de local: lo que multiplica los metros del sector y lo que da de sí.
+
+    Attributes:
+        key: Clave estable.
+        name: Cómo se enseña.
+        m2: Lo que multiplica los metros del sector (y con ellos el alquiler).
+        clients: Lo que multiplica los clientes de un turno (caben más).
+        pool: Lo que multiplica el cupo del barrio que le toca (se le ve desde más lejos).
+        costs: Lo que multiplica los suministros y el acondicionamiento.
+    """
+
+    key: str
+    name: str
+    m2: float
+    clients: float
+    pool: float
+    costs: float
+
+
+SIZES: tuple[Size, ...] = (
+    Size("pequeno", "Pequeño", 1.0, 1.0, 1.0, 1.0),
+    Size("mediano", "Mediano", 1.6, 1.3, 1.25, 1.4),
+    Size("grande", "Grande", 2.4, 1.6, 1.5, 1.8),
+)
+#: Un local propio de `pisos` sirve si mide al menos esta parte de los metros del sector;
+#: desde `SIZE_FROM[i]` veces los metros, es del tamaño `i`.
+SIZE_FROM: tuple[float, ...] = (0.75, 1.3, 2.0)
+
+#: Clases de amortización: `(nombre, coeficiente anual máximo)`. Tabla de la estimación
+#: directa simplificada (Orden de 27 de marzo de 1998, art. 30 RIRPF). En el juego el año
+#: fiscal es la semana: cada noche se amortiza la séptima parte del coeficiente.
+AMORTIZATION: dict[str, tuple[str, float]] = {
+    "instalaciones": ("Instalaciones y mobiliario", 0.10),
+    "maquinaria": ("Maquinaria", 0.12),
+    "informatica": ("Equipos informáticos", 0.26),
+    "herramientas": ("Útiles y herramientas", 0.30),
+}
+#: Clase del acondicionamiento del local (las obras al montarlo o al trasladarse).
+SETUP_CLASS = "instalaciones"
+
+
+@dataclass(frozen=True, slots=True)
+class Equipment:
+    """Una mejora del local: se compra una vez, se amortiza y cambia el turno.
+
+    Attributes:
+        key: Clave estable (la dibuja la escena).
+        name: Cómo se enseña.
+        sectors: Sectores que la pueden instalar.
+        cost: Base sin IGIC.
+        kind: Clase de `AMORTIZATION`.
+        clients: Lo que suma a los clientes de un turno (0,15 = un 15 % más).
+        patience: Lo que suma a la paciencia de cada cliente.
+        spoil: La parte de la merma de cada noche que evita.
+        tips: Lo que suma a la propina de quien se atiende rápido (parte del tique).
+        nightly_fee: Tasa municipal de cada noche (la terraza ocupa la vía pública).
+    """
+
+    key: str
+    name: str
+    sectors: tuple[str, ...]
+    cost: int
+    kind: str
+    clients: float = 0.0
+    patience: float = 0.0
+    spoil: float = 0.0
+    tips: float = 0.0
+    nightly_fee: int = 0
+
+    def effect(self) -> str:
+        """Lo que hace, en una línea."""
+        parts = []
+        if self.clients:
+            parts.append(f"+{round(self.clients * 100)} % de clientes por turno")
+        if self.patience:
+            parts.append(f"+{round(self.patience * 100)} % de paciencia")
+        if self.spoil:
+            parts.append(f"−{round(self.spoil * 100)} % de merma")
+        if self.tips:
+            parts.append(f"+{round(self.tips * 100)} puntos de propina")
+        if self.nightly_fee:
+            parts.append(f"tasa de {self.nightly_fee} Y$ cada noche")
+        return ", ".join(parts)
+
+
+EQUIPMENT: tuple[Equipment, ...] = (
+    Equipment("cafetera2", "Cafetera de dos grupos", ("cafeteria",), 60_000, "maquinaria",
+              clients=0.15),
+    Equipment("terraza", "Terraza con cuatro mesas", ("cafeteria", "heladeria"), 45_000,
+              "instalaciones", clients=0.2, nightly_fee=300),
+    Equipment("vitrina", "Vitrina refrigerada", ("cafeteria",), 30_000, "maquinaria",
+              spoil=0.5, tips=0.03),
+    Equipment("tpv", "Segunda caja con TPV", ("tienda", "ferreteria"), 40_000, "informatica",
+              patience=0.25),
+    Equipment("camara", "Cámara frigorífica", ("tienda",), 50_000, "instalaciones", spoil=0.6),
+    Equipment("estanterias", "Estanterías y cartelería", ("tienda", "ferreteria"), 25_000,
+              "instalaciones", clients=0.12),
+    Equipment("elevador", "Elevador de dos columnas", ("taller",), 90_000, "maquinaria",
+              clients=0.25),
+    Equipment("diagnosis", "Máquina de diagnosis", ("taller",), 55_000, "informatica",
+              patience=0.3),
+    Equipment("llaves", "Llaves de impacto y carro", ("taller",), 20_000, "herramientas",
+              clients=0.1),
+    Equipment("mantecadora", "Mantecadora artesana", ("heladeria",), 55_000, "maquinaria",
+              clients=0.15, tips=0.03),
+    Equipment("vitrina_helados", "Vitrina de 18 sabores", ("heladeria",), 40_000,
+              "maquinaria", spoil=0.5, patience=0.1),
+    Equipment("copiadora", "Máquina de copiar llaves", ("ferreteria",), 30_000, "maquinaria",
+              clients=0.15),
+)  # fmt: skip
+EQUIPMENT_BY_KEY: dict[str, Equipment] = {e.key: e for e in EQUIPMENT}
+
+
+def equipment_for(sector: str) -> tuple[Equipment, ...]:
+    """Las mejoras que puede instalar un sector, por orden del catálogo."""
+    return tuple(e for e in EQUIPMENT if sector in e.sectors)
+
+
+@dataclass(frozen=True, slots=True)
+class Campaign:
+    """Una campaña de publicidad: más clientes y más cupo del barrio unos días.
+
+    Attributes:
+        key: Clave estable.
+        name: Cómo se enseña.
+        cost: Base sin IGIC (gasto de la actividad).
+        days: Días que dura, contando el de hoy.
+        boost: Lo que suma a los clientes de cada turno y a tu parte del cupo del barrio.
+    """
+
+    key: str
+    name: str
+    cost: int
+    days: int
+    boost: float
+
+
+CAMPAIGNS: tuple[Campaign, ...] = (
+    Campaign("buzoneo", "Buzoneo y carteles", 8_000, 3, 0.10),
+    Campaign("redes", "Anuncios en redes", 20_000, 5, 0.20),
+    Campaign("radio", "Cuña en la radio local", 45_000, 7, 0.30),
+)
+CAMPAIGN_BY_KEY: dict[str, Campaign] = {c.key: c for c in CAMPAIGNS}
+
+#: Quien deja reseña y no es habitual: nombre e inicial, como en las plataformas.
+REVIEWERS: tuple[str, ...] = (
+    "Ana G.", "Kevin R.", "Yurena P.", "Jonathan M.", "Saray D.", "Airam C.", "Begoña L.",
+    "Fran T.", "Idaira S.", "Marcos V.", "Tamara B.", "Echedey F.", "Lucía N.", "Moisés A.",
+)  # fmt: skip
+#: Lo que dice una reseña según sus estrellas (la reseña guarda el índice). Al menos la
+#: mitad de cada lista son frases normales.
+REVIEW_LINES: dict[int, tuple[str, ...]] = {
+    5: (
+        "Todo perfecto. Volveremos.",
+        "Rápido, amable y a buen precio.",
+        "El mejor del barrio, sin discusión.",
+        "Me atendieron enseguida y con una sonrisa.",
+        "Cinco estrellas porque no me deja poner seis.",
+        "Mi suegra salió contenta. Eso no lo consigue ni el párroco.",
+    ),
+    4: (
+        "Muy bien, aunque había algo de cola.",
+        "Buen sitio. Repetiré.",
+        "Correcto y sin sorpresas.",
+        "Bien atendido. El local, algo pequeño.",
+        "Un cuatro: el cinco lo reservo para el bar de mi primo.",
+    ),
+    3: (
+        "Normal. Ni fu ni fa.",
+        "Bien, pero tardaron un rato.",
+        "Cumple, sin más.",
+        "Esperaba más por lo que dicen las reseñas.",
+        "Tres estrellas, que es lo que tiene el wifi.",
+    ),
+    2: (
+        "Me equivocaron el pedido.",
+        "Tardaron muchísimo en atenderme.",
+        "Me dieron mal el cambio.",
+        "No creo que vuelva.",
+        "El de la caja tenía cara de llevar tres turnos seguidos.",
+    ),
+    1: (
+        "Me fui sin que me atendieran.",
+        "Una espera eterna. No vuelvo.",
+        "Me acusaron de robar. Inaceptable.",
+        "Cero estrellas, si se pudiera.",
+        "Pedí un cortado y me sirvieron un disgusto.",
     ),
 }

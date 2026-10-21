@@ -158,7 +158,9 @@ def simulate(sector: Sector, barrio: Barrio, turns: int, miss: float, days: int,
             for key, units in summary.units.items():
                 business.stock[key] = max(0, business.stock.get(key, 0) - units)
                 used[key] = used.get(key, 0) + units
-            change = turn_reputation(sector, summary.reputation, summary.served, business.price)
+            change = turn_reputation(
+                sector, summary.reputation, summary.served, price_reputation(business)
+            )
             business.reputation = max(0.0, min(REPUTATION_MAX, business.reputation + change))
             business.regulars = apply_loyalty(business.regulars, summary.loyalty)
             sales += summary.sales

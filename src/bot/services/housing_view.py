@@ -67,6 +67,7 @@ STATUS_TEXT = {
     rules.EVICTING: "Desahucio en marcha",
     rules.SQUATTED: "Okupado",
     rules.HABITUAL: "Vive su dueño",
+    rules.OWN_BUSINESS: "Su dueño tiene aquí su negocio",
     rules.OBRAS: "En obras",
 }
 
@@ -94,6 +95,8 @@ NEWS_TEXT = {
     "anticipo": "{who} cede sus rentas al banco por un anticipo de {amount}",
     "ejecucion": "El banco ejecuta la hipoteca de {who}: subasta por {amount}",
     "se_muda": "{who} se muda aquí",
+    "abre_negocio": "{who} trae aquí su negocio",
+    "cierra_negocio": "{who} saca de aquí su negocio",
     "firma_miembro": "{who} firma el alquiler por {amount} al mes",
     "obra_nueva": "{who} levanta la promoción: sale a {amount}",
     "fianza_devuelta": "{who} recupera la fianza: {amount}",

@@ -16,7 +16,12 @@ Todo el dinero (y su tratamiento fiscal) está documentado en `EconomyService.bu
   suministros y lo que se debía del local, hasta donde llegue. A las `EVICTION_NIGHTS`
   noches sin pagar, el casero rescinde: la fianza cubre la deuda y el resto vuelve.
 - Cada semana: la cuota de autónomo, si no la ha pagado ya (una por persona).
-- Cerrar: la fianza vuelve, menos lo que se deba.
+- Cerrar: la fianza vuelve, menos lo que se deba. Desde la fase 2, el stock y las mejoras se
+  traspasan (con la clientela) o se liquidan a la baja (`closing_offer`).
+
+Fase 2 (9.5.0): mejoras que se amortizan cada noche (`buy_equipment`), campañas de
+publicidad (`start_campaign`), precio por producto (`set_price`), traslado a otro local o a
+uno propio de `pisos` (`move`, `move_to_own`) y reseñas al acabar cada turno.
 """
 
 from __future__ import annotations
@@ -30,31 +35,49 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+from typing import TYPE_CHECKING
 
 from bot.repositories.business import BusinessRepository
+from bot.repositories.housing import HousingError
 from bot.services.agenda import Agenda
 from bot.services.business import (
     EVICTION_NIGHTS,
     FLAT_RATE_DAYS,
     REPUTATION_MAX,
     Business,
+    ClosingOffer,
+    MoveQuote,
     NightlyBill,
     OpeningQuote,
+    add_asset,
+    add_reviews,
+    amortize,
     clean_name,
+    closing_offer,
     daily_pool,
     drift,
+    forget_on_move,
+    move_quote,
     nightly_bill,
     opening_quote,
+    pool_factor,
+    price_reputation,
+    review_of,
+    setup_asset,
+    size_for,
     spoil,
     turn_clients,
     turn_reputation,
     wholesale,
 )
 from bot.services.business_catalog import (
+    CAMPAIGN_BY_KEY,
     EMBLEMS,
+    EQUIPMENT_BY_KEY,
     PALETTES,
     PRICE_BY_KEY,
     SECTOR_BY_KEY,
+    SIZES,
 )
 from bot.services.business_games import (
     Client,
@@ -69,9 +92,10 @@ from bot.services.economy import (
     EconomyService,
     InsufficientFundsError,
 )
-from bot.services.housing_catalog import BARRIO_BY_KEY
+from bot.services.housing_catalog import BARRIO_BY_KEY, Listing
 from bot.services.levels import TIMEZONE, local_day
 from bot.services.pala import WorkService
+from bot.services.taxes import igic
 from bot.services.telemetry import TimedLock
 from bot.services.work import (
     BATTERY_MIN,
@@ -81,6 +105,9 @@ from bot.services.work import (
     TIRED,
     week_of,
 )
+
+if TYPE_CHECKING:
+    from bot.repositories.housing import HousingRepository
 
 logger = logging.getLogger(__name__)
 
@@ -184,6 +211,7 @@ class TurnResult:
         hour: Hora canaria a la que empezó.
         weekday: Día de la semana en que empezó (0 = lunes).
         day: Día (ISO, hora canaria) en que empezó.
+        reviews: Las reseñas que dejaron sus clientes: `(quién, estrellas, frase)`.
     """
 
     business: Business
@@ -197,6 +225,7 @@ class TurnResult:
     weekday: int
     day: str = ""
     bank_garnished: int = 0
+    reviews: tuple[tuple[str, int, int], ...] = ()
 
     @property
     def net(self) -> int:
@@ -215,7 +244,8 @@ class NightRun:
         due: Lo que había que pagar (con la deuda de antes).
         unpaid: Lo que no llegó.
         spoiled: Unidades perdidas por producto.
-        evicted: Si el casero rescindió el contrato esta noche.
+        evicted: Si el casero rescindió el contrato esta noche (o perdió su local propio).
+        amortized: Lo amortizado esa noche.
     """
 
     user_id: int
@@ -225,6 +255,7 @@ class NightRun:
     unpaid: int
     spoiled: dict[str, int] = field(default_factory=dict)
     evicted: bool = False
+    amortized: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,12 +267,39 @@ class Closing:
         refund: Fianza que vuelve.
         forfeit: Fianza que se queda el casero.
         balance: Saldo final del dueño.
+        traspaso: Si se traspasó (si no, se liquidó lo que quedaba).
+        stock: Lo cobrado por el stock.
+        proceeds: Lo cobrado por las mejoras, la obra y la clientela.
+        gain_tax: IRPF de la ganancia patrimonial (19 %, base del ahorro).
+        reason: `cierre`, `traspaso`, `desahucio` o `sin_local`.
     """
 
     business: Business
     refund: int
     forfeit: int
     balance: int
+    traspaso: bool = False
+    stock: int = 0
+    proceeds: int = 0
+    gain_tax: int = 0
+    reason: str = "cierre"
+
+
+@dataclass(frozen=True, slots=True)
+class OwnLocal:
+    """Un local o nave entera de alguien en `pisos`, para llevar ahí su negocio.
+
+    Attributes:
+        listing: El inmueble.
+        status: Su estado en `pisos` (`vacio`, `negocio`…).
+        size: El tamaño que tendría el negocio ahí (índice de `SIZES`), o `None` si no cabe.
+        fits: Si sirve para su sector (local o nave) y está libre.
+    """
+
+    listing: Listing
+    status: str
+    size: int | None
+    fits: bool
 
 
 class BusinessService:
@@ -253,6 +311,8 @@ class BusinessService:
         work: El curro del dueño (franjas y batería).
         clock: Fuente de tiempo (epoch); inyectable en pruebas.
         rng: Azar de las colas de clientes; inyectable en pruebas.
+        housing: Los inmuebles de `pisos`, para el local propio (fase 2). Sin ellos no hay
+            traslado a un local tuyo.
     """
 
     def __init__(
@@ -263,10 +323,12 @@ class BusinessService:
         *,
         clock: Callable[[], float] = time.time,
         rng: random.Random | None = None,
+        housing: HousingRepository | None = None,
     ) -> None:
         self.repository = repository
         self.economy = economy
         self.work = work
+        self.housing = housing
         self._clock = clock
         self.rng = rng or random.Random()
         self._locks: dict[tuple[int, int], asyncio.Lock] = {}
@@ -335,7 +397,9 @@ class BusinessService:
             business=business,
             agenda=await self.work.agenda(guild_id, user_id),
             bill=nightly_bill(business),
-            pool_left=daily_pool(business.sector_info, business.barrio_info) - used,
+            pool_left=daily_pool(business.sector_info, business.barrio_info)
+            * pool_factor(business, today)
+            - used,
             rivals=rivals,
             battery=await self.work.battery(guild_id, user_id),
             now=now,
@@ -405,19 +469,11 @@ class BusinessService:
                     billed_day=(today - timedelta(days=1)).isoformat(),
                 )
                 business.roll_over(today, week)
-                business.add("apertura", -(quote.license + quote.setup + quote.setup_igic))
+                business.add("apertura", -quote.license)
+                setup_asset(business, quote.setup + quote.setup_igic)
                 self.repository.save_in(connection, guild_id, business)
                 move = BusinessMove(
-                    user_id=user_id,
-                    payments=(
-                        BusinessCost("negocio:apertura", taxes=(("tasa", quote.license),)),
-                        BusinessCost(
-                            "negocio:acondicionamiento",
-                            gone=quote.setup,
-                            taxes=(("igic", quote.setup_igic),),
-                        ),
-                    ),
-                    deposit=quote.deposit,
+                    user_id=user_id, payments=_opening_payments(quote), deposit=quote.deposit
                 )
                 return business, move
 
@@ -500,6 +556,275 @@ class BusinessService:
             await self.repository.save(guild_id, business)
             return news
 
+    # -- Fase 2: mejoras, campañas y precios ---------------------------------------------
+
+    async def buy_equipment(
+        self, guild_id: int, user_id: int, key: str
+    ) -> tuple[Business, int, int, int]:
+        """Compra e instala una mejora del local.
+
+        Tratamiento fiscal: compra con IGIC (al Estado); la base desaparece. No es gasto el
+        día que se paga: base más IGIC (que el pequeño empresario no deduce) se amortizan
+        cada noche (`business.amortize`, ver `EconomyService.business`).
+
+        Returns:
+            `(el negocio, base, IGIC, saldo final)`.
+
+        Raises:
+            BusinessError: Sin negocio, si no es para su sector, ya la tiene o no le llega.
+        """
+        item = EQUIPMENT_BY_KEY.get(key)
+        if item is None:
+            raise BusinessError("Esa mejora no existe.")
+        base, tax = item.cost, igic(item.cost)
+        async with self._lock(guild_id, user_id):
+            today, week = self._today(self._clock())
+
+            def prepare(connection: sqlite3.Connection) -> tuple[Business, BusinessMove]:
+                business = self.repository.business_in(connection, guild_id, user_id)
+                if business is None:
+                    raise BusinessError("No tienes negocio.")
+                if business.sector not in item.sectors:
+                    raise BusinessError("Esa mejora no es para tu negocio.")
+                if key in business.equipment:
+                    raise BusinessError("Ya la tienes instalada.")
+                business.roll_over(today, week)
+                business.equipment = [*business.equipment, key]
+                add_asset(business, key, base + tax, item.kind)
+                self.repository.save_in(connection, guild_id, business)
+                cost = BusinessCost(
+                    "negocio:mejora", gone=base, taxes=(("igic", tax),), expense=False
+                )
+                return business, BusinessMove(user_id=user_id, payments=(cost,))
+
+            try:
+                business, paid = await self.economy.business(guild_id, prepare)
+            except InsufficientFundsError as error:
+                raise BusinessError(f"No te llega: son {base + tax} Y$ con el IGIC.") from error
+            return business, base, tax, paid.balance
+
+    async def start_campaign(
+        self, guild_id: int, user_id: int, key: str
+    ) -> tuple[Business, int, int, int]:
+        """Lanza una campaña de publicidad: más clientes y más cupo unos días.
+
+        Tratamiento fiscal: servicio con IGIC general (al Estado); la base desaparece. Es
+        gasto entero de la actividad el día que se paga (art. 15.e LIS, por el art. 28.1
+        LIRPF, y criterio de cobros y pagos).
+
+        Returns:
+            `(el negocio, base, IGIC, saldo final)`.
+
+        Raises:
+            BusinessError: Sin negocio, con otra campaña en marcha o si no le llega.
+        """
+        campaign = CAMPAIGN_BY_KEY.get(key)
+        if campaign is None:
+            raise BusinessError("Esa campaña no existe.")
+        base, tax = campaign.cost, igic(campaign.cost)
+        async with self._lock(guild_id, user_id):
+            today, week = self._today(self._clock())
+
+            def prepare(connection: sqlite3.Connection) -> tuple[Business, BusinessMove]:
+                business = self.repository.business_in(connection, guild_id, user_id)
+                if business is None:
+                    raise BusinessError("No tienes negocio.")
+                if business.campaign and business.campaign_until >= today.isoformat():
+                    raise BusinessError("Ya tienes una campaña en marcha: espera a que acabe.")
+                business.roll_over(today, week)
+                business.campaign = key
+                business.campaign_until = (today + timedelta(days=campaign.days - 1)).isoformat()
+                business.add("marketing", -(base + tax))
+                self.repository.save_in(connection, guild_id, business)
+                cost = BusinessCost("negocio:publicidad", gone=base, taxes=(("igic", tax),))
+                return business, BusinessMove(user_id=user_id, payments=(cost,))
+
+            try:
+                business, paid = await self.economy.business(guild_id, prepare)
+            except InsufficientFundsError as error:
+                raise BusinessError(f"No te llega: son {base + tax} Y$ con el IGIC.") from error
+            return business, base, tax, paid.balance
+
+    async def set_price(
+        self, guild_id: int, user_id: int, product: str, level: str | None
+    ) -> Business:
+        """Pone el nivel de precios de un producto (`None`: el general). No mueve dinero.
+
+        Raises:
+            BusinessError: Sin negocio o con algo que no existe.
+        """
+        async with self._lock(guild_id, user_id):
+            business = await self.business(guild_id, user_id)
+            if business is None:
+                raise BusinessError("No tienes negocio.")
+            if business.sector_info.product(product) is None:
+                raise BusinessError("Eso no se vende en tu negocio.")
+            if level is not None and level not in PRICE_BY_KEY:
+                raise BusinessError("Ese nivel de precios no existe.")
+            prices = dict(business.prices)
+            if level is None or level == business.price:
+                prices.pop(product, None)
+            else:
+                prices[product] = level
+            business.prices = prices
+            return await self.repository.save(guild_id, business)
+
+    # -- Fase 2: trasladarse ----------------------------------------------------------
+
+    def move_quote(self, business: Business, barrio: str, size: int) -> MoveQuote:
+        """Lo que cuesta trasladar `business` a un local alquilado.
+
+        Raises:
+            BusinessError: Si el barrio o el tamaño no existen.
+        """
+        if barrio not in BARRIO_BY_KEY or not 0 <= size < len(SIZES):
+            raise BusinessError("Ese local no existe.")
+        return move_quote(business, BARRIO_BY_KEY[barrio], size)
+
+    async def own_locals(self, guild_id: int, user_id: int) -> list[OwnLocal]:
+        """Los locales y naves enteros suyos en `pisos`, con si sirven para su negocio."""
+        business = await self.repository.business(guild_id, user_id)
+        if business is None or self.housing is None:
+            return []
+        housing = self.housing
+
+        def read(connection: sqlite3.Connection) -> list[tuple[Listing, str]]:
+            return housing.business_locals_in(connection, guild_id, user_id)
+
+        sector = business.sector_info
+        out = []
+        for listing, status in await self.repository.read(read):
+            size = size_for(sector, listing.m2) if listing.kind == sector.kind else None
+            free = status == "vacio" or listing.key == business.own_listing
+            out.append(OwnLocal(listing, status, size, size is not None and free))
+        return out
+
+    async def move(
+        self, guild_id: int, user_id: int, barrio: str, size: int
+    ) -> tuple[Business, MoveQuote, int]:
+        """Traslada el negocio a un local alquilado de `barrio` y tamaño `size`.
+
+        Tratamiento fiscal: como montarlo (`open`): la tasa de la comunicación previa del
+        traslado (art. 34.2 de la Ley 7/2011 de Canarias), el acondicionamiento (se
+        amortiza) y la fianza nueva. La del local de ahora vuelve, menos lo que se deba al
+        casero; lo que no cubra se paga entero antes de irse. Si deja un local propio, ese
+        vuelve a estar vacío en `pisos`. La obra del local que deja se queda allí.
+
+        Returns:
+            `(el negocio, lo que costó, saldo final)`.
+
+        Raises:
+            BusinessError: Sin negocio, si es el mismo local o si no le llega.
+        """
+        async with self._lock(guild_id, user_id):
+            current = await self.business(guild_id, user_id)
+            if current is None:
+                raise BusinessError("No tienes negocio.")
+            quote = self.move_quote(current, barrio, size)
+            if quote.same_barrio and size == current.size and not current.own_listing:
+                raise BusinessError("Ya estás en ese local.")
+            return await self._move(guild_id, user_id, current, quote, barrio, None)
+
+    async def move_to_own(
+        self, guild_id: int, user_id: int, key: str
+    ) -> tuple[Business, MoveQuote, int]:
+        """Traslada el negocio a un local o nave entera suya de `pisos`: sin alquiler ni fianza.
+
+        Tratamiento fiscal: la tasa del traslado y el acondicionamiento, como `move`. El
+        local queda afecto a la actividad (`housing.OWN_BUSINESS`): no se alquila, no se
+        vende y no imputa renta (art. 85.1 LIRPF). Sus recibos (IBI, comunidad, seguro) los
+        sigue pagando `pisos` (simplificación: en la vida real serían gasto de la actividad).
+
+        Raises:
+            BusinessError: Sin negocio, si el local no sirve o si no le llega.
+        """
+        if self.housing is None:
+            raise BusinessError("Ahora mismo no se puede mirar `pisos`.")
+        async with self._lock(guild_id, user_id):
+            current = await self.business(guild_id, user_id)
+            if current is None:
+                raise BusinessError("No tienes negocio.")
+            if current.own_listing == key:
+                raise BusinessError("Ya estás en ese local.")
+            local = next(
+                (o for o in await self.own_locals(guild_id, user_id) if o.listing.key == key), None
+            )
+            if local is None:
+                raise BusinessError("Ese local no es entero tuyo.")
+            if local.listing.kind != current.sector_info.kind:
+                kind = "una nave" if current.sector_info.kind == "nave" else "un local"
+                raise BusinessError(f"Tu negocio necesita {kind}.")
+            if local.size is None:
+                raise BusinessError("No cabe: el local es demasiado pequeño para tu negocio.")
+            barrio = BARRIO_BY_KEY[local.listing.barrio]
+            quote = move_quote(current, barrio, local.size, own=True)
+            return await self._move(guild_id, user_id, current, quote, barrio.key, key)
+
+    async def _move(
+        self,
+        guild_id: int,
+        user_id: int,
+        current: Business,
+        quote: MoveQuote,
+        barrio: str,
+        own: str | None,
+    ) -> tuple[Business, MoveQuote, int]:
+        """Mueve el dinero y el negocio de un traslado (con el candado ya cogido)."""
+        now = self._clock()
+        today, week = self._today(now)
+        housing = self.housing
+
+        def prepare(connection: sqlite3.Connection) -> tuple[Business, BusinessMove]:
+            business = self.repository.business_in(connection, guild_id, user_id)
+            if business is None or business.id != current.id:
+                raise BusinessError("Tu negocio ya no existe.")
+            business.roll_over(today, week)
+            forfeit = min(business.deposit, business.rent_debt)
+            owed = business.rent_debt - forfeit
+            if housing is not None and business.own_listing:
+                housing.free_business_local_in(
+                    connection, guild_id, user_id, business.own_listing, today, now
+                )
+            if own is not None:
+                assert housing is not None
+                try:
+                    housing.occupy_business_local_in(connection, guild_id, user_id, own, today, now)
+                except HousingError as error:
+                    raise BusinessError(str(error)) from error
+            if barrio != business.barrio:
+                forget_on_move(business)
+            opening = quote.opening
+            refund = business.deposit - forfeit
+            business.barrio, business.size, business.own_listing = barrio, quote.size, own or ""
+            business.deposit, business.rent_debt, business.unpaid_nights = opening.deposit, 0, 0
+            business.assets = [a for a in business.assets if a["key"] != "obra"]
+            setup_asset(business, opening.setup + opening.setup_igic)
+            business.add("apertura", -opening.license)
+            if owed:
+                business.add("local", -owed)
+            business.tell(f"🚚 Te has trasladado a {BARRIO_BY_KEY[barrio].name}.")
+            self.repository.save_in(connection, guild_id, business)
+            payments = (
+                *((BusinessCost("negocio:deuda_local", gone=owed),) if owed else ()),
+                *_opening_payments(opening),
+            )
+            move = BusinessMove(
+                user_id=user_id,
+                refund=refund,
+                forfeit=forfeit,
+                payments=payments,
+                deposit=opening.deposit,
+            )
+            return business, move
+
+        try:
+            business, paid = await self.economy.business(guild_id, prepare)
+        except InsufficientFundsError as error:
+            raise BusinessError(
+                f"No te llega: el traslado cuesta {quote.total} Y$ (con la fianza nueva)."
+            ) from error
+        return business, quote, paid.balance
+
     # -- Comprar ------------------------------------------------------------------------
 
     async def buy(
@@ -567,7 +892,8 @@ class BusinessService:
         """La cola de un turno que empieza en el momento de `status`."""
         business = status.business
         hour = datetime.fromtimestamp(status.now, TIMEZONE).hour
-        count = min(turn_clients(business, hour, plan.luck), math.floor(status.pool_left))
+        wanted = turn_clients(business, hour, plan.luck, local_day(status.now))
+        count = min(wanted, math.floor(status.pool_left))
         return make_clients(business, count, plan.seed)
 
     async def start_turn(self, guild_id: int, user_id: int, plan: TurnPlan | None = None) -> Turn:
@@ -620,6 +946,7 @@ class BusinessService:
             today, week = self._today(now)
             stars_before = turn.business.stars
             best: list[bool] = []
+            reviews: list[tuple[str, int, int]] = []
 
             def prepare(connection: sqlite3.Connection) -> tuple[Business, BusinessMove]:
                 business = self.repository.business_in(connection, guild_id, user_id)
@@ -629,7 +956,10 @@ class BusinessService:
                 for key, units in summary.units.items():
                     business.stock[key] = max(0, business.stock.get(key, 0) - units)
                 change = turn_reputation(
-                    business.sector_info, summary.reputation, summary.served, business.price
+                    business.sector_info,
+                    summary.reputation,
+                    summary.served,
+                    price_reputation(business),
                 )
                 business.reputation = max(0.0, min(REPUTATION_MAX, business.reputation + change))
                 business.regulars = apply_loyalty(business.regulars, summary.loyalty)
@@ -638,6 +968,11 @@ class BusinessService:
                 business.add("ventas", summary.sales)
                 best.append(summary.sales > business.best_turn)
                 business.best_turn = max(business.best_turn, summary.sales)
+                # Reseñas con un azar propio del turno: no gastan el de las colas.
+                rng = random.Random(f"{business.seed}:{game.started}")
+                left = [r for o in summary.outcomes if (r := review_of(o, rng)) is not None]
+                add_reviews(business, today, left)
+                reviews.extend(left)
                 self.repository.save_in(connection, guild_id, business)
                 move = BusinessMove(
                     user_id=user_id, sales=summary.sales, sold_cost=summary.sold_cost
@@ -661,6 +996,7 @@ class BusinessService:
                 weekday=started.weekday(),
                 day=started.date().isoformat(),
                 bank_garnished=paid.bank_garnished,
+                reviews=tuple(reviews),
             )
 
     # -- Las noches y la semana ---------------------------------------------------------
@@ -710,7 +1046,7 @@ class BusinessService:
     ) -> NightRun | None:
         """Cobra una noche de un negocio y, si toca, lo desahucia. `None` si ya no existe."""
         holder: list[NightRun] = []
-        evict: list[Business] = []
+        evict: list[str] = []
 
         def prepare(connection: sqlite3.Connection) -> tuple[Business | None, BusinessMove]:
             business = self.repository.business_in(connection, guild_id, user_id)
@@ -739,15 +1075,30 @@ class BusinessService:
                     taxes=(("igic", bill.utilities_igic),),
                 )
             )
+            if bill.fees:
+                bills.append(BusinessCost("negocio:terraza", taxes=(("tasa", bill.fees),)))
             due = debt + bill.total
             spoiled = spoil(business)
             if business.last_open_day != day.isoformat():
                 drift(business)
             business.billed_day = day.isoformat()
+            amortized = amortize(business)
+            if business.campaign and business.campaign_until <= day.isoformat():
+                name = CAMPAIGN_BY_KEY[business.campaign].name.lower()
+                business.tell(f"📣 Se acabó tu campaña: {name}.")
+                business.campaign, business.campaign_until = "", ""
+            lost_local = (
+                bool(business.own_listing)
+                and housing is not None
+                and not housing.business_local_ok_in(
+                    connection, guild_id, user_id, business.own_listing
+                )
+            )
 
             def settle(connection: sqlite3.Connection, unpaid: int) -> None:
                 business.roll_over(day, week_of(day))
                 business.add("local", -(due - unpaid))
+                business.add("amortizacion", -amortized)
                 business.rent_debt = unpaid
                 business.unpaid_nights = business.unpaid_nights + 1 if unpaid else 0
                 if unpaid:
@@ -759,57 +1110,110 @@ class BusinessService:
                     units = sum(spoiled.values())
                     business.tell(f"🗑️ Se te estropearon {units} unidades de lo perecedero.")
                 self.repository.save_in(connection, guild_id, business)
+                gone = business.unpaid_nights >= EVICTION_NIGHTS or lost_local
                 holder.append(
                     NightRun(user_id, business.name, day, due, unpaid, spoiled,
-                             evicted=business.unpaid_nights >= EVICTION_NIGHTS)
+                             evicted=gone, amortized=amortized)
                 )  # fmt: skip
-                if business.unpaid_nights >= EVICTION_NIGHTS:
-                    evict.append(business)
+                if gone:
+                    evict.append("sin_local" if lost_local else "desahucio")
 
-            return business, BusinessMove(user_id=user_id, bills=tuple(bills), settle=settle)
+            return business, BusinessMove(
+                user_id=user_id, bills=tuple(bills), settle=settle, amortization=amortized
+            )
 
+        housing = self.housing
         business, _paid = await self.economy.business(guild_id, prepare)
         if business is None:
             return None
         run = holder[0]
         if evict:
-            await self._close(guild_id, user_id, evict[0].id, now, reason="desahucio")
+            await self._close(guild_id, user_id, business.id, now, reason=evict[0])
         return run
 
     # -- Cerrar -------------------------------------------------------------------------
 
-    async def close(self, guild_id: int, user_id: int) -> Closing:
-        """Cierra el negocio: la fianza vuelve menos lo que se deba al casero.
+    def offer(self, business: Business) -> ClosingOffer:
+        """Lo que daría cerrar ahora: traspasándolo o liquidando lo que queda."""
+        return closing_offer(business, self._clock())
 
-        El stock se pierde (traspasarlo llegará con la fase 2). La cuota de la semana ya
-        pagada no se devuelve.
+    async def close(self, guild_id: int, user_id: int, *, traspaso: bool = False) -> Closing:
+        """Cierra el negocio: traspasándolo o liquidando el stock y las mejoras.
+
+        La fianza vuelve menos lo que se deba al casero. Tratamiento fiscal de lo cobrado en
+        `EconomyService.business` («Traspasar»). La cuota de la semana ya pagada no se
+        devuelve.
 
         Raises:
-            BusinessError: Si no tiene negocio.
+            BusinessError: Si no tiene negocio o nadie quiere traspasarlo.
         """
         async with self._lock(guild_id, user_id):
             business = await self.repository.business(guild_id, user_id)
             if business is None:
                 raise BusinessError("No tienes negocio.")
-            return await self._close(guild_id, user_id, business.id, self._clock(), reason="cierre")
+            if traspaso and not self.offer(business).can_traspasar:
+                raise BusinessError(
+                    "Nadie quiere quedárselo: hace falta una semana abierto, 3 estrellas y "
+                    "un local alquilado."
+                )
+            reason = "traspaso" if traspaso else "cierre"
+            return await self._close(guild_id, user_id, business.id, self._clock(), reason=reason)
 
     async def _close(
         self, guild_id: int, user_id: int, business_id: int, now: float, *, reason: str
     ) -> Closing:
-        """Borra el negocio y mueve la fianza (sin coger el candado: lo tiene quien llama)."""
+        """Borra el negocio y mueve la fianza y lo que se cobra (el candado lo tiene quien llama).
+
+        Si no es un traspaso (cierre, desahucio, sin local), se liquida a la baja.
+        """
+        traspaso = reason == "traspaso"
+        housing = self.housing
+        today = local_day(now)
 
         def prepare(connection: sqlite3.Connection) -> tuple[Closing, BusinessMove]:
             business = self.repository.business_in(connection, guild_id, user_id)
             if business is None or business.id != business_id:
                 raise BusinessError("No tienes negocio.")
+            offer = closing_offer(business, now)
             forfeit = min(business.deposit, business.rent_debt)
             refund = business.deposit - forfeit
+            if traspaso:
+                stock, proceeds = offer.stock, offer.book + offer.goodwill
+                gain = offer.goodwill
+            else:
+                stock, proceeds = offer.liquidation_stock, offer.liquidation_equipment
+                gain = proceeds - offer.equipment_book
+            if housing is not None and business.own_listing:
+                housing.free_business_local_in(
+                    connection, guild_id, user_id, business.own_listing, today, now
+                )
             self.repository.close_in(connection, guild_id, business, now, reason)
-            closing = Closing(business, refund, forfeit, 0)
-            return closing, BusinessMove(user_id=user_id, refund=refund, forfeit=forfeit)
+            closing = Closing(
+                business, refund, forfeit, 0, traspaso, stock, proceeds, reason=reason
+            )
+            move = BusinessMove(
+                user_id=user_id,
+                refund=refund,
+                forfeit=forfeit,
+                sales=stock,
+                sold_cost=offer.stock,
+                proceeds=proceeds,
+                gain=gain,
+            )
+            return closing, move
 
         closing, paid = await self.economy.business(guild_id, prepare)
-        return Closing(closing.business, closing.refund, closing.forfeit, paid.balance)
+        return Closing(
+            closing.business,
+            closing.refund,
+            closing.forfeit,
+            paid.balance,
+            closing.traspaso,
+            closing.stock,
+            closing.proceeds,
+            paid.gain_tax,
+            closing.reason,
+        )
 
     # -- Para `saldo` -------------------------------------------------------------------
 
@@ -823,3 +1227,16 @@ class BusinessService:
             flat = self._clock() - business.opened_at < FLAT_RATE_DAYS * 86_400
             fee = FLAT_RATE_FEE if flat else SELF_EMPLOYED_FEE
         return nightly_bill(business).total, business.rent_debt, fee
+
+
+def _opening_payments(quote: OpeningQuote) -> tuple[BusinessCost, ...]:
+    """Los pagos de abrir un local: la tasa (gasto) y el acondicionamiento (se amortiza)."""
+    return (
+        BusinessCost("negocio:apertura", taxes=(("tasa", quote.license),)),
+        BusinessCost(
+            "negocio:acondicionamiento",
+            gone=quote.setup,
+            taxes=(("igic", quote.setup_igic),),
+            expense=False,
+        ),
+    )

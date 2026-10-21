@@ -1018,11 +1018,17 @@ def _check_no_advance(market: Market, key: str, user_id: int) -> None:
     Solo para las ventas voluntarias (al mercado, al fondo buitre, a un miembro y la subasta
     que saca el dueño): el banco no consiente. Las forzosas (ejecución, división, la junta)
     no se paran y el anticipo sigue vivo. No va en `_check_free`, que mira también la
-    rehipoteca, y un anticipo no impide rehipotecar.
+    rehipoteca, y un anticipo no impide rehipotecar. Tampoco se vende un local con el
+    negocio propio dentro (`OWN_BUSINESS`): primero se traslada o se cierra.
 
     Raises:
-        HousingError: Si tiene un anticipo vivo sobre ese inmueble.
+        HousingError: Si tiene un anticipo vivo sobre ese inmueble o su negocio dentro.
     """
+    lease = market.leases.get(key)
+    if lease is not None and lease.status == rules.OWN_BUSINESS:
+        raise HousingError(
+            "Tienes tu negocio en este local: trasládalo o ciérralo antes de venderlo."
+        )
     live = market.advance_of(user_id, key)
     if live is not None:
         raise HousingError(
@@ -4118,6 +4124,83 @@ class HousingRepository:
         _save_lease_in(connection, guild_id, key, replace(lease, status=rules.HABITUAL, since=day))
         finance.set_home_in(connection, guild_id, user_id, finance.HOME_OWN, key, now)
         _news_in(connection, guild_id, News(key, day, "se_muda", 0, user_id, None), now)
+
+    # -- El negocio propio de `pala` en un local tuyo (fase 2 de los negocios) ------------
+    #
+    # Las llama `bot.services.negocio` con la conexión de su propia transacción, la que mueve
+    # el dinero del traslado: el local y el dinero se guardan juntos o no se guarda nada.
+
+    @staticmethod
+    def business_locals_in(
+        connection: sqlite3.Connection, guild_id: int, user_id: int
+    ) -> list[tuple[Listing, str]]:
+        """Los locales y naves enteros de alguien, con su estado (`VACANT`, `OWN_BUSINESS`…)."""
+        market = _market_in(connection, guild_id)
+        out = []
+        for key in market.keys():
+            listing = market.listing(key)
+            lease = market.leases.get(key)
+            if (
+                listing is None
+                or lease is None
+                or listing.kind not in rules.BUSINESS_SPACE_KINDS
+                or market.shares_of(key).get(user_id, 0) != rules.SHARES
+            ):
+                continue
+            out.append((listing, lease.status))
+        return out
+
+    @staticmethod
+    def occupy_business_local_in(
+        connection: sqlite3.Connection, guild_id: int, user_id: int, key: str, day: date,
+        now: float,
+    ) -> Listing:  # fmt: skip
+        """Lleva el negocio propio a un local suyo: deja de alquilarse y de poder venderse.
+
+        Raises:
+            HousingError: Si no es un local o una nave entera suya, vacía y sin anticipo.
+        """
+        market = _market_in(connection, guild_id)
+        listing = _listing(market, key)
+        if listing.kind not in rules.BUSINESS_SPACE_KINDS:
+            raise HousingError("Ahí no cabe un negocio: tiene que ser un local o una nave.")
+        if market.shares_of(key).get(user_id, 0) != rules.SHARES:
+            raise HousingError("Solo puedes llevar tu negocio a un local que sea entero tuyo.")
+        lease = market.leases.get(key)
+        if lease is None or lease.status != rules.VACANT or lease.member is not None:
+            raise HousingError("Está ocupado: tiene que estar vacío para llevar ahí tu negocio.")
+        if market.advance_of(user_id, key) is not None:
+            raise HousingError("Tienes sus rentas cedidas al banco: cancela antes el anticipo.")
+        _save_lease_in(
+            connection, guild_id, key, replace(lease, status=rules.OWN_BUSINESS, since=day)
+        )
+        _news_in(connection, guild_id, News(key, day, "abre_negocio", 0, user_id, None), now)
+        return listing
+
+    @staticmethod
+    def free_business_local_in(
+        connection: sqlite3.Connection, guild_id: int, user_id: int, key: str, day: date,
+        now: float,
+    ) -> None:  # fmt: skip
+        """Saca el negocio propio de un local: vuelve a estar vacío (si aún lo tenía dentro)."""
+        lease = _market_in(connection, guild_id).leases.get(key)
+        if lease is None or lease.status != rules.OWN_BUSINESS:
+            return
+        _save_lease_in(connection, guild_id, key, replace(lease, status=rules.VACANT, since=day))
+        _news_in(connection, guild_id, News(key, day, "cierra_negocio", 0, user_id, None), now)
+
+    @staticmethod
+    def business_local_ok_in(
+        connection: sqlite3.Connection, guild_id: int, user_id: int, key: str
+    ) -> bool:
+        """Si el negocio sigue teniendo su local propio: entero de su dueño y con el negocio."""
+        market = _market_in(connection, guild_id)
+        lease = market.leases.get(key)
+        return (
+            lease is not None
+            and lease.status == rules.OWN_BUSINESS
+            and market.shares_of(key).get(user_id, 0) == rules.SHARES
+        )
 
     async def leave_home(self, guild_id: int, user_id: int, day: date, now: float) -> str:
         """Deja la vivienda habitual (su piso o el que alquila a otro miembro).

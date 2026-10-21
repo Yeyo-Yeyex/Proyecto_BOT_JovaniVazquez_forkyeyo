@@ -18,10 +18,19 @@ import copy
 import io
 import sys
 import time
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
-from bot.services.business_catalog import SECTOR_BY_KEY
+from bot.services.business import Business, add_asset, move_quote, setup_asset
+from bot.services.business_catalog import EQUIPMENT_BY_KEY, SECTOR_BY_KEY, SECTORS
+from bot.services.business_view import (
+    mejoras_state,
+    negocio_state,
+    resenas_state,
+    traslado_state,
+)
+from bot.services.housing_catalog import BARRIO_BY_KEY
 
 #: Lo común de cada negocio de ejemplo: nombre, sector, colores del rótulo, emblema y tema.
 SHOPS: dict[str, dict[str, Any]] = {
@@ -46,9 +55,23 @@ SHOPS: dict[str, dict[str, Any]] = {
         "accent": "#f58220",
         "emblem": "drago",
     },
+    "heladeria": {
+        "name": "Heladería Dácil",
+        "sector": "heladeria",
+        "main": "#13867f",
+        "accent": "#fbf3e0",
+        "emblem": "sol",
+    },
+    "ferreteria": {
+        "name": "Ferretería El Tornillo",
+        "sector": "ferreteria",
+        "main": "#b3261e",
+        "accent": "#f6bd2d",
+        "emblem": "rayo",
+    },
 }
 
-SECTOR_NAME = {"cafeteria": "Cafetería", "tienda": "Tienda de barrio", "taller": "Taller"}
+SECTOR_NAME = {s.key: s.name for s in SECTORS}
 
 JOB = {
     "icon": "obra",
@@ -106,6 +129,8 @@ def _montar() -> dict[str, Any]:
         "cafeteria": ["Local de 50 m²", "Alquiler: unos 7.900 Y$ al día", "Montarlo: 150.000 Y$"],
         "tienda": ["Local de 60 m²", "Alquiler: unos 9.400 Y$ al día", "Montarlo: 125.000 Y$"],
         "taller": ["Nave de 90 m²", "Alquiler: unos 8.100 Y$ al día", "Montarlo: 180.000 Y$"],
+        "heladeria": ["Local de 40 m²", "Alquiler: unos 6.300 Y$ al día", "Montarlo: 115.000 Y$"],
+        "ferreteria": ["Local de 70 m²", "Alquiler: unos 11.000 Y$ al día", "Montarlo: 140.000 Y$"],
     }
     return {
         "screen": "montar",
@@ -118,7 +143,7 @@ def _montar() -> dict[str, Any]:
                 "lines": lines[key],
                 "selected": key == "tienda",
             }
-            for key in ("cafeteria", "tienda", "taller")
+            for key in SECTOR_NAME
         ],
         "foot": "Elige el sector en el desplegable. Luego, el barrio, el nombre y los colores.",
     }
@@ -181,7 +206,41 @@ PRODUCTS: dict[str, list[tuple[str, str, str, str, str, str | None, bool]]] = {
         ("bujias", "Bujías", "0", "400 Y$", "1.400 Y$", None, True),
         ("neumatico", "Neumático", "8", "1.100 Y$", "2.600 Y$", None, False),
     ],
+    "heladeria": [
+        (
+            "vainilla",
+            "Helado de vainilla",
+            "40",
+            "60 Y$",
+            "250 Y$",
+            "Caduca un 10 % cada noche",
+            False,
+        ),
+        (
+            "chocolate",
+            "Helado de chocolate",
+            "52",
+            "60 Y$",
+            "250 Y$",
+            "Caduca un 10 % cada noche",
+            False,
+        ),
+        ("gofio", "Helado de gofio", "9", "70 Y$", "320 Y$", "Caduca un 10 % cada noche", True),
+        ("mango", "Sorbete de mango", "20", "80 Y$", "300 Y$", "Caduca un 15 % cada noche", False),
+        ("granizado", "Granizado de limón", "64", "30 Y$", "180 Y$", None, False),
+        ("batido", "Batido", "14", "70 Y$", "320 Y$", "Caduca un 30 % cada noche", False),
+    ],
+    "ferreteria": [
+        ("tornillos", "Tornillería", "180", "120 Y$", "300 Y$", None, False),
+        ("bombillas", "Bombillas", "35", "250 Y$", "600 Y$", None, False),
+        ("pintura", "Pintura", "6", "900 Y$", "1.900 Y$", None, False),
+        ("herramientas", "Herramientas", "2", "1.100 Y$", "2.400 Y$", None, True),
+        ("fontaneria", "Fontanería", "20", "450 Y$", "1.000 Y$", None, False),
+        ("cerraduras", "Cerraduras", "8", "800 Y$", "1.700 Y$", None, False),
+    ],
 }
+#: Productos con su propio nivel de precios en las muestras (la chapa del almacén).
+LEVELS = {("heladeria", "gofio"): "Caro", ("ferreteria", "tornillos"): "Barato"}
 
 
 def _almacen(sector: str) -> dict[str, Any]:
@@ -197,6 +256,7 @@ def _almacen(sector: str) -> dict[str, Any]:
                 "price": price,
                 "spoil": spoil,
                 "low": low,
+                "level": LEVELS.get((sector, key)),
             }
             for key, name, units, cost, price, spoil, low in PRODUCTS[sector]
         ],
@@ -488,6 +548,114 @@ def samples() -> dict[str, dict[str, Any]]:
         ],
         lines=["Acusaste a quien no era: −8 de reputación", "Nayra baja a fidelidad 2"],
     )
+    s.update(_phase2())
+    return s
+
+
+def _phase2() -> dict[str, dict[str, Any]]:
+    """Las muestras de la fase 2, con las funciones de verdad de `business_view`."""
+    today = date(2026, 10, 20)
+    s: dict[str, dict[str, Any]] = {}
+    s["dia_heladeria"] = _dia(
+        business=_business("heladeria", barrio="Las Canteras", alert=None, stars=4.5),
+        tip="Te quedan 2 franjas: la heladería vende más por la tarde.",
+    )
+    s["dia_ferreteria"] = _dia(
+        job=None, jornada="Sin curro", battery=46, family=None,
+        business=_business("ferreteria", barrio="Schamann", alert="Poco stock: herramientas"),
+        tip="Sin curro también te cansas: cada turno en la ferretería gasta batería.",
+    )  # fmt: skip
+    s["cliente_heladeria"] = _cliente(
+        "heladeria",
+        theme="playa",
+        order=[{"key": "gofio", "n": 2}, {"key": "granizado", "n": 1}, {"key": "batido", "n": 1}],
+        patience="22 s",
+    )
+    s["cliente_ferreteria"] = _cliente(
+        "ferreteria",
+        theme="obrero",
+        client={"seed": 64, "name": "Don Fefo", "regular": True, "line": "Buenas tardes."},
+        basket=[
+            {"key": "tornillos", "n": 3, "price": "900 Y$"},
+            {"key": "pintura", "n": 1, "price": "1.900 Y$"},
+            {"key": "cerraduras", "n": 1, "price": "1.700 Y$"},
+            {"key": "bombillas", "n": 2, "price": "1.200 Y$"},
+            {"key": "fontaneria", "n": 1, "price": "1.000 Y$"},
+            {"key": "herramientas", "n": 1, "price": "2.400 Y$"},
+        ],
+        total="9.100 Y$",
+        paid="10.000 Y$",
+        thief=True,
+        queue=2,
+        index="Cliente 2 de 5",
+        patience="35 s",
+    )
+    for sector in ("heladeria", "ferreteria"):
+        s[f"almacen_{sector}"] = _almacen(sector)
+    # Una cafetería crecida: local grande y propio, tres mejoras, campaña y buenas reseñas.
+    cafe = Business(
+        user_id=1, sector="cafeteria", barrio="triana", name="Cafetería La Tertulia",
+        seed=12345, reputation=88.0, day=today.isoformat(), turns_today=3,
+        sales_today=31_400, clients_today=29, best_turn=14_800, size=2,
+        own_listing="triana_local", equipment=["cafetera2", "terraza", "vitrina"],
+        campaign="radio", campaign_until=(today + timedelta(days=3)).isoformat(),
+        regulars={"Doña Carmen": 9, "Yeray": 6}, week_totals={"ventas": 180_000},
+    )  # fmt: skip
+    setup_asset(cafe, 230_000)
+    for key in cafe.equipment:
+        item = EQUIPMENT_BY_KEY[key]
+        add_asset(cafe, key, round(item.cost * 1.07), item.kind)
+    cafe.assets[1]["left"] -= 9_000
+    lines = [(5, 0), (5, 3), (4, 1), (5, 4), (5, 2), (5, 1), (4, 0), (5, 2), (5, 5),
+             (4, 3), (5, 0), (5, 1), (5, 3), (2, 0)]  # fmt: skip
+    names = ["Doña Carmen", "Ana G.", "Yeray", "Kevin R.", "Saray D.", "Pino", "Airam C.",
+             "Lucía N.", "Fran T.", "Nayra", "Moisés A.", "Echedey F.", "Begoña L.",
+             "Tamara B."]  # fmt: skip
+    cafe.reviews = [
+        [(today - timedelta(days=13 - i)).isoformat(), who, n, line]
+        for i, (who, (n, line)) in enumerate(zip(names, lines, strict=True))
+    ]
+    s["negocio_cafeteria_crecida"] = negocio_state(
+        cafe, foot="Abrir gasta 1 franja. Te quedan 4.", rivals=2
+    )
+    s["mejoras_cafeteria"] = mejoras_state(cafe, today)
+    s["resenas"] = resenas_state(cafe, today)
+    fresh = {
+        sector: Business(
+            user_id=2,
+            sector=sector,
+            barrio="schamann",
+            name=SHOPS[sector]["name"],
+            seed=7,
+            day=today.isoformat(),
+        )  # fmt: skip
+        for sector in SHOPS
+    }
+    for sector, business in fresh.items():
+        if sector != "cafeteria":
+            s[f"mejoras_{sector}"] = mejoras_state(business, today)
+    s["resenas_vacia"] = resenas_state(fresh["tienda"], today)
+    s["negocio_heladeria_playa"] = negocio_state(
+        Business(
+            user_id=3, sector="heladeria", barrio="canteras", name="Heladería Dácil",
+            palette=1, emblem=3, seed=55, reputation=70.0, day=today.isoformat(),
+            turns_today=1, sales_today=6_800, clients_today=9,
+        ),
+        foot="Abrir gasta 1 franja. Te quedan 5.",
+    )  # fmt: skip
+    s["negocio_ferreteria_obrero"] = negocio_state(
+        Business(
+            user_id=4, sector="ferreteria", barrio="schamann", name="Ferretería El Tornillo",
+            palette=7, emblem=7, seed=77, reputation=40.0, day=today.isoformat(),
+            equipment=["tpv"],
+        ),
+        foot="Abrir gasta 1 franja. Te quedan 6.",
+    )  # fmt: skip
+    small = fresh["cafeteria"]
+    quote = move_quote(small, BARRIO_BY_KEY["vegueta"], 1)
+    s["traslado_vegueta"] = traslado_state(small, "vegueta", 1, quote)
+    own = move_quote(small, BARRIO_BY_KEY["schamann"], 0, own=True)
+    s["traslado_propio"] = traslado_state(small, "schamann", 0, own, own=True)
     return s
 
 

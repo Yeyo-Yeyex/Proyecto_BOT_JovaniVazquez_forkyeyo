@@ -23,6 +23,20 @@ En resumen:
 - **Cada noche** se pagan el alquiler y los suministros (`nightly_bill`); lo que no llega
   queda como deuda del local y, a las `EVICTION_NIGHTS` noches sin pagar, el casero
   rescinde el contrato.
+
+Fase 2 (9.5.0, «crecer el local»):
+
+- **Tamaño** (`SIZES`): un local mayor cuesta más de alquiler y suministros, pero caben más
+  clientes por turno y le toca más cupo del barrio. Un local propio de `pisos`
+  (`own_listing`) no paga alquiler ni fianza; su tamaño sale de sus metros (`size_for`).
+- **Mejoras** (`EQUIPMENT`): suben los clientes, la paciencia o la propina, o bajan la
+  merma. Se amortizan cada noche (`amortize`), como el acondicionamiento del local.
+- **Campañas** (`CAMPAIGNS`): unos días con más clientes y más cupo.
+- **Precio por producto** (`prices`): cada producto puede tener su nivel de precios.
+- **Reseñas** (`review_of`): las dejan algunos clientes; con buena media y bastantes, el
+  negocio sale «recomendado» (`RECOMMENDED_BOOST`).
+- **Cerrar** con traspaso o liquidando lo que queda (`closing_offer`), y **trasladarse**
+  (`move_quote`).
 """
 
 from __future__ import annotations
@@ -30,18 +44,31 @@ from __future__ import annotations
 import math
 import random
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
+from typing import Any
 
 from bot.services.business_catalog import (
+    AMORTIZATION,
+    CAMPAIGN_BY_KEY,
     EMBLEMS,
+    EQUIPMENT_BY_KEY,
     PALETTES,
     PRICE_BY_KEY,
     REGULAR_NAMES,
     REGULARS_PER_BUSINESS,
+    REVIEW_LINES,
+    REVIEWERS,
     SECTOR_BY_KEY,
+    SETUP_CLASS,
+    SIZE_FROM,
+    SIZES,
+    Equipment,
+    PriceLevel,
     Product,
     Sector,
+    Size,
 )
 from bot.services.housing_catalog import BARRIO_BY_KEY, KINDS, Barrio
 from bot.services.taxes import IGIC_BY_KEY, IGIC_GENERAL_RATE, YAPDOLLARS_PER_EURO, igic
@@ -99,16 +126,40 @@ REPUTATION: dict[str, float] = {
 #: sector con pocos clientes por turno (el taller) sube y baja al mismo ritmo por turno.
 REPUTATION_CLIENTS = 8
 
+#: Fase 2. Reseñas: probabilidad de que deje una quien se atendió y quien se fue sin
+#: atender (el enfadado escribe más), y cuántas cuentan en la media.
+REVIEW_CHANCE = 0.25
+REVIEW_ANGRY_CHANCE = 0.5
+REVIEW_WINDOW = 20
+#: «Recomendado»: con esta media y estas reseñas, un 10 % más de clientes.
+RECOMMENDED_RATING = 4.5
+RECOMMENDED_REVIEWS = 10
+RECOMMENDED_BOOST = 0.10
+#: Días que tiene que llevar abierto un negocio para que alguien quiera traspasarlo, y las
+#: estrellas mínimas: nadie compra un negocio hundido.
+TRASPASO_MIN_DAYS = 7
+TRASPASO_MIN_STARS = 3.0
+#: El fondo de comercio de un traspaso: estos días de lo que dejó de media la semana pasada,
+#: por las estrellas sobre cinco.
+GOODWILL_DAYS = 3
+#: Sin traspaso, el mayorista recompra el stock a esta parte de lo que costó y las mejoras
+#: se venden de segunda mano a esta parte de lo que queda por amortizar.
+LIQUIDATION_STOCK = 0.5
+LIQUIDATION_EQUIPMENT = 0.4
+#: Al cambiar de barrio, la reputación se acerca a la de partida a la mitad y los habituales
+#: pierden la mitad de su fidelidad: te conocen, pero les pilla lejos.
+MOVE_KEEP = 0.5
+
 
 def stars(reputation: float) -> float:
     """Estrellas de 1 a 5, de media en media, de una reputación de 0 a 100."""
     return round((1 + 4 * max(0.0, min(REPUTATION_MAX, reputation)) / REPUTATION_MAX) * 2) / 2
 
 
-def turn_reputation(sector: Sector, raw: float, served: int, price: str) -> float:
+def turn_reputation(sector: Sector, raw: float, served: int, per_client: float) -> float:
     """Lo que mueve la reputación un turno: lo de sus clientes escalado a `REPUTATION_CLIENTS`,
-    más lo del nivel de precios por cada cliente atendido."""
-    return (raw + PRICE_BY_KEY[price].reputation * served) * REPUTATION_CLIENTS / sector.clients
+    más lo de los precios por cada cliente atendido (`price_reputation`)."""
+    return (raw + per_client * served) * REPUTATION_CLIENTS / sector.clients
 
 
 def reputation_factor(reputation: float) -> float:
@@ -154,6 +205,15 @@ class Business:
         deposit: Fianza que espera en el depósito de fianzas.
         news: Lo que ha pasado desde la última vez que se abrió el panel (las noches).
         best_turn: Las mejores ventas de un turno.
+        size: Índice de `SIZES` (fase 2).
+        own_listing: Clave del local propio de `pisos` en el que está (`""` = alquilado).
+        equipment: Claves de `EQUIPMENT` instaladas.
+        assets: Lo que se amortiza: `{"key", "cost", "rate", "left"}` (`left`, lo que queda;
+            `key` es la mejora o `obra` para el acondicionamiento).
+        campaign: Clave de la campaña de publicidad en marcha (`""` si no hay).
+        campaign_until: Último día (ISO) de la campaña.
+        prices: Nivel de precios de cada producto que no va con el general (`price`).
+        reviews: Las últimas reseñas: `[día ISO, quién, estrellas, índice de la frase]`.
     """
 
     user_id: int
@@ -185,6 +245,14 @@ class Business:
     deposit: int = 0
     news: list[str] = field(default_factory=list)
     best_turn: int = 0
+    size: int = 0
+    own_listing: str = ""
+    equipment: list[str] = field(default_factory=list)
+    assets: list[dict[str, Any]] = field(default_factory=list)
+    campaign: str = ""
+    campaign_until: str = ""
+    prices: dict[str, str] = field(default_factory=dict)
+    reviews: list[list[Any]] = field(default_factory=list)
     id: int = 0
 
     @property
@@ -212,6 +280,20 @@ class Business:
     def emblem_key(self) -> str:
         """Clave del emblema del rótulo (la dibuja la escena)."""
         return EMBLEMS[self.emblem % len(EMBLEMS)][0]
+
+    @property
+    def size_info(self) -> Size:
+        """Su tamaño de local."""
+        return SIZES[max(0, min(len(SIZES) - 1, self.size))]
+
+    @property
+    def installed(self) -> tuple[Equipment, ...]:
+        """Sus mejoras, del catálogo."""
+        return tuple(EQUIPMENT_BY_KEY[k] for k in self.equipment if k in EQUIPMENT_BY_KEY)
+
+    def level(self, product: str) -> PriceLevel:
+        """El nivel de precios de un producto (el suyo o el general)."""
+        return PRICE_BY_KEY[self.prices.get(product, self.price)]
 
     def roll_over(self, today: date, week: str) -> None:
         """Pone a cero los contadores del día y pasa la semana si han cambiado.
@@ -277,19 +359,26 @@ def usual_order(seed: int, regular: str, sector: Sector) -> dict[str, int]:
 # -- El local y lo que cuesta ----------------------------------------------------------
 
 
-def rent(sector: Sector, barrio: Barrio) -> int:
+def rent(sector: Sector, barrio: Barrio, size: Size = SIZES[0]) -> int:
     """Alquiler del local de cada noche (un mes del contrato), base sin IGIC, en Y$.
 
     Como `housing.reference_rent` de un local o una nave de `pisos` con los metros del
-    sector: alquilar el local o tenerlo alquilado sale a lo mismo.
+    sector (por su tamaño): alquilar el local o tenerlo alquilado sale a lo mismo.
     """
-    euros = sector.m2 * barrio.rent_m2 * KINDS[sector.kind].rent_factor
+    euros = sector.m2 * size.m2 * barrio.rent_m2 * KINDS[sector.kind].rent_factor
     return int(round(euros * YAPDOLLARS_PER_EURO, -1))
 
 
-def deposit(sector: Sector, barrio: Barrio) -> int:
+def deposit(sector: Sector, barrio: Barrio, size: Size = SIZES[0]) -> int:
     """Fianza del local: `DEPOSIT_MONTHS` mensualidades."""
-    return DEPOSIT_MONTHS * rent(sector, barrio)
+    return DEPOSIT_MONTHS * rent(sector, barrio, size)
+
+
+def size_for(sector: Sector, m2: int) -> int | None:
+    """El tamaño (índice de `SIZES`) de un local propio de `m2` metros, o `None` si no cabe."""
+    ratio = m2 / sector.m2
+    fits = [i for i, low in enumerate(SIZE_FROM) if ratio >= low]
+    return fits[-1] if fits else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -316,14 +405,21 @@ class OpeningQuote:
         return self.license + self.deposit + self.setup + self.setup_igic
 
 
-def opening_quote(sector: Sector, barrio: Barrio) -> OpeningQuote:
-    """Lo que cuesta montar `sector` en `barrio`."""
+def opening_quote(
+    sector: Sector, barrio: Barrio, size: Size = SIZES[0], *, own: bool = False
+) -> OpeningQuote:
+    """Lo que cuesta montar `sector` en `barrio` (o trasladarse allí).
+
+    Args:
+        own: En un local propio de `pisos`: sin fianza ni alquiler.
+    """
+    setup = int(round(sector.setup * size.costs, -2))
     return OpeningQuote(
         license=sector.license,
-        deposit=deposit(sector, barrio),
-        setup=sector.setup,
-        setup_igic=igic(sector.setup),
-        rent=rent(sector, barrio),
+        deposit=0 if own else deposit(sector, barrio, size),
+        setup=setup,
+        setup_igic=igic(setup),
+        rent=0 if own else rent(sector, barrio, size),
     )
 
 
@@ -338,6 +434,7 @@ class NightlyBill:
             el inquilino la ingresa en el Estado y el resto se lo lleva el casero.
         utilities: Suministros, base.
         utilities_igic: Su IGIC.
+        fees: Tasas municipales de cada noche (la terraza, art. 20.3.l TRLRHL): al Estado.
     """
 
     rent: int
@@ -345,28 +442,31 @@ class NightlyBill:
     withholding: int
     utilities: int
     utilities_igic: int
+    fees: int = 0
 
     @property
     def total(self) -> int:
         """Lo que cuesta la noche entera."""
-        return self.rent + self.rent_igic + self.utilities + self.utilities_igic
+        return self.rent + self.rent_igic + self.utilities + self.utilities_igic + self.fees
 
     @property
     def taxes(self) -> int:
-        """Lo que va al Estado (IGIC y retención)."""
-        return self.rent_igic + self.withholding + self.utilities_igic
+        """Lo que va al Estado (IGIC, retención y tasas)."""
+        return self.rent_igic + self.withholding + self.utilities_igic + self.fees
 
 
 def nightly_bill(business: Business) -> NightlyBill:
-    """Lo que cuesta una noche del local de `business`."""
-    sector, barrio = business.sector_info, business.barrio_info
-    base = rent(sector, barrio)
+    """Lo que cuesta una noche del local de `business` (sin alquiler si el local es suyo)."""
+    sector, barrio, size = business.sector_info, business.barrio_info, business.size_info
+    base = 0 if business.own_listing else rent(sector, barrio, size)
+    utilities = int(round(sector.utilities * size.costs, -1))
     return NightlyBill(
         rent=base,
         rent_igic=igic(base),
         withholding=round(base * RENT_WITHHOLDING),
-        utilities=sector.utilities,
-        utilities_igic=igic(sector.utilities),
+        utilities=utilities,
+        utilities_igic=igic(utilities),
+        fees=sum(e.nightly_fee for e in business.installed),
     )
 
 
@@ -382,11 +482,16 @@ def sale_price(product: Product, price_level: str) -> int:
 
 
 def spoil(business: Business) -> dict[str, int]:
-    """Quita del stock lo que se pierde esta noche y devuelve las unidades perdidas."""
+    """Quita del stock lo que se pierde esta noche y devuelve las unidades perdidas.
+
+    Las mejoras que enfrían (`Equipment.spoil`) evitan una parte.
+    """
     lost: dict[str, int] = {}
+    keep = min(1.0, sum(e.spoil for e in business.installed))
     for product in business.sector_info.products:
         units = business.stock.get(product.key, 0)
-        gone = math.ceil(units * product.spoil) if product.spoil and units else 0
+        share = product.spoil * (1 - keep)
+        gone = math.ceil(units * share) if share and units else 0
         if gone:
             business.stock[product.key] = units - gone
             lost[product.key] = gone
@@ -407,21 +512,58 @@ def daily_pool(sector: Sector, barrio: Barrio) -> float:
     return DAILY_POOL_TURNS * sector.clients * sector.fit.get(barrio.theme, 1.0)
 
 
-def turn_clients(business: Business, hour: int, luck: float) -> int:
+def campaign_boost(business: Business, today: date) -> float:
+    """Lo que suma su campaña de publicidad hoy (0 si no tiene o ya acabó)."""
+    campaign = CAMPAIGN_BY_KEY.get(business.campaign)
+    if campaign is None or business.campaign_until < today.isoformat():
+        return 0.0
+    return campaign.boost
+
+
+def pool_factor(business: Business, today: date) -> float:
+    """Lo que multiplica su parte del cupo del barrio: el tamaño del local y la campaña."""
+    return business.size_info.pool * (1 + campaign_boost(business, today))
+
+
+def _weighted(business: Business, value: Callable[[PriceLevel], float]) -> float:
+    """La media de algo del nivel de precios de cada producto, por lo que se pide."""
+    products = business.sector_info.products
+    total = sum(p.weight for p in products)
+    return sum(value(business.level(p.key)) * p.weight for p in products) / total
+
+
+def price_clients(business: Business) -> float:
+    """Lo que multiplican los precios los clientes de un turno (media por producto)."""
+    luxury = business.barrio_info.theme == "lujo"
+    return _weighted(business, lambda lv: lv.luxury_clients if luxury else lv.clients)
+
+
+def price_reputation(business: Business) -> float:
+    """Lo que suman los precios a la reputación por cada cliente bien atendido."""
+    return _weighted(business, lambda lv: lv.reputation)
+
+
+def turn_clients(business: Business, hour: int, luck: float, today: date | None = None) -> int:
     """Clientes que vendrían a un turno a esta hora (sin mirar el cupo del barrio).
 
-    `base × tema del barrio × hora × reputación × precio`, redondeado con un poco de azar
-    (`luck`, de 0 a 1) para que dos turnos iguales no salgan clavados. Al menos uno.
+    `base × tema del barrio × hora × reputación × precio × local`, redondeado con un poco de
+    azar (`luck`, de 0 a 1) para que dos turnos iguales no salgan clavados. El local suma
+    su tamaño, sus mejoras, la campaña de `today` y el «recomendado». Al menos uno.
     """
     sector, barrio = business.sector_info, business.barrio_info
-    level = PRICE_BY_KEY[business.price]
-    price = level.luxury_clients if barrio.theme == "lujo" else level.clients
+    local = (
+        business.size_info.clients
+        * (1 + sum(e.clients for e in business.installed))
+        * (1 + (campaign_boost(business, today) if today else 0.0))
+        * (1 + (RECOMMENDED_BOOST if recommended(business) else 0.0))
+    )
     expected = (
         sector.clients
         * sector.fit.get(barrio.theme, 1.0)
         * sector.curve[hour % 24]
         * reputation_factor(business.reputation)
-        * price
+        * price_clients(business)
+        * local
     )
     return max(1, math.floor(expected + luck))
 
@@ -429,6 +571,168 @@ def turn_clients(business: Business, hour: int, luck: float) -> int:
 def stock_value(business: Business) -> int:
     """Lo que costó al mayorista el stock que hay (sin IGIC)."""
     return sum(p.cost * business.stock.get(p.key, 0) for p in business.sector_info.products)
+
+
+# -- Fase 2: amortizar, reseñas, cerrar y trasladarse --------------------------------
+
+
+def add_asset(business: Business, key: str, cost: int, kind: str) -> None:
+    """Apunta algo que se amortiza (`cost` con su IGIC, que el pequeño empresario no deduce)."""
+    rate = AMORTIZATION[kind][1]
+    business.assets = [*business.assets, {"key": key, "cost": cost, "rate": rate, "left": cost}]
+
+
+def amortize(business: Business) -> int:
+    """La amortización de una noche: la séptima parte del coeficiente anual de cada cosa.
+
+    El año fiscal es la semana. Baja lo que queda por amortizar y devuelve el total.
+    """
+    total = 0
+    assets = []
+    for asset in business.assets:
+        share = min(asset["left"], max(1, round(asset["cost"] * asset["rate"] / 7)))
+        total += share
+        if asset["left"] - share > 0:
+            assets.append({**asset, "left": asset["left"] - share})
+    business.assets = assets
+    return total
+
+
+def book_value(business: Business, *, equipment_only: bool = False) -> int:
+    """Lo que queda por amortizar (el valor neto contable); sin la obra, si se pide."""
+    return sum(a["left"] for a in business.assets if not (equipment_only and a["key"] == "obra"))
+
+
+def setup_asset(business: Business, cost: int) -> None:
+    """Apunta el acondicionamiento de un local nuevo (base más IGIC) como instalación."""
+    add_asset(business, "obra", cost, SETUP_CLASS)
+
+
+def review_of(outcome: Any, rng: random.Random) -> tuple[str, int, int] | None:
+    """La reseña que deja un cliente (`(quién, estrellas, frase)`), o `None` si no deja.
+
+    Las estrellas salen de su nota (`Outcome.score`, de 0 a 100) con un poco de azar; un
+    habitual es algo más generoso.
+    """
+    angry = not outcome.served
+    if rng.random() >= (REVIEW_ANGRY_CHANCE if angry else REVIEW_CHANCE):
+        return None
+    regular = outcome.client.regular
+    stars = 1 + outcome.score / 25 + rng.uniform(-0.5, 0.5) + (0.4 if regular else 0.0)
+    count = max(1, min(5, round(stars)))
+    who = regular or rng.choice(REVIEWERS)
+    return who, count, rng.randrange(len(REVIEW_LINES[count]))
+
+
+def add_reviews(business: Business, day: date, reviews: list[tuple[str, int, int]]) -> None:
+    """Apunta las reseñas de un turno (se guardan las `REVIEW_WINDOW` últimas)."""
+    rows = [[day.isoformat(), who, n, line] for who, n, line in reviews]
+    business.reviews = [*business.reviews, *rows][-REVIEW_WINDOW:]
+
+
+def rating(business: Business) -> tuple[float, int]:
+    """`(media, cuántas)` de sus reseñas (media 0 si no hay)."""
+    count = len(business.reviews)
+    return (sum(r[2] for r in business.reviews) / count if count else 0.0), count
+
+
+def recommended(business: Business) -> bool:
+    """Si sale «recomendado»: buena media con bastantes reseñas."""
+    average, count = rating(business)
+    return count >= RECOMMENDED_REVIEWS and average >= RECOMMENDED_RATING
+
+
+@dataclass(frozen=True, slots=True)
+class ClosingOffer:
+    """Lo que se saca al cerrar: traspasándolo o liquidando.
+
+    Attributes:
+        stock: Coste al mayorista del stock que queda.
+        book: Lo que queda por amortizar de mejoras y obra (valor neto contable).
+        equipment_book: Lo mismo, solo de las mejoras (la obra no se puede vender suelta).
+        goodwill: El fondo de comercio de un traspaso (0 si no hay quien lo compre).
+        can_traspasar: Si hay quien lo compre (local alquilado, días y estrellas).
+    """
+
+    stock: int
+    book: int
+    equipment_book: int
+    goodwill: int
+    can_traspasar: bool
+
+    @property
+    def traspaso(self) -> int:
+        """Lo que paga quien se queda el negocio: stock, mejoras y obra, y la clientela."""
+        return self.stock + self.book + self.goodwill
+
+    @property
+    def liquidation_stock(self) -> int:
+        """Lo que paga el mayorista por el stock."""
+        return int(self.stock * LIQUIDATION_STOCK)
+
+    @property
+    def liquidation_equipment(self) -> int:
+        """Lo que se saca vendiendo las mejoras de segunda mano."""
+        return int(self.equipment_book * LIQUIDATION_EQUIPMENT)
+
+    @property
+    def liquidation(self) -> int:
+        """Lo que se saca cerrando sin traspaso."""
+        return self.liquidation_stock + self.liquidation_equipment
+
+
+def closing_offer(business: Business, now: float) -> ClosingOffer:
+    """Lo que daría cerrar ahora `business` (la semana pasada fija el fondo de comercio)."""
+    days = (now - business.opened_at) / 86_400
+    can = (
+        not business.own_listing
+        and days >= TRASPASO_MIN_DAYS
+        and business.stars >= TRASPASO_MIN_STARS
+    )
+    daily = max(0, sum(business.last_week.values())) / 7
+    goodwill = int(round(daily * GOODWILL_DAYS * business.stars / 5, -2)) if can else 0
+    return ClosingOffer(
+        stock=stock_value(business),
+        book=book_value(business),
+        equipment_book=book_value(business, equipment_only=True),
+        goodwill=goodwill,
+        can_traspasar=can,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class MoveQuote:
+    """Lo que cuesta trasladar el negocio.
+
+    Attributes:
+        opening: La apertura del local nuevo (tasa, acondicionamiento y fianza).
+        refund: La fianza del local de ahora que vuelve (menos lo que se debe al casero).
+        size: Tamaño del local nuevo (índice de `SIZES`).
+        same_barrio: Si se queda en el mismo barrio (no pierde clientela).
+    """
+
+    opening: OpeningQuote
+    refund: int
+    size: int
+    same_barrio: bool
+
+    @property
+    def total(self) -> int:
+        """Lo que sale del monedero (sin contar la fianza que vuelve)."""
+        return self.opening.total
+
+
+def move_quote(business: Business, barrio: Barrio, size: int, *, own: bool = False) -> MoveQuote:
+    """Lo que cuesta trasladar `business` a `barrio` con un local de tamaño `size`."""
+    opening = opening_quote(business.sector_info, barrio, SIZES[size], own=own)
+    refund = max(0, business.deposit - business.rent_debt)
+    return MoveQuote(opening, refund, size, barrio.key == business.barrio)
+
+
+def forget_on_move(business: Business) -> None:
+    """Lo que pierde un negocio al cambiar de barrio: media reputación y media fidelidad."""
+    business.reputation = REPUTATION_START + (business.reputation - REPUTATION_START) * MOVE_KEEP
+    business.regulars = {k: int(v * MOVE_KEEP) for k, v in business.regulars.items()}
 
 
 #: IGIC general, para los textos.

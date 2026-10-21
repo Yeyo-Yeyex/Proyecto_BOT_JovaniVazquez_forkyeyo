@@ -226,7 +226,9 @@ class BotClient(commands.Bot):
         self.work = WorkService(WorkRepository(database_path), self.economy, housing=self.housing)
         # Negocios propios dentro de `pala`: comparten las franjas y la batería del curro;
         # el dinero pasa por `economy`.
-        self.negocio = BusinessService(BusinessRepository(database_path), self.economy, self.work)
+        self.negocio = BusinessService(
+            BusinessRepository(database_path), self.economy, self.work, housing=self.housing
+        )
         self.work.business = self.negocio
         # Los sonidos de entrada viven junto a la base de datos, en el mismo
         # volumen persistente (`.data/entradas/`).

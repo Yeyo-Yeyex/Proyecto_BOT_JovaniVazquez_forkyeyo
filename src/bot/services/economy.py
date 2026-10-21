@@ -1699,7 +1699,20 @@ class EconomyService:
           del casero (arts. 100 RIRPF y 101.8 LIRPF), que el inquilino ingresa en el
           Estado; el resto se lo lleva el casero, que no existe. Los suministros llevan IGIC.
           Se cobra lo que llegue y el resto queda como deuda del local. Todo es gasto de la
-          actividad.
+          actividad. La terraza paga cada noche su tasa municipal por ocupar la vía
+          pública (art. 20.3.l TRLRHL), que va al Estado.
+        - **Fase 2.** Las mejoras del local y el acondicionamiento no son gasto el día que
+          se pagan: se amortizan cada noche con la tabla simplificada (Orden de 27 de marzo
+          de 1998, art. 30 RIRPF), sobre lo pagado con el IGIC, que el pequeño empresario no
+          deduce (norma 2.ª del PGC). Interpretación: con el criterio de cobros y pagos se
+          sigue amortizando por la dotación, porque la amortización no es un pago. Las
+          campañas de publicidad son gasto entero (art. 15.e LIS, por el art. 28.1 LIRPF).
+        - **Traspasar** (cesión del local con el negocio, art. 32 LAU): el stock se cobra
+          como venta de la actividad (art. 27 LIRPF) y lo demás (mejoras, obra y clientela)
+          es ganancia patrimonial de elementos afectos (art. 28.2 LIRPF) en la base del
+          ahorro (art. 46.b), sobre su valor neto contable (art. 40 RIRPF): el 19 % en el
+          momento, como el Rastro. Sin IGIC: es una unidad económica autónoma (art. 9.1.º de
+          la Ley 20/1991). Liquidar (cerrar sin traspaso) cobra igual, a la baja.
 
         La cuota de autónomos va aparte (`charge_self_employed_fee`). Ver
         `EconomyRepository.business` para el orden de los movimientos.
