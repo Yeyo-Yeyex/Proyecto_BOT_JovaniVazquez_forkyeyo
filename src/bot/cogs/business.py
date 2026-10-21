@@ -53,6 +53,7 @@ from discord.ext import commands, tasks
 
 from bot.cogs import achievements as logros
 from bot.cogs import renta
+from bot.repositories.business import companies_in
 from bot.services.achievements import StatDelta, business_stats
 from bot.services.business import (
     Business,
@@ -1893,6 +1894,18 @@ async def business_line(bot: commands.Bot, guild_id: int, user_id: int) -> str |
         f"{sector.emoji} **{business.name}** · {sector.name} en {business.barrio_info.name} · "
         f"{_stars_text(business.stars)}"
     )
+
+
+async def company_values(bot: commands.Bot, guild_id: int) -> dict[int, int]:
+    """El valor de la sociedad de cada dueño (para `perfil` y `fortunas`). Vacío sin el cog."""
+    cog = find_cog(bot, Negocio)
+    if cog is None:
+        return {}
+    try:
+        return await cog.service.repository.read(lambda c: companies_in(c, guild_id))
+    except (OSError, sqlite3.Error):
+        logger.exception("No se pudieron leer las sociedades de %s", guild_id)
+        return {}
 
 
 async def pending(bot: commands.Bot, guild_id: int, user_id: int) -> list[Pending]:

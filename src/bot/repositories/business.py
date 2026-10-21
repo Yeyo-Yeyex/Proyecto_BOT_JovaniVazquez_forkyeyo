@@ -27,7 +27,8 @@ from pathlib import Path
 from typing import TypeVar
 
 from bot.repositories import sqlite
-from bot.services.business import Business
+from bot.repositories.economy import company_account
+from bot.services.business import Business, book_value, stock_value
 
 T = TypeVar("T")
 
@@ -299,3 +300,30 @@ class BusinessRepository:
             raise
         finally:
             connection.close()
+
+
+def companies_in(connection: sqlite3.Connection, guild_id: int) -> dict[int, int]:
+    """El valor de la sociedad de cada dueño, para el Patrimonio (fase 3 de los negocios).
+
+    Es el valor teórico de sus participaciones (art. 16.Uno de la Ley 19/1991): la caja, el
+    stock y lo que queda por amortizar, menos lo que debe la sociedad al casero y a Hacienda.
+    Lo que le debe al socio no se resta: es un crédito del propio dueño y se anulan.
+    """
+    out: dict[int, int] = {}
+    for row in connection.execute("SELECT * FROM business WHERE guild_id = ?", (guild_id,)):
+        business = _load(row)
+        if not business.is_company:
+            continue
+        cash = connection.execute(
+            "SELECT balance FROM economy_wallets WHERE guild_id = ? AND user_id = ?",
+            (guild_id, company_account(business.id)),
+        ).fetchone()
+        value = (
+            (int(cash[0]) if cash else 0)
+            + stock_value(business)
+            + book_value(business)
+            - business.rent_debt
+            - business.company.get("tax_debt", 0)
+        )
+        out[business.user_id] = out.get(business.user_id, 0) + value
+    return out

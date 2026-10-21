@@ -657,6 +657,49 @@ def _phase2() -> dict[str, dict[str, Any]]:
     s["traslado_vegueta"] = traslado_state(small, "vegueta", 1, quote)
     own = move_quote(small, BARRIO_BY_KEY["schamann"], 0, own=True)
     s["traslado_propio"] = traslado_state(small, "schamann", 0, own, own=True)
+    s.update(_phase3(today))
+    return s
+
+
+def _phase3(today: date) -> dict[str, dict[str, Any]]:
+    """Las muestras de la pantalla 🏢 Sociedad, con las funciones de verdad."""
+    from bot.services import business_sl as sl
+    from bot.services.business_view import sociedad_state
+    from bot.services.negocio import CompanyView
+
+    s: dict[str, dict[str, Any]] = {}
+    shop = Business(
+        user_id=5, sector="tienda", barrio="schamann", name="Ultramarinos Pino", palette=4,
+        emblem=3, seed=21, day=today.isoformat(),
+    )  # fmt: skip
+    s["sociedad_autonomo"] = sociedad_state(CompanyView(shop, 0, 0, 0, 0.35, None, False))
+    s["sociedad_autonomo_1euro"] = sociedad_state(
+        CompanyView(shop, 0, 0, 0, 0.35, None, False), capital=100
+    )
+    blocked = sl.incompatibility("politica", "moncloa", "tienda")
+    s["sociedad_incompatible"] = sociedad_state(CompanyView(shop, 0, 0, 0, 0.35, blocked, False))
+    company = Business(
+        user_id=6, sector="cafeteria", barrio="triana", name="Cafetería La Tertulia",
+        seed=12345, day=today.isoformat(), form="sl", reputation=80.0,
+    )  # fmt: skip
+    company.company = sl.new_company(300_000, 325_000, 0)
+    company.company.update(reserve=42_000, retained=168_000, loan=50_000)
+    company.company["last"] = {
+        "week": "2026-10-12", "base": 210_000, "compensated": 0, "tax": 39_900,
+        "rate": 0.19, "reserve": 34_020, "profit": 170_100,
+    }  # fmt: skip
+    s["sociedad_sl"] = sociedad_state(
+        CompanyView(company, 412_000, 560_000, 168_000, 0.19, None, False)
+    )
+    broke = Business(
+        user_id=7, sector="taller", barrio="arucas", name="Talleres El Drago", seed=4242,
+        day=today.isoformat(), form="sl", palette=5, emblem=5,
+    )  # fmt: skip
+    broke.company = sl.new_company(1_000_000, 1_000_000, 0)
+    broke.company.update(retained=-640_000, losses=640_000, tax_debt=12_000)
+    s["sociedad_en_perdidas"] = sociedad_state(
+        CompanyView(broke, 18_000, 360_000, 0, 0.19, blocked, True)
+    )
     return s
 
 
