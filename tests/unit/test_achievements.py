@@ -314,9 +314,10 @@ PRODUCED_STATS = {
     "market_loss", "market_gifts_given", "market_sold_one", "market_666", "market_sunday",
     "market_bought", "market_spent", "market_bought_max", "market_itp",
     "market_gift_received", "market_auction_won", "market_serial_bought",
-    "market_title_bought", "market_tapete_bought", "market_listings", "market_withdrawn",
+    "market_title_bought", "market_tapete_bought", "market_listings", "market_offers",
+    "market_withdrawn",
     "market_expired", "market_bids", "market_bid_max", "market_outbid",
-    # cogs/banco.py: el Monte de Piedad (monte_*_stats)
+    # cogs/rastro.py: el Monte de Piedad del panel de `vender` (monte_*_stats)
     "monte_sold", "monte_sold_y", "monte_title_sold", "monte_pawned", "monte_loan_max",
     "monte_tickets_max", "monte_redeemed", "monte_redeem_late", "monte_forfeited",
     # cogs/banco.py y el cierre de cogs/pisos.py: préstamos y cuentas (loan_*_stats,

@@ -10,17 +10,31 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
+import discord
 import pytest
+from interaction_fakes import fake_interaction
 
-from bot.cogs.rastro import Rastro, pick_entry
+from bot.cogs.rastro import (
+    MemberForm,
+    MonteSellButton,
+    OfferView,
+    PawnButton,
+    Rastro,
+    RedeemButton,
+    StallForm,
+    VenderPanel,
+    pending,
+    pick_entry,
+)
 from bot.repositories.economy import (
     MARKET_ACCOUNT_ID,
     EconomyRepository,
     InsufficientFundsError,
     LedgerEntry,
 )
+from bot.repositories.monte import MonteRepository
 from bot.repositories.rastro import MarketRepository
 from bot.repositories.shop import ShopRepository
 from bot.services.achievements import (
@@ -421,9 +435,11 @@ async def test_no_se_pueden_tener_mas_de_cinco_puestos(tmp_path: Path) -> None:
 
 async def make_cog(tmp_path: Path, clock: Clock) -> Rastro:
     economy, shop, market = await make_stores(tmp_path, clock)
+    monte = MonteRepository(tmp_path / "bot.db")
+    await monte.initialize()
     bot = MagicMock()
     bot.get_guild.return_value = None
-    return Rastro(bot, economy, market, shop, clock=clock)
+    return Rastro(bot, economy, market, shop, monte, clock=clock)
 
 
 async def test_elegir_el_objeto_por_nombre_o_por_id(tmp_path: Path) -> None:
@@ -492,3 +508,222 @@ def test_los_logros_del_rastro_salen_de_sus_estadisticas() -> None:
     rastro = [a for a in BY_ID.values() if a.category == "rastro"]
     assert len(rastro) >= 40
     assert sum(a.secret for a in rastro) >= len(rastro) // 7
+
+
+# -- Panel de vender -------------------------------------------------------------------
+
+
+def member(user_id: int, name: str = "Diego") -> MagicMock:
+    user = MagicMock(spec=discord.Member)
+    user.id, user.bot, user.display_name, user.mention = user_id, False, name, f"<@{user_id}>"
+    return user
+
+
+def clicked(user: MagicMock) -> MagicMock:
+    """Una interacción de `user` en el servidor, como las que llegan del panel."""
+    interaction = fake_interaction(user)
+    interaction.guild = MagicMock(spec=discord.Guild)
+    interaction.guild.id = GUILD
+    interaction.channel = MagicMock(spec=discord.TextChannel)
+    interaction.channel.id = 99
+    interaction.original_response = AsyncMock(return_value=MagicMock())
+    return interaction
+
+
+def shown(interaction: MagicMock) -> dict:
+    """Lo último que se pintó en el mensaje del panel."""
+    return interaction.edit_original_response.await_args.kwargs
+
+
+async def test_vender_sin_argumentos_abre_el_panel_privado(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, Clock())
+    it = await stocked_item(cog.shop)
+    await bought(cog.economy, cog.shop, it, SELLER)
+    interaction = clicked(member(SELLER))
+    await cog.vender.callback(cog, interaction)
+    interaction.response.defer.assert_awaited_once_with(ephemeral=True, thinking=True)
+    sent = interaction.followup.send.await_args.kwargs
+    assert sent["ephemeral"] is True and sent["embed"].title == "🧺 Vender"
+    panel = sent["view"]
+    assert isinstance(panel, VenderPanel) and panel.selected is None
+    ids = {child.custom_id for child in panel.children}
+    assert {"vender:objeto", "vender:miembro", "vender:rastro", "vender:monte"} <= ids
+    assert all(c.disabled for c in panel.children if c.custom_id != "vender:objeto")
+
+
+async def test_vender_con_objeto_y_sin_precio_abre_el_panel_con_el_elegido(
+    tmp_path: Path,
+) -> None:
+    cog = await make_cog(tmp_path, Clock())
+    it = await stocked_item(cog.shop)
+    entry = await bought(cog.economy, cog.shop, it, SELLER)
+    interaction = clicked(member(SELLER))
+    await cog.vender.callback(cog, interaction, objeto=str(entry))
+    sent = interaction.followup.send.await_args.kwargs
+    assert sent["view"].selected == entry
+    backpack = sent["embed"].fields[-1].value
+    assert "Valor de referencia en el Rastro: **10.000 Y$**" in backpack
+    assert "El Monte te lo compra por **8.500 Y$**" in backpack
+    sell = next(c for c in sent["view"].children if c.custom_id == "vender:monte")
+    assert not sell.disabled and "8.500" in sell.label
+
+
+async def test_vender_por_texto_sin_nada_saca_el_panel_en_el_canal(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, Clock())
+    ctx = MagicMock()
+    ctx.guild = MagicMock(spec=discord.Guild)
+    ctx.guild.id = GUILD
+    ctx.author = member(SELLER)
+    ctx.send = AsyncMock()
+    await cog.vender_text.callback(cog, ctx)
+    sent = ctx.send.await_args.kwargs
+    assert isinstance(sent["view"], VenderPanel)
+    assert "No tienes nada que se pueda vender" in sent["embed"].fields[-1].value
+
+
+async def test_el_atajo_con_objeto_y_precio_sigue_como_siempre(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, Clock())
+    it = await stocked_item(cog.shop)
+    stall_entry = await bought(cog.economy, cog.shop, it, SELLER)
+    offer_entry = await bought(cog.economy, cog.shop, it, SELLER)
+    interaction = clicked(member(SELLER))
+    await cog.vender.callback(cog, interaction, objeto=str(stall_entry), precio="5000")
+    posted = interaction.response.send_message.await_args
+    assert "monta un puesto" in posted.kwargs["embed"].description
+    assert len(cog.listings) == 1
+    buyer = member(BUYER, "Ana")
+    interaction = clicked(member(SELLER))
+    await cog.vender.callback(
+        cog, interaction, objeto=str(offer_entry), precio="100", comprador=buyer
+    )
+    posted = interaction.response.send_message.await_args
+    assert posted.args[0] == buyer.mention
+    assert posted.kwargs["allowed_mentions"].users == [buyer]
+    view = posted.kwargs["view"]
+    assert isinstance(view, OfferView) and view.message is not None
+
+
+async def test_el_panel_vende_empena_y_desempena_en_el_monte(tmp_path: Path) -> None:
+    clock = Clock()
+    cog = await make_cog(tmp_path, clock)
+    it = await stocked_item(cog.shop)
+    sold, pawned = [await bought(cog.economy, cog.shop, it, SELLER) for _ in range(2)]
+    owner = member(SELLER)
+    panel = VenderPanel(cog, GUILD, owner)
+    start = await cog.economy.balance(GUILD, SELLER)
+
+    panel.selected = sold
+    await panel.screen()
+    interaction = clicked(owner)
+    await next(c for c in panel.children if isinstance(c, MonteSellButton)).callback(interaction)
+    assert "El Monte te compra" in shown(interaction)["content"]
+    assert await cog.economy.balance(GUILD, SELLER) == start + 8_500
+
+    panel.selected = pawned
+    await panel.screen()
+    interaction = clicked(owner)
+    await next(c for c in panel.children if isinstance(c, PawnButton)).callback(interaction)
+    assert "Empeñas" in shown(interaction)["content"]
+    (ticket,) = cog.tickets.values()
+    assert await cog.economy.balance(GUILD, SELLER) == start + 8_500 + ticket.loan
+    assert [i.kind for i in pending(_bot_with(cog), GUILD, SELLER)] == ["monte_ticket"]
+
+    redeem = next(c for c in shown(interaction)["view"].children if isinstance(c, RedeemButton))
+    assert redeem.custom_id == f"vender:desempenar:{ticket.id}"
+    interaction = clicked(owner)
+    await redeem.callback(interaction)
+    assert "Recuperas" in shown(interaction)["content"]
+    assert cog.tickets == {} and await owner_of(cog.shop, pawned) == SELLER
+    assert_books_balance(tmp_path)
+
+
+def _bot_with(cog: Rastro) -> MagicMock:
+    """Un bot que solo tiene cargado `cog`, para las funciones puente."""
+    bot = MagicMock()
+    bot.get_cog.side_effect = lambda name: cog if name == "Rastro" else None
+    return bot
+
+
+async def test_dos_operaciones_del_monte_a_la_vez_no_pasan(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, Clock())
+    it = await stocked_item(cog.shop)
+    entry = await bought(cog.economy, cog.shop, it, SELLER)
+    owner = member(SELLER)
+    panel = VenderPanel(cog, GUILD, owner)
+    panel.selected = entry
+    await panel.screen()
+    cog.working.add((GUILD, SELLER))
+    interaction = clicked(owner)
+    await next(c for c in panel.children if isinstance(c, MonteSellButton)).callback(interaction)
+    assert "está con lo anterior" in interaction.response.send_message.await_args.args[0]
+    assert await owner_of(cog.shop, entry) == SELLER
+
+
+async def test_el_panel_publica_la_oferta_y_el_puesto_en_el_canal(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, Clock())
+    it = await stocked_item(cog.shop)
+    offered, listed = [await bought(cog.economy, cog.shop, it, SELLER) for _ in range(2)]
+    owner, buyer = member(SELLER), member(BUYER, "Ana")
+    panel = VenderPanel(cog, GUILD, owner)
+
+    panel.selected = offered
+    form = MemberForm(panel)
+    form.buyer._values = [buyer]
+    form.price._value = "100"
+    interaction = clicked(owner)
+    await form.on_submit(interaction)
+    posted = interaction.followup.send.await_args
+    assert posted.args[0] == buyer.mention and posted.kwargs["wait"] is True
+    assert posted.kwargs["allowed_mentions"].users == [buyer]
+    view = posted.kwargs["view"]
+    assert isinstance(view, OfferView) and view.message is not None and view.price == 100
+    assert "Oferta publicada" in shown(interaction)["content"] and panel.selected is None
+
+    panel.selected = listed
+    form = StallForm(panel)
+    form.price._value = "5000"
+    interaction = clicked(owner)
+    await form.on_submit(interaction)
+    (listing,) = cog.listings.values()
+    assert listing.start_price == 5_000 and listing.channel_id == 99
+    assert "monta un puesto" in interaction.followup.send.await_args.kwargs["embed"].description
+    assert "Puesto montado" in shown(interaction)["content"]
+
+
+async def test_un_error_del_formulario_sale_en_el_panel_y_no_publica(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, Clock())
+    it = await stocked_item(cog.shop)
+    entry = await bought(cog.economy, cog.shop, it, SELLER)
+    owner = member(SELLER)
+    panel = VenderPanel(cog, GUILD, owner)
+    panel.selected = entry
+    form = MemberForm(panel)
+    form.buyer._values = [owner]
+    form.price._value = "100"
+    interaction = clicked(owner)
+    await form.on_submit(interaction)
+    interaction.followup.send.assert_not_awaited()
+    assert "blanquear" in shown(interaction)["content"] and panel.selected == entry
+
+
+async def test_lo_que_el_monte_no_acepta_dice_por_que_y_va_a_los_otros_sitios(
+    tmp_path: Path,
+) -> None:
+    cog = await make_cog(tmp_path, Clock())
+    it = await stocked_item(cog.shop)
+    entry, _dupe = await cog.shop.grant(GUILD, SELLER, it, NOW)
+    panel = VenderPanel(cog, GUILD, member(SELLER))
+    panel.selected = entry.id
+    kwargs = await panel.screen()
+    assert "El Monte no lo acepta: Eso no salió de la tienda" in kwargs["embed"].fields[-1].value
+    buttons = {c.custom_id: c for c in panel.children}
+    assert buttons["vender:monte"].disabled and buttons["vender:empenar"].disabled
+    assert not buttons["vender:miembro"].disabled and not buttons["vender:rastro"].disabled
+
+
+async def test_el_panel_solo_lo_maneja_quien_lo_abre(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, Clock())
+    panel = VenderPanel(cog, GUILD, member(SELLER))
+    interaction = clicked(member(BUYER))
+    assert not await panel.interaction_check(interaction)
+    assert "no es tuyo" in interaction.response.send_message.await_args.args[0]
