@@ -2,7 +2,8 @@
 
 Cada pantalla de las muestras (`docs/muestras_negocio.py`) se pinta con Node en un PNG de
 1000 × 640; repartir el dibujo entre procesos no cambia un byte; Node y Chromium pintan lo mismo;
-y cada clave del catálogo (productos, emblemas, temas, oficios, franjas y averías) tiene su dibujo.
+y cada clave del catálogo (productos, mejoras, emblemas, temas, oficios, franjas y averías) tiene
+su dibujo.
 Sin Node ni Chromium, `paint` devuelve `None` y el cog enseña el panel en texto.
 """
 
@@ -25,7 +26,7 @@ from test_node_scene import LOCAL_CHROMIUM, needs_node, node_ready, own_node
 
 from bot.services import browser_scene, node_scene
 from bot.services.browser_scene import BrowserScene
-from bot.services.business_catalog import EMBLEMS, FAULTS, SECTORS
+from bot.services.business_catalog import EMBLEMS, EQUIPMENT, FAULTS, SECTORS
 from bot.services.business_scene import SCENE, BusinessScene, H, W
 from bot.services.housing_catalog import THEMES
 from bot.services.work_catalog import JOBS
@@ -65,15 +66,34 @@ def difference(a: Image.Image, b: Image.Image) -> float:
 def test_las_muestras_cubren_cada_pantalla_y_las_variantes_del_contrato() -> None:
     states = samples()
     screens = {s["screen"] for s in states.values()}
-    assert screens == {"dia", "montar", "negocio", "almacen", "cuentas", "cliente", "cierre"}
+    assert screens == {
+        "dia", "montar", "negocio", "almacen", "cuentas", "cliente", "cierre", "mejoras", "resenas"
+    }  # fmt: skip
+    sectors = {sector.key for sector in SECTORS}
     clients = [s for s in states.values() if s["screen"] == "cliente"]
-    assert {s["sector"] for s in clients} == {"cafeteria", "tienda", "taller"}
+    assert {s["sector"] for s in clients} == sectors
+    assert {p["key"] for p in states["montar"]["sectors"]} == sectors
+    for screen in ("almacen", "mejoras"):
+        assert {s["sector"] for s in states.values() if s["screen"] == screen} == sectors
+    assert any(p.get("level") for s in states.values() if s["screen"] == "almacen"
+               for p in s["products"])  # fmt: skip
     assert any(s.get("usual") for s in clients) and any(s.get("thief") for s in clients)
     assert {s.get("step") for s in clients} >= {"diagnostico", "presupuesto"}
     assert any(s["cash"] == "" for s in clients) and any(s["cash"] for s in clients)
     shops = [s for s in states.values() if s["screen"] == "negocio"]
     assert {s["mode"] for s in shops} == {"portada", "preview"}
     assert {s["open"] for s in shops} == {True, False}
+    covers = [s for s in shops if s["mode"] == "portada" and "rating" in s]
+    assert {s["rating"] is None for s in covers} == {True, False}
+    assert {s["campaign"] is None for s in covers} == {True, False}
+    assert any("terraza" in s["equipment"] for s in covers)
+    assert any(not s["equipment"] for s in covers) and all(s["size"] for s in covers)
+    upgrades = [s for s in states.values() if s["screen"] == "mejoras"]
+    assert {s["active"] is None for s in upgrades} == {True, False}
+    assert {i["owned"] for s in upgrades for i in s["items"]} == {True, False}
+    reviews = [s for s in states.values() if s["screen"] == "resenas"]
+    assert {bool(s["reviews"]) for s in reviews} == {True, False}
+    assert {s["badge"] for s in reviews} == {True, False}
     days = [s for s in states.values() if s["screen"] == "dia"]
     assert {(s["job"] is None, s["business"] is None) for s in days} == {
         (False, False),
@@ -197,7 +217,7 @@ async def test_las_pantallas_repartidas_pintan_lo_mismo_que_con_un_proceso(
 
 
 def catalog_states() -> list[dict[str, Any]]:
-    """Una pantalla por cada producto, emblema, tema, oficio, franja y avería."""
+    """Una pantalla por cada producto, mejora, emblema, tema, oficio, franja y avería."""
     s = samples()
     states: list[dict[str, Any]] = []
     for sector in SECTORS:  # cada producto, en el almacén de su sector
@@ -214,6 +234,14 @@ def catalog_states() -> list[dict[str, Any]]:
         for n, sector in enumerate(SECTORS):
             states.append({**base, "theme": theme, "sector": sector.key, "open": n % 2 == 0})
         states.append({**s["cliente_caja"], "theme": theme})
+    cover = s["negocio_cafeteria_crecida"]  # cada mejora, instalada en la portada y en su pantalla
+    for sector in SECTORS:
+        kit = [e.key for e in EQUIPMENT if sector.key in e.sectors]
+        states.append({**cover, "sector": sector.key, "equipment": kit})
+        upgrades = copy.deepcopy(s[f"mejoras_{sector.key}"])
+        for item in upgrades["items"]:
+            item.update(owned=True, book="Por amortizar: 1.000 Y$")
+        states.append(upgrades)
     for job in JOBS:
         day = copy.deepcopy(s["dia_curro_y_negocio"])
         day["job"]["icon"] = job.key
@@ -237,11 +265,14 @@ def catalog_states() -> list[dict[str, Any]]:
 async def test_cada_clave_del_catalogo_se_pinta_sin_error(scene: BusinessScene) -> None:
     keys = await scene.painter.evaluate(
         "({product: Object.keys(PRODUCT), emblem: Object.keys(EMBLEM), job: Object.keys(JOB_ICON),"
-        " theme: Object.keys(SKY), slot: Object.keys(SLOT), wall: Object.keys(WALLS)})"
+        " theme: Object.keys(SKY), slot: Object.keys(SLOT), wall: Object.keys(WALLS),"
+        " equip: Object.keys(EQUIP), sector: Object.keys(GAME)})"
     )
     assert isinstance(keys, dict)
     assert set(keys["product"]) >= {p.key for sector in SECTORS for p in sector.products}
     assert set(keys["emblem"]) >= {key for key, _name in EMBLEMS}
+    assert set(keys["equip"]) >= {e.key for e in EQUIPMENT}
+    assert set(keys["sector"]) >= {sector.key for sector in SECTORS}
     assert set(keys["job"]) >= {job.key for job in JOBS}
     assert set(keys["theme"]) >= set(THEMES) and set(keys["wall"]) >= set(THEMES)
     assert set(keys["slot"]) == set(SLOT_KINDS)
