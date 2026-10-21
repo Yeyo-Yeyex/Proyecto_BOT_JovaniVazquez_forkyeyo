@@ -19832,9 +19832,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("negocio", "biz_purchases", [
         (1, "biz_buy_1", "Vamos de mayoristas", "Haz una compra al mayorista.", C),
         (10, "biz_buy_10", "La furgoneta ya se sabe el camino",
-         "Haz 10 compras al mayorista.", R),
+         "Haz 10 compras al mayorista.", C),
         (100, "biz_buy_100", "Inventario de Resident Evil",
-         "Haz 100 compras al mayorista.", L),
+         "Haz 100 compras al mayorista.", E),
     ])  # fmt: skip
     a.append(Achievement(
         id="biz_prices_all", name="Rebajas, ofertas y atracos",

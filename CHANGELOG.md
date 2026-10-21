@@ -8,6 +8,14 @@ criterio.
 
 ## 9.x
 
+### 9.4.0 · 2026-10-21
+
+- Negocios: el IMV y el banco cuentan lo que deja tu negocio (ventas menos su IRPF y sus gastos, nunca en negativo): quien vive de su negocio ya no es «sin nómina» para los préstamos, y el IMV baja como con una nómina
+- Negocios: sin curro, los turnos del negocio también cansan; el inicio de `pala` enseña tu batería, y al fichar tu primer curro llegas con la que tengas
+- Negocios: el primer cliente del turno ya está pintado al pulsar 🔑 Abrir
+- Negocios: la mascota tiene frases propias al cerrar un turno, contenta con una S o una A y de bajón con una D; la paloma también se posa al salir del negocio
+- Logros: 52 nuevos en 🏪 Negocio (escalones intermedios, domingos, el mayorista, las noches, los cierres, los clientes rápidos y los que se van)
+
 ### 9.3.0 · 2026-10-21
 
 - Banco: 🤝 avalista, otro miembro te avala un préstamo o una rehipoteca (suma su 35 % y baja el tipo medio punto)

@@ -83,8 +83,8 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
     from bot.services.bacara_scene import BacaraScene
     from bot.services.backgammon_scene import BackgammonScene
     from bot.services.blackjack_scene import BlackjackScene
-    from bot.services.business_scene import BusinessScene
     from bot.services.bus_scene import BusScene
+    from bot.services.business_scene import BusinessScene
     from bot.services.coin import Side
     from bot.services.coin_scene import CoinScene
     from bot.services.craps_scene import CrapsScene
