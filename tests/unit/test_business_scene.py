@@ -67,7 +67,8 @@ def test_las_muestras_cubren_cada_pantalla_y_las_variantes_del_contrato() -> Non
     states = samples()
     screens = {s["screen"] for s in states.values()}
     assert screens == {
-        "dia", "montar", "negocio", "almacen", "cuentas", "cliente", "cierre", "mejoras", "resenas"
+        "dia", "montar", "negocio", "almacen", "cuentas", "cliente", "cierre", "mejoras", "resenas",
+        "sociedad",
     }  # fmt: skip
     sectors = {sector.key for sector in SECTORS}
     clients = [s for s in states.values() if s["screen"] == "cliente"]
@@ -102,6 +103,14 @@ def test_las_muestras_cubren_cada_pantalla_y_las_variantes_del_contrato() -> Non
         (True, True),
     }
     assert {s["grade"] for s in states.values() if s["screen"] == "cierre"} >= {"S", "D"}
+    companies = [s for s in states.values() if s["screen"] == "sociedad"]
+    assert {s["mode"] for s in companies} == {"autonomo", "sl"}
+    forming = [s for s in companies if s["mode"] == "autonomo"]
+    assert {s["blocked"] is None for s in forming} == {True, False}
+    assert {c["amount"] for s in forming for c in s["capitals"] if c["selected"]} >= {"100 Y$"}
+    books = [s for s in companies if s["mode"] == "sl"]
+    assert {s["last"] is None for s in books} == {True, False}
+    assert any(s["warnings"] for s in books) and any(not s["warnings"] for s in books)
 
 
 async def test_sin_node_ni_chromium_no_se_pinta_y_el_panel_va_en_texto() -> None:
