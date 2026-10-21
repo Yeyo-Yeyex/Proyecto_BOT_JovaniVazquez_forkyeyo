@@ -307,3 +307,16 @@ async def test_en_la_vivienda_habitual_solo_resta_la_parte_que_no_esta_exenta(
     taxed = (fiscal - rules.HOME_WEALTH_EXEMPT) / fiscal
     await remortgage(service, 200_000, key=home.key)
     assert wealth(tmp_path) == before - int(200_000 * taxed)
+
+
+async def test_perfil_y_fortunas_restan_lo_que_se_debe_al_banco(tmp_path: Path) -> None:
+    from bot.services.net_worth import build
+
+    clock = Clock(14)
+    _economy, service = await owned(tmp_path, clock)
+    await remortgage(service, 200_000)
+    debts = await service.repository.member_debts(GUILD)
+    assert debts == {ANA: 200_000}
+    (rich, poor) = build({ANA: 300_000, 20: 250_000}, [], {}, {}, debts=debts)
+    assert (poor.user_id, poor.total) == (ANA, 100_000) and poor.assets == 300_000
+    assert rich.user_id == 20

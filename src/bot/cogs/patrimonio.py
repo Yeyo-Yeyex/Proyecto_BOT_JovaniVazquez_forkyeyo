@@ -253,13 +253,14 @@ class Patrimonio(commands.Cog):
         homes, homes_fiscal = (
             await self.housing.member_values(guild_id) if self.housing else ({}, {})
         )
+        debts = await self.housing.member_debts(guild_id) if self.housing else {}
         users = set(balances) | {row[0] for row in holdings} | set(lottery) | set(homes)
         renta = {}
         for user_id in users:
             pending = await self.economy.pending_declarations(guild_id, user_id)
             if total := sum(d.refund for d in pending):
                 renta[user_id] = total
-        return build(balances, holdings, lottery, renta, homes, homes_fiscal)
+        return build(balances, holdings, lottery, renta, homes, homes_fiscal, debts)
 
     @staticmethod
     def _name(guild: discord.Guild, user_id: int) -> str:
@@ -324,6 +325,11 @@ class Patrimonio(commands.Cog):
             f"🎟️ Boletos de lotería por sortear: **{format_amount(worth.lottery)}**",
             f"📬 Renta por cobrar: **{format_amount(worth.renta)}**",
         ]
+        if worth.debts:
+            lines.append(
+                f"🏦 Deudas con el banco: **−{format_amount(worth.debts)}** (hipotecas, "
+                "préstamos y deuda)"
+            )
         embed = discord.Embed(
             title=f"🏰 Patrimonio de {discord.utils.escape_markdown(target.display_name)}",
             description=(
@@ -338,7 +344,11 @@ class Patrimonio(commands.Cog):
                 "📛 En el fichero de morosos (ASNEF): ni préstamos ni hipotecas hasta "
                 "pagar lo que debe al banco"
             )
-        embed.add_field(name="Activos", value="\n".join(lines), inline=False)
+        embed.add_field(
+            name="Activos y deudas" if worth.debts else "Activos",
+            value="\n".join(lines),
+            inline=False,
+        )
         if worth.goods:
             shown = [holding_line(item) for item in worth.goods[:15]]
             if len(worth.goods) > 15:
@@ -414,6 +424,7 @@ class Patrimonio(commands.Cog):
             + (f" · 🏠 {format_amount(w.homes)}" if w.homes else "")
             + (f" · 🎟️ {format_amount(w.lottery)}" if w.lottery else "")
             + (f" · 📬 {format_amount(w.renta)}" if w.renta else "")
+            + (f" · 🏦 −{format_amount(w.debts)}" if w.debts else "")
             for i, w in enumerate(everyone[:FORTUNES_TOP])
         ]
         if len(everyone) > FORTUNES_TOP:
@@ -443,7 +454,8 @@ class Patrimonio(commands.Cog):
         if block:
             embed.add_field(name="La lista" if first else "\u200b", value=block, inline=False)
         embed.set_footer(
-            text="Efectivo, pisos, bienes de la tienda, boletos por sortear y renta por cobrar. "
+            text="Efectivo, pisos, bienes de la tienda, boletos por sortear y renta por cobrar, "
+            "menos lo que se debe al banco. "
             "Gini: 0 si todos tienen lo mismo, 1 si uno lo tiene todo."
         )
         await responder.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())

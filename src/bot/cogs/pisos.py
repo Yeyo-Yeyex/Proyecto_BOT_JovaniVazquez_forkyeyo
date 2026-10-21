@@ -68,8 +68,8 @@ from discord import app_commands, ui
 from discord.ext import commands, tasks
 
 from bot.cogs import achievements as logros
+from bot.cogs import banco, renta
 from bot.cogs import pets as mascotas
-from bot.cogs import renta
 from bot.cogs import shop as tienda
 from bot.cogs import work as curro
 from bot.repositories.economy import BalanceLimitError, InsufficientFundsError
@@ -1110,6 +1110,7 @@ class Panel(ui.View):
                 self._button("🤝 Vender a un miembro", "vender_miembro", self._sell_member, row=3)
                 self._button("🔨 Subastar", "subastar", self._auction_form, row=3)
                 self._button("🏗️ Reformas", "reformas", self._go_reforms, row=3)
+                self._button("🏦 Rehipotecar", "rehipotecar", self._remortgage, row=3)
 
     def _reform_buttons(self) -> None:
         """🏗️ Reformas: una por botón, con dos clics porque cuesta dinero."""
@@ -1311,6 +1312,13 @@ class Panel(ui.View):
 
     async def _go_reforms(self, interaction: discord.Interaction) -> None:
         await self._go(interaction, REFORMAS)
+
+    async def _remortgage(self, interaction: discord.Interaction) -> None:
+        """🏦 Rehipotecar: abre `banco` en 🔐 Garantías con este inmueble, en privado."""
+        if not await banco.open_guarantees(self.cog.bot, interaction, self.listing):
+            await interaction.response.send_message(
+                "El banco está cerrado ahora mismo.", ephemeral=True
+            )
 
     async def _go_decisions(self, interaction: discord.Interaction) -> None:
         await self._go(interaction, IMPREVISTOS)

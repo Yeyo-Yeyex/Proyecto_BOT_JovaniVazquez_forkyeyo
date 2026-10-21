@@ -870,7 +870,8 @@ def _remortgage_desk_in(market: Market, user_id: int) -> RemortgageDesk:
             blocked = str(error)
         found.append(
             Collateral(
-                key=key, title=listing.title, shares=held.shares, value=value, owed=owed, dwelling=dwelling,
+                key=key, title=listing.title, shares=held.shares, value=value, owed=owed,
+                dwelling=dwelling,
                 habitual=market.homes.get(user_id) == (finance.HOME_OWN, key),
                 room=lending.remortgage_room(value, owed, home=dwelling), blocked=blocked,
             )
@@ -1535,8 +1536,10 @@ class BankBook:
     """Las cuentas del banco en un servidor, para `banco`.
 
     Attributes:
-        mortgages: Hipotecas activas.
+        mortgages: Hipotecas activas (con las rehipotecas).
         mortgage_balance: Capital que queda de ellas.
+        remortgages: Rehipotecas activas.
+        remortgage_balance: Capital que queda de ellas.
         loans: Préstamos activos.
         loan_balance: Capital que queda de ellos.
         lent: Todo lo prestado en préstamos personales desde el primer día.
@@ -1551,6 +1554,8 @@ class BankBook:
 
     mortgages: int = 0
     mortgage_balance: int = 0
+    remortgages: int = 0
+    remortgage_balance: int = 0
     loans: int = 0
     loan_balance: int = 0
     lent: int = 0
@@ -1867,6 +1872,14 @@ class HousingRepository:
             values[owner.owner_id] = values.get(owner.owner_id, 0) + VPO_BY_KEY[unit].price
         return values, fiscal
 
+    async def member_debts(self, guild_id: int) -> dict[int, int]:
+        """Lo que debe al banco cada miembro: hipotecas, préstamos y deuda (`perfil`)."""
+        market = await self.market(guild_id)
+        out: dict[int, int] = dict(market.bank_debts)
+        for debt in (*market.mortgages, *market.loans):
+            out[debt.user_id] = out.get(debt.user_id, 0) + debt.owed
+        return {member: owed for member, owed in out.items() if owed}
+
     async def home_of(self, guild_id: int, user_id: int) -> tuple[str, str] | None:
         """`(tipo, referencia)` de la vivienda habitual de alguien, o `None`."""
         return await self._run(self._home_of_sync, guild_id, user_id)
@@ -2159,6 +2172,8 @@ class HousingRepository:
         return BankBook(
             mortgages=len(market.mortgages),
             mortgage_balance=sum(m.balance for m in market.mortgages),
+            remortgages=sum(1 for m in market.mortgages if m.remortgage),
+            remortgage_balance=sum(m.balance for m in market.mortgages if m.remortgage),
             loans=len(market.loans),
             loan_balance=sum(loan.balance for loan in market.loans),
             lent=int(lent),

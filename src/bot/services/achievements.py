@@ -136,8 +136,7 @@ from bot.services.interest import (
 from bot.services.levels import TIMEZONE
 from bot.services.loans import MAX_LOANS as LOAN_MAX_LOANS
 from bot.services.loans import MAX_PRINCIPAL as LOAN_MAX_PRINCIPAL
-from bot.services.loans import REMORTGAGE_MIN
-from bot.services.loans import REMORTGAGE_TERMS
+from bot.services.loans import REMORTGAGE_MIN, REMORTGAGE_TERMS
 from bot.services.loans import TERMS as LOAN_TERMS
 from bot.services.lootboxes import COLLECTIONS as LOOTBOX_COLLECTIONS
 from bot.services.lottery import MAX_PER_DRAW as MAX_LOTTERY_PER_DRAW
@@ -9187,9 +9186,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Saca 10.000.000 Y$ o más de una sola rehipoteca.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("bizum", "remortgages_open_max", [
-        (3, "remortgage_open_3", "Hipotecado hasta las cejas",
+        (3, "remortgage_open_3", "Ladrillos de Jenga",
          "Ten 3 rehipotecas abiertas a la vez.", R),
-        (10, "remortgage_open_10", "Castillo de naipes",
+        (10, "remortgage_open_10", "Tetris de escrituras",
          "Ten 10 rehipotecas abiertas a la vez.", E),
     ])  # fmt: skip
     a += _tiers("bizum", "remortgage_home", [

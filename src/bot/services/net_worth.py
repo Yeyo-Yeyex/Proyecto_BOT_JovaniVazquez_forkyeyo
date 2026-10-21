@@ -17,10 +17,11 @@ Qué cuenta como activo y cómo se valora:
   no ha presentado.
 - **Inmuebles de `pisos`**, a su valor de mercado de hoy (con el índice del barrio).
 
-No hay deudas personales en el bot (las multas se cobran al momento, y lo que debe
-un piso se descuenta al venderlo), así que el patrimonio neto es la suma de los
-activos. El Impuesto sobre el Patrimonio que cobra `bot.cogs.patrimonio` mira el
-efectivo y los inmuebles a su valor fiscal (`homes_fiscal`), no a precio de mercado.
+El patrimonio neto es lo que tiene menos lo que debe al banco (`debts`): hipotecas y
+rehipotecas, préstamos y la deuda tras un vencimiento o una ejecución. Así pedir prestado no
+sube a nadie en `fortunas`. El Impuesto sobre el Patrimonio que cobra `bot.cogs.patrimonio`
+mira el efectivo y los inmuebles a su valor fiscal (`homes_fiscal`), no a precio de mercado,
+y resta las deudas con sus reglas (`repositories.housing.assets_in`).
 """
 
 from __future__ import annotations
@@ -54,6 +55,7 @@ class NetWorth:
         renta: Lo que la renta le debe y no ha cobrado.
         homes: Sus inmuebles de `pisos`, a precio de mercado.
         homes_fiscal: Los mismos, a su valor fiscal (lo que mira el Patrimonio).
+        debts: Lo que debe al banco (hipotecas, préstamos y deuda).
     """
 
     user_id: int
@@ -63,6 +65,7 @@ class NetWorth:
     renta: int = 0
     homes: int = 0
     homes_fiscal: int = 0
+    debts: int = 0
 
     @property
     def goods_value(self) -> int:
@@ -70,14 +73,19 @@ class NetWorth:
         return sum(item.value for item in self.goods)
 
     @property
-    def total(self) -> int:
-        """Patrimonio neto."""
+    def assets(self) -> int:
+        """Todo lo que tiene, sin restar lo que debe."""
         return self.cash + self.goods_value + self.lottery + self.renta + self.homes
 
     @property
+    def total(self) -> int:
+        """Patrimonio neto: lo que tiene menos lo que debe al banco."""
+        return self.assets - self.debts
+
+    @property
     def illiquid_share(self) -> float:
-        """Parte del patrimonio que no es efectivo (0–1)."""
-        return 1 - self.cash / self.total if self.total > 0 else 0.0
+        """Parte de lo que tiene que no es efectivo (0–1)."""
+        return 1 - self.cash / self.assets if self.assets > 0 else 0.0
 
 
 def build(
@@ -87,6 +95,7 @@ def build(
     renta: dict[int, int],
     homes: dict[int, int] | None = None,
     homes_fiscal: dict[int, int] | None = None,
+    debts: dict[int, int] | None = None,
 ) -> list[NetWorth]:
     """Junta las piezas en un `NetWorth` por miembro, del más rico al menos.
 
@@ -97,13 +106,15 @@ def build(
         renta: Devolución pendiente por miembro.
         homes: Valor de mercado de los inmuebles por miembro.
         homes_fiscal: Valor fiscal de los inmuebles por miembro.
+        debts: Lo que debe al banco cada miembro.
     """
     homes = homes or {}
     homes_fiscal = homes_fiscal or {}
+    debts = debts or {}
     goods: dict[int, list[Holding]] = {}
     for user_id, name, emoji, kind, value, expires in holdings:
         goods.setdefault(user_id, []).append(Holding(name, emoji, kind, value, expires))
-    users = set(balances) | set(goods) | set(lottery) | set(renta) | set(homes)
+    users = set(balances) | set(goods) | set(lottery) | set(renta) | set(homes) | set(debts)
     out = [
         NetWorth(
             user_id=user_id,
@@ -113,6 +124,7 @@ def build(
             renta=renta.get(user_id, 0),
             homes=homes.get(user_id, 0),
             homes_fiscal=homes_fiscal.get(user_id, 0),
+            debts=debts.get(user_id, 0),
         )
         for user_id in users
     ]

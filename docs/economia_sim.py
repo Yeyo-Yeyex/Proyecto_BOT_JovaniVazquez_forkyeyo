@@ -19,8 +19,11 @@ Uso, desde la raíz del repo (`PYTHONIOENCODING=utf-8` en la consola de Windows)
 Caminos:
 
 - **Referencia:** un oficio y sus dos ramas (la segura primero; `--arriesgada`, al revés),
-  con pisos (hipoteca o al contado) o solo sueldo. Da el día del Falcon, el del primer P10 y
-  el de la segunda rama completa.
+  con pisos (hipoteca, hipoteca y rehipotecas, o al contado) o solo sueldo. Con rehipotecas
+  (9.1.0, `docs/garantias.md`), cuando ya no le llega para comprar con hipoteca, saca con el
+  35 % que le sobra lo que deja la tasación de lo que tiene, si el mejor inmueble libre renta
+  más que la cuota, y sigue comprando. Da el día del Falcon, el del primer P10 y el de la
+  segunda rama completa.
 - **Acumulador:** todos los oficios uno detrás de otro, cada uno con sus dos ramas, solo
   sueldo y pensión. Da cuándo acaba cada oficio y cómo sube el ingreso diario.
 
@@ -44,6 +47,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from bot.services import housing as h  # noqa: E402
+from bot.services import loans as lending  # noqa: E402
 from bot.services import taxes  # noqa: E402
 from bot.services.housing_catalog import KINDS, LISTINGS  # noqa: E402
 from bot.services.shop_catalog import CATALOG  # noqa: E402
@@ -86,6 +90,7 @@ FALCON = FALCON_ENTRY.price + igic(FALCON_ENTRY.price)
 #: vacíos e impagos incluidos; `docs/pisos_sim.py`).
 RENT_LEVEL_FACTOR = {"referencia": 0.925, "mercado": 1.068}
 MORTGAGE_RATE = h.EURIBOR_START + h.MORTGAGE_SPREAD
+REMORTGAGE_RATE = h.EURIBOR_START + lending.REMORTGAGE_SPREAD
 BUY_COST = 1 + h.ITP_RATE + h.NOTARY_RATE * (1 + h.SERVICES_IGIC)
 #: Lo que se guarda el jugador antes de invertir (formación, cuotas, Patrimonio).
 CASH_BUFFER = 20_000
@@ -237,6 +242,9 @@ class Holding:
     paid: float = 0.0
     balance: float = 0.0
     payment: float = 0.0
+    #: Rehipotecas sobre este inmueble: lo que queda y la cuota (sus intereses no deducen).
+    rebalance: float = 0.0
+    repayment: float = 0.0
 
 
 @dataclass
@@ -375,6 +383,12 @@ class Simulation:
             interest = hold.balance * MORTGAGE_RATE / 12
             paid = min(hold.payment, hold.balance + interest) if hold.balance > 0 else 0.0
             hold.balance = max(0.0, hold.balance + interest - paid)
+            if hold.rebalance > 0:
+                reinterest = hold.rebalance * REMORTGAGE_RATE / 12
+                repaid = min(hold.repayment, hold.rebalance + reinterest)
+                hold.rebalance = max(0.0, hold.rebalance + reinterest - repaid)
+                paid += repaid
+                self.add("rehipoteca_cuotas", repaid)
             item = PropertyWeek(
                 ref=key,
                 income=round(rent),
@@ -425,7 +439,9 @@ class Simulation:
             self.cash
             - self.debt
             + sum(
-                max(self.market[k].cadastral * hold.shares / h.SHARES, hold.paid) - hold.balance
+                max(self.market[k].cadastral * hold.shares / h.SHARES, hold.paid)
+                - hold.balance
+                - hold.rebalance
                 for k, hold in self.holdings.items()
             )
         )
@@ -459,6 +475,7 @@ class Simulation:
             / h.SHARES
             * (1 - h.SALE_FEE_RATE * (1 + h.SERVICES_IGIC))
             - hold.balance
+            - hold.rebalance
             for k, hold in self.holdings.items()
         )
         return self.cash - self.debt + homes
@@ -535,13 +552,27 @@ class Simulation:
         recent = self.daily[-h.INCOME_DAYS :]
         income = sum(w + p + h.RENT_INCOME_SHARE * r for w, p, r in recent) / max(1, len(recent))
         current = sum(hold.payment for hold in self.holdings.values() if hold.balance > 0)
+        current += sum(hold.repayment for hold in self.holdings.values() if hold.rebalance > 0)
         options = sorted(
             (e for e in self.market.values() if self.free_shares(e.key) >= 1),
             key=lambda e: -e.yield_rate(),
         )
+        avail, current = self.buy_step(options, avail, income, current)
+        if self.invest == "rehip" and options and avail < options[0].price / h.SHARES:
+            # Lo último: con el 35 % que sobra tras comprar con hipoteca (más barata y que sí
+            # desgrava), rehipotecar lo que ya tiene y seguir comprando.
+            before = avail
+            avail, current = self.remortgage_step(options[0], avail, income, current)
+            if avail > before:
+                self.buy_step(options, avail, income, current)
+
+    def buy_step(
+        self, options: list[Eco], avail: float, income: float, current: float
+    ) -> tuple[float, float]:
+        """Compra participaciones de lo que más renta con lo disponible (y la hipoteca)."""
         for eco in options:
             per_share = eco.price / h.SHARES
-            loan = per_share * h.MORTGAGE_LTV if self.invest == "lev" else 0.0
+            loan = per_share * h.MORTGAGE_LTV if self.invest in ("lev", "rehip") else 0.0
             payment = monthly_payment(loan)
             if loan and (eco.rent - eco.costs - eco.repairs) / h.SHARES <= payment:
                 loan, payment = 0.0, 0.0
@@ -561,6 +592,43 @@ class Simulation:
             self.add("compras", n * per_share * BUY_COST)
             if avail < per_share:
                 break
+        return avail, current
+
+    def remortgage_step(
+        self, best: Eco, avail: float, income: float, current: float
+    ) -> tuple[float, float]:
+        """Rehipoteca lo que deja la tasación si lo mejor que hay libre renta más que la cuota.
+
+        Returns:
+            `(dinero disponible, cuotas al mes)` después de firmar.
+        """
+        rate = REMORTGAGE_RATE / 12
+        factor = (1 - (1 + rate) ** -h.MORTGAGE_MONTHS) / rate
+        # Lo que da cada Y$ invertido en lo mejor que hay libre, contra lo que cuesta al mes.
+        if best.yield_rate() <= 1 / factor:
+            return avail, current
+        for key, hold in self.holdings.items():
+            eco = self.market[key]
+            listing = next(x for x in LISTINGS if x.key == key)
+            value = eco.price * hold.shares / h.SHARES
+            room = lending.remortgage_room(
+                round(value), round(hold.balance + hold.rebalance),
+                home=listing.kind in h.HOME_KINDS,
+            )  # fmt: skip
+            dti = max(0.0, h.DTI_MAX * income - current)
+            amount = min(room, dti * factor)
+            if amount < lending.REMORTGAGE_MIN:
+                continue
+            quote = lending.remortgage_quote(round(amount), h.MORTGAGE_MONTHS, REMORTGAGE_RATE,
+                                             round(value))  # fmt: skip
+            hold.rebalance += quote.principal
+            hold.repayment += quote.payment
+            current += quote.payment
+            self.cash += quote.received
+            avail += quote.received
+            self.add("rehipotecado", quote.principal)
+            self.add("rehipoteca_gastos", quote.principal - quote.received)
+        return avail, current
 
     def free_shares(self, key: str) -> int:
         hold = self.holdings.get(key)
@@ -690,7 +758,10 @@ def main() -> None:
         print("\n".join(ladder_report(jobs, args.nota)))
     if args.solo in (None, "referencia"):
         job = by_key[args.oficio]
-        for label, invest in (("hipoteca", "lev"), ("al contado", "cash"), ("solo sueldo", "none")):
+        for label, invest in (
+            ("hipoteca", "lev"), ("hipoteca y rehipotecas", "rehip"), ("al contado", "cash"),
+            ("solo sueldo", "none"),
+        ):  # fmt: skip
             sim = Simulation(
                 reference_plan(job, args.arriesgada), invest=invest, level=args.nivel, **opts
             ).run(args.dias)

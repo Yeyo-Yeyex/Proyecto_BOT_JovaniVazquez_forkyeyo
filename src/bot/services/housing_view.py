@@ -1409,7 +1409,8 @@ def pending_items(
         due = (mortgage.payment if mortgage.months_left > 0 else 0) + mortgage.unpaid_amount
         if not due:
             continue
-        text = f"Hipoteca de {_place(market, mortgage.listing)}: {format_amount(due)}"
+        what = "Rehipoteca" if mortgage.remortgage else "Hipoteca"
+        text = f"{what} de {_place(market, mortgage.listing)}: {format_amount(due)}"
         kind = "mortgage"
         if mortgage.unpaid_count:
             kind = "mortgage_unpaid"

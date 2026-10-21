@@ -446,7 +446,9 @@ python -m bot
   paga el 19 % de la plusvalía. Con `trueque <tu objeto> <miembro> <su objeto>
   [dinero]` le propones cambiar un objeto por otro, con dinero encima si
   quieres: cada uno paga el ITP de lo que recibe y la plusvalía de lo que da.
-- **Banco** (`banco`): un panel con dos mostradores. **Préstamos** personales para
+- **Banco** (`banco`): un panel con tres mostradores. **Garantías**: rehipotecar
+  tus pisos (hasta el 80 % de lo que valen hoy si son vivienda, el 60 % si no, menos
+  lo que ya debes de ellos; sus intereses no desgravan). **Préstamos** personales para
   lo que quieras (también la entrada de un piso): todas tus cuotas juntas,
   hipotecas incluidas, no pasan del 35 % de lo que ingresas; el tipo es el Euríbor
   más un diferencial que depende de tu perfil (préstamos devueltos, inmuebles,

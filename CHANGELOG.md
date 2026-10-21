@@ -8,6 +8,15 @@ criterio.
 
 ## 9.x
 
+### 9.1.0 · 2026-10-21
+
+- Banco: 🔐 Garantías, rehipotecar tus pisos: hasta el 80 % de lo que valen hoy (60 % si no es vivienda) menos lo que ya debes de ellos
+- Pisos: 🏦 Rehipotecar en 🧰 Gestionar abre el banco con el inmueble elegido
+- Pisos: las hipotecas de un mismo inmueble se ejecutan juntas, con una sola subasta (antes podía quedar una viva sin inmueble)
+- Perfil: el patrimonio y `fortunas` restan las deudas con el banco
+- Patrimonio: las hipotecas de la vivienda habitual restan en la parte que no está exenta
+- Logros: 11 de rehipotecas en 🏦 Banco
+
 ### 9.0.0 · 2026-10-21
 
 - Vender: `vender` sin nada abre un panel con tu mochila: a un miembro, al Rastro, al Monte de Piedad o empeñado

@@ -290,7 +290,8 @@ class TermSelect(ui.Select["BankPanel"]):
             placeholder="Plazo",
             options=[
                 discord.SelectOption(
-                    label=f"{term} meses ({term // 12} años, {term} días)", value=str(term),
+                    label=f"{term} meses ({term // 12} años, {term} días)",
+                    value=str(term),
                     default=term == months,
                 )
                 for term in lending.REMORTGAGE_TERMS

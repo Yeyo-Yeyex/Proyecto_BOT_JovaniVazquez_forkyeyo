@@ -37,7 +37,8 @@ ficha del inmueble de `pisos`, que abre el banco con ese inmueble elegido.
 - **Notaría, registro, gestoría y AJD:** los paga el banco (Ley 5/2019 y RDL 17/2018). El banco
   no existe: no se mueve dinero.
 - **Cuánto:** hasta el **80 % de lo tasado si es vivienda** (`HOME_KINDS`) y el **60 % si no**
-  (locales, garajes, trasteros, naves), los límites del mercado hipotecario (RD 716/2009),
+  (locales, garajes, trasteros, naves), los límites de los préstamos de los bonos garantizados
+  (art. 23.2 del RDL 24/2021; antes, art. 5 del RD 716/2009),
   **menos lo que ya debes de ese inmueble** (todas sus hipotecas). Mínimo 10.000 Y$.
 - **Tipo y plazo:** fijo, Euríbor + 1,5 % (medio punto más que la de compra: va detrás en el
   rango). Plazos de 120, 240 o 360 meses. Comisión de apertura del 0,5 %, que desaparece.
@@ -58,16 +59,22 @@ ficha del inmueble de `pisos`, que abre el banco con ese inmueble elegido.
   del dinero invertido en comprarlo o mejorarlo), y su cuota no cuenta para la deducción canaria
   por inversión en vivienda habitual (art. 14 del DL 1/2009). Se guarda como `kind = 'rehipoteca'`
   en `housing_mortgages`.
-- **Patrimonio:** resta siempre, también la de la vivienda habitual: no se pidió para comprar un
-  bien exento. Y `perfil` y `fortunas` enseñan las deudas y el patrimonio neto (activos menos
+- **Patrimonio:** resta como las demás deudas. En la vivienda habitual, solo en la parte de la
+  casa que no está exenta: no se restan las cargas de un bien exento (art. 9.Tres de la Ley
+  19/1991) y, con una exención parcial, la parte proporcional (art. 25.Tres). Es lo mismo que
+  ya se hacía con la hipoteca de compra, que ahora también resta esa parte si la casa pasa de
+  3.000.000 Y$. Y `perfil` y `fortunas` enseñan las deudas y el patrimonio neto (activos menos
   deudas), para que pedir prestado no suba a nadie en la lista.
+- **Sin desistimiento:** un préstamo con hipoteca va por la Ley 5/2019 y no por la de crédito
+  al consumo (art. 3.a de la Ley 16/2011).
 - **Amortizar:** como cualquier hipoteca (`pisos` y el mostrador), sin comisión (decisión del
   proyecto, como las demás).
 
 ## 2. Anticipo de rentas (9.2.0)
 
 El banco te adelanta hoy varios meses de lo que te paga el inquilino de un inmueble y se cobra
-él esa renta hasta saldarlo (cesión de rentas futuras en garantía).
+él esa renta hasta saldarlo (cesión de las rentas futuras, arts. 1526 y siguientes del CC). En
+España lo ofrecen empresas, no bancos: aquí lo hace el banco del bot.
 
 - **Qué inmueble:** uno tuyo (también participaciones) **alquilado** (no vacío, ni okupado, ni
   vacacional, ni tu vivienda habitual), sin rentas atrasadas y con al menos tantos meses de
@@ -94,7 +101,8 @@ Al pedir un préstamo personal o una rehipoteca, puedes poner a otro miembro de 
   Retirar para ti), y caduca a los 10 minutos. Al aceptar se firma, volviendo a comprobarlo todo.
 - **Lo que aporta:** el banco suma a lo que te cabe en tu 35 % lo que le cabe al avalista en el
   suyo, y el tipo baja medio punto («Con avalista»).
-- **Riesgo indirecto (CIRBE):** mientras dure, la cuota avalada cuenta en el 35 % del avalista
+- **Riesgo indirecto (CIRBE, norma segunda.2.b de la Circular 1/2013 del Banco de España):**
+  mientras dure, la cuota avalada cuenta en el 35 % del avalista
   para lo que pida él, y la ve en `banco` y en `saldo`. Cada miembro avala como mucho 2 cosas a
   la vez. Ni en el fichero de morosos ni con deuda con Hacienda.
 - **Si no pagas** (fianza solidaria, sin beneficio de excusión, como en los bancos: arts. 1822,
@@ -102,8 +110,8 @@ Al pedir un préstamo personal o una rehipoteca, puedes poner a otro miembro de 
   queda pasa a **deuda con el banco del avalista** (se cobra cada noche, embargo del 607, ASNEF).
   Tú quedas debiéndole eso al avalista (**acción de reembolso**, art. 1838 CC): se cobra cada
   noche de tu monedero y va al suyo. El impago cuenta en tu historial.
-- **Patrimonio:** lo avalado no resta al avalista hasta que se lo reclaman (art. 25 de la Ley
-  19/1991); entonces resta su deuda con el banco. Lo que le debes es deuda tuya y un derecho de
+- **Patrimonio:** lo avalado no resta al avalista hasta que se lo reclaman (art. 25.Dos.a de la
+  Ley 19/1991); entonces resta su deuda con el banco. Lo que le debes es deuda tuya y un derecho de
   cobro suyo.
 
 ## Logros (🏦 Banco)
@@ -113,6 +121,28 @@ sacado, lo más grande y lo más pequeño, mala suerte (te ejecutan la rehipotec
 va con el anticipo vivo, te reclaman un aval), fechas, social (avalar, que te avalen, pagar el
 reembolso entero) y secretos.
 
-## Por comprobar en fuente oficial
+## Normas verificadas (21/10/2026, BOE consolidado)
 
-Lo verifica un subagente contra el BOE; el resultado va en la sección siguiente.
+- Ley 5/2019, art. 14.1.e.i-iii: tasación al prestatario; notaría, registro y gestoría al
+  prestamista. El AJD queda a la norma tributaria: art. 29 del RDL 1/1993 (RDL 17/2018), sujeto
+  pasivo el prestamista en toda escritura de préstamo hipotecario, sin mirar para qué es.
+- Ley 5/2019, art. 24: vencimiento anticipado con el 3 % o 12 cuotas en la primera mitad (7 % o
+  15 en la segunda) y un requerimiento previo de un mes. El bot usa solo la primera mitad.
+- Ley 5/2019, art. 23.7: la compensación por amortizar a tipo fijo puede ser del 2 % (10 primeros
+  años) o el 1,5 %; el bot no la cobra (decisión del proyecto, como con las de compra).
+- LIRPF arts. 23.1.a.1.º (intereses del dinero invertido en adquirir o mejorar el bien) y
+  14.1.a (imputación cuando son exigibles).
+- Ley 19/1991: arts. 9.Dos.b y 25.Uno (deudas deducibles), 9.Tres y 25.Tres (cargas de bienes
+  exentos y deudas para adquirirlos; exención parcial, en proporción), 25.Dos.a (avales) y
+  4.Nueve (vivienda habitual, 300.000 €).
+- Código Civil: arts. 1822, 1831, 1838, 1839, 1144, 399 (hipotecar la cuota indivisa), 1526 y
+  1927.2.ª (prelación por antigüedad); Ley Hipotecaria, arts. 17 y 32.
+- RDL 24/2021, art. 23.2: 60 % del valor de tasación, 80 % en inmuebles residenciales.
+- Ley 16/2011: arts. 28 y 30 (desistimiento y compensación) y art. 3.a (excluye el crédito con
+  hipoteca inmobiliaria).
+- VPO en Canarias (Ley 2/2003, arts. 39 y 65): no prohíbe hipotecarla, pero limita transmitirla
+  y da tanteo y retracto. Dejarla fuera de la rehipoteca es decisión del proyecto.
+- Tasación: sin tarifa oficial; las tasadoras cobran de 250 a 600 € por una vivienda.
+
+Pendiente: doctrina de la DGT sobre la deducción en el Patrimonio de una hipoteca de liquidez
+sobre la vivienda habitual (el bot aplica la proporción del art. 25.Tres).

@@ -2260,7 +2260,7 @@ async def test_el_banco_sin_monte_y_el_fichero_de_morosos_en_perfil_con_el_bot_r
         owner = MagicMock(spec=discord.Member)
         owner.id, owner.bot, owner.display_name = OWNER_ID, False, "Diego"
         panel = module.BankPanel(banco, GUILD_ID, owner)
-        for tab in ("loans", "books"):
+        for tab in ("loans", "guarantees", "books"):
             panel.tab = tab
             kwargs = await panel.screen()
             assert kwargs["embed"].fields
@@ -2283,6 +2283,69 @@ async def test_el_banco_sin_monte_y_el_fichero_de_morosos_en_perfil_con_el_bot_r
             connection.close()
         embed = await client.get_cog("Patrimonio").patrimonio_embed(guild, owner, owner, None)
         assert "ASNEF" in embed.fields[0].value
+    finally:
+        await client.close()
+
+
+async def test_pisos_abre_las_garantias_y_se_rehipoteca_con_el_bot_real(tmp_path: Path) -> None:
+    """🏦 Rehipotecar de `pisos` abre `banco` en 🔐 Garantías con el inmueble elegido; desde
+    ahí se pide, se firma, la cuota sale en `saldo` y los logros se apuntan."""
+    client = await load_bot(tmp_path)
+    try:
+        pisos = client.get_cog("Pisos")
+        await client.economy.repository.apply(GUILD, OWNER_ID, [LedgerEntry(10_000_000, "test")])
+        await pisos.service.buy(GUILD, OWNER_ID, "taco_bajo", 100)
+        connection = client.housing._connect()  # noqa: SLF001
+        try:
+            connection.execute(
+                "INSERT INTO economy_payroll (guild_id, user_id, concept, gross, ss_worker, "
+                "ss_employer, irpf, net, created_at) VALUES (?, ?, 'pala:obra', 600000, 0, 0, "
+                "0, 600000, ?)",
+                (GUILD, OWNER_ID, client.get_cog("Banco").clock() - 86_400),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        owner = MagicMock(spec=discord.Member)
+        owner.id, owner.bot, owner.display_name = OWNER_ID, False, "Diego"
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = GUILD_ID
+        owner.guild = guild
+        painter = MagicMock()
+        painter.paint = AsyncMock(side_effect=lambda states: [b"PNG"] * len(states))
+        painter.close = AsyncMock()
+        pisos.painter.scene = painter
+        panel = importer("Pisos", client).Panel(pisos, guild=guild, owner=owner)
+        panel.listing, panel.screen = "taco_bajo", "gestion"
+        interaction = fake_interaction(owner)
+        interaction.client, interaction.guild, interaction.channel = client, guild, None
+        await panel._remortgage(interaction)  # noqa: SLF001
+        shown = interaction.edit_original_response.await_args.kwargs
+        assert shown["embed"].title == "🔐 Banco · Garantías"
+        bank = shown["view"]
+        assert bank.collateral == "taco_bajo" and bank.remortgage_most > 0
+
+        garantias = importer("Banco", client).garantias
+        form = garantias.AmountForm(bank, bank.remortgage_most)
+        form.amount._value = "50000"
+        clicked = fake_interaction(owner)
+        clicked.client, clicked.guild, clicked.channel = client, guild, None
+        await form.on_submit(clicked)
+        assert bank.remortgage_offer is not None
+        await bank.screen()
+        sign = next(
+            c for c in bank.children if getattr(c, "custom_id", "") == "banco:garantia_firmar"
+        )
+        clicked = fake_interaction(owner)
+        clicked.client, clicked.guild, clicked.channel = client, guild, None
+        await sign.callback(clicked)
+        (mortgage,) = (await pisos.service.market(GUILD)).mortgages_of(OWNER_ID)
+        assert mortgage.remortgage and mortgage.principal == 50_000
+        profile = await client.achievements.profile(GUILD, OWNER_ID)
+        assert profile.stats["remortgages_signed"] == 1 and "remortgage_1" in profile.unlocked
+        casino = client.get_cog("Casino")
+        kinds = {item.kind for item in await casino._pending(GUILD, OWNER_ID, 0, own=True)}  # noqa: SLF001
+        assert "mortgage" in kinds
     finally:
         await client.close()
 

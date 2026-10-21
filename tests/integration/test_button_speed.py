@@ -1537,6 +1537,63 @@ async def press_banco_repay(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def garantias_panel(client: BotClient, owner: MagicMock):  # noqa: ANN201
+    """El panel de `banco` en 🔐 Garantías con un inmueble pagado al contado y nómina."""
+    banco_payroll(client)
+    await pisos_owned(client, "taco_bajo")
+    return await banco_panel(client, owner, "guarantees")
+
+
+async def press_garantia_pick(client: BotClient, owner: MagicMock) -> Click:
+    panel = await garantias_panel(client, owner)
+    select = child(panel, discord.ui.Select, "banco:garantia")
+
+    async def click(interaction: MagicMock) -> None:
+        select._values = ["taco_bajo"]  # lo que Discord rellena al elegir
+        await select.callback(interaction)
+
+    return click
+
+
+async def press_garantia_term(client: BotClient, owner: MagicMock) -> Click:
+    panel = await garantias_panel(client, owner)
+    select = child(panel, discord.ui.Select, "banco:garantia_plazo")
+
+    async def click(interaction: MagicMock) -> None:
+        select._values = ["120"]
+        await select.callback(interaction)
+
+    return click
+
+
+async def press_garantia_amount(client: BotClient, owner: MagicMock) -> Click:
+    panel = await garantias_panel(client, owner)
+    form = module_of(client, "Banco").garantias.AmountForm(panel, panel.remortgage_most)
+
+    async def click(interaction: MagicMock) -> None:
+        form.amount._value = "20000"
+        await form.on_submit(interaction)
+
+    return click
+
+
+async def press_garantia_sign(client: BotClient, owner: MagicMock) -> Click:
+    from bot.services import loans as lending
+
+    panel = await garantias_panel(client, owner)
+    desk, _income = await panel.cog.housing.remortgage_desk(GUILD_ID, OWNER_ID)
+    (found,) = desk.collaterals
+    quote = lending.remortgage_quote(20_000, 360, desk.rate, found.value)
+    panel.remortgage_offer = (quote, found.key, found.title)
+    await panel.screen()
+    button = child(panel, discord.ui.Button, "banco:garantia_firmar")
+
+    async def click(interaction: MagicMock) -> None:
+        await button.callback(interaction)
+
+    return click
+
+
 async def vender_panel(client: BotClient, owner: MagicMock, selected: int | None = None):  # noqa: ANN201
     """El panel de `vender` ya pintado, con `selected` elegido (leerlo no cuenta)."""
     panel = module_of(client, "Rastro").VenderPanel(client.get_cog("Rastro"), GUILD_ID, owner)
@@ -1718,6 +1775,17 @@ async def press_pisos_pick(client: BotClient, owner: MagicMock) -> Click:
 
     async def click(interaction: MagicMock) -> None:
         await panel._toggle_pick(interaction)
+
+    return click
+
+
+async def press_pisos_remortgage(client: BotClient, owner: MagicMock) -> Click:
+    await pisos_owned(client, "taco_bajo")
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen = "taco_bajo", "gestion"
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._remortgage(interaction)
 
     return click
 
@@ -2237,6 +2305,11 @@ CASES: dict[str, Press] = {
     "banco: pedir importe": press_banco_amount,
     "banco: firmar": press_banco_sign,
     "banco: amortizar": press_banco_repay,
+    "banco: elegir inmueble para rehipotecar": press_garantia_pick,
+    "banco: plazo de la rehipoteca": press_garantia_term,
+    "banco: importe de la rehipoteca": press_garantia_amount,
+    "banco: firmar la rehipoteca": press_garantia_sign,
+    "pisos: rehipotecar": press_pisos_remortgage,
     "vender: elegir objeto": press_vender_item,
     "vender: vender al Monte": press_vender_sell,
     "vender: empeñar": press_vender_pawn,
