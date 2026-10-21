@@ -14,8 +14,11 @@ Python:
 
 Pantallas (`screen`), todas de 1000 × 640: dia (el inicio de `pala`: las 8 franjas, el curro y el
 negocio), montar (elegir sector), negocio (la portada y la vista previa), almacen, cuentas, cliente
-(el minijuego: comandas, caja o diagnóstico) y cierre (el tique del turno). El contrato de cada una
-está en la docstring de bot/services/business_view.py. Una pantalla desconocida lanza un error.
+(el minijuego: comandas, caja o diagnóstico), cierre (el tique del turno) y, desde la fase 2,
+mejoras (las del local y las campañas) y resenas. El contrato de cada una está en la docstring de
+bot/services/business_view.py. Una pantalla desconocida lanza un error. Los cinco sectores
+(cafetería, tienda, taller, heladería y ferretería) tienen su fachada y su sala; cada producto
+(`PRODUCT`) y cada mejora (`EQUIP`) tiene su icono, y la terraza se ve en la fachada.
 
 Es del mismo mundo que `pisos` (assets/pisos/escena.html): su paleta canaria, sus fuentes y sus
 cielos, paisajes y suelos de cada tema de barrio, copiados de allí. La fachada del negocio se dibuja
@@ -709,7 +712,187 @@ const PRODUCT = {
     dot(0, 0, 10, "#c4cbd3"); dot(0, 0, 4, "#6b7682");
     for (let k = 0; k < 5; k++) dot(Math.cos(k * TAU / 5) * 7, Math.sin(k * TAU / 5) * 7, 1.3, "#6b7682");
   },
+  // la heladería
+  vainilla() { cone(); scoop(0, -6, 12, "#f8eec8", "#e2cf94"); for (const [x, y] of [[-5, -9], [2, -12], [5, -6], [-1, -4], [-6, -3]]) dot(x, y, 0.8, "#5a3a1a"); },
+  chocolate() {
+    cone(); scoop(0, -6, 12, "#7a4422", "#55301a");
+    g.beginPath(); g.moveTo(3, 0); g.quadraticCurveTo(5, 5, 4, 7); g.quadraticCurveTo(2, 6, 1, 1); g.fillStyle = "#55301a"; g.fill();
+    for (const [x, y, c] of [[-5, -11, "#f6d13a"], [1, -14, "#d6337a"], [5, -9, "#7fd6d0"], [-2, -8, "#fff"]]) { g.save(); g.translate(x, y); g.rotate(x * 0.3); rect(-1.6, -0.6, 3.2, 1.2, c); g.restore(); }
+  },
+  gofio() { tub("#d2403a"); scoop(0, -4, 11, "#cfa468", "#a87c44"); speckle(-8, -12, 16, 10, 7, 10, 0.9, "rgba(90,60,20,0.6)"); spoon(6, -10); },
+  mango() {
+    tub("#f58220"); scoop(0, -4, 11, "#f7a21b", "#d6800e");
+    g.save(); g.translate(-3, -13); g.rotate(-0.5); ell(0, 0, 5, 2.4, "#3f9a4a"); line(-4, 0, 4, 0, "#2a7034", 0.8); g.restore();
+    ell(6, -11, 3.6, 2.4, "#ffc24a", 0.4);
+  },
+  granizado() {
+    const sh = () => glassShape(-11, 11, -9, -8, 8, 18);
+    layered(sh, [[-9, 18, "#f6e27a"]]);
+    g.save(); sh(); g.clip(); speckle(-11, -9, 22, 27, 11, 26, 1.6, "rgba(255,255,255,0.7)"); g.restore();
+    g.beginPath(); g.ellipse(0, -9, 11, 6, 0, Math.PI, TAU); g.fillStyle = "rgba(220,240,250,0.7)"; g.fill(); stroke("rgba(120,150,165,0.9)", 1.4);
+    line(3, -8, 9, -21, "#3f9a4a", 2.6);
+    g.beginPath(); g.arc(-11, -9, 6, Math.PI * 0.5, Math.PI * 1.5); g.fillStyle = "#f6e04a"; g.fill(); stroke("#c9b018", 1.2);
+  },
+  batido() {
+    const sh = () => glassShape(-10, 10, -6, -7, 7, 18);
+    layered(sh, [[-6, 18, "#f2a0bc"]]);
+    for (const [x, y, r] of [[-7, -7, 4.5], [-2, -10, 5.5], [4, -9, 5], [8, -6, 3.8], [1, -6, 5]]) dot(x, y, r, "#fffaf4");
+    dot(1, -15, 3, "#d2283a"); line(1, -17, 3, -21, "#5a3a1a", 1);
+    g.save(); g.translate(-5, -10); g.rotate(-0.3); fillRR(-1.6, -12, 3.2, 14, 1.6, "#fff"); for (let k = 0; k < 3; k++) rect(-1.6, -11 + k * 4.4, 3.2, 2, "#d6337a"); g.restore();
+  },
+  // la ferretería
+  tornillos() {
+    g.save(); g.translate(4, -3); g.rotate(0.75);
+    fillRR(-3, -6, 6, 26, 1.5, "#b8c0c8"); g.beginPath(); for (let y = -3; y < 18; y += 3) { g.moveTo(-3.4, y); g.lineTo(3.4, y + 1.6); } stroke("#6b7682", 1);
+    poly([[-3, 20], [3, 20], [0, 24]], "#9aa4ae");
+    ell(0, -7, 8, 3.4, "#c4cbd3"); g.beginPath(); g.ellipse(0, -7, 8, 3.4, 0, 0, TAU); stroke("#6b7682", 1.2); line(-4, -7, 4, -7, "#4a525c", 1.6);
+    g.restore();
+    const hex = []; for (let k = 0; k < 6; k++) hex.push([-9 + Math.cos(k * TAU / 6) * 8, 10 + Math.sin(k * TAU / 6) * 8]);
+    path(hex); g.fillStyle = "#c4cbd3"; g.fill(); stroke("#6b7682", 1.4); dot(-9, 10, 3.4, "#fffdf6"); circle(-9, 10, 3.4); stroke("#6b7682", 1.2);
+  },
+  bombillas() {
+    g.beginPath(); g.arc(0, -5, 12, Math.PI * 0.78, Math.PI * 0.22); g.lineTo(5, 8); g.lineTo(-5, 8); g.closePath();
+    g.fillStyle = rgrad(-3, -8, 1, 13, [[0, "#fffbe0"], [1, "#ffd23a"]]); g.fill(); stroke("#d0a010", 1.4);
+    g.beginPath(); g.moveTo(-3, 7); g.lineTo(-3, -2); g.lineTo(-1, -5); g.lineTo(1, -2); g.lineTo(3, -5); g.lineTo(3, 7); stroke("#a87410", 1.2);
+    for (let k = 0; k < 3; k++) fillRR(-5.5, 8 + k * 3.2, 11, 3, 1, k % 2 ? "#8a95a3" : "#b8c0c8");
+    poly([[-3, 17.6], [3, 17.6], [0, 20]], "#4a525c");
+    for (const a of [-2.5, -1.57, -0.64]) line(Math.cos(a) * 15, -5 + Math.sin(a) * 15, Math.cos(a) * 19, -5 + Math.sin(a) * 19, "#f6bd2d", 2);
+  },
+  pintura() {
+    rect(-13, -6, 22, 22, "#c4cbd3"); rect(-13, -1, 22, 12, "#1f6fb2"); ell(-2, 16, 11, 3, "#a8b0ba");
+    ell(-2, -6, 11, 3.4, "#e4e8ee"); ell(-2, -6, 8.5, 2.4, "#2f8ad8");
+    g.beginPath(); g.moveTo(-9, -5); g.lineTo(-9, 4); g.quadraticCurveTo(-7, 7, -5, 4); g.lineTo(-5, -4); g.fillStyle = "#2f8ad8"; g.fill();
+    g.beginPath(); g.arc(-2, -6, 13, Math.PI * 1.05, Math.PI * 1.95); stroke("#6b7682", 1.4);
+    g.save(); g.translate(12, -2); g.rotate(0.35); fillRR(-2, -18, 4, 14, 2, "#c88a4a"); rect(-3.4, -5, 6.8, 4, "#9aa4ae"); fillRR(-3.4, -1, 6.8, 8, 1.5, "#3a2a1a"); rect(-3.4, 5, 6.8, 2.4, "#2f8ad8"); g.restore();
+  },
+  herramientas() {
+    g.save(); g.rotate(-0.75); // el martillo
+    fillRR(-2.4, -6, 4.8, 26, 2, "#c88a4a"); line(-1, -4, -1, 18, "rgba(255,255,255,0.3)", 1);
+    fillRR(-11, -13, 22, 8, 2, "#6b7682"); rect(-11, -13, 22, 2.4, "#9aa4ae"); poly([[11, -13], [16, -15], [16, -5], [11, -5]], "#6b7682");
+    g.restore();
+    g.save(); g.rotate(0.75); // el destornillador
+    fillRR(-3.4, 4, 6.8, 15, 3, "#d2403a"); for (let k = 0; k < 3; k++) line(-1.4 + k * 1.4, 6, -1.4 + k * 1.4, 17, "rgba(0,0,0,0.2)", 0.8);
+    rect(-1.3, -18, 2.6, 22, "#b8c0c8"); rect(-2, -19, 4, 2, "#8a95a3");
+    g.restore();
+  },
+  fontaneria() { // el grifo con su gota
+    rect(-18, -10, 8, 10, "#9aa4ae"); fillRR(-12, -12, 22, 14, 4, "#c4cbd3"); rect(-12, -12, 22, 3, "#e4e8ee");
+    g.beginPath(); g.moveTo(6, -2); g.lineTo(6, 6); g.quadraticCurveTo(6, 10, 10, 10); g.lineTo(14, 10); g.lineTo(14, 4); g.lineTo(12, 4); g.quadraticCurveTo(12, -2, 10, -2); g.closePath(); g.fillStyle = "#b8c0c8"; g.fill(); stroke("#6b7682", 1.2);
+    rect(-3, -18, 4, 6, "#9aa4ae"); fillRR(-10, -21, 18, 4, 2, "#d2403a");
+    g.beginPath(); g.moveTo(10, 12); g.quadraticCurveTo(15, 19, 10, 20); g.quadraticCurveTo(5, 19, 10, 12); g.fillStyle = "#3a9ae0"; g.fill();
+    g.beginPath(); g.rect(-12, -12, 22, 14); stroke("#6b7682", 1.2);
+  },
+  cerraduras() { // el candado
+    g.beginPath(); g.arc(0, -6, 9, Math.PI, TAU); g.lineTo(9, 0); g.moveTo(-9, 0); g.lineTo(-9, -6); stroke("#9aa4ae", 4.4);
+    fillRR(-14, -2, 28, 21, 4, "#f2b81c"); rect(-14, -2, 28, 5, "#f6d04a"); rr(-14, -2, 28, 21, 4); stroke("#b07c10", 1.4);
+    dot(0, 6, 3.4, "#3a2a10"); poly([[-1.8, 7], [1.8, 7], [2.4, 14], [-2.4, 14]], "#3a2a10");
+  },
 };
+function cone() { // el cucurucho de barquillo, con su cuadrícula
+  const sh = () => path([[-10, -1], [10, -1], [0, 20]]);
+  sh(); g.fillStyle = "#e3aa5e"; g.fill();
+  g.save(); sh(); g.clip(); g.beginPath(); for (let k = -26; k < 26; k += 5) { g.moveTo(k, -1); g.lineTo(k + 13, 21); g.moveTo(k, -1); g.lineTo(k - 13, 21); } stroke("rgba(140,80,20,0.45)", 1); g.restore();
+  sh(); stroke("#b0742c", 1.3);
+}
+function tub(stripe) { // la tarrina de papel con sus rayas
+  const sh = () => path([[-12, 1], [12, 1], [8, 19], [-8, 19]]);
+  sh(); g.fillStyle = "#fffdf6"; g.fill();
+  g.save(); sh(); g.clip(); for (let k = -12; k < 14; k += 6) poly([[k, 1], [k + 3, 1], [k + 2, 19], [k - 1, 19]], stripe); g.restore();
+  sh(); stroke("rgba(120,90,60,0.6)", 1.2); fillRR(-13, -0.5, 26, 3.4, 1.5, shade(stripe, -0.15));
+}
+function scoop(x, y, r, c, dk) { // una bola de helado con el borde ondulado
+  for (let k = 0; k < 5; k++) dot(x - r * 0.8 + k * r * 0.4, y + r * 0.5, r * 0.3, dk);
+  dot(x, y, r, c);
+  for (let k = 0; k < 4; k++) dot(x - r * 0.6 + k * r * 0.4, y + r * 0.55, r * 0.26, c);
+  ell(x - r * 0.35, y - r * 0.4, r * 0.32, r * 0.18, "rgba(255,255,255,0.5)", -0.5);
+}
+function spoon(x, y) { g.save(); g.translate(x, y); g.rotate(0.5); fillRR(-1.2, -10, 2.4, 12, 1.2, "#f6d13a"); ell(0, -11, 2.6, 3.4, "#f6d13a"); g.restore(); }
+
+// Las mejoras del local, en el mismo recuadro de 40 × 40 y con sus colores.
+const EQUIP = {
+  cafetera2() { // dos grupos, el manómetro y dos tazas
+    fillRR(-18, -16, 36, 18, 3, "#c4cbd3"); rect(-18, -16, 36, 4, "#e4e8ee"); rect(-18, -5, 36, 3, "#d2403a");
+    dot(0, -9, 3.6, "#fffdf6"); circle(0, -9, 3.6); stroke("#6b7682", 1); line(0, -9, 2, -11, "#d2403a", 1);
+    for (const x of [-10, 10]) { fillRR(x - 4, 2, 8, 5, 1.5, "#2a2f36"); rect(x - 1.4, 7, 2.8, 3, "#2a2f36"); fillRR(x - 4.5, 11, 9, 7, 1.5, "#fffdf6"); rr(x - 4.5, 11, 9, 7, 1.5); stroke("#b9a88a", 1); }
+    rect(-18, 18, 36, 3, "#6b7682"); line(-16, -16, -16, -20, "#9aa4ae", 2); line(16, -16, 16, -20, "#9aa4ae", 2);
+  },
+  terraza() { // la sombrilla y su mesa con dos sillas
+    line(0, -12, 0, 16, "#6b5a48", 2);
+    for (let i = 0; i < 4; i++) poly([[0, -19], [-18 + i * 9, -8], [-9 + i * 9, -8]], i % 2 ? "#fffdf6" : "#d2403a");
+    ell(0, 8, 11, 3, "#f4f6f8"); g.beginPath(); g.ellipse(0, 8, 11, 3, 0, 0, TAU); stroke("#9aa4ae", 1);
+    for (const d of [-1, 1]) { const x = d * 15; rect(x - 4, 10, 8, 2, "#8a5a2a"); line(x - 3, 11, x - 3, 18, "#8a5a2a", 1.4); line(x + 3, 11, x + 3, 18, "#8a5a2a", 1.4); line(x + d * 4, 11, x + d * 5, 2, "#8a5a2a", 1.6); }
+    line(-4, 18, 4, 18, "#6b5a48", 2);
+  },
+  vitrina() { // la vitrina de los dulces
+    fillRR(-18, 8, 36, 11, 2, "#8a5a2a"); rect(-18, 8, 36, 2.4, "#c88a4a");
+    g.beginPath(); g.moveTo(-17, 8); g.lineTo(-17, -10); g.quadraticCurveTo(-17, -16, -10, -16); g.lineTo(17, -16); g.lineTo(17, 8); g.closePath();
+    g.fillStyle = "rgba(190,228,246,0.55)"; g.fill(); stroke("#7fa8c0", 1.4);
+    line(-17, -3, 17, -3, "#9ab8c8", 1.4);
+    for (const x of [-10, 0, 10]) { ell(x, -7, 4, 2.6, "#e0a050"); ell(x, 4, 4.2, 2.6, x ? "#f2a0bc" : "#7a4422"); }
+    poly([[-12, -16], [-6, -16], [-15, 8], [-17, 8], [-17, -6]], "rgba(255,255,255,0.35)");
+  },
+  tpv() { // el datáfono con la tarjeta
+    g.save(); g.rotate(-0.25); fillRR(-4, -20, 22, 14, 2, "#1f6fb2"); rect(-4, -16, 22, 3, "#0f3a66"); fillRR(0, -11, 5, 4, 1, "#f6bd2d"); g.restore();
+    fillRR(-12, -10, 22, 30, 4, "#2a2f36"); fillRR(-9, -7, 16, 9, 2, "#7cf0a0"); line(-7, -3, 3, -3, "#1f7a4a", 1.4);
+    for (let r = 0; r < 3; r++) for (let k = 0; k < 3; k++) fillRR(-8 + k * 5.4, 5 + r * 4.4, 4, 3, 1, r === 2 && k === 2 ? C.green : "#9aa4ae");
+  },
+  camara() { // la puerta de la cámara frigorífica
+    fillRR(-16, -18, 32, 37, 3, "#dfe6ec"); rr(-16, -18, 32, 37, 3); stroke("#8a95a3", 1.6);
+    fillRR(-12, -14, 24, 29, 2, "#f4f7fa"); rect(7, -4, 3, 10, "#6b7682"); fillRR(5, -6, 7, 3, 1, "#8a95a3");
+    unit(-2, -1, 9, () => { for (let k = 0; k < 3; k++) { const a = k * Math.PI / 3; line(Math.cos(a) * -14, Math.sin(a) * -14, Math.cos(a) * 14, Math.sin(a) * 14, "#3a9ae0", 4); } });
+    for (const x of [-12, -4, 6]) poly([[x, -14], [x + 3, -14], [x + 1.5, -10]], "rgba(160,210,240,0.8)");
+  },
+  estanterias() { // la estantería llena y su cartel de oferta
+    rect(-17, -18, 3, 37, "#8a6a44"); rect(14, -18, 3, 37, "#8a6a44");
+    const cols = ["#d2403a", "#2f7fd0", "#f2c230", "#2f9a5a", "#e8742a", "#7a5aa8"];
+    for (let r = 0; r < 3; r++) { const y = -16 + r * 12; rect(-14, y + 9, 28, 2, "#a07a4a"); for (let k = 0; k < 5; k++) rect(-13 + k * 5.4, y + 2 + ((k + r) % 2), 4.2, 7 - ((k + r) % 2), cols[(k + r * 2) % 6]); }
+    g.save(); g.translate(10, -14); g.rotate(0.2); fillRR(-7, -4, 14, 8, 1.5, "#f6bd2d"); T("%", 0, 0, { font: F.d(7), color: "#3a2800", align: "center" }); g.restore();
+  },
+  elevador() { // el elevador de dos columnas con un coche arriba
+    rect(-17, -16, 4, 35, "#f2c230"); rect(13, -16, 4, 35, "#f2c230"); rect(-17, -18, 34, 3, "#d8a810");
+    rect(-13, 2, 26, 2, "#9aa4ae");
+    path([[-15, 0], [-14, -6], [-7, -7], [-3, -12], [6, -12], [10, -7], [15, -6], [15, 0]]); g.fillStyle = "#2f7fd0"; g.fill();
+    path([[-6, -7], [-2, -11], [5, -11], [8, -7]]); g.fillStyle = "#cfe8f4"; g.fill();
+    for (const x of [-8, 9]) { dot(x, 0, 3.6, "#1b1d22"); dot(x, 0, 1.4, "#9aa4ae"); }
+    rect(-20, 18, 40, 2, "#6b7682");
+  },
+  diagnosis() { // la pantalla con la gráfica y el conector
+    fillRR(-18, -16, 30, 22, 3, "#2a2f36"); fillRR(-15, -13, 24, 16, 1.5, "#0f2a22");
+    g.beginPath(); g.moveTo(-14, -3); for (let x = -14; x <= 8; x += 2) g.lineTo(x, -5 + Math.sin(x * 0.9) * 3 + (x === 0 ? -5 : 0)); stroke("#7cf0a0", 1.4);
+    rect(-6, 6, 6, 4, "#2a2f36"); rect(-12, 10, 18, 2.4, "#2a2f36");
+    g.beginPath(); g.moveTo(12, -2); g.bezierCurveTo(20, 0, 18, 12, 10, 14); stroke("#2a2f36", 2);
+    fillRR(4, 12, 10, 7, 1.5, "#1f6fb2"); for (let k = 0; k < 3; k++) dot(6.5 + k * 2.5, 15.5, 0.8, "#f6bd2d");
+  },
+  llaves() { // la pistola de impacto con su vaso
+    fillRR(-14, -12, 24, 12, 4, "#1f6fb2"); rect(-14, -12, 24, 3, "#3f8ad8");
+    path([[-8, -1], [0, -1], [3, 16], [-5, 16]]); g.fillStyle = "#2a2f36"; g.fill();
+    fillRR(-6, 13, 10, 6, 1.5, "#1f6fb2"); rect(-2, 0, 2.4, 4, "#d2403a");
+    rect(10, -9, 4, 6, "#6b7682"); fillRR(14, -10.5, 7, 9, 1.5, "#9aa4ae"); line(15, -6, 20, -6, "#6b7682", 1);
+  },
+  mantecadora() { // la máquina de mantecar con su pala y el helado
+    fillRR(-16, -2, 32, 21, 3, "#c4cbd3"); rect(-16, -2, 32, 4, "#e4e8ee"); fillRR(-12, 6, 10, 8, 1.5, "#2a2f36"); dot(-7, 10, 1.6, "#7cf0a0"); dot(6, 10, 3, "#d2403a");
+    g.beginPath(); g.ellipse(0, -2, 15, 4, 0, 0, Math.PI); g.lineTo(15, -10); g.ellipse(0, -10, 15, 4, 0, 0, Math.PI, true); g.closePath(); g.fillStyle = "#b8c0c8"; g.fill();
+    ell(0, -10, 15, 4, "#9aa4ae"); ell(0, -10, 12, 3, "#f2a0bc");
+    line(0, -10, 0, -20, "#6b7682", 2.4); line(-8, -20, 8, -20, "#6b7682", 2.4); line(0, -10, 7, -8, "#6b7682", 1.6);
+  },
+  vitrina_helados() { // la vitrina con las cubetas de colores
+    fillRR(-19, 4, 38, 15, 2, "#13867f"); rect(-19, 4, 38, 2.4, "#1fb5ad");
+    g.beginPath(); g.moveTo(-18, 4); g.lineTo(-14, -14); g.lineTo(18, -14); g.lineTo(18, 4); g.closePath(); g.fillStyle = "rgba(190,228,246,0.5)"; g.fill(); stroke("#7fa8c0", 1.4);
+    const cols = ["#f8eec8", "#7a4422", "#cfa468", "#f7a21b", "#f2a0bc", "#9cd36a"];
+    for (let k = 0; k < 6; k++) { const x = -14 + (k % 3) * 11, y = k < 3 ? -6 : 1; rect(x, y, 9, 4, "#e4e8ee"); g.beginPath(); g.ellipse(x + 4.5, y, 4.5, 2.6, 0, Math.PI, TAU); g.fillStyle = cols[k]; g.fill(); }
+  },
+  copiadora() { // la máquina de copiar llaves
+    fillRR(-18, 6, 36, 13, 3, "#d2403a"); rect(-18, 6, 36, 3, "#e8605a");
+    for (const x of [-10, 8]) { fillRR(x - 4, -2, 8, 9, 1.5, "#6b7682"); rect(x - 4, -2, 8, 2, "#9aa4ae"); }
+    dot(-1, -9, 7, "#9aa4ae"); circle(-1, -9, 7); stroke("#6b7682", 1.2); for (let k = 0; k < 10; k++) { const a = k * TAU / 10; line(-1 + Math.cos(a) * 6, -9 + Math.sin(a) * 6, -1 + Math.cos(a) * 8, -9 + Math.sin(a) * 8, "#6b7682", 1); }
+    circle(-13, 1, 3.4); stroke("#f2b81c", 2.2); rect(-10, 0, 20, 2.4, "#f2b81c"); for (let k = 0; k < 4; k++) rect(-4 + k * 3.4, 2.4, 2, 1.6 + (k % 2), "#f2b81c");
+  },
+};
+function equipIcon(key, cx, cy, s) {
+  const draw = EQUIP[key];
+  if (!draw) throw new Error(`Mejora desconocida: ${key}`);
+  unit(cx, cy, s, draw);
+}
 function productIcon(key, cx, cy, s) {
   const draw = PRODUCT[key];
   if (!draw) throw new Error(`Producto desconocido: ${key}`);
@@ -834,6 +1017,21 @@ const GLYPH = {
   calendar(c) { rr(-15, -11, 30, 26, 3); stroke(c, 3); rect(-15, -11, 30, 8, c); line(-8, -16, -8, -8, c, 3); line(8, -16, 8, -8, c, 3); for (let k = 0; k < 3; k++) rect(-9 + k * 7, 2, 4, 4, c); },
   key(c) { circle(-8, 0, 7); stroke(c, 3.4); line(-1, 0, 16, 0, c, 3.4); line(11, 0, 11, 6, c, 3.4); line(16, 0, 16, 5, c, 3.4); },
   snow(c) { for (let k = 0; k < 3; k++) { const a = k * Math.PI / 3; line(Math.cos(a) * -14, Math.sin(a) * -14, Math.cos(a) * 14, Math.sin(a) * 14, c, 3); } },
+  mega(c) { // el megáfono de la publicidad
+    path([[-14, -5], [-4, -5], [12, -15], [12, 15], [-4, 5], [-14, 5]]); g.fillStyle = c; g.fill();
+    fillRR(-11, 4, 7, 11, 2, c); for (const a of [-0.5, 0, 0.5]) line(15 + Math.cos(a) * 2, Math.sin(a) * 8, 15 + Math.cos(a) * 6, Math.sin(a) * 12, c, 2.4);
+  },
+  mail(c) { rr(-16, -11, 32, 22, 3); g.fillStyle = c; g.fill(); path([[-15, -10], [0, 3], [15, -10]], false); stroke("rgba(0,0,0,0.3)", 2.4); },
+  phone(c) { JOB_ICON.influencer(c); },
+  radio(c) {
+    line(-10, -10, 10, -19, c, 2.6); fillRR(-17, -10, 34, 25, 4, c);
+    circle(-7, 3, 7); g.fillStyle = "rgba(0,0,0,0.3)"; g.fill(); for (let k = -1; k <= 1; k++) line(-12, 3 + k * 3, -2, 3 + k * 3, c, 1.2);
+    fillRR(3, -5, 11, 6, 1.5, "rgba(0,0,0,0.3)"); dot(6, 8, 2.4, "rgba(0,0,0,0.3)"); dot(12, 8, 2.4, "rgba(0,0,0,0.3)");
+  },
+  bubble(c) { // un bocadillo de cómic: las opiniones
+    rr(-17, -14, 34, 24, 8); g.fillStyle = c; g.fill(); poly([[-8, 9], [-2, 9], [-10, 18]], c);
+    for (const x of [-8, 0, 8]) dot(x, -2, 2.6, "rgba(0,0,0,0.28)");
+  },
 };
 function glyph(key, cx, cy, s, color) { unit(cx, cy, s, () => GLYPH[key](color)); }
 
@@ -1029,7 +1227,9 @@ const WALLS = {
   playa: ["#f7f3ea", "#ace0ee", "#f3e6c0", "#fff8e8"], lujo: ["#fbfbf6", "#f4efe6", "#eef2f4"], rural: ["#e8d9c0", "#d6e6c8", "#f2e4c6", "#bcc3cc"],
 };
 const SHUTTER = { marinero: "#2a8fbd", historico: "#2f6b45", centro: "#6b3a1e", obrero: "#8a7a68", playa: "#1f8aa0", lujo: "#8a95a3", rural: "#3f6b3a" };
-const SECTOR_NAME = { cafeteria: "Cafetería", tienda: "Tienda de barrio", taller: "Taller" };
+const SECTOR_NAME = { cafeteria: "Cafetería", tienda: "Tienda de barrio", taller: "Taller", heladeria: "Heladería", ferreteria: "Ferretería" };
+// El minijuego de cada sector: decide la sala y el panel de `cliente`.
+const GAME = { cafeteria: "comandas", heladeria: "comandas", tienda: "caja", ferreteria: "caja", taller: "diagnostico" };
 
 function hangingSign(cx, cy, s, text, bg, fg) {
   g.save(); g.translate(cx, cy); g.scale(s, s);
@@ -1157,7 +1357,7 @@ function shopBuilding(th, r, o) {
   sign(o, bx + 8, 91, bw - 16, 26);
   if (lit) for (const lx of [bx + 40, bx + bw - 40]) { line(lx, 84, lx, 80, "#3a3f46", 1.4); line(lx, 80, lx + 6, 80, "#3a3f46", 1.4); dot(lx + 6, 82, 2.2, "#fff6c8"); poly([[lx + 3, 84], [lx + 9, 84], [lx + 18, 104], [lx - 6, 104]], "rgba(255,240,180,0.25)"); }
   // la planta baja
-  ({ cafeteria: cafeFront, tienda: shopFront, taller: garageFront }[o.sector] || cafeFront)(bx, bw, o, lit);
+  ({ cafeteria: cafeFront, tienda: shopFront, taller: garageFront, heladeria: iceFront, ferreteria: hardwareFront }[o.sector] || cafeFront)(bx, bw, o, lit);
   if (o.preview) openingBanner(bx, bw, o);
 }
 function sign(o, x, y, w, h) {
@@ -1179,7 +1379,74 @@ function cafeFront(bx, bw, o, lit) {
   else { rect(dx, 140, 44, 32, "#7a4a2a"); rect(dx + 5, 144, 15, 18, "#4a5a6c"); rect(dx + 24, 144, 15, 18, "#4a5a6c"); dot(dx + 21, 160, 1.4, "#f2c230"); }
   if (!o.open && !o.preview) hangingSign(dx + 22, 156, 0.75, "CERRADO", "#fff", "#d2403a");
   if (lit) ell(150, 178, 90, 5, "rgba(255,220,140,0.3)");
-  if (!o.preview) { cafeTable(bx + 28, 194, !o.open, true); cafeTable(bx + bw - 28, 194, !o.open, false); }
+  if (hasTerrace(o)) terrace(bx, bw, o);
+  else if (!o.preview) { cafeTable(bx + 28, 194, !o.open, true); cafeTable(bx + bw - 28, 194, !o.open, false); }
+}
+// La mejora `terraza`: cuatro mesas en la acera, con sombrilla si está abierto.
+const hasTerrace = (o) => !o.preview && (o.equipment || []).includes("terraza");
+function terrace(bx, bw, o) {
+  [bx + 6, bx + 66, bx + bw - 66, bx + bw - 6].forEach((x, k) => {
+    cafeTable(x, 196, !o.open, k % 2 === 0);
+    if (o.open) umbrella(x, 181, 0.95, o.main, o.accent);
+  });
+}
+function iceFront(bx, bw, o, lit) {
+  // el toldo con faldón de ondas grandes y lunares
+  rect(bx + 4, 118, bw - 8, 10, o.main);
+  for (let k = 0; k < 10; k++) { g.beginPath(); g.arc(bx + 4 + (k + 0.5) * (bw - 8) / 10, 128, (bw - 8) / 20, 0, Math.PI); g.fillStyle = k % 2 ? o.main : o.accent; g.fill(); }
+  g.beginPath(); for (let k = 0; k < 12; k++) g.rect(bx + 14 + k * 20, 121, 3, 3); g.fillStyle = o.accent; g.fill();
+  const wx = bx + 12, ww = 140, dx = bx + 162;
+  if (o.preview) kraft(wx, 140, ww, 30);
+  else if (!o.open) rollShutter(wx - 2, 138, ww + 4, 34);
+  else shopWindow(wx, 140, ww, 30, true, () => { // la vitrina con las cubetas de colores
+    rect(wx, 158, ww, 12, "#e4e8ee");
+    const cols = ["#f8eec8", "#7a4422", "#cfa468", "#f7a21b", "#f2a0bc", "#9cd36a", "#7fd6d0"];
+    for (let k = 0; k < 9; k++) { const x = wx + 6 + k * 15; g.beginPath(); g.ellipse(x + 6, 158, 6, 4, 0, Math.PI, TAU); g.fillStyle = cols[k % cols.length]; g.fill(); }
+  });
+  rect(dx - 2, 136, 48, 36, "#3a3f46");
+  rect(dx, 138, 44, 34, lit ? vgrad(138, 172, "#ffe9b0", "#f6c26a") : "#4a5a6c"); line(dx + 22, 138, dx + 22, 172, "#3a3f46", 1.6);
+  if (!o.open && !o.preview) hangingSign(dx + 22, 154, 0.75, "CERRADO", "#fff", "#d2403a");
+  unit(bx + bw - 22, 150, 19, () => { cone(); scoop(0, -6, 12, "#f2a0bc", "#d6789a"); }); // el cucurucho gigante de la pared
+  if (lit) {
+    ell(150, 178, 90, 5, "rgba(255,220,140,0.3)");
+    if (!hasTerrace(o)) { // la pizarra con un cucurucho
+      path([[bx + 14, 200], [bx + 22, 174], [bx + 30, 200]], false); stroke("#6b4a2a", 1.6);
+      fillRR(bx + 8, 172, 28, 20, 1, "#2a3a2a"); rr(bx + 8, 172, 28, 20, 1); stroke("#8a6a44", 1.4);
+      unit(bx + 22, 182, 7, () => { cone(); scoop(0, -6, 12, "#fff", "#ddd"); });
+    }
+  }
+  if (hasTerrace(o)) terrace(bx, bw, o);
+}
+function hardwareFront(bx, bw, o, lit) {
+  rect(bx + 4, 119, bw - 8, 9, o.main); rect(bx + 4, 126, bw - 8, 2.4, o.accent);
+  const wx = bx + 12, ww = 150, dx = bx + 172;
+  if (o.preview) kraft(wx, 136, ww, 34);
+  else if (!o.open) rollShutter(wx - 2, 134, ww + 4, 38);
+  else shopWindow(wx, 136, ww, 34, true, () => { // el panel perforado con las herramientas colgadas
+    rect(wx, 136, ww, 34, "#d8b47a");
+    g.beginPath(); for (let y = 139; y < 170; y += 5) for (let x = wx + 3; x < wx + ww; x += 5) g.rect(x, y, 1, 1); g.fillStyle = "rgba(90,60,20,0.35)"; g.fill();
+    for (let k = 0; k < 6; k++) {
+      const x = wx + 14 + k * 24;
+      unit(x, 153, 10, PRODUCT[["herramientas", "tornillos", "pintura", "bombillas", "cerraduras", "fontaneria"][k]]);
+    }
+  });
+  rect(dx - 2, 134, 48, 38, "#3a3f46");
+  rect(dx, 136, 44, 36, lit ? vgrad(136, 172, "#ffe9b0", "#f6c26a") : "#4a5a6c"); line(dx + 22, 136, dx + 22, 172, "#3a3f46", 1.6);
+  if (!o.open && !o.preview) hangingSign(dx + 22, 154, 0.75, "CERRADO", "#fff", "#d2403a");
+  // la llave gigante de la pared, el letrero de siempre de las ferreterías
+  g.save(); g.translate(bx + bw - 14, 152); g.rotate(Math.PI / 2);
+  circle(-11, 0, 7); stroke("#f2b81c", 4); rect(-4, -2, 22, 4, "#f2b81c"); rect(10, 2, 3, 5, "#f2b81c"); rect(15, 2, 3, 4, "#f2b81c");
+  g.restore();
+  if (lit) {
+    ell(150, 178, 90, 5, "rgba(255,220,140,0.3)");
+    // los botes de pintura apilados y el cubo de las escobas
+    for (const [x, y, c] of [[bx + 14, 200, "#1f6fb2"], [bx + 32, 200, "#d2403a"], [bx + 50, 200, "#2f9a5a"], [bx + 23, 186, "#f2c230"], [bx + 41, 186, "#7a5aa8"]]) {
+      rect(x - 8, y - 14, 16, 14, "#c4cbd3"); rect(x - 8, y - 11, 16, 7, c); ell(x, y - 14, 8, 2, "#e4e8ee");
+    }
+    for (let k = 0; k < 3; k++) line(bx + bw - 30 + k * 6, 200, bx + bw - 34 + k * 8, 166, "#c88a4a", 1.8);
+    for (let k = 0; k < 3; k++) poly([[bx + bw - 38 + k * 8, 166], [bx + bw - 30 + k * 8, 166], [bx + bw - 32 + k * 8, 156], [bx + bw - 36 + k * 8, 156]], ["#d2403a", "#f2c230", "#2f7fd0"][k]);
+    rect(bx + bw - 40, 188, 24, 14, "#6b7682");
+  }
 }
 function shopFront(bx, bw, o, lit) {
   poly([[bx + 6, 120], [bx + bw - 6, 120], [bx + bw - 2, 128], [bx + 2, 128]], o.main);
@@ -1375,7 +1642,7 @@ function placeholder(kind, x, y, w, h) {
   if (kind === "job") jobIcon("oficina", cx, cy, 24, "rgba(103,95,82,0.6)"); else glyph("shop", cx, cy, 24, "rgba(103,95,82,0.6)");
   dot(cx + 34, cy - 30, 15, C.sun); glyph("plus", cx + 34, cy - 30, 9, "#fff");
   TX(kind === "job" ? "Buscar curro" : "Montar un negocio", cx, y + h * 0.64, { font: F.t(32), color: C.ink, align: "center" });
-  fitText(kind === "job" ? "Un sueldo por cada turno de jornada." : "Cafetería, tienda o taller, en el barrio que elijas.", cx, y + h * 0.64 + 40, w - 40, F.m, 20, 14, { color: C.mute, align: "center" });
+  fitText(kind === "job" ? "Un sueldo por cada turno de jornada." : "Cinco tipos de local, en el barrio que elijas.", cx, y + h * 0.64 + 40, w - 40, F.m, 20, 14, { color: C.mute, align: "center" });
 }
 function paintDia(st) {
   appHeader(st.who || "", st.date || "", st.clock);
@@ -1427,23 +1694,27 @@ const DEMO = {
   cafeteria: { main: "#0f4c81", accent: "#f6bd2d", emblem: "taza", name: "Cafetería", theme: "centro", seed: 3 },
   tienda: { main: "#1f5a37", accent: "#f0dfb2", emblem: "sol", name: "Tienda", theme: "obrero", seed: 5 },
   taller: { main: "#2a242d", accent: "#f58220", emblem: "rayo", name: "Taller", theme: "rural", seed: 6 },
+  heladeria: { main: "#13867f", accent: "#fbf3e0", emblem: "sol", name: "Heladería", theme: "playa", seed: 8 },
+  ferreteria: { main: "#b3261e", accent: "#f6bd2d", emblem: "estrella", name: "Ferretería", theme: "marinero", seed: 9 },
 };
 function paintMontar(st) {
-  appHeader(st.title || "", "Tres locales, tres minijuegos", null);
-  const sectors = (st.sectors || []).slice(0, 3), cw = 308, gap = 18, x0 = (W - cw * 3 - gap * 2) / 2, y = 112, chh = 476;
+  appHeader(st.title || "", "Cinco locales, tres minijuegos", null);
+  const sectors = (st.sectors || []).slice(0, 5), n = Math.max(3, sectors.length), gap = 12;
+  const cw = (W - 32 - gap * (n - 1)) / n, x0 = (W - cw * sectors.length - gap * (sectors.length - 1)) / 2, y = 110, chh = 486;
   sectors.forEach((s, i) => {
-    const x = x0 + i * (cw + gap), demo = DEMO[s.key] || DEMO.cafeteria;
-    if (s.selected) fillRR(x - 6, y - 6, cw + 12, chh + 12, 20, C.sun);
+    const x = x0 + i * (cw + gap), demo = DEMO[s.key] || DEMO.cafeteria, tw = cw - 28;
+    if (s.selected) fillRR(x - 5, y - 5, cw + 10, chh + 10, 19, C.sun);
     card(x, y, cw, chh);
-    storefront(x + 10, y + 10, cw - 20, 190, { sector: s.key, ...demo, open: true, r: 10 });
-    if (s.selected) chip("ELEGIDO", x + cw - 18, y + 18, "orange", { align: "right", size: 17 });
-    TX(s.name || "", x + 18, y + 228, { font: F.t(32), color: C.ink });
-    paragraph(s.blurb || "", x + 18, y + 266, cw - 36, F.r(19), 25, 3, { color: C.mute });
+    storefront(x + 8, y + 8, cw - 16, 150, { sector: s.key, ...demo, open: true, r: 10 });
+    if (s.selected) chip("ELEGIDO", x + cw - 14, y + 14, "orange", { align: "right", size: 14 });
+    fitText(s.name || "", x + 14, y + 184, tw, F.t, 26, 16, { color: C.ink, fancy: true });
+    paragraph(s.blurb || "", x + 14, y + 216, tw, F.r(16), 21, 5, { color: C.mute });
     (s.lines || []).slice(0, 3).forEach((t, k) => {
-      const ry = y + 364 + k * 36;
-      line(x + 18, ry - 18, x + cw - 18, ry - 18, C.line, 1.2);
-      glyph(["box", "key", "coin"][k], x + 32, ry, 10, C.atl);
-      fitText(t, x + 54, ry, cw - 72, F.m, 20, 14, { color: C.ink });
+      const ry = y + 340 + k * 50;
+      line(x + 14, ry - 18, x + cw - 14, ry - 18, C.line, 1.2);
+      glyph(["box", "key", "coin"][k], x + 24, ry, 8, C.atl);
+      if (width(t, F.m(13)) <= tw - 24) fitText(t, x + 38, ry, tw - 24, F.m, 15, 13, { color: C.ink });
+      else paragraph(t, x + 38, ry, tw - 24, F.m(15), 19, 2, { color: C.ink });
     });
   });
   footer(st.foot, H - 22);
@@ -1459,10 +1730,38 @@ function statTile(s, x, y, w, h) {
 function loyaltyDots(x, cy, v) {
   for (let k = 0; k < 10; k++) dot(x + k * 11, cy, 4, k < v ? C.bug : "#e3d8bc");
 }
+// «Le quedan 4 días» / «Le queda 1 día».
+const leftText = (left) => `${/^1 /.test(left || "") ? "Le queda" : "Le quedan"} ${left || ""}`;
+// La campaña de publicidad en marcha, como una nota sobre la foto. Devuelve su alto.
+function campaignNote(cp, x, y, maxW) {
+  const l2 = `${cp.boost || ""} · ${leftText(cp.left).toLowerCase()}`;
+  const w = Math.min(maxW, Math.max(width(cp.name || "", F.d(18)), width(l2, F.m(16))) + 76), h = 56;
+  fillRR(x, y + 3, w, h, 14, "rgba(0,0,0,0.22)"); fillRR(x, y, w, h, 14, "#fffdf6");
+  dot(x + 29, y + h / 2, 19, C.bug); glyph("mega", x + 29, y + h / 2, 11, "#fff");
+  fitText(cp.name || "", x + 58, y + 19, w - 70, F.d, 18, 12, { color: C.ink });
+  fitText(l2, x + 58, y + 40, w - 70, F.m, 16, 11, { color: C.bugDk });
+  return h;
+}
+// Las mejoras instaladas (sin la terraza, que ya se ve), en iconos sobre una pastilla blanca.
+function equipmentPill(keys, x, y) {
+  const n = Math.min(keys.length, 6), sz = 40, w = 106 + n * (sz + 6), h = 52;
+  fillRR(x, y + 3, w, h, 14, "rgba(0,0,0,0.22)"); fillRR(x, y, w, h, 14, "#fffdf6");
+  T("MEJORAS", x + 14, y + h / 2, { font: F.d(15), color: C.mute });
+  keys.slice(0, n).forEach((k, i) => { const ix = x + 100 + i * (sz + 6); fillRR(ix, y + 6, sz, sz, 9, "#f2e9d4"); equipIcon(k, ix + sz / 2, y + 6 + sz / 2, 16); });
+}
+// El distintivo RECOMENDADO: una escarapela dorada con su cinta.
+function rosette(cx, cy, r) {
+  for (const d of [-1, 1]) poly([[cx + d * r * 0.18, cy + r * 0.5], [cx + d * r * 0.62, cy + r * 0.5], [cx + d * r * 0.6, cy + r * 1.5], [cx + d * r * 0.4, cy + r * 1.3], [cx + d * r * 0.2, cy + r * 1.5]], d < 0 ? C.bug : C.bugDk);
+  g.beginPath(); for (let k = 0; k < 32; k++) { const a = k * TAU / 32, q = k % 2 ? r : r * 0.9; g.lineTo(cx + Math.cos(a) * q, cy + Math.sin(a) * q); } g.closePath(); g.fillStyle = "#c98a00"; g.fill();
+  dot(cx, cy, r * 0.84, C.gold); circle(cx, cy, r * 0.72); stroke("rgba(255,255,255,0.75)", 1.6);
+  starPath(cx, cy - r * 0.18, r * 0.34, "#fff");
+  fillRR(cx - r * 1.2, cy + r * 0.2, r * 2.4, r * 0.46, 4, C.bugDk);
+  fitText("RECOMENDADO", cx, cy + r * 0.43, r * 2.2, F.d, Math.round(r * 0.3), 9, { color: "#fff", align: "center" });
+}
 function paintNegocio(st) {
   const preview = st.mode === "preview";
   shopHeader(st, "", {
-    sub: `${SECTOR_NAME[st.sector] || ""} · ${st.barrio || ""}`, rightW: 200,
+    sub: [SECTOR_NAME[st.sector] || "", st.barrio || "", preview ? "" : st.size || ""].filter(Boolean).join(" · "), rightW: 200,
     right: (hh) => chip(preview ? "Vista previa" : st.open ? "Abierto" : "Cerrado", W - 24, hh / 2 - 19, preview ? "ink" : st.open ? "green" : "red", { align: "right", size: 22 }),
   });
   const fx = 16, fy = 106, fw = 600, fh = 476;
@@ -1477,6 +1776,12 @@ function paintNegocio(st) {
       if (tx > fx + 14 && tx + tw > fx + fw - 14) { tx = fx + 14; ty -= 38; }
       tag(t, tx, ty, kind, icon, 17, fw - 28); tx += tw + 8;
     }
+    // arriba, sobre el cielo: la campaña en marcha, las mejoras instaladas y el distintivo
+    let oy = fy + 14;
+    if (st.campaign) oy += campaignNote(st.campaign, fx + 14, oy, fw - 150) + 8;
+    const kit = (st.equipment || []).filter((k) => k !== "terraza");
+    if (kit.length) equipmentPill(kit, fx + 14, oy);
+    if (st.rating && st.rating.badge) rosette(fx + fw - 64, fy + 68, 46);
   }
   const px = 632, pw = W - 16 - px;
   if (preview) {
@@ -1492,9 +1797,16 @@ function paintNegocio(st) {
     return;
   }
   // la reputación y las cifras
+  // la reputación (las estrellas) y, a la derecha, la media de las reseñas
   card(px, fy, pw, 74);
-  starRow(px + 24 + 2 * 34, fy + 37, 15, 34, st.stars || 0);
-  T(Number(st.stars ?? 0).toFixed(1).replace(".", ","), px + pw - 22, fy + 37, { font: F.d(30), color: C.ink, align: "right" });
+  starRow(px + 22 + 2 * 32, fy + 29, 14, 32, st.stars || 0);
+  T("Reputación", px + 22 - 14, fy + 58, { font: F.m(15), color: C.mute });
+  const rt = st.rating;
+  if (rt) {
+    T(rt.avg || "", px + pw - 18, fy + 29, { font: F.d(28), color: C.ink, align: "right" });
+    starPath(px + pw - 30 - width(rt.avg || "", F.d(28)), fy + 28, 10, C.gold);
+    T(rt.count || "", px + pw - 18, fy + 58, { font: F.m(15), color: C.mute, align: "right" });
+  } else T("Sin reseñas", px + pw - 18, fy + 37, { font: F.m(17), color: C.mute, align: "right" });
   const stats = (st.stats || []).slice(0, 6), sw = (pw - 10) / 2, sh = 60;
   stats.forEach((s, i) => statTile(s, px + (i % 2) * (sw + 10), fy + 84 + Math.floor(i / 2) * (sh + 7), sw, sh));
   const y = fy + 84 + Math.ceil(stats.length / 2) * (sh + 7) + 3;
@@ -1529,6 +1841,7 @@ function paintAlmacen(st) {
     // la caja con el producto
     fillRR(cx + 8, cy + 18, 100, 100, 14, p.low ? "#fde3df" : "#fffdf6"); rr(cx + 8.5, cy + 18.5, 99, 99, 14); stroke(p.low ? C.red : C.line, 2);
     productIcon(p.key, cx + 58, cy + 68, 38);
+    if (p.level) chip(p.level, cx + 58, cy + 104, /barat/i.test(p.level) ? "turq" : "orange", { align: "center", size: 14, maxW: 100 }); // su propio nivel de precios
     fitText(p.name || "", cx + 122, cy + 34, ww - 120, F.d, 21, 13, { color: C.ink });
     T(String(p.units ?? ""), cx + 122, cy + 76, { font: F.t(44), color: p.low ? C.redDk : C.ink });
     T("uds.", cx + 128 + width(String(p.units ?? ""), F.t(44)), cy + 82, { font: F.m(18), color: p.low ? C.redDk : C.mute });
@@ -1579,13 +1892,103 @@ function paintCuentas(st) {
   footer(st.foot, H - 24);
 }
 
+// -- mejoras: lo que se instala en el local y las campañas de publicidad ----------------------
+
+const CAMPAIGN_ICON = { buzoneo: "mail", redes: "phone", radio: "radio" };
+function paintMejoras(st) {
+  shopHeader(st, "MEJORAS", { sub: SECTOR_NAME[st.sector] || "" });
+  const items = (st.items || []).slice(0, 3), gap = 14, iw = (W - 32 - gap * (Math.max(1, items.length) - 1)) / Math.max(1, items.length), iy = 104, ih = 226;
+  items.forEach((it, i) => {
+    const x = 16 + i * (iw + gap), tw = iw - 136;
+    card(x, iy, iw, ih, it.owned ? { stroke: C.green } : {});
+    fillRR(x + 16, iy + 16, 92, 92, 16, it.owned ? "#e3f4e8" : "#f2e9d4");
+    equipIcon(it.key, x + 62, iy + 62, 36);
+    const name = wrap(it.name || "", tw, F.t(24), 3);
+    name.forEach((l, k) => TX(l, x + 122, iy + 62 - (name.length - 1) * 14 + k * 28, { font: F.t(24), color: C.ink }));
+    fitText(it.class || "", x + 18, iy + 124, iw - 36, F.m, 16, 12, { color: C.mute });
+    paragraph(it.effect || "", x + 18, iy + 149, iw - 36, F.m(17), 22, 2, { color: C.ink });
+    const by = iy + ih - 24;
+    line(x + 16, by - 22, x + iw - 16, by - 22, C.line, 1.2);
+    if (it.owned) {
+      const cw = chip("INSTALADA", x + iw - 14, by - 15, "green", { align: "right", size: 14 });
+      fitText(it.book || "", x + 18, by, iw - 50 - cw, F.m, 17, 12, { color: C.greenDk });
+    } else {
+      T(it.price || "", x + 18, by, { font: F.d(24), color: C.ink });
+      T("con IGIC", x + 26 + width(it.price || "", F.d(24)), by + 2, { font: F.m(15), color: C.mute });
+    }
+  });
+  // las campañas: la que está en marcha, resaltada
+  const cy = iy + ih + 22, act = st.active || null;
+  sectionLabel("Publicidad", 18, cy);
+  T(act ? `En marcha: ${act.name || ""}` : "Ninguna campaña en marcha", W - 18, cy, { font: F.m(17), color: act ? C.bugDk : C.mute, align: "right" });
+  const cps = (st.campaigns || []).slice(0, 3), cw = (W - 32 - gap * 2) / 3, y = cy + 18, ch = 178;
+  cps.forEach((cp, i) => {
+    const x = 16 + i * (cw + gap), on = !!act && act.key === cp.key;
+    if (on) fillRR(x - 4, y - 4, cw + 8, ch + 8, 18, C.bug);
+    card(x, y, cw, ch);
+    dot(x + 40, y + 42, 25, on ? C.bug : C.atl); glyph(CAMPAIGN_ICON[cp.key] || "mega", x + 40, y + 42, 14, "#fff");
+    fitText(cp.name || "", x + 76, y + 32, cw - 90, F.t, 22, 14, { color: C.ink, fancy: true });
+    fitText(on ? `Dura ${cp.days || ""} · ${leftText(act.left).toLowerCase()}` : `Dura ${cp.days || ""}`, x + 76, y + 60, cw - 90, F.m, 17, 12, { color: on ? C.bugDk : C.mute });
+    paragraph(cp.effect || "", x + 18, y + 100, cw - 36, F.m(18), 23, 2, { color: C.ink });
+    T(cp.price || "", x + 18, y + ch - 24, { font: F.d(22), color: C.ink });
+    if (on) chip("EN MARCHA", x + cw - 14, y + ch - 39, "bug", { align: "right", size: 14 });
+  });
+  glyph("coin", 30, H - 52, 10, C.atl);
+  fitText(st.book || "", 48, H - 52, W - 70, F.d, 19, 14, { color: C.ink });
+  footer(st.foot, H - 20);
+}
+
+// -- resenas: la media y las últimas opiniones ----------------------------------------------
+
+function paintResenas(st) {
+  shopHeader(st, "RESEÑAS", { sub: SECTOR_NAME[st.sector] || "" });
+  const lx = 16, ly = 104, lw = 300, lh = 486, mx = lx + lw / 2, reviews = (st.reviews || []).slice(0, 6);
+  card(lx, ly, lw, lh, { top: 10, topColor: st.main || C.atl });
+  sectionLabel("La media", lx + 22, ly + 42);
+  TX(st.avg || "—", mx, ly + 118, { font: F.t(104), color: reviews.length ? C.ink : C.sandDk, align: "center", shadow: "rgba(0,0,0,0.12)", dx: 0, dy: 4 });
+  starRow(mx, ly + 198, 17, 40, st.value || 0);
+  T(st.count || "", mx, ly + 240, { font: F.m(22), color: C.mute, align: "center" });
+  if (st.badge) rosette(mx, ly + 338, 62);
+  else {
+    circle(mx, ly + 338, 56); g.setLineDash([8, 6]); stroke("rgba(103,95,82,0.45)", 3); g.setLineDash([]);
+    starPath(mx, ly + 324, 22, "rgba(103,95,82,0.25)");
+    T("Sin distintivo", mx, ly + 360, { font: F.d(15), color: C.mute, align: "center" });
+  }
+  // las reseñas, de dos en dos
+  const rx = lx + lw + 16, rw = W - 16 - rx, gap = 12, cw = (rw - gap) / 2, rh = (lh - gap * 2) / 3;
+  if (!reviews.length) {
+    dashedCard(rx, ly, rw, lh);
+    dot(rx + rw / 2, ly + 170, 56, "rgba(103,95,82,0.12)"); glyph("bubble", rx + rw / 2, ly + 170, 30, "rgba(103,95,82,0.55)");
+    TX("Aún no hay reseñas", rx + rw / 2, ly + 278, { font: F.t(34), color: C.ink, align: "center" });
+    paragraph("Algunos clientes dejan una al irse, contentos o no.", rx + rw / 2, ly + 326, rw - 120, F.m(21), 28, 2, { color: C.mute, align: "center" });
+  }
+  reviews.forEach((rv, i) => {
+    const x = rx + (i % 2) * (cw + gap), y = ly + Math.floor(i / 2) * (rh + gap), n = clamp(rv.stars | 0, 1, 5);
+    card(x, y, cw, rh, { top: 6, topColor: n >= 4 ? C.green : n === 3 ? C.amber : C.red });
+    const dw = width(rv.day || "", F.m(16));
+    fitText(rv.name || "", x + 18, y + 32, cw - 46 - dw, F.d, 20, 13, { color: C.ink });
+    T(rv.day || "", x + cw - 18, y + 32, { font: F.m(16), color: C.mute, align: "right" });
+    for (let k = 0; k < 5; k++) starFrac(x + 30 + k * 24, y + 62, 10, k < n ? 1 : 0);
+    paragraph(`«${rv.line || ""}»`, x + 18, y + 98, cw - 36, F.m(19), 25, 2, { color: C.ink });
+  });
+  footer(st.foot, H - 22);
+}
+
 // -- cliente: el minijuego -------------------------------------------------------------------
 
 const ROOM = {
   cafeteria: { wall: "#f3e3c3", tile: "#e8d2a6", floor: ["#d9c7a6", "#c7b18a"], counter: "#8a5a2a", top: "#efe6d6" },
   tienda: { wall: "#e6efe0", tile: "#d4e2cc", floor: ["#e3ddd0", "#d2cabb"], counter: "#2f6b45", top: "#f4f1ea" },
   taller: { wall: "#c8ccd0", tile: "#b8bec4", floor: ["#9aa0a6", "#8a9096"], counter: "#5a626c", top: "#c4cbd3" },
+  heladeria: { wall: "#e3f4f0", tile: "#f6d6e2", floor: ["#f2ead8", "#e0d4bc"], counter: "#13867f", top: "#f4f1ea" },
+  ferreteria: { wall: "#ece2cf", tile: "#d8b47a", floor: ["#c9c2b4", "#b4ab9a"], counter: "#6b4a2a", top: "#e8e0d0" },
 };
+// Lo de las baldas de la pared (`shelf`), cómo se cubre la parte baja (`dado`) y, en las comandas,
+// lo que ya está servido en el mostrador (`served`).
+Object.assign(ROOM.cafeteria, { shelf: ["cafe", "cortado", "zumo", "barraquito"], dado: "tiles", served: ["cafe", "cortado", "dulce"] });
+Object.assign(ROOM.heladeria, { shelf: ["vainilla", "chocolate", "mango", "batido", "gofio", "granizado"], dado: "tiles", served: ["vainilla", "granizado", "batido"] });
+Object.assign(ROOM.tienda, { shelf: ["pan", "leche", "conservas", "bebidas", "limpieza", "fruta"], dado: "band" });
+Object.assign(ROOM.ferreteria, { shelf: ["tornillos", "bombillas", "pintura", "herramientas", "fontaneria", "cerraduras"], dado: "pegboard" });
 // La calle vista por una ventana o un portón: el barrio de fondo (`backdrop` de `pisos`).
 function streetView(x, y, w, h, theme, seed) {
   const th = SKY[theme] ? theme : "centro", s = Math.max(w / 300, h / 190);
@@ -1598,8 +2001,9 @@ function streetView(x, y, w, h, theme, seed) {
 function sceneRoom(st, x, y, w, h) {
   const R = ROOM[st.sector] || ROOM.cafeteria, floorY = y + h * 0.74, seed = (st.client && st.client.seed) || 1;
   rect(x, y, w, floorY - y, R.wall);
-  if (st.sector === "cafeteria") { for (let ty = floorY - 70; ty < floorY; ty += 14) for (let tx = x; tx < x + w; tx += 14) rect(tx + 1, ty + 1, 12, 12, ((tx + ty) / 14) % 2 ? R.tile : shade(R.tile, 0.08)); }
-  else if (st.sector === "tienda") rect(x, floorY - 50, w, 50, R.tile);
+  if (R.dado === "tiles") { for (let ty = floorY - 70; ty < floorY; ty += 14) for (let tx = x; tx < x + w; tx += 14) rect(tx + 1, ty + 1, 12, 12, ((tx + ty) / 14) % 2 ? R.tile : shade(R.tile, 0.08)); }
+  else if (R.dado === "band") rect(x, floorY - 50, w, 50, R.tile);
+  else if (R.dado === "pegboard") { rect(x, floorY - 60, w, 60, R.tile); g.beginPath(); for (let ty = floorY - 55; ty < floorY - 2; ty += 8) for (let tx = x + 4; tx < x + w; tx += 8) g.rect(tx, ty, 1.6, 1.6); g.fillStyle = "rgba(90,60,20,0.35)"; g.fill(); }
   else { rect(x, floorY - 40, w, 40, "#e0b02a"); for (let k = x - 40; k < x + w; k += 30) poly([[k, floorY], [k + 15, floorY], [k + 35, floorY - 40], [k + 20, floorY - 40]], "#2a2f36"); }
   // el suelo
   rect(x, floorY, w, y + h - floorY, vgrad(floorY, y + h, R.floor[0], R.floor[1]));
@@ -1615,7 +2019,7 @@ function sceneRoom(st, x, y, w, h) {
   rect(dx - 8, dy - 8, dw + 16, floorY - dy + 8, R.counter); streetView(dx, dy, dw, floorY - dy, st.theme, seed + 7);
   rect(dx + dw - 14, dy + (floorY - dy) / 2, 6, 30, "#c4cbd3");
   // las baldas de la pared
-  const keys = st.sector === "cafeteria" ? ["cafe", "cortado", "zumo", "barraquito"] : ["pan", "leche", "conservas", "bebidas", "limpieza", "fruta"];
+  const keys = R.shelf || ROOM.cafeteria.shelf;
   for (let k = 0; k < 3; k++) { rect(x + 164, y + 74 + k * 56, 90, 6, "#8a6a44"); for (let j = 0; j < 4; j++) productIcon(keys[(j + k * 2) % keys.length], x + 178 + j * 21, y + 60 + k * 56, 10); }
   // la ventana a la calle, con el rótulo al revés (se ve desde dentro)
   const wx = x + 276, wy = y + 30, ww = w - 276 - 28, wh = floorY - wy - 96;
@@ -1675,6 +2079,8 @@ const PRODUCT_NAME = {
   cafe: "Café solo", cortado: "Cortado", barraquito: "Barraquito", zumo: "Zumo natural", bocadillo: "Bocadillo", dulce: "Dulce",
   pan: "Pan", leche: "Leche", fruta: "Fruta", conservas: "Conservas", limpieza: "Limpieza", bebidas: "Bebidas",
   pastillas: "Pastillas de freno", bateria: "Batería", aceite: "Aceite y filtro", correa: "Correa", bujias: "Bujías", neumatico: "Neumático",
+  vainilla: "Helado de vainilla", chocolate: "Helado de chocolate", gofio: "Helado de gofio", mango: "Sorbete de mango", granizado: "Granizado de limón", batido: "Batido",
+  tornillos: "Tornillería", bombillas: "Bombillas", pintura: "Pintura", herramientas: "Herramientas", fontaneria: "Fontanería", cerraduras: "Cerraduras",
 };
 function magnifier(cx, cy, s, color) { circle(cx - s * 0.15, cy - s * 0.15, s * 0.55); stroke(color, s * 0.16); line(cx + s * 0.25, cy + s * 0.25, cx + s * 0.75, cy + s * 0.75, color, s * 0.22); }
 function clipboard(cx, cy, s) { // la libreta del presupuesto
@@ -1685,7 +2091,7 @@ function clipboard(cx, cy, s) { // la libreta del presupuesto
   glyph("check", cx + s * 0.32, cy + s * 0.55, s * 0.22, C.green);
 }
 function paintCliente(st) {
-  const c = st.client || {}, taller = st.sector === "taller";
+  const c = st.client || {}, game = GAME[st.sector] || "comandas", taller = game === "diagnostico", comandas = game === "comandas", caja = game === "caja";
   shopHeader(st, "", { h: 80, rightW: 440, right: () => hud(st) });
   const sx = 16, sy = 92, sw = 624, sh = 532;
   g.save(); rr(sx, sy, sw, sh, 16); g.clip();
@@ -1698,26 +2104,26 @@ function paintCliente(st) {
     who = person(sx + 530, sy + 176, 44, c.seed || 1, { full: true, floor: sy + sh - 34 });
   } else {
     const R = ROOM[st.sector] || ROOM.cafeteria, cy = sy + sh - 96;
-    who = person(sx + 420, sy + 130, 58, c.seed || 1, { cut: cy + 10, pocket: st.sector === "tienda", thief: !!st.thief, shifty: !!st.thief, sweat: !!st.thief });
+    who = person(sx + 420, sy + 130, 58, c.seed || 1, { cut: cy + 10, pocket: caja, thief: !!st.thief, shifty: !!st.thief, sweat: !!st.thief });
     // el mostrador, visto desde detrás, con las manos del cliente encima
     rect(sx, cy, sw, 22, lgrad(0, cy, 0, cy + 22, [[0, shade(R.top, 0.05)], [1, shade(R.top, -0.08)]])); rect(sx, cy + 22, sw, sh, R.counter);
     rect(sx, cy + 22, sw, 6, "rgba(0,0,0,0.2)");
     g.beginPath(); for (let k = sx + 40; k < sx + sw; k += 120) { g.moveTo(k, cy + 34); g.lineTo(k, sy + sh); } stroke("rgba(0,0,0,0.12)", 2);
     for (const ax of who.arms) ell(ax, cy + 6, who.R * 0.3, who.R * 0.2, who.look.skin);
-    if (st.sector === "tienda") {
+    if (caja) {
       basketOnCounter(st.basket || [], sx + 150, cy + 16);
       register(sx + sw - 140, cy + 14, st.total);
       banknote(sx + 424, cy + 8, st.paid, -0.06); // el billete con que paga, sobre el mostrador
-    } else for (let k = 0; k < 3; k++) productIcon(["cafe", "cortado", "dulce"][k], sx + 60 + k * 50, cy - 12, 20);
+    } else for (let k = 0; k < 3; k++) productIcon(R.served[k], sx + 60 + k * 50, cy - 12, 20);
   }
   if (c.name) nameTag(c.name, who.headX, who.headY - who.R - 50, !!c.regular);
   g.restore();
   rr(sx, sy, sw, sh, 16); stroke("rgba(0,0,0,0.15)", 2);
   // el panel de la derecha: el bocadillo con lo que dice (y lo que pide)
   const px = 664, pw = W - 16 - px, lines = wrap(c.line || "", pw - 40, F.m(23), 3);
-  const order = st.sector === "cafeteria" && !st.usual ? (st.order || []).slice(0, 6) : null;
+  const order = comandas && !st.usual ? (st.order || []).slice(0, 6) : null;
   let bh = 34 + lines.length * 30;
-  if (st.sector === "cafeteria") bh += st.usual ? 140 : 10 + Math.ceil(order.length / 3) * 94;
+  if (comandas) bh += st.usual ? 140 : 10 + Math.ceil(order.length / 3) * 94;
   const tailX = who.headX + who.R * 0.9, tailY = who.headY + who.R * 0.3;
   fillRR(px + 3, sy + 5, pw, bh, 22, "rgba(0,0,0,0.15)");
   path([[px + 4, sy + 34], [tailX, tailY], [px + 4, sy + 96]]); g.fillStyle = "#fff"; g.fill(); stroke("rgba(27,42,53,0.25)", 2);
@@ -1725,14 +2131,14 @@ function paintCliente(st) {
   rect(px - 1, sy + 36, 6, 58, "#fff");
   lines.forEach((l, i) => T(l, px + 20, sy + 32 + i * 30, { font: F.m(23), color: C.ink }));
   let y = sy + 26 + lines.length * 30;
-  if (st.sector === "cafeteria") {
+  if (comandas) {
     if (st.usual) {
       TX("Lo de siempre", px + pw / 2, y + 26, { font: F.t(34), color: C.bugDk, align: "center" });
       for (let k = 0; k < 3; k++) { const qx = px + pw / 2 + (k - 1) * 74; fillRR(qx - 28, y + 54, 56, 56, 12, "#fbf3e0"); rr(qx - 27.5, y + 54.5, 55, 55, 12); stroke(C.line, 1.5); TX("?", qx, y + 82, { font: F.t(36), color: C.sandDk, align: "center" }); }
     } else orderGrid(order, px + 20, y + 6, pw - 40);
   }
   y = sy + bh + 16;
-  if (st.sector === "cafeteria") {
+  if (comandas) {
     const ch = sy + sh - y;
     card(px, y, pw, ch);
     sectionLabel(st.usual ? "Su pedido de siempre" : "La comanda", px + 18, y + 22);
@@ -1745,7 +2151,7 @@ function paintCliente(st) {
       T(`${it.n || 1} ×`, px + 58, ry, { font: F.d(21), color: C.bugDk });
       fitText(PRODUCT_NAME[it.key] || it.key, px + 98, ry, pw - 116, F.m, 21, 14, { color: C.ink });
     });
-  } else if (st.sector === "tienda") {
+  } else if (caja) {
     const items = (st.basket || []).slice(0, 6), rh = 34, ch = Math.min(70 + items.length * rh + 84, sy + sh - y);
     card(px, y, pw, ch);
     sectionLabel("La cesta", px + 18, y + 22);
@@ -1833,7 +2239,7 @@ function paintCierre(st) {
 
 // -- Entrada ---------------------------------------------------------------------------------
 
-const SCREENS = { dia: paintDia, montar: paintMontar, negocio: paintNegocio, almacen: paintAlmacen, cuentas: paintCuentas, cliente: paintCliente, cierre: paintCierre };
+const SCREENS = { dia: paintDia, montar: paintMontar, negocio: paintNegocio, almacen: paintAlmacen, cuentas: paintCuentas, cliente: paintCliente, cierre: paintCierre, mejoras: paintMejoras, resenas: paintResenas };
 
 function paintScreen(st) {
   const draw = SCREENS[st.screen];
