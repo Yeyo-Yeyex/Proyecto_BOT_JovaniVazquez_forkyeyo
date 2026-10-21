@@ -214,6 +214,9 @@ class Business:
         campaign_until: Último día (ISO) de la campaña.
         prices: Nivel de precios de cada producto que no va con el general (`price`).
         reviews: Las últimas reseñas: `[día ISO, quién, estrellas, índice de la frase]`.
+        company: La sociedad limitada, si `form` es `sl` (fase 3): ver
+            `bot.services.business_sl.new_company`.
+        pluri_week: Última semana (lunes ISO) en que se miró el reintegro de pluriactividad.
     """
 
     user_id: int
@@ -253,6 +256,8 @@ class Business:
     campaign_until: str = ""
     prices: dict[str, str] = field(default_factory=dict)
     reviews: list[list[Any]] = field(default_factory=list)
+    company: dict[str, Any] = field(default_factory=dict)
+    pluri_week: str = ""
     id: int = 0
 
     @property
@@ -280,6 +285,11 @@ class Business:
     def emblem_key(self) -> str:
         """Clave del emblema del rótulo (la dibuja la escena)."""
         return EMBLEMS[self.emblem % len(EMBLEMS)][0]
+
+    @property
+    def is_company(self) -> bool:
+        """Si es de una sociedad limitada (fase 3) y no de un autónomo."""
+        return self.form == "sl" and bool(self.company)
 
     @property
     def size_info(self) -> Size:

@@ -222,6 +222,17 @@ SPORTS_ACCOUNT_ID = -900
 #: tiene monedero: compra y presta con la caja de la tienda (`SHOP_ACCOUNT_ID`).
 PAWN_ACCOUNT_ID = -1000
 
+#: Las cuentas de las sociedades limitadas de los negocios de `pala` (fase 3): la de un
+#: negocio es `COMPANY_ACCOUNT_BASE - id del negocio`. Negativas y lejos de las fijas y de
+#: las ONGs (-1, -2…), así no salen como miembros ni pagan Patrimonio por su cuenta.
+COMPANY_ACCOUNT_BASE = -1_000_000
+
+
+def company_account(business_id: int) -> int:
+    """La cuenta (`user_id` de `economy_wallets`) de la sociedad de un negocio."""
+    return COMPANY_ACCOUNT_BASE - business_id
+
+
 #: Motivo del libro de las rentas de `pisos` (y concepto en `economy_tax_records`).
 HOUSING_RENT_CONCEPT = "pisos:renta"
 #: Conceptos de las filas de antes de la 8.0.0 que guardaban la renta de `pisos` a la
@@ -1066,6 +1077,33 @@ class BusinessMove:
             liquidar (fase 2): lo crea quien no existe.
         gain: La ganancia patrimonial de `proceeds` (lo cobrado menos lo que quedaba por
             amortizar): tributa al 19 % en el momento, como el Rastro.
+
+    Fase 3, la sociedad limitada (`account`): el negocio tiene caja propia. Todo lo de
+    arriba sale y entra de `account` y no del monedero del dueño, sin IRPF (la sociedad
+    paga el Impuesto sobre Sociedades, que va en `bills`) ni embargos de las deudas del
+    dueño. Entre el dueño y su sociedad:
+
+    Attributes:
+        account: La cuenta de la sociedad (`company_account`), o `None` si es de autónomo.
+        contribution: Lo que el dueño mete en la caja (capital o aportación de socio), entero
+            o nada, antes que los pagos.
+        loan_in: Lo que el dueño le presta a la sociedad, entero o nada.
+        loan_back: Lo que la sociedad le devuelve del préstamo, entero o nada.
+        salary: Sueldo de administrador: sale de la caja y le llega al dueño con la
+            retención `salary_rate` (art. 101.2 LIRPF), como rendimiento del trabajo.
+        salary_rate: El tipo de esa retención.
+        dividend: Dividendo: sale de la caja y le llega con la retención del 19 %.
+        liquidation: Si se disuelve: después de `bills` (sus acreedores, por orden), la caja
+            devuelve el préstamo del socio (`liquidation_loan`, que cobra el último: es
+            subordinado, art. 281 TRLC) y lo que quede es la cuota de liquidación del dueño.
+        liquidation_basis: Lo que el dueño metió (capital y aportaciones): la ganancia es
+            lo que pase de ahí, al 19 % en el momento.
+        liquidation_loan: Lo que se le debe al dueño de su préstamo.
+        cover_limit: Lo más que el dueño paga de lo que la sociedad no llegue a pagar a sus
+            acreedores (`bills` sin impuestos): la diferencia hasta 3.000 € del capital (art.
+            4.1 LSC), o todo si dejó la causa de disolución sin remediar (art. 367 LSC). Lo que
+            no llegue a pagar a Hacienda (las `bills` de concepto `sociedad:hacienda`) se le
+            deriva entero como administrador (art. 43.1.b LGT): lo que no tenga, a su deuda.
     """
 
     user_id: int
@@ -1080,6 +1118,17 @@ class BusinessMove:
     amortization: int = 0
     proceeds: int = 0
     gain: int = 0
+    account: int | None = None
+    contribution: int = 0
+    loan_in: int = 0
+    loan_back: int = 0
+    salary: int = 0
+    salary_rate: float = 0.0
+    dividend: int = 0
+    liquidation: bool = False
+    liquidation_basis: int = 0
+    liquidation_loan: int = 0
+    cover_limit: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -1092,7 +1141,15 @@ class BusinessPaid:
         garnished: Lo embargado de las ventas por deudas con Hacienda.
         bank_garnished: Lo embargado de las ventas por deudas con el banco (art. 607 LEC).
         unpaid: Lo que no llegó de los recibos.
-        gain_tax: IRPF de la ganancia patrimonial de un traspaso.
+        gain_tax: IRPF de la ganancia patrimonial de un traspaso (o de la liquidación de la
+            sociedad).
+        company: Saldo final de la caja de la sociedad (0 si es de autónomo).
+        salary_tax: IRPF retenido del sueldo de administrador.
+        dividend_tax: IRPF retenido de los dividendos.
+        liquidated: La cuota de liquidación que le llegó al dueño.
+        loan_repaid: Lo que se le devolvió de su préstamo al liquidar.
+        covered: Lo que el dueño pagó de las deudas de su sociedad al liquidarla.
+        derived_debt: Lo que se le quedó como deuda con Hacienda (art. 43.1.b LGT).
     """
 
     balance: int
@@ -1101,6 +1158,13 @@ class BusinessPaid:
     unpaid: int = 0
     bank_garnished: int = 0
     gain_tax: int = 0
+    company: int = 0
+    salary_tax: int = 0
+    dividend_tax: int = 0
+    liquidated: int = 0
+    loan_repaid: int = 0
+    covered: int = 0
+    derived_debt: int = 0
 
 
 class EconomyRepository:
@@ -1742,6 +1806,74 @@ class EconomyRepository:
     def _balance_sync(self, guild_id: int, user_id: int) -> int:
         with self._transaction() as connection:
             return self._ensure_wallet(connection, guild_id, user_id)
+
+    async def contributions(
+        self, guild_id: int, user_id: int, start: float, end: float
+    ) -> tuple[int, int]:
+        """`(por cuenta ajena, RETA)`: lo cotizado entre `start` y `end`.
+
+        Por cuenta ajena, la del trabajador y la de la empresa de las nóminas de España; el
+        RETA, las cuotas de autónomo (filas sin bruto de `autonomos`).
+        """
+        return await self._run(self._contributions_sync, guild_id, user_id, start, end)
+
+    def _contributions_sync(
+        self, guild_id: int, user_id: int, start: float, end: float
+    ) -> tuple[int, int]:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                """
+                SELECT
+                    COALESCE(SUM(CASE WHEN concept != 'autonomos' AND country = 'es'
+                                      THEN ss_worker + ss_employer END), 0),
+                    COALESCE(SUM(CASE WHEN concept = 'autonomos' AND gross = 0
+                                      THEN ss_worker END), 0)
+                FROM economy_payroll
+                WHERE guild_id = ? AND user_id = ? AND created_at >= ? AND created_at < ?
+                """,
+                (guild_id, user_id, start, end),
+            ).fetchone()
+        finally:
+            connection.close()
+        return int(row[0]), int(row[1])
+
+    async def transfer_from_state(
+        self, guild_id: int, user_id: int, *, amount: int, reason: str
+    ) -> int:
+        """Paga `amount` de la cuenta del Estado a un miembro (lo que haya en ella). Devuelve
+        el saldo final del miembro."""
+        return await self._run(self._transfer_from_state_sync, guild_id, user_id, amount, reason)
+
+    def _transfer_from_state_sync(
+        self, guild_id: int, user_id: int, amount: int, reason: str
+    ) -> int:
+        with self._transaction() as connection:
+            self._ensure_wallet(connection, guild_id, user_id)
+            paid = min(amount, max(0, self._state_balance_in(connection, guild_id)))
+            if not paid:
+                return self._ensure_wallet(connection, guild_id, user_id)
+            self._apply_in_transaction(
+                connection, guild_id, STATE_ACCOUNT_ID, (LedgerEntry(-paid, reason),)
+            )
+            return self._apply_in_transaction(
+                connection, guild_id, user_id, (LedgerEntry(paid, reason),)
+            )
+
+    async def account_balance(self, guild_id: int, account: int) -> int:
+        """El saldo de una cuenta que no es de un miembro (0 si no existe). No la abre."""
+        return await self._run(self._account_balance_sync, guild_id, account)
+
+    def _account_balance_sync(self, guild_id: int, account: int) -> int:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT balance FROM economy_wallets WHERE guild_id = ? AND user_id = ?",
+                (guild_id, account),
+            ).fetchone()
+        finally:
+            connection.close()
+        return int(row[0]) if row is not None else 0
 
     async def apply(
         self,
@@ -3820,7 +3952,8 @@ class EconomyRepository:
             UNION ALL
             SELECT user_id,
                    CASE kind WHEN 'tasa' THEN 'tasas' WHEN 'retencion' THEN 'irpf_otros'
-                        WHEN 'plusvalia' THEN 'irpf_ahorro' ELSE 'igic' END,
+                        WHEN 'plusvalia' THEN 'irpf_ahorro' WHEN 'dividendo' THEN 'irpf_ahorro'
+                        WHEN 'sociedades' THEN 'sociedades' ELSE 'igic' END,
                    tax, created_at
             FROM economy_business_tax WHERE guild_id = :guild
             UNION ALL
@@ -5823,8 +5956,21 @@ class EconomyRepository:
     ) -> tuple[T, BusinessPaid]:
         with self._transaction() as connection:
             result, move = prepare(connection)
-            user = move.user_id
-            self._ensure_wallet(connection, guild_id, user)
+            owner = move.user_id
+            self._ensure_wallet(connection, guild_id, owner)
+            company = move.account is not None
+            # La caja que paga y cobra: la de la sociedad o el monedero del dueño.
+            wallet = move.account if move.account is not None else owner
+            if company:
+                self._open_empty_wallet(connection, guild_id, wallet)
+
+            def whole(member: int, amount: int, reason: str) -> None:
+                if self._ensure_wallet(connection, guild_id, member) < amount:
+                    raise InsufficientFundsError(self._ensure_wallet(connection, guild_id, member))
+                self._apply_in_transaction(
+                    connection, guild_id, member, (LedgerEntry(-amount, reason),)
+                )
+
             tax = garnished = bank = 0
             if move.forfeit > 0:
                 self._open_empty_wallet(connection, guild_id, HOUSING_DEPOSIT_ACCOUNT_ID)
@@ -5839,76 +5985,219 @@ class EconomyRepository:
                     (LedgerEntry(-move.refund, "negocio:fianza_devuelta"),),
                 )  # fmt: skip
                 self._apply_in_transaction(
-                    connection, guild_id, user,
+                    connection, guild_id, wallet,
                     (LedgerEntry(move.refund, "negocio:fianza_devuelta"),),
+                )  # fmt: skip
+            for amount, reason in ((move.contribution, "sociedad:aportacion"),
+                                   (move.loan_in, "sociedad:prestamo")):  # fmt: skip
+                if company and amount > 0:
+                    whole(owner, amount, reason)
+                    self._apply_in_transaction(
+                        connection, guild_id, wallet, (LedgerEntry(amount, reason),)
+                    )
+            if company and move.loan_back > 0:
+                whole(wallet, move.loan_back, "sociedad:devolucion_prestamo")
+                self._apply_in_transaction(
+                    connection, guild_id, owner,
+                    (LedgerEntry(move.loan_back, "sociedad:devolucion_prestamo"),),
                 )  # fmt: skip
             for cost in move.payments:
                 if cost.total <= 0:
                     continue
-                if self._ensure_wallet(connection, guild_id, user) < cost.total:
-                    raise InsufficientFundsError(self._ensure_wallet(connection, guild_id, user))
-                self._business_cost_in(connection, guild_id, user, cost, now, cost.total)
+                if self._ensure_wallet(connection, guild_id, wallet) < cost.total:
+                    raise InsufficientFundsError(self._ensure_wallet(connection, guild_id, wallet))
+                self._business_cost_in(
+                    connection, guild_id, wallet, cost, now, cost.total, owner=owner
+                )
             if move.deposit > 0:
                 self._open_empty_wallet(connection, guild_id, HOUSING_DEPOSIT_ACCOUNT_ID)
                 self._apply_in_transaction(
-                    connection, guild_id, user, (LedgerEntry(-move.deposit, "negocio:fianza"),)
+                    connection, guild_id, wallet, (LedgerEntry(-move.deposit, "negocio:fianza"),)
                 )
                 self._apply_in_transaction(
                     connection, guild_id, HOUSING_DEPOSIT_ACCOUNT_ID,
                     (LedgerEntry(move.deposit, "negocio:fianza"),),
                 )  # fmt: skip
-            if move.sales > 0:
-                pace = self._pace_in(connection, guild_id, user, week)
+            if move.sales > 0 and company:
+                # Las ventas de una sociedad son suyas: ni IRPF ni embargos del dueño.
+                self._apply_in_transaction(
+                    connection, guild_id, wallet, (LedgerEntry(move.sales, "negocio:ventas"),)
+                )
+            elif move.sales > 0:
+                pace = self._pace_in(connection, guild_id, owner, week)
                 margin = max(0, move.sales - move.sold_cost)
                 tax = max(0, min(move.sales, withhold(margin, pace)))
                 entries = [LedgerEntry(move.sales, "negocio:ventas")]
                 if tax:
                     entries.append(LedgerEntry(-tax, "irpf:negocio:ventas"))
-                self._apply_in_transaction(connection, guild_id, user, entries)
+                self._apply_in_transaction(connection, guild_id, owner, entries)
                 if tax:
                     self._credit_state_in(connection, guild_id, tax, "irpf:negocio:ventas")
                 self._record_in(
-                    connection, guild_id, user, now=now, concept="negocio:ventas",
+                    connection, guild_id, owner, now=now, concept="negocio:ventas",
                     kind=INCOME_BUSINESS, gross=move.sales, withheld=tax,
                 )  # fmt: skip
-                garnished = self._garnish_in(connection, guild_id, user, move.sales - tax, now)
+                garnished = self._garnish_in(connection, guild_id, owner, move.sales - tax, now)
                 bank = self._bank_garnish_in(
-                    connection, guild_id, user, move.sales - tax - garnished, now
+                    connection, guild_id, owner, move.sales - tax - garnished, now
                 )
             gain_tax = 0
-            if move.proceeds > 0:
+            if move.proceeds > 0 and company:
+                # La ganancia de una sociedad tributa en su Impuesto sobre Sociedades.
+                self._apply_in_transaction(
+                    connection, guild_id, wallet, (LedgerEntry(move.proceeds, "negocio:traspaso"),)
+                )
+            elif move.proceeds > 0:
                 gain_tax = min(move.proceeds, capital_gain_tax(move.gain))
                 entries = [LedgerEntry(move.proceeds, "negocio:traspaso")]
                 if gain_tax:
                     entries.append(LedgerEntry(-gain_tax, "irpf:negocio:traspaso"))
+                    self._business_tax_in(connection, guild_id, owner, "plusvalia", gain_tax, now)
                     self._credit_state_in(connection, guild_id, gain_tax, "irpf:negocio:traspaso")
-                    connection.execute(
-                        "INSERT INTO economy_business_tax (guild_id, user_id, kind, tax, "
-                        "created_at) VALUES (?, ?, 'plusvalia', ?, ?)",
-                        (guild_id, user, gain_tax, now),
-                    )
-                self._apply_in_transaction(connection, guild_id, user, entries)
+                self._apply_in_transaction(connection, guild_id, owner, entries)
                 left = move.proceeds - gain_tax
-                got = self._garnish_in(connection, guild_id, user, left, now)
+                got = self._garnish_in(connection, guild_id, owner, left, now)
                 garnished += got
-                bank += self._bank_garnish_in(connection, guild_id, user, left - got, now)
-            if move.amortization > 0:
+                bank += self._bank_garnish_in(connection, guild_id, owner, left - got, now)
+            if move.amortization > 0 and not company:
                 self._record_in(
-                    connection, guild_id, user, now=now, concept="negocio:amortizacion",
+                    connection, guild_id, owner, now=now, concept="negocio:amortizacion",
                     kind=INCOME_BUSINESS, gross=-move.amortization, withheld=0,
                 )  # fmt: skip
-            unpaid = 0
+            unpaid = unpaid_tax = 0
             for cost in move.bills:
                 if cost.total <= 0:
                     continue
-                room = min(cost.total, self._ensure_wallet(connection, guild_id, user))
+                room = min(cost.total, self._ensure_wallet(connection, guild_id, wallet))
                 unpaid += cost.total - room
+                if cost.concept.startswith("sociedad:hacienda"):
+                    unpaid_tax += cost.total - room
                 if room > 0:
-                    self._business_cost_in(connection, guild_id, user, cost, now, room)
+                    self._business_cost_in(
+                        connection, guild_id, wallet, cost, now, room, owner=owner
+                    )
+            salary_tax = dividend_tax = liquidated = 0
+            if company and move.salary > 0:
+                whole(wallet, move.salary, "sociedad:sueldo")
+                salary_tax = min(move.salary, round(move.salary * move.salary_rate))
+                net = move.salary - salary_tax
+                entries = [LedgerEntry(move.salary, "sociedad:sueldo")]
+                if salary_tax:
+                    entries.append(LedgerEntry(-salary_tax, "irpf:sociedad:sueldo"))
+                    self._credit_state_in(connection, guild_id, salary_tax, "irpf:sociedad:sueldo")
+                self._apply_in_transaction(connection, guild_id, owner, entries)
+                # Rendimiento del trabajo (art. 17.2.e LIRPF): a la Renta y, como nómina, al
+                # IMV y al banco.
+                self._record_in(
+                    connection, guild_id, owner, now=now, concept="sociedad:sueldo",
+                    kind=INCOME_WORK, gross=move.salary, withheld=salary_tax,
+                )  # fmt: skip
+                connection.execute(
+                    "INSERT INTO economy_payroll (guild_id, user_id, concept, gross, ss_worker, "
+                    "ss_employer, irpf, net, created_at) VALUES (?, ?, ?, ?, 0, 0, ?, ?, ?)",
+                    (guild_id, owner, "sociedad:sueldo", move.salary, salary_tax, net, now),
+                )
+                got = self._garnish_in(connection, guild_id, owner, net, now)
+                garnished += got
+                bank += self._bank_garnish_in(connection, guild_id, owner, net - got, now)
+            if company and move.dividend > 0:
+                whole(wallet, move.dividend, "sociedad:dividendo")
+                dividend_tax = min(move.dividend, capital_gain_tax(move.dividend))
+                entries = [LedgerEntry(move.dividend, "sociedad:dividendo")]
+                if dividend_tax:
+                    entries.append(LedgerEntry(-dividend_tax, "irpf:sociedad:dividendo"))
+                    self._business_tax_in(
+                        connection, guild_id, owner, "dividendo", dividend_tax, now
+                    )
+                    self._credit_state_in(
+                        connection, guild_id, dividend_tax, "irpf:sociedad:dividendo"
+                    )
+                self._apply_in_transaction(connection, guild_id, owner, entries)
+                net = move.dividend - dividend_tax
+                got = self._garnish_in(connection, guild_id, owner, net, now)
+                garnished += got
+                bank += self._bank_garnish_in(connection, guild_id, owner, net - got, now)
+            loan_repaid = covered = derived = 0
+            if company and move.liquidation:
+                loan_repaid = min(
+                    move.liquidation_loan, max(0, self._ensure_wallet(connection, guild_id, wallet))
+                )
+                if loan_repaid:
+                    whole(wallet, loan_repaid, "sociedad:devolucion_prestamo")
+                    self._apply_in_transaction(
+                        connection, guild_id, owner,
+                        (LedgerEntry(loan_repaid, "sociedad:devolucion_prestamo"),),
+                    )  # fmt: skip
+                liquidated = max(0, self._ensure_wallet(connection, guild_id, wallet))
+                if liquidated:
+                    whole(wallet, liquidated, "sociedad:liquidacion")
+                    gain = liquidated - move.liquidation_basis
+                    gain_tax = min(liquidated, capital_gain_tax(gain))
+                    entries = [LedgerEntry(liquidated, "sociedad:liquidacion")]
+                    if gain_tax:
+                        entries.append(LedgerEntry(-gain_tax, "irpf:sociedad:liquidacion"))
+                        self._business_tax_in(
+                            connection, guild_id, owner, "plusvalia", gain_tax, now
+                        )
+                        self._credit_state_in(
+                            connection, guild_id, gain_tax, "irpf:sociedad:liquidacion"
+                        )
+                    self._apply_in_transaction(connection, guild_id, owner, entries)
+                    net = liquidated - gain_tax
+                    got = self._garnish_in(connection, guild_id, owner, net, now)
+                    garnished += got
+                    bank += self._bank_garnish_in(connection, guild_id, owner, net - got, now)
+                # Lo que la sociedad no llegó a pagar: a Hacienda, el administrador; al resto,
+                # el socio hasta su límite.
+                if unpaid_tax:
+                    paid = min(unpaid_tax, max(0, self._ensure_wallet(connection, guild_id, owner)))
+                    if paid:
+                        self._apply_in_transaction(
+                            connection, guild_id, owner,
+                            (LedgerEntry(-paid, "sociedad:derivacion"),),
+                        )  # fmt: skip
+                        self._credit_state_in(connection, guild_id, paid, "sociedad:derivacion")
+                        self._business_tax_in(connection, guild_id, owner, "sociedades", paid, now)
+                    covered += paid
+                    derived = unpaid_tax - paid
+                    if derived:
+                        connection.execute(
+                            """
+                            INSERT INTO economy_tax_debts (guild_id, user_id, amount)
+                            VALUES (?, ?, ?)
+                            ON CONFLICT (guild_id, user_id)
+                            DO UPDATE SET amount = amount + excluded.amount
+                            """,
+                            (guild_id, owner, derived),
+                        )
+                rest = min(unpaid - unpaid_tax, move.cover_limit)
+                paid = min(rest, max(0, self._ensure_wallet(connection, guild_id, owner)))
+                if paid:
+                    self._apply_in_transaction(
+                        connection, guild_id, owner,
+                        (LedgerEntry(-paid, "sociedad:responsabilidad"),),
+                    )  # fmt: skip
+                    covered += paid
             if move.settle is not None:
                 move.settle(connection, unpaid)
-            balance = self._ensure_wallet(connection, guild_id, user)
-            return result, BusinessPaid(balance, tax, garnished, unpaid, bank, gain_tax)
+            balance = self._ensure_wallet(connection, guild_id, owner)
+            cash = self._ensure_wallet(connection, guild_id, wallet) if company else 0
+            return result, BusinessPaid(
+                balance, tax, garnished, unpaid, bank, gain_tax, cash, salary_tax, dividend_tax,
+                liquidated, loan_repaid, covered, derived,
+            )  # fmt: skip
+
+    @staticmethod
+    def _business_tax_in(
+        connection: sqlite3.Connection, guild_id: int, user_id: int, kind: str, tax: int,
+        now: float,
+    ) -> None:  # fmt: skip
+        """Apunta un impuesto de un negocio para `hacienda` (a nombre de su dueño)."""
+        connection.execute(
+            "INSERT INTO economy_business_tax (guild_id, user_id, kind, tax, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (guild_id, user_id, kind, tax, now),
+        )
 
     def _business_cost_in(
         self,
@@ -5918,15 +6207,24 @@ class EconomyRepository:
         cost: BusinessCost,
         now: float,
         most: int,
+        *,
+        owner: int | None = None,
     ) -> int:
         """Cobra hasta `most` de un pago de un negocio: primero los impuestos, luego el resto.
 
-        Los impuestos van al Estado y a `economy_business_tax`; lo demás desaparece. Si es
-        gasto de la actividad, lo cobrado se apunta en `economy_tax_records` en negativo.
+        Los impuestos van al Estado y a `economy_business_tax` (a nombre del dueño); lo demás
+        desaparece. Si es gasto de la actividad de un autónomo (paga su monedero), lo cobrado
+        se apunta en `economy_tax_records` en negativo; el de una sociedad (paga su caja) va a
+        su Impuesto sobre Sociedades, que lleva el negocio.
+
+        Args:
+            user_id: Quien paga: el dueño o la caja de su sociedad.
+            owner: El dueño (por defecto, quien paga).
 
         Returns:
-            El saldo final del dueño.
+            El saldo final de quien paga.
         """
+        owner = user_id if owner is None else owner
         room = most
         entries: list[LedgerEntry] = []
         for kind, amount in cost.taxes:
@@ -5937,17 +6235,13 @@ class EconomyRepository:
             reason = f"{cost.concept}:{kind}"
             entries.append(LedgerEntry(-cut, reason))
             self._credit_state_in(connection, guild_id, cut, reason)
-            connection.execute(
-                "INSERT INTO economy_business_tax (guild_id, user_id, kind, tax, created_at) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (guild_id, user_id, kind, cut, now),
-            )
+            self._business_tax_in(connection, guild_id, owner, kind, cut, now)
         gone = min(room, max(0, cost.gone))
         if gone:
             entries.append(LedgerEntry(-gone, cost.concept))
         balance = self._apply_in_transaction(connection, guild_id, user_id, entries)
         paid = most - room + gone
-        if cost.expense and paid:
+        if cost.expense and paid and user_id == owner:
             self._record_in(
                 connection, guild_id, user_id, now=now, concept=cost.concept,
                 kind=INCOME_BUSINESS, gross=-paid, withheld=0,

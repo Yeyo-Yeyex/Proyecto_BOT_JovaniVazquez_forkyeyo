@@ -35,10 +35,12 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from bot.repositories.business import BusinessRepository
+from bot.repositories.economy import company_account
 from bot.repositories.housing import HousingError
+from bot.services import business_sl as sl
 from bot.services.agenda import Agenda
 from bot.services.business import (
     EVICTION_NIGHTS,
@@ -52,6 +54,7 @@ from bot.services.business import (
     add_asset,
     add_reviews,
     amortize,
+    book_value,
     clean_name,
     closing_offer,
     daily_pool,
@@ -66,6 +69,7 @@ from bot.services.business import (
     setup_asset,
     size_for,
     spoil,
+    stock_value,
     turn_clients,
     turn_reputation,
     wholesale,
@@ -119,6 +123,44 @@ MAX_LOTS = 20
 
 class BusinessError(Exception):
     """Algo que impide la acción; el mensaje es para el usuario."""
+
+
+def _account(business: Business) -> int | None:
+    """La caja que paga y cobra por el negocio: la de su sociedad, o `None` (su dueño)."""
+    return company_account(business.id) if business.is_company else None
+
+
+def _broke(business: Business, total: int) -> str:
+    """El aviso de que no llega, de quien sea la caja."""
+    if business.is_company:
+        return (
+            f"La caja de la sociedad no llega: son {total} Y$. Aporta o préstale dinero desde 🏢 "
+            "Sociedad."
+        )
+    return f"No te llega: son {total} Y$ con el IGIC."
+
+
+@dataclass(frozen=True, slots=True)
+class CompanyView:
+    """Lo que enseña la pantalla 🏢 Sociedad.
+
+    Attributes:
+        business: El negocio.
+        cash: Lo que hay en la caja de la sociedad (0 si es de autónomo).
+        equity: Su patrimonio neto.
+        dividend_room: Lo más que se puede repartir ahora.
+        retention: La retención del sueldo de administrador ahora.
+        blocked: Por qué no puede administrar una sociedad su dueño (incompatibilidad), o `None`.
+        dissolution: Si está en causa de disolución por pérdidas.
+    """
+
+    business: Business
+    cash: int
+    equity: int
+    dividend_room: int
+    retention: float
+    blocked: sl.Incompatibility | None
+    dissolution: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -246,6 +288,8 @@ class NightRun:
         spoiled: Unidades perdidas por producto.
         evicted: Si el casero rescindió el contrato esta noche (o perdió su local propio).
         amortized: Lo amortizado esa noche.
+        corporate: El Impuesto sobre Sociedades de la semana que se cerró esa noche (fase 3):
+            `{"base", "compensated", "tax", "rate", "reserve", "profit"}`, o `None`.
     """
 
     user_id: int
@@ -256,6 +300,7 @@ class NightRun:
     spoiled: dict[str, int] = field(default_factory=dict)
     evicted: bool = False
     amortized: int = 0
+    corporate: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -272,6 +317,12 @@ class Closing:
         proceeds: Lo cobrado por las mejoras, la obra y la clientela.
         gain_tax: IRPF de la ganancia patrimonial (19 %, base del ahorro).
         reason: `cierre`, `traspaso`, `desahucio` o `sin_local`.
+        company: Si era una sociedad (fase 3): lo de abajo es de su liquidación.
+        liquidated: La cuota de liquidación que le llegó al socio.
+        loan_repaid: Lo que se le devolvió de su préstamo.
+        covered: Lo que pagó él de las deudas de la sociedad.
+        derived_debt: Lo que se le queda como deuda con Hacienda (art. 43.1.b LGT).
+        corporate_tax: El último Impuesto sobre Sociedades.
     """
 
     business: Business
@@ -283,6 +334,12 @@ class Closing:
     proceeds: int = 0
     gain_tax: int = 0
     reason: str = "cierre"
+    company: bool = False
+    liquidated: int = 0
+    loan_repaid: int = 0
+    covered: int = 0
+    derived_debt: int = 0
+    corporate_tax: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -595,13 +652,15 @@ class BusinessService:
                 cost = BusinessCost(
                     "negocio:mejora", gone=base, taxes=(("igic", tax),), expense=False
                 )
-                return business, BusinessMove(user_id=user_id, payments=(cost,))
+                move = BusinessMove(user_id=user_id, payments=(cost,), account=_account(business))
+                return business, move
 
+            current = await self.repository.business(guild_id, user_id)
             try:
                 business, paid = await self.economy.business(guild_id, prepare)
             except InsufficientFundsError as error:
-                raise BusinessError(f"No te llega: son {base + tax} Y$ con el IGIC.") from error
-            return business, base, tax, paid.balance
+                raise BusinessError(_broke(current, base + tax) if current else "") from error
+            return business, base, tax, paid.company if business.is_company else paid.balance
 
     async def start_campaign(
         self, guild_id: int, user_id: int, key: str
@@ -637,13 +696,15 @@ class BusinessService:
                 business.add("marketing", -(base + tax))
                 self.repository.save_in(connection, guild_id, business)
                 cost = BusinessCost("negocio:publicidad", gone=base, taxes=(("igic", tax),))
-                return business, BusinessMove(user_id=user_id, payments=(cost,))
+                move = BusinessMove(user_id=user_id, payments=(cost,), account=_account(business))
+                return business, move
 
+            current = await self.repository.business(guild_id, user_id)
             try:
                 business, paid = await self.economy.business(guild_id, prepare)
             except InsufficientFundsError as error:
-                raise BusinessError(f"No te llega: son {base + tax} Y$ con el IGIC.") from error
-            return business, base, tax, paid.balance
+                raise BusinessError(_broke(current, base + tax) if current else "") from error
+            return business, base, tax, paid.company if business.is_company else paid.balance
 
     async def set_price(
         self, guild_id: int, user_id: int, product: str, level: str | None
@@ -746,6 +807,11 @@ class BusinessService:
                 raise BusinessError("No tienes negocio.")
             if current.own_listing == key:
                 raise BusinessError("Ya estás en ese local.")
+            if current.is_company:
+                raise BusinessError(
+                    "Tu sociedad no puede usar un local tuyo sin pagarte un alquiler (operación "
+                    "vinculada, art. 18 LIS): de momento, solo locales alquilados."
+                )
             local = next(
                 (o for o in await self.own_locals(guild_id, user_id) if o.listing.key == key), None
             )
@@ -814,6 +880,7 @@ class BusinessService:
                 forfeit=forfeit,
                 payments=payments,
                 deposit=opening.deposit,
+                account=_account(business),
             )
             return business, move
 
@@ -821,9 +888,263 @@ class BusinessService:
             business, paid = await self.economy.business(guild_id, prepare)
         except InsufficientFundsError as error:
             raise BusinessError(
-                f"No te llega: el traslado cuesta {quote.total} Y$ (con la fianza nueva)."
+                _broke(current, quote.total)
+                if current.is_company
+                else f"No te llega: el traslado cuesta {quote.total} Y$ (con la fianza nueva)."
             ) from error
         return business, quote, paid.balance
+
+    # -- Fase 3: la sociedad limitada ---------------------------------------------------
+
+    async def incompatible(
+        self, guild_id: int, user_id: int, sector: str
+    ) -> sl.Incompatibility | None:
+        """Lo que impide a un miembro administrar una sociedad por su curro (o `None`).
+
+        De excedencia no hay incompatibilidad: no está en servicio activo.
+        """
+        contract = await self.work.repository.contract(guild_id, user_id)
+        if contract is None or contract.on_excedencia:
+            return None
+        return sl.incompatibility(contract.job, contract.branch, sector)
+
+    async def company_view(self, guild_id: int, user_id: int) -> CompanyView | None:
+        """La foto de la sociedad (o de lo que costaría constituirla), o `None` sin negocio."""
+        business = await self.business(guild_id, user_id)
+        if business is None:
+            return None
+        blocked = await self.incompatible(guild_id, user_id, business.sector)
+        if not business.is_company:
+            return CompanyView(business, 0, 0, 0, sl.ADMIN_RETENTION, blocked, False)
+        cash = await self.economy.account_balance(guild_id, company_account(business.id))
+        net = _equity(business, cash)
+        sales = business.last_week.get("ventas", business.week_totals.get("ventas", 0))
+        return CompanyView(
+            business,
+            cash,
+            net,
+            sl.dividend_room(business.company, cash),
+            sl.admin_retention(sales),
+            blocked,
+            sl.in_dissolution(business.company, net),
+        )
+
+    async def constitute(self, guild_id: int, user_id: int, capital: int) -> tuple[Business, int]:
+        """Convierte el negocio de un autónomo en una sociedad limitada unipersonal.
+
+        Tratamiento fiscal: la constitución está exenta del ITP-AJD (art. 45.I.B.11 del
+        TRLITPAJD). El dueño mete en la caja nueva el capital y lo que cuestan la notaría y el
+        registro con su IGIC (aportación de socio), y la sociedad los paga: son su primer
+        gasto. El negocio (stock, mejoras, obra y fianza) pasa a la sociedad por lo que valía
+        en sus cuentas: es la aportación de una rama de actividad, neutral en el IRPF (art. 87
+        LIS) y no sujeta al IGIC (art. 9.1.º de la Ley 20/1991). Desde ahí, el negocio tributa
+        en el Impuesto sobre Sociedades y su dueño, por lo que cobre de él. Sigue en el RETA
+        como autónomo societario (art. 305.2.b LGSS), con la misma cuota.
+
+        Returns:
+            `(el negocio, lo que salió del monedero)`.
+
+        Raises:
+            BusinessError: Sin negocio, si ya es sociedad, si su curro no lo deja, si está en
+                un local propio o si no le llega.
+        """
+        if capital not in sl.CAPITALS:
+            raise BusinessError("Ese capital no está entre los que se pueden escriturar.")
+        fees = sl.constitution_fees(capital)
+        fees_igic = igic(fees)
+        async with self._lock(guild_id, user_id):
+            current = await self.business(guild_id, user_id)
+            if current is None:
+                raise BusinessError("No tienes negocio.")
+            if current.is_company:
+                raise BusinessError("Tu negocio ya es una sociedad limitada.")
+            if current.own_listing:
+                raise BusinessError(
+                    "Tu negocio está en un local tuyo: la sociedad tendría que alquilártelo "
+                    "(operación vinculada, art. 18 LIS). Trasládalo a uno alquilado antes."
+                )
+            if blocked := await self.incompatible(guild_id, user_id, current.sector):
+                raise BusinessError(
+                    f"No puedes administrar una sociedad: {blocked.text} ({blocked.law})."
+                )
+            now = self._clock()
+            today, week = self._today(now)
+            total = capital + fees + fees_igic
+
+            def prepare(connection: sqlite3.Connection) -> tuple[Business, BusinessMove]:
+                business = self.repository.business_in(connection, guild_id, user_id)
+                if business is None or business.id != current.id or business.is_company:
+                    raise BusinessError("Tu negocio ha cambiado: vuelve a intentarlo.")
+                business.roll_over(today, week)
+                business.form = "sl"
+                business.company = sl.new_company(capital, total, now)
+                # Lo de esta semana antes de constituirla es del autónomo: no entra en Sociedades.
+                business.company["offset_week"] = week
+                business.company["offset"] = dict(business.week_totals)
+                business.add("constitucion", -(fees + fees_igic))
+                business.tell(f"🏢 {business.name} ya es una sociedad limitada.")
+                self.repository.save_in(connection, guild_id, business)
+                cost = BusinessCost(
+                    "sociedad:constitucion", gone=fees, taxes=(("igic", fees_igic),), expense=False
+                )
+                move = BusinessMove(
+                    user_id=user_id,
+                    account=company_account(business.id),
+                    contribution=total,
+                    payments=(cost,),
+                )
+                return business, move
+
+            try:
+                business, _paid = await self.economy.business(guild_id, prepare)
+            except InsufficientFundsError as error:
+                raise BusinessError(
+                    f"No te llega: el capital y la notaría suman {total} Y$."
+                ) from error
+            return business, total
+
+    async def _company_move(
+        self,
+        guild_id: int,
+        user_id: int,
+        change: Callable[[Business], BusinessMove],
+        broke: str,
+    ) -> tuple[Business, Any]:
+        """Una operación entre el dueño y su sociedad (con el candado y la sociedad comprobada)."""
+        async with self._lock(guild_id, user_id):
+            today, week = self._today(self._clock())
+
+            def prepare(connection: sqlite3.Connection) -> tuple[Business, BusinessMove]:
+                business = self.repository.business_in(connection, guild_id, user_id)
+                if business is None or not business.is_company:
+                    raise BusinessError("Tu negocio no es una sociedad.")
+                business.roll_over(today, week)
+                move = change(business)
+                self.repository.save_in(connection, guild_id, business)
+                return business, move
+
+            try:
+                return await self.economy.business(guild_id, prepare)
+            except InsufficientFundsError as error:
+                raise BusinessError(broke) from error
+
+    async def contribute(self, guild_id: int, user_id: int, amount: int) -> tuple[Business, Any]:
+        """Mete dinero en la caja de la sociedad como aportación de socio (no se devuelve).
+
+        Tratamiento fiscal: una aportación de socio (cuenta 118 del PGC) no es ingreso de la
+        sociedad ni gasto del dueño; exenta de operaciones societarias (art. 45.I.B.11 del
+        TRLITPAJD). Sube lo aportado, que se resta de lo que cobre al liquidarla.
+        """
+        if amount <= 0:
+            raise BusinessError("La cantidad tiene que ser mayor que cero.")
+
+        def change(business: Business) -> BusinessMove:
+            business.company["contributed"] += amount
+            return BusinessMove(user_id=user_id, account=_account(business), contribution=amount)
+
+        return await self._company_move(guild_id, user_id, change, "No te llega para aportar eso.")
+
+    async def lend(self, guild_id: int, user_id: int, amount: int) -> tuple[Business, Any]:
+        """Le presta dinero a la sociedad (se le devuelve cuando haya en caja).
+
+        Tratamiento fiscal: sin intereses. Simplificación: entre una sociedad y su socio, el
+        art. 18 LIS pide valorarlo a precio de mercado. Si la sociedad se liquida, el préstamo
+        del socio cobra el último (es subordinado, arts. 281 y 283 TRLC).
+        """
+        if amount <= 0:
+            raise BusinessError("La cantidad tiene que ser mayor que cero.")
+
+        def change(business: Business) -> BusinessMove:
+            business.company["loan"] += amount
+            return BusinessMove(user_id=user_id, account=_account(business), loan_in=amount)
+
+        return await self._company_move(guild_id, user_id, change, "No te llega para prestar eso.")
+
+    async def repay(self, guild_id: int, user_id: int, amount: int) -> tuple[Business, Any]:
+        """La sociedad le devuelve al dueño parte de su préstamo. No es renta: es su dinero."""
+        if amount <= 0:
+            raise BusinessError("La cantidad tiene que ser mayor que cero.")
+
+        def change(business: Business) -> BusinessMove:
+            if amount > business.company["loan"]:
+                raise BusinessError(f"Solo te debe {business.company['loan']} Y$ del préstamo.")
+            business.company["loan"] -= amount
+            return BusinessMove(user_id=user_id, account=_account(business), loan_back=amount)
+
+        return await self._company_move(
+            guild_id, user_id, change, "La caja de la sociedad no tiene tanto."
+        )
+
+    async def pay_salary(self, guild_id: int, user_id: int, amount: int) -> tuple[Business, Any]:
+        """La sociedad le paga a su administrador un sueldo de `amount` (bruto).
+
+        Tratamiento fiscal: en el IRPF, rendimiento del trabajo (art. 17.2.e LIRPF) con la
+        retención del 35 %, o del 19 % si la sociedad factura menos de 100.000 € al año (art.
+        101.2 LIRPF y art. 80.1.3.º RIRPF); entra en la Renta del lunes, y en el IMV y el banco
+        como una nómina. En Sociedades es gasto deducible: no es una liberalidad (art. 15.e LIS)
+        porque los estatutos tipo del juego lo prevén (art. 217 LSC). Sin cotización aparte: el
+        administrador ya paga su cuota de autónomo societario.
+
+        Raises:
+            BusinessError: Si su curro no le deja administrar o la caja no llega.
+        """
+        if amount <= 0:
+            raise BusinessError("La cantidad tiene que ser mayor que cero.")
+        business = await self.business(guild_id, user_id)
+        if business is not None and (
+            blocked := await self.incompatible(guild_id, user_id, business.sector)
+        ):
+            raise BusinessError(
+                f"No puedes cobrar de administrador: {blocked.text} ({blocked.law})."
+            )
+
+        def change(business: Business) -> BusinessMove:
+            sales = business.last_week.get("ventas", business.week_totals.get("ventas", 0))
+            business.add("sueldo", -amount)
+            business.company["paid_out"] += amount
+            return BusinessMove(
+                user_id=user_id,
+                account=_account(business),
+                salary=amount,
+                salary_rate=sl.admin_retention(sales),
+            )
+
+        return await self._company_move(
+            guild_id, user_id, change, "La caja de la sociedad no tiene tanto."
+        )
+
+    async def pay_dividend(self, guild_id: int, user_id: int, amount: int) -> tuple[Business, Any]:
+        """La sociedad reparte `amount` de dividendo a su socio único.
+
+        Tratamiento fiscal: rendimiento del capital mobiliario (art. 25.1.a LIRPF) de la base
+        del ahorro (art. 46), con la retención del 19 % (art. 101.4). Simplificación: como las
+        plusvalías del Rastro, ese 19 % es lo que paga, sin la escala del ahorro. Solo de lo
+        que queda disponible tras el Impuesto sobre Sociedades y la reserva legal, y si el
+        patrimonio neto no baja del capital (art. 273 LSC).
+
+        Raises:
+            BusinessError: Si no hay tanto para repartir.
+        """
+        if amount <= 0:
+            raise BusinessError("La cantidad tiene que ser mayor que cero.")
+        view = await self.company_view(guild_id, user_id)
+        if view is None or not view.business.is_company:
+            raise BusinessError("Tu negocio no es una sociedad.")
+        room = min(view.dividend_room, max(0, view.equity - view.business.company["capital"]))
+        if amount > room:
+            raise BusinessError(
+                f"Solo puedes repartir {room} Y$: lo que quedó tras Sociedades y la reserva "
+                "legal, sin dejar el patrimonio por debajo del capital."
+            )
+
+        def change(business: Business) -> BusinessMove:
+            business.company["retained"] -= amount
+            business.company["paid_out"] += amount
+            return BusinessMove(user_id=user_id, account=_account(business), dividend=amount)
+
+        return await self._company_move(
+            guild_id, user_id, change, "La caja de la sociedad no tiene tanto."
+        )
 
     # -- Comprar ------------------------------------------------------------------------
 
@@ -861,13 +1182,14 @@ class BusinessService:
                 self.repository.save_in(connection, guild_id, business)
                 taxes = (("igic", tax),) if tax else ()
                 cost = BusinessCost("negocio:compras", gone=base, taxes=taxes)
-                return business, BusinessMove(user_id=user_id, payments=(cost,))
+                move = BusinessMove(user_id=user_id, payments=(cost,), account=_account(business))
+                return business, move
 
             try:
                 business, paid = await self.economy.business(guild_id, prepare)
             except InsufficientFundsError as error:
-                raise BusinessError(f"No te llega: son {base + tax} Y$ con el IGIC.") from error
-            return business, base, tax, paid.balance
+                raise BusinessError(_broke(current, base + tax)) from error
+            return business, base, tax, paid.company if business.is_company else paid.balance
 
     # -- Un turno -----------------------------------------------------------------------
 
@@ -975,7 +1297,10 @@ class BusinessService:
                 reviews.extend(left)
                 self.repository.save_in(connection, guild_id, business)
                 move = BusinessMove(
-                    user_id=user_id, sales=summary.sales, sold_cost=summary.sold_cost
+                    user_id=user_id,
+                    sales=summary.sales,
+                    sold_cost=summary.sold_cost,
+                    account=_account(business),
                 )
                 return business, move
 
@@ -1035,11 +1360,44 @@ class BusinessService:
                 runs.append(run)
                 if run.evicted:
                     return runs
+                if day.weekday() == 6:
+                    await self._pluriactivity(guild_id, user_id, day)
                 day += timedelta(days=1)
             fresh = await self.repository.business(guild_id, user_id)
         if fresh is not None:
             await self._charge_fee(guild_id, fresh, now)
         return runs
+
+    async def _pluriactivity(self, guild_id: int, user_id: int, sunday: date) -> int:
+        """El reintegro de la semana que acaba en `sunday` a quien cotizó por los dos lados.
+
+        Tratamiento fiscal: el art. 313 LGSS (con el RDL 3/2026) devuelve el 50 % de lo que
+        lo cotizado por cuenta ajena y en el RETA pase de 17.323,68 € al año, con el tope del
+        50 % de lo pagado al RETA. Lo paga el Estado. Simplificación: no se apunta como renta
+        (en la vida real reduce el gasto de la cuota que se dedujo). Una vez por semana.
+        """
+        business = await self.repository.business(guild_id, user_id)
+        week = week_of(sunday)
+        if business is None or business.pluri_week >= week:
+            return 0
+        business.pluri_week = week
+        await self.repository.save(guild_id, business)
+        start = datetime.combine(date.fromisoformat(week), datetime.min.time(), TIMEZONE)
+        end = start + timedelta(days=7)
+        general, reta = await self.economy.contributions(
+            guild_id, user_id, start.timestamp(), end.timestamp()
+        )
+        refund = sl.pluriactivity_refund(general, reta)
+        if refund:
+            await self.economy.refund_contributions(guild_id, user_id, amount=refund)
+            fresh = await self.repository.business(guild_id, user_id)
+            if fresh is not None:
+                fresh.tell(
+                    f"💶 La Seguridad Social te devuelve {refund} Y$: cotizaste de más por la "
+                    "pluriactividad (art. 313 LGSS)."
+                )
+                await self.repository.save(guild_id, fresh)
+        return refund
 
     async def _close_night(
         self, guild_id: int, user_id: int, business_id: int, day: date, now: float
@@ -1094,16 +1452,77 @@ class BusinessService:
                     connection, guild_id, user_id, business.own_listing
                 )
             )
+            company = business.is_company
+            books = sl.BOOKKEEPING_NIGHT + igic(sl.BOOKKEEPING_NIGHT) if company else 0
+            week_result: dict[str, Any] | None = None
+            old_tax = business.company.get("tax_debt", 0) if company else 0
+            if company:
+                # Primero lo que se debe a Hacienda; la gestoría, con el local.
+                if old_tax:
+                    bills.insert(
+                        0,
+                        BusinessCost(
+                            "sociedad:hacienda:deuda",
+                            taxes=(("sociedades", old_tax),),
+                            expense=False,
+                        ),
+                    )
+                bills.append(
+                    BusinessCost(
+                        "sociedad:gestoria",
+                        gone=sl.BOOKKEEPING_NIGHT,
+                        taxes=(("igic", books - sl.BOOKKEEPING_NIGHT),),
+                    )
+                )
+                if day.weekday() == 6:
+                    # La última noche de la semana fiscal, el Impuesto sobre Sociedades, con lo
+                    # de esta noche ya devengado (aunque no llegue para pagarlo).
+                    week = week_of(day)
+                    business.roll_over(day, week)
+                    info = business.company
+                    offset = info["offset"] if info["offset_week"] == week else None
+                    base = (
+                        sl.tax_base(business.week_totals, offset) - bill.total - amortized - books
+                    )
+                    week_result = sl.settle_week(
+                        info, base, weekly_sales=business.week_totals.get("ventas", 0)
+                    )
+                    if week_result["tax"]:
+                        bills.append(
+                            BusinessCost(
+                                "sociedad:hacienda:is",
+                                taxes=(("sociedades", week_result["tax"]),),
+                                expense=False,
+                            )
+                        )
 
             def settle(connection: sqlite3.Connection, unpaid: int) -> None:
                 business.roll_over(day, week_of(day))
-                business.add("local", -(due - unpaid))
+                if company:
+                    # Lo que no llegó: primero el impuesto de esta noche, luego lo del local y,
+                    # si aún falta, lo que ya se le debía a Hacienda (las facturas van por orden).
+                    tax = week_result["tax"] if week_result else 0
+                    unpaid_tax = min(tax, unpaid)
+                    rest = unpaid - unpaid_tax
+                    unpaid_old = max(0, rest - (due + books))
+                    unpaid = rest - unpaid_old
+                    business.company["tax_debt"] = unpaid_old + unpaid_tax
+                    # Sociedades va por devengo: el local y la gestoría cuentan esta noche.
+                    business.add("local", -(due - debt))
+                    business.add("gestoria", -books)
+                    if tax:
+                        business.add("sociedades", -tax)
+                    if week_result is not None:
+                        business.company["last"] = {"week": week_of(day), **week_result}
+                else:
+                    business.add("local", -(due - unpaid))
                 business.add("amortizacion", -amortized)
                 business.rent_debt = unpaid
                 business.unpaid_nights = business.unpaid_nights + 1 if unpaid else 0
                 if unpaid:
+                    whose = "la caja de la sociedad" if company else "para el local"
                     business.tell(
-                        f"🧾 Anoche no llegó para el local: debes {unpaid} Y$ al casero "
+                        f"🧾 Anoche no llegó {whose}: debes {unpaid} Y$ al casero "
                         f"({business.unpaid_nights} de {EVICTION_NIGHTS} noches)."
                     )
                 if spoiled:
@@ -1113,23 +1532,48 @@ class BusinessService:
                 gone = business.unpaid_nights >= EVICTION_NIGHTS or lost_local
                 holder.append(
                     NightRun(user_id, business.name, day, due, unpaid, spoiled,
-                             evicted=gone, amortized=amortized)
+                             evicted=gone, amortized=amortized, corporate=week_result)
                 )  # fmt: skip
                 if gone:
                     evict.append("sin_local" if lost_local else "desahucio")
 
             return business, BusinessMove(
-                user_id=user_id, bills=tuple(bills), settle=settle, amortization=amortized
+                user_id=user_id,
+                bills=tuple(bills),
+                settle=settle,
+                amortization=amortized,
+                account=_account(business),
             )
 
         housing = self.housing
-        business, _paid = await self.economy.business(guild_id, prepare)
+        business, paid = await self.economy.business(guild_id, prepare)
         if business is None:
             return None
         run = holder[0]
         if evict:
             await self._close(guild_id, user_id, business.id, now, reason=evict[0])
+        elif business.is_company:
+            await self._watch_losses(guild_id, business, paid.company, day)
         return run
+
+    async def _watch_losses(self, guild_id: int, business: Business, cash: int, day: date) -> None:
+        """Apunta si la sociedad está en causa de disolución por pérdidas (art. 363.1.e LSC).
+
+        Con dos noches (meses) así sin remediarla, su administrador responde de las deudas al
+        liquidarla (art. 367 LSC, `business_sl.liable_for_all`).
+        """
+        info = business.company
+        cause = sl.in_dissolution(info, _equity(business, cash))
+        since = info.get("cause_since", "")
+        if cause == bool(since):
+            return
+        info["cause_since"] = day.isoformat() if cause else ""
+        if cause:
+            business.tell(
+                "⚠️ Las pérdidas dejan a tu sociedad por debajo de la mitad de su capital: es "
+                "causa de disolución. Aporta dinero en dos noches o responderás de sus deudas."
+            )
+        await self.repository.save(guild_id, business)
 
     # -- Cerrar -------------------------------------------------------------------------
 
@@ -1188,6 +1632,50 @@ class BusinessService:
                     connection, guild_id, user_id, business.own_listing, today, now
                 )
             self.repository.close_in(connection, guild_id, business, now, reason)
+            if business.is_company:
+                info = business.company
+                # El último Impuesto sobre Sociedades: lo de la semana hasta hoy, con la venta.
+                offset = info["offset"] if info["offset_week"] == business.week else None
+                base = sl.tax_base(business.week_totals, offset) + stock + proceeds - offer.book
+                sales = business.week_totals.get("ventas", 0) + stock
+                result = sl.settle_week(info, base, weekly_sales=sales)
+                hacienda = info["tax_debt"] + result["tax"]
+                owed = business.rent_debt - forfeit
+                bills = []
+                if hacienda:
+                    bills.append(
+                        BusinessCost(
+                            "sociedad:hacienda:cierre",
+                            taxes=(("sociedades", hacienda),),
+                            expense=False,
+                        )
+                    )
+                if owed:
+                    bills.append(BusinessCost("negocio:deuda_local", gone=owed, expense=False))
+                limit = (
+                    owed + hacienda
+                    if sl.liable_for_all(info, today.isoformat())
+                    else sl.guarantee(info)
+                )
+                closing = Closing(
+                    business, refund, forfeit, 0, traspaso, stock, proceeds, reason=reason,
+                    company=True, corporate_tax=result["tax"],
+                )  # fmt: skip
+                move = BusinessMove(
+                    user_id=user_id,
+                    account=_account(business),
+                    refund=refund,
+                    forfeit=forfeit,
+                    sales=stock,
+                    sold_cost=offer.stock,
+                    proceeds=proceeds,
+                    bills=tuple(bills),
+                    liquidation=True,
+                    liquidation_basis=info["contributed"],
+                    liquidation_loan=info["loan"],
+                    cover_limit=limit,
+                )
+                return closing, move
             closing = Closing(
                 business, refund, forfeit, 0, traspaso, stock, proceeds, reason=reason
             )
@@ -1213,6 +1701,12 @@ class BusinessService:
             closing.proceeds,
             paid.gain_tax,
             closing.reason,
+            closing.company,
+            paid.liquidated,
+            paid.loan_repaid,
+            paid.covered,
+            paid.derived_debt,
+            closing.corporate_tax,
         )
 
     # -- Para `saldo` -------------------------------------------------------------------
@@ -1226,6 +1720,8 @@ class BusinessService:
         if not await self.economy.self_employed_fee_paid(guild_id, user_id):
             flat = self._clock() - business.opened_at < FLAT_RATE_DAYS * 86_400
             fee = FLAT_RATE_FEE if flat else SELF_EMPLOYED_FEE
+        if business.is_company:
+            return 0, 0, fee  # el local lo paga la caja de la sociedad, no tu monedero
         return nightly_bill(business).total, business.rent_debt, fee
 
 
@@ -1240,3 +1736,9 @@ def _opening_payments(quote: OpeningQuote) -> tuple[BusinessCost, ...]:
             expense=False,
         ),
     )
+
+
+def _equity(business: Business, cash: int) -> int:
+    """El patrimonio neto de la sociedad de un negocio con `cash` en caja."""
+    assets = stock_value(business) + book_value(business)
+    return sl.equity(business.company, cash, assets, business.rent_debt)
