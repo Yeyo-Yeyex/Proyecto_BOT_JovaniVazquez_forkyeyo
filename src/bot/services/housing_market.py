@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from bot.repositories.housing import (
+    AdvanceDesk,
     AuctionRun,
     Bid,
     DayRun,
@@ -32,6 +33,7 @@ from bot.repositories.housing import (
     ReformDone,
     RemortgageDesk,
     Sale,
+    SignedAdvance,
     SignedLoan,
     SignedRemortgage,
     Signing,
@@ -245,6 +247,34 @@ class HousingService:
             income=income, day=local_day(now), now=now, guarantor=guarantor,
             guarantor_income=guarantor_income,
         )  # fmt: skip
+        signed, balances = await self.economy.housing(guild_id, run)
+        return signed, balances[user_id]
+
+    async def advance_desk(self, guild_id: int, user_id: int) -> AdvanceDesk:
+        """Lo que ve el banco de alguien para adelantarle rentas (💸 Anticipos)."""
+        return await self.repository.advance_desk(guild_id, user_id, self.today())
+
+    async def advance(
+        self, guild_id: int, user_id: int, key: str, *, months: int, rate: float
+    ) -> tuple[SignedAdvance, int]:
+        """Firma un anticipo de rentas (fiscalidad en `HousingRepository.advance`).
+
+        No mira el 35 %: la cuota la paga el inquilino (pero cuenta para lo siguiente).
+
+        Raises:
+            HousingError: Si debe a Hacienda o el banco no adelanta (ver `advance` del
+                repositorio).
+        """
+        if await self.economy.tax_debt(guild_id, user_id) > 0:
+            # Lo adelantado se embargaría al entrar, como un préstamo.
+            raise HousingError(
+                "Debes dinero a Hacienda y tendrías la cuenta embargada: el banco no adelanta "
+                "rentas. Liquida la deuda en `renta`."
+            )
+        now = self._clock()
+        run = self.repository.advance(
+            guild_id, user_id, key, months=months, rate=rate, day=local_day(now), now=now
+        )
         signed, balances = await self.economy.housing(guild_id, run)
         return signed, balances[user_id]
 

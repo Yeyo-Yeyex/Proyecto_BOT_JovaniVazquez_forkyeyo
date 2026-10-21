@@ -91,6 +91,7 @@ NEWS_TEXT = {
     "hipoteca": "{who} firma una hipoteca de {amount}",
     "amortiza": "{who} cancela la hipoteca: {amount}",
     "rehipoteca": "{who} rehipoteca su parte por {amount}",
+    "anticipo": "{who} cede sus rentas al banco por un anticipo de {amount}",
     "ejecucion": "El banco ejecuta la hipoteca de {who}: subasta por {amount}",
     "se_muda": "{who} se muda aquí",
     "firma_miembro": "{who} firma el alquiler por {amount} al mes",
@@ -1426,7 +1427,12 @@ def pending_items(
         # La primera cuota se cobra la noche siguiente a firmar (`Loan.first_day`).
         first = date.fromisoformat(loan.first_day)
         when = tonight if today >= first else _midnight(first + timedelta(days=1))
-        text = f"Préstamo #{loan.id} del banco: {format_amount(due)}"
+        what = (
+            f"Anticipo de rentas de {_place(market, loan.listing)}"
+            if loan.advance and loan.listing
+            else f"Préstamo #{loan.id} del banco"
+        )
+        text = f"{what}: {format_amount(due)}"
         kind = "loan"
         if loan.unpaid_count:
             kind = "loan_unpaid"

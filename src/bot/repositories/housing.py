@@ -352,6 +352,10 @@ class Market:
             if lending.guarantor_of(debt.aval) == user_id
         ]
 
+    def advance_of(self, user_id: int, listing: str) -> Loan | None:
+        """El anticipo de rentas vivo de un miembro sobre un inmueble, si tiene."""
+        return next((x for x in self.loans_of(user_id) if x.advance and x.listing == listing), None)
+
     def installments_of(self, user_id: int) -> int:
         """Lo que paga cada mes al banco: hipotecas y préstamos con su seguro (el 35 %).
 
@@ -713,6 +717,8 @@ class DayRun:
         mortgage_unpaid: Miembros que no pudieron pagar entera la cuota.
         installments: Cuotas de hipoteca pagadas enteras por cada miembro.
         remortgage_executions: Miembros a los que han ejecutado un inmueble rehipotecado.
+        advance_orphans: Miembros que pagan la cuota de un anticipo de rentas con el
+            inquilino ido o sin pagar (la pone él).
         aval_executions: Miembros a los que han ejecutado una hipoteca avalada por sus
             padres (la familia de `pala` lo paga).
         promotions: `(promotor, inmueble)` de la obra nueva que ha salido hoy (los lunes).
@@ -754,6 +760,7 @@ class DayRun:
     installments: dict[int, int] = field(default_factory=dict)
     aval_executions: list[int] = field(default_factory=list)
     remortgage_executions: list[int] = field(default_factory=list)
+    advance_orphans: list[int] = field(default_factory=list)
     promotions: list[tuple[int, str]] = field(default_factory=list)
     euribor: tuple[float, float] | None = None
     barrio_news: list[tuple[str, str]] = field(default_factory=list)
@@ -881,7 +888,7 @@ def _desk_in(
     return LoanDesk(
         euribor=market.euribor,
         installments=market.installments_of(user_id),
-        loans=tuple(loans),
+        loans=tuple(x for x in loans if not x.advance),
         asnef=asnef,
         bank_debt=market.bank_debts.get(user_id, 0),
         profile=profile,
@@ -945,6 +952,83 @@ def _room_with(
         return room
     theirs = lending.room_for(guarantor_income, market.installments_of(guarantor))
     return lending.guaranteed_room(room, theirs)
+
+
+def _advance_desk_in(market: Market, user_id: int, day: date) -> AdvanceDesk:
+    """Lo que ve el banco de alguien para adelantarle rentas, con el mercado ya leído."""
+    found = []
+    for key in market.keys():
+        held = market.holdings.get(key, {}).get(user_id)
+        listing = market.listing(key)
+        if held is None or listing is None:
+            continue
+        lease = market.leases.get(key, rules.Lease())
+        rented = lease.status == rules.RENTED and (lease.tenant or lease.member) is not None
+        pool = sum(market.shares_of(key).values())
+        payment = lease.rent * held.shares // max(1, pool) if rented else 0
+        left = (lease.until - day).days if rented and lease.until is not None else 0
+        live = market.advance_of(user_id, key)
+        blocked = None
+        if lease.status == rules.DEFAULTING or lease.unpaid:
+            blocked = f"el inquilino debe {max(1, lease.unpaid)} meses"
+        elif not rented:
+            blocked = "no está alquilado"
+        elif lease.level == rules.VACATION_LEVEL:
+            blocked = "es vacacional: no hay contrato que ceder"
+        elif market.homes.get(user_id) == (finance.HOME_OWN, key):
+            blocked = "vives en él"
+        elif live is not None:
+            blocked = f"ya tienes el anticipo #{live.id}"
+        elif left < min(lending.ADVANCE_TERMS):
+            blocked = f"al contrato le quedan {max(0, left)} meses"
+        elif payment <= 0:
+            blocked = "tu parte de la renta no llega a 1 Y$"
+        else:
+            try:
+                _check_free(market, key, user_id, day)
+            except HousingError as error:
+                blocked = str(error)
+        found.append(
+            RentShare(
+                key=key, title=listing.title, shares=held.shares, payment=payment,
+                months_left=max(0, left), blocked=blocked,
+            )
+        )  # fmt: skip
+    return AdvanceDesk(
+        euribor=market.euribor,
+        installments=market.installments_of(user_id),
+        asnef=market.in_asnef(user_id),
+        shares=tuple(found),
+        advances=tuple(x for x in market.loans_of(user_id) if x.advance),
+    )
+
+
+def _tenant_paying_in(connection: sqlite3.Connection, guild_id: int, key: str | None) -> bool:
+    """Si el inmueble sigue alquilado y al día tras el cierre de esta noche."""
+    row = connection.execute(
+        "SELECT status, unpaid FROM housing_leases WHERE guild_id = ? AND listing = ?",
+        (guild_id, key),
+    ).fetchone()
+    return row is not None and row[0] == rules.RENTED and not row[1]
+
+
+def _check_no_advance(market: Market, key: str, user_id: int) -> None:
+    """Comprueba que alguien no tiene cedidas al banco las rentas de lo que quiere vender.
+
+    Solo para las ventas voluntarias (al mercado, al fondo buitre, a un miembro y la subasta
+    que saca el dueño): el banco no consiente. Las forzosas (ejecución, división, la junta)
+    no se paran y el anticipo sigue vivo. No va en `_check_free`, que mira también la
+    rehipoteca, y un anticipo no impide rehipotecar.
+
+    Raises:
+        HousingError: Si tiene un anticipo vivo sobre ese inmueble.
+    """
+    live = market.advance_of(user_id, key)
+    if live is not None:
+        raise HousingError(
+            f"Tienes cedidas las rentas de este inmueble al banco (anticipo #{live.id}): "
+            "cancélalo antes de vender."
+        )
 
 
 def _own_loan_in(connection: sqlite3.Connection, guild_id: int, user_id: int, loan_id: int) -> Loan:
@@ -1567,6 +1651,60 @@ class RemortgageDesk:
     def rate(self) -> float:
         """El tipo de una rehipoteca hoy: Euríbor más el diferencial, fijo al firmar."""
         return round(self.euribor + lending.REMORTGAGE_SPREAD, 4)
+
+
+@dataclass(frozen=True, slots=True)
+class RentShare:
+    """Tu parte de la renta de un inmueble, como la ve el banco para un anticipo.
+
+    Attributes:
+        key: El inmueble.
+        title: Su titular.
+        shares: Tus participaciones.
+        payment: Tu parte de la renta de hoy (la cuota del anticipo); 0 si no está alquilado.
+        months_left: Días (meses) que le quedan al contrato.
+        blocked: Por qué no se puede adelantar ahora, o `None`.
+    """
+
+    key: str
+    title: str
+    shares: int
+    payment: int
+    months_left: int
+    blocked: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AdvanceDesk:
+    """Lo que ve el banco de alguien para adelantarle rentas (💸 Anticipos).
+
+    Attributes:
+        euribor: El Euríbor de esta semana.
+        installments: Lo que ya paga cada mes al banco (no se mira al firmar: lo paga el
+            inquilino; cuenta en el 35 % de lo siguiente que pida).
+        asnef: Si está en el fichero de morosos.
+        shares: Sus inmuebles, en el orden del catálogo.
+        advances: Sus anticipos vivos.
+    """
+
+    euribor: float
+    installments: int
+    asnef: bool
+    shares: tuple[RentShare, ...]
+    advances: tuple[Loan, ...]
+
+    @property
+    def rate(self) -> float:
+        """El tipo de un anticipo hoy: Euríbor más el diferencial, fijo al firmar."""
+        return round(self.euribor + lending.ADVANCE_SPREAD, 4)
+
+
+@dataclass(frozen=True, slots=True)
+class SignedAdvance:
+    """Un anticipo de rentas recién firmado, con su oferta."""
+
+    loan: Loan
+    quote: lending.AdvanceQuote
 
 
 @dataclass(frozen=True, slots=True)
@@ -2261,6 +2399,95 @@ class HousingRepository:
 
         return run
 
+    # -- Anticipo de rentas (`banco`, 💸 Anticipos) ------------------------------------
+
+    async def advance_desk(self, guild_id: int, user_id: int, day: date) -> AdvanceDesk:
+        """Lo que ve el banco de alguien para adelantarle las rentas de sus inmuebles."""
+        return await self._run(self._advance_desk_sync, guild_id, user_id, day)
+
+    def _advance_desk_sync(self, guild_id: int, user_id: int, day: date) -> AdvanceDesk:
+        connection = self._connect()
+        try:
+            return _advance_desk_in(_market_in(connection, guild_id), user_id, day)
+        finally:
+            connection.close()
+
+    def advance(
+        self,
+        guild_id: int,
+        user_id: int,
+        key: str,
+        *,
+        months: int,
+        rate: float,
+        day: date,
+        now: float,
+    ) -> Callable[[sqlite3.Connection], tuple[SignedAdvance, HousingMove]]:
+        """Firma un anticipo: el banco adelanta `months` cuotas de tu parte de la renta.
+
+        Es un préstamo más de `housing_loans` (`kind = 'rentas'` y su inmueble en `listing`),
+        sin seguro, con la primera cuota la noche siguiente (hasta entonces se desiste, Ley
+        16/2011) y que se cobra cada noche como cualquier otro: si el inquilino no paga, lo
+        pone el dueño (con recurso). Entra lo adelantado (`banco:anticipo`, se crea: el banco
+        no existe) y sale la comisión de apertura (`banco:apertura`, desaparece).
+
+        Fiscalidad: lo adelantado no es renta (es un préstamo, se devuelve); la renta del
+        inmueble sigue tributando cada noche al devengarse (art. 14.1.a LIRPF), no al
+        adelantarla; el coste del anticipo no deduce, porque no es interés del dinero invertido
+        en comprar o mejorar el inmueble (art. 23.1.a.1.º LIRPF); el interés y la comisión,
+        exentos de IGIC como operaciones financieras (art. 18 del Decreto Legislativo 1/2025
+        de Canarias). No mira el 35 %: la cuota la paga el inquilino.
+
+        Args:
+            rate: El tipo que enseñaba la oferta; si el Euríbor ha cambiado, no se firma.
+            day: Hoy (para los meses que le quedan al contrato).
+
+        Raises (dentro de la transacción):
+            HousingError: Fichero de morosos, inmueble que no vale (ver `_advance_desk_in`),
+                plazo que no cabe en el contrato u otro tipo que el de la oferta.
+        """
+
+        def run(connection: sqlite3.Connection) -> tuple[SignedAdvance, HousingMove]:
+            market = _market_in(connection, guild_id)
+            desk = _advance_desk_in(market, user_id, day)
+            if desk.asnef:
+                raise HousingError(lending.ASNEF_REFUSAL)
+            found = next((x for x in desk.shares if x.key == key), None)
+            if found is None:
+                raise HousingError("No tienes nada en ese inmueble.")
+            if found.blocked is not None:
+                raise HousingError(f"Sobre ese inmueble no se puede: {found.blocked}.")
+            if months not in lending.ADVANCE_TERMS:
+                raise HousingError("Ese plazo no lo ofrece el banco.")
+            if months > found.months_left:
+                raise HousingError(
+                    f"Al contrato le quedan {found.months_left} meses: no se pueden adelantar "
+                    f"{months}."
+                )
+            if desk.rate != rate:
+                raise HousingError("El Euríbor ha cambiado desde la oferta: vuelve a mirarla.")
+            offer = lending.advance_quote(found.payment, months, rate)
+            if offer.received <= 0:
+                raise HousingError("Con la comisión no te llegaría nada.")
+            loan_id = finance.add_loan_in(
+                connection, guild_id, user_id, principal=offer.principal, rate=rate,
+                payment=offer.payment, months=months, fee=offer.fee, premium=0, premium_tax=0,
+                covers=0, first_day=(day + timedelta(days=1)).isoformat(), now=now,
+                kind=finance.LOAN_ADVANCE, listing=key,
+            )  # fmt: skip
+            loan = finance.loan_in(connection, guild_id, loan_id)
+            assert loan is not None
+            _news_in(
+                connection, guild_id, News(key, day, "anticipo", offer.principal, user_id, None),
+                now,
+            )  # fmt: skip
+            entries = [(user_id, LedgerEntry(offer.principal, "banco:anticipo"))]
+            if offer.fee:
+                entries.append((user_id, LedgerEntry(-offer.fee, "banco:apertura")))
+            return SignedAdvance(loan, offer), HousingMove(entries=tuple(entries))
+
+        return run
+
     async def bank_book(self, guild_id: int) -> BankBook:
         """Las cuentas del banco de un servidor: lo prestado, lo cobrado y lo que se debe."""
         return await self._run(self._bank_book_sync, guild_id)
@@ -2478,6 +2705,7 @@ class HousingRepository:
         *,
         expected: int | None = None,
         vulture: bool = False,
+        forced: bool = False,
     ) -> Callable[[sqlite3.Connection], tuple[Sale, HousingMove]]:
         """Vende participaciones al mercado al índice de hoy (o al fondo buitre).
 
@@ -2488,9 +2716,12 @@ class HousingRepository:
         Args:
             expected: Lo que decía la caja que cobraría. Si ha bajado, no se vende.
             vulture: Vender entero al fondo buitre al precio de su oferta.
+            forced: Si la venta no la decide él (la junta o una división sin pujas): un
+                anticipo de rentas vivo no la para y sigue debiéndose.
 
         Raises (dentro de la transacción):
-            HousingError: Si no tiene tantas, o si la oferta no existe o caducó.
+            HousingError: Si no tiene tantas, si tiene un anticipo de rentas vivo sobre el
+                inmueble (venta voluntaria) o si la oferta no existe o caducó.
             PriceChanged: Si lo que cobraría ya no es `expected`.
         """
 
@@ -2503,6 +2734,8 @@ class HousingRepository:
             if not 1 <= shares <= held.shares:
                 raise HousingError(f"Tienes {held.shares} participaciones: no puedes vender más.")
             _check_free(market, key, user_id, day, market_sale=True)
+            if not forced:
+                _check_no_advance(market, key, user_id)
             lease = market.leases.get(key, rules.Lease())
             index = market.index(listing.barrio)
             agreed = None
@@ -3158,6 +3391,10 @@ class HousingRepository:
                 finance.set_member_debt_in(conn, guild_id, creditor, debtor, left)
                 if amount > left:
                     result.reimbursements.append((creditor, debtor, amount - left))
+            for loan_id, (_balance, pay, _interest) in loan_plan.items():
+                loan = loans[loan_id]
+                if pay and loan.advance and not _tenant_paying_in(conn, guild_id, loan.listing):
+                    result.advance_orphans.append(loan.user_id)
             # Después de poner al día las deudas con el banco: un préstamo que vence hoy suma.
             for loan_id, plan in loan_plan.items():
                 self._settle_loan_in(conn, guild_id, now, loans[loan_id], plan, unpaid, result)
@@ -4398,6 +4635,7 @@ class HousingRepository:
             if held is None or not 1 <= shares <= held.shares:
                 raise HousingError("El vendedor ya no tiene esas participaciones.")
             _check_free(market, key, seller, day)
+            _check_no_advance(market, key, seller)
             index = market.index(listing.barrio)
             try:
                 quote = rules.member_sale_quote(
@@ -4491,6 +4729,7 @@ class HousingRepository:
                 f"Tienes {held.shares if held else 0} participaciones: no puedes subastar más."
             )
         _check_free(market, key, seller, local_day(now))
+        _check_no_advance(market, key, seller)
         if min_bid < 1:
             raise HousingError("La puja mínima tiene que ser de 1 Y$ o más.")
         number = trade.add_auction_in(
@@ -4881,7 +5120,9 @@ class HousingRepository:
             held = market.holdings[key][member]
             if held.locked_until and held.locked_until > day:
                 continue  # adjudicado en una subasta judicial: aún no puede venderlo
-            _sale, move = self.sell(guild_id, member, key, shares, day, now)(connection)
+            _sale, move = self.sell(guild_id, member, key, shares, day, now, forced=True)(
+                connection
+            )
             moves.append(move)
         return moves
 

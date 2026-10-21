@@ -1,4 +1,5 @@
-"""El banco: `banco`, un panel con tres mostradores (préstamos, garantías y cuentas).
+"""El banco: `banco`, un panel con cuatro mostradores (préstamos, garantías, anticipos y
+cuentas).
 
 `/banco [mostrador]` (y `.banco`) abre tu panel. Solo lo maneja quien lo abre; con `/` es
 privado y con `.` se ve en el canal.
@@ -8,10 +9,13 @@ privado y con `.` se ve en el canal.
   35 %), tu tipo explicado punto a punto, lo más que te presta a cada plazo y tus
   préstamos. Eliges plazo y seguro, pides con 💳 (un formulario con el importe), miras la
   ficha (TIN, TAE, comisión, total) y firmas con ✍️. Desde tus préstamos se amortiza o se
-  desiste (hasta la primera cuota).
+  desiste (hasta la primera cuota). Con 🤝 Avalista, otro miembro te avala (en préstamos y
+  rehipotecas): `bot.cogs.banco_avales`.
 - 🔐 **Garantías** (`bot.cogs.banco_garantias`, diseño en `docs/garantias.md`): pignorar
   lo que tienes para pedir prestado. Rehipotecar tus inmuebles de `pisos`: lo que vale cada
   uno, lo que ya debes de él y lo más que te presta; eliges, pides con 🏦 y firmas con ✍️.
+- 💸 **Anticipos** (`bot.cogs.banco_anticipos`, `docs/garantias.md`): el banco te adelanta
+  3, 6 o 12 meses de tu parte de la renta de un inmueble alquilado y se la cobra cada noche.
 - 📒 **Cuentas**: lo que ha cobrado la tienda (su caja, lo que paga el Monte), lo que ha
   prestado y cobrado el banco y lo que ha ganado el casino, desde el primer día.
 
@@ -23,9 +27,11 @@ Dinero: los préstamos van por `EconomyService.housing` (fiscalidad en su docstr
 acción con dinero llama a `renta.remind` y su resultado lleva `renta.hint` con la mascota.
 Lo pendiente sale en `saldo`: las cuotas, con las de `pisos`.
 
-Logros: los préstamos, las garantías y las cuentas en 🏦 Banco (`loan_*_stats`,
-`remortgage_*_stats`, `bank_panel_stats`). `pisos` abre las garantías con un inmueble ya
-elegido (`open_guarantees`). No necesita permisos especiales ni intents.
+Logros: los préstamos, las garantías, los anticipos y las cuentas en 🏦 Banco
+(`loan_*_stats`, `remortgage_*_stats`, `advance_*_stats`, `guarantee_*_stats`,
+`bank_panel_stats`). `pisos` abre
+las garantías y los anticipos con un inmueble ya elegido (`open_guarantees`,
+`open_advances`). No necesita permisos especiales ni intents.
 """
 
 from __future__ import annotations
@@ -41,6 +47,7 @@ from discord import app_commands, ui
 from discord.ext import commands
 
 from bot.cogs import achievements as logros
+from bot.cogs import banco_anticipos as anticipos
 from bot.cogs import banco_avales as avales
 from bot.cogs import banco_garantias as garantias
 from bot.cogs import renta
@@ -79,7 +86,12 @@ PANEL_TIMEOUT = 900
 #: Plazo que sale elegido al abrir el mostrador de préstamos.
 DEFAULT_TERM = 48
 #: Mostradores del panel: `(clave, etiqueta)`.
-TABS = (("loans", "🏦 Préstamos"), (garantias.TAB, "🔐 Garantías"), ("books", "📒 Cuentas"))
+TABS = (
+    ("loans", "🏦 Préstamos"),
+    (garantias.TAB, "🔐 Garantías"),
+    (anticipos.TAB, "💸 Anticipos"),
+    ("books", "📒 Cuentas"),
+)
 #: Aviso de `.banco monte`, que abría el mostrador que se mudó a `vender`.
 MONTE_MOVED = "El Monte de Piedad se ha mudado a `vender`."
 
@@ -430,7 +442,7 @@ class Banco(commands.Cog):
     # -- Comandos ----------------------------------------------------------------------
 
     @app_commands.command(
-        name="banco", description="Préstamos, garantías y las cuentas del servidor."
+        name="banco", description="Préstamos, garantías, anticipos y las cuentas del servidor."
     )
     @app_commands.describe(mostrador="Por dónde abrir el banco (por defecto, préstamos).")
     @app_commands.choices(
@@ -458,14 +470,14 @@ class Banco(commands.Cog):
     @commands.command(name="banco")
     @commands.guild_only()
     async def banco_text(self, ctx: commands.Context, mostrador: str | None = None) -> None:
-        """Versión de texto (`.banco [préstamos|garantías|cuentas]`): el panel sale en el canal.
+        """Versión de texto (`.banco [préstamos|garantías|anticipos|cuentas]`): sale en el canal.
 
         `.banco monte` abre los préstamos con el aviso de que el Monte está en `vender`.
         """
         assert ctx.guild is not None
         keys = {
             "prestamos": "loans", "préstamos": "loans", "cuentas": "books",
-            "garantias": garantias.TAB, "garantías": garantias.TAB,
+            "garantias": garantias.TAB, "garantías": garantias.TAB, "anticipos": anticipos.TAB,
         }  # fmt: skip
         wanted = (mostrador or "").casefold()
         panel = BankPanel(self, ctx.guild.id, ctx.author, keys.get(wanted, "loans"))
@@ -500,7 +512,7 @@ class AmountForm(ui.Modal):
 
 
 class BankPanel(ui.View):
-    """El panel de `banco` de un miembro: tres mostradores y sus botones."""
+    """El panel de `banco` de un miembro: cuatro mostradores y sus botones."""
 
     def __init__(
         self, cog: Banco, guild_id: int, owner: discord.abc.User, tab: str = "loans"
@@ -535,6 +547,12 @@ class BankPanel(ui.View):
         self.remortgage_most = 0
         self.remortgage_room = 0
         self.remortgage_offer: tuple[lending.RemortgageQuote, str, str] | None = None
+        #: 💸 Anticipos: el inmueble y los meses elegidos, la oferta enseñada `(oferta, clave,
+        #: titular)` y el anticipo elegido en la lista.
+        self.advance_key: str | None = None
+        self.advance_months = anticipos.DEFAULT_TERM
+        self.advance_offer: tuple[lending.AdvanceQuote, str, str] | None = None
+        self.selected_advance: int | None = None
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.owner.id:
@@ -575,6 +593,8 @@ class BankPanel(ui.View):
             embed = await self.cog.books_embed(self.guild_id)
         elif self.tab == garantias.TAB:
             embed = await garantias.screen(self)
+        elif self.tab == anticipos.TAB:
+            embed = await anticipos.screen(self)
         elif self.quote is not None:
             lines = quote_lines(self.quote)
             if avales.guaranteed(self):
@@ -708,6 +728,7 @@ class TabButton(ui.Button["BankPanel"]):
         panel.quote = None
         panel.remortgage_offer = None
         panel.picking_guarantor = False
+        panel.advance_offer = None
         await panel.refresh(interaction)
         if self.key == "books":
             await panel.track_open(interaction.channel)
@@ -920,6 +941,27 @@ async def open_guarantees(bot: commands.Bot, interaction: discord.Interaction, k
         await edit(interaction, content="El banco está cerrado ahora mismo.")
         return True
     # Tras `ack`, editar la respuesta devuelve el mensaje: lo guarda el panel para caducarlo.
+    panel.message = await interaction.edit_original_response(**kwargs)
+    return True
+
+
+async def open_advances(bot: commands.Bot, interaction: discord.Interaction, key: str) -> bool:
+    """Abre el banco en 💸 Anticipos con un inmueble elegido, en un mensaje privado nuevo.
+
+    Lo usa 💸 Adelantar rentas de `pisos`. Devuelve `False` sin el cog (sin contestar al clic).
+    """
+    cog = find_cog(bot, Banco)
+    if cog is None or interaction.guild is None:
+        return False
+    await ack(interaction, new_message=True)
+    panel = BankPanel(cog, interaction.guild.id, interaction.user, anticipos.TAB)
+    panel.advance_key = key
+    try:
+        kwargs = await panel.screen()
+    except (OSError, sqlite3.Error):
+        logger.exception("No se pudo abrir el banco en %s", interaction.guild.id)
+        await edit(interaction, content="El banco está cerrado ahora mismo.")
+        return True
     panel.message = await interaction.edit_original_response(**kwargs)
     return True
 

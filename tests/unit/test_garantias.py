@@ -497,3 +497,217 @@ async def test_lo_que_se_deben_los_miembros_cuenta_en_el_patrimonio(tmp_path: Pa
         found = assets_in(connection, GUILD)
     assert (found[ANA], found[BEA]) == (-30_000, 30_000)
     assert await service.repository.member_debts(GUILD) == {ANA: 30_000, BEA: -30_000}
+
+
+# -- Anticipo de rentas (9.2.0) ------------------------------------------------------------
+
+RENT = 8_000
+
+
+def let(tmp_path: Path, key: str = BAJO.key, **changes: object) -> None:
+    """Alquila el inmueble a una familia de la gestora (o lo deja como diga `changes`)."""
+    values = {"status": "alquilado", "tenant": "familia", "rent": RENT, "until": "2027-01-01",
+              "unpaid": 0, "level": "referencia", **changes}  # fmt: skip
+    sets = ", ".join(f"{column} = ?" for column in values)
+    sql(tmp_path, f"UPDATE housing_leases SET {sets} WHERE listing = ?", *values.values(), key)
+
+
+async def rented(tmp_path: Path, clock: Clock, **changes: object):  # noqa: ANN201
+    """Ana con nómina y el bajo alquilado, comprado al contado."""
+    economy, service = await owned(tmp_path, clock)
+    let(tmp_path, **changes)
+    return economy, service
+
+
+async def advance(service: HousingService, months: int = 12, key: str = BAJO.key):  # noqa: ANN201
+    desk = await service.advance_desk(GUILD, ANA)
+    return await service.advance(GUILD, ANA, key, months=months, rate=desk.rate)
+
+
+def test_el_anticipo_es_el_valor_actual_de_las_cuotas_menos_la_comision() -> None:
+    quote = lending.advance_quote(10_000, 12, 0.06)
+    exact = 10_000 * (1 - (1 + 0.005) ** -12) / 0.005
+    assert quote.principal == int(exact)
+    assert quote.fee == -(-quote.principal // 100)
+    assert quote.received == quote.principal - quote.fee
+    assert quote.total == 120_000 and quote.cost == 120_000 - quote.received
+    assert quote.tae > quote.rate
+    assert lending.advance_quote(10_000, 3, 0.0).principal == 30_000
+
+
+def test_las_cuotas_del_anticipo_lo_saldan_en_su_plazo() -> None:
+    for months in lending.ADVANCE_TERMS:
+        quote = lending.advance_quote(8_765, months, 0.0525)
+        balance = quote.principal
+        for _ in range(months):
+            _interest, principal = rules.mortgage_month(balance, quote.rate, quote.payment)
+            balance -= principal
+        assert balance == 0
+
+
+async def test_adelantar_trae_lo_adelantado_menos_la_comision(tmp_path: Path) -> None:
+    clock = Clock(14)
+    economy, service = await rented(tmp_path, clock)
+    before = await economy.balance(GUILD, ANA)
+    desk = await service.advance_desk(GUILD, ANA)
+    (found,) = desk.shares
+    assert found.blocked is None and found.payment == RENT and found.months_left > 12
+    signed, balance = await advance(service)
+    assert balance == before + signed.quote.received
+    assert ledger_sum(tmp_path) == balance
+    assert signed.quote.payment == RENT
+    assert sql(tmp_path, "SELECT kind, listing, months, premium FROM housing_loans") == [
+        ("rentas", BAJO.key, 12, 0)
+    ]
+    desk = await service.advance_desk(GUILD, ANA)
+    assert [x.id for x in desk.advances] == [signed.loan.id]
+    assert "ya tienes el anticipo" in (desk.shares[0].blocked or "")
+    # No cuenta en el tope de préstamos personales, pero su cuota sí cuenta en el 35 %.
+    loans, _income = await service.loan_desk(GUILD, ANA)
+    assert loans.loans == () and loans.installments == RENT
+    assert sql(tmp_path, "SELECT kind FROM housing_news WHERE kind = 'anticipo'") == [("anticipo",)]
+
+
+async def test_la_cuota_es_tu_parte_de_la_renta(tmp_path: Path) -> None:
+    clock = Clock(14)
+    economy, service = await make(tmp_path, clock)
+    await economy.repository.apply(GUILD, 20, [LedgerEntry(3_000_000, "prueba")])
+    await give(economy, 3_000_000)
+    await service.buy(GUILD, ANA, BAJO.key, 75)
+    await service.buy(GUILD, 20, BAJO.key, 25)
+    let(tmp_path)
+    (found,) = (await service.advance_desk(GUILD, ANA)).shares
+    assert found.payment == RENT * 75 // 100
+
+
+@pytest.mark.parametrize(
+    ("changes", "why"),
+    [
+        ({"status": "vacio", "tenant": None, "rent": 0}, "no está alquilado"),
+        ({"level": rules.VACATION_LEVEL, "license": 1}, "vacacional"),
+        ({"until": "2026-10-16"}, "le quedan 2 meses"),
+        ({"unpaid": 1}, "debe 1 meses"),
+    ],
+)
+async def test_no_se_adelanta_lo_que_no_esta_alquilado_con_contrato(
+    tmp_path: Path, changes: dict, why: str
+) -> None:
+    clock = Clock(14)
+    _economy, service = await rented(tmp_path, clock, **changes)
+    (found,) = (await service.advance_desk(GUILD, ANA)).shares
+    assert why in (found.blocked or "")
+    with pytest.raises(HousingError, match="no se puede"):
+        await advance(service, months=3)
+
+
+async def test_ni_la_casa_en_que_vives_ni_mas_meses_que_el_contrato(tmp_path: Path) -> None:
+    clock = Clock(14)
+    _economy, service = await rented(tmp_path, clock, until="2026-10-20")
+    with pytest.raises(HousingError, match="le quedan 6 meses"):
+        await advance(service, months=12)
+    await advance(service, months=6)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        set_home_in(connection, GUILD, ANA, HOME_OWN, BAJO.key, clock.now)
+    (found,) = (await service.advance_desk(GUILD, ANA)).shares
+    assert found.blocked == "vives en él"
+
+
+async def test_en_asnef_con_hacienda_o_con_uno_vivo_no_se_adelanta(tmp_path: Path) -> None:
+    clock = Clock(14)
+    _economy, service = await rented(tmp_path, clock)
+    sql(tmp_path, "INSERT INTO housing_bank_debts (guild_id, user_id, amount) VALUES (?, ?, ?)",
+        GUILD, ANA, 10_000)  # fmt: skip
+    with pytest.raises(HousingError, match="ASNEF"):
+        await advance(service)
+    sql(tmp_path, "DELETE FROM housing_bank_debts")
+    sql(tmp_path, "INSERT INTO economy_tax_debts (guild_id, user_id, amount) VALUES (?, ?, 300)",
+        GUILD, ANA)  # fmt: skip
+    with pytest.raises(HousingError, match="Hacienda"):
+        await advance(service)
+    sql(tmp_path, "DELETE FROM economy_tax_debts")
+    await advance(service)
+    with pytest.raises(HousingError, match="ya tienes el anticipo"):
+        await advance(service)
+
+
+async def test_desistir_lo_devuelve_y_la_comision_vuelve(tmp_path: Path) -> None:
+    clock = Clock(14)
+    economy, service = await rented(tmp_path, clock)
+    before = await economy.balance(GUILD, ANA)
+    signed, _ = await advance(service)
+    closed, balance = await service.desist_loan(GUILD, ANA, signed.loan.id)
+    assert closed.status == "desistido" and balance == before
+    assert ledger_sum(tmp_path) == balance
+    assert (await service.advance_desk(GUILD, ANA)).advances == ()
+
+
+async def test_cada_noche_se_cobra_la_cuota_y_se_cancela_con_compensacion(tmp_path: Path) -> None:
+    clock = Clock(14)
+    economy, service = await rented(tmp_path, clock)
+    signed, _ = await advance(service)
+    clock.to(16)
+    runs = await service.close_days(GUILD)
+    assert runs and all(ANA not in run.advance_orphans for run in runs)
+    (loan,) = (await service.advance_desk(GUILD, ANA)).advances
+    assert loan.months_left == 11 and loan.balance < signed.loan.balance and not loan.unpaid_count
+    with pytest.raises(HousingError, match="primera cuota"):
+        await service.desist_loan(GUILD, ANA, loan.id)
+    closed, balance = await service.repay_loan(GUILD, ANA, loan.id)
+    assert closed.fee == lending.early_fee(loan.balance, loan.months_left)
+    assert closed.paid == loan.owed + closed.fee
+    assert ledger_sum(tmp_path) == balance == await economy.balance(GUILD, ANA)
+    await service.sell(GUILD, ANA, BAJO.key, 100)  # cancelado, ya se puede vender
+
+
+async def test_con_el_anticipo_vivo_no_se_vende_por_las_buenas(tmp_path: Path) -> None:
+    clock = Clock(14)
+    economy, service = await rented(tmp_path, clock)
+    signed, _ = await advance(service)
+    blocked = f"anticipo #{signed.loan.id}"
+    with pytest.raises(HousingError, match=blocked):
+        await service.sell(GUILD, ANA, BAJO.key, 100)
+    await economy.repository.apply(GUILD, 20, [LedgerEntry(5_000_000, "prueba")])
+    with pytest.raises(HousingError, match=blocked):
+        await service.member_sale(GUILD, ANA, 20, BAJO.key, 100, 1_000_000)
+    with pytest.raises(HousingError, match=blocked):
+        await service.create_auction(GUILD, ANA, BAJO.key, 100, 1_000)
+    # Una venta que no decide él (la junta, una división sin pujas) sí sigue, y el anticipo
+    # se queda: lo sigue pagando él.
+    run = service.repository.sell(
+        GUILD, ANA, BAJO.key, 100, service.today(), clock.now, forced=True
+    )
+    await economy.housing(GUILD, run)
+    market = await service.market(GUILD)
+    assert BAJO.key not in market.holdings
+    assert market.advance_of(ANA, BAJO.key) is not None
+
+
+async def test_si_el_inquilino_se_va_la_cuota_la_pones_tu(tmp_path: Path) -> None:
+    clock = Clock(14)
+    economy, service = await rented(tmp_path, clock)
+    signed, _ = await advance(service)
+    let(tmp_path, status="okupa", tenant=None, rent=0)
+    before = await economy.balance(GUILD, ANA)
+    clock.to(16)
+    runs = await service.close_days(GUILD)
+    assert any(ANA in run.advance_orphans for run in runs)
+    (loan,) = (await service.advance_desk(GUILD, ANA)).advances
+    assert loan.months_left == 11 and not loan.unpaid_count
+    assert await economy.balance(GUILD, ANA) <= before - signed.quote.payment
+    assert ledger_sum(tmp_path) == await economy.balance(GUILD, ANA)
+
+
+async def test_sin_dinero_la_cuota_del_anticipo_es_un_impago_del_prestamo(tmp_path: Path) -> None:
+    clock = Clock(14)
+    economy, service = await rented(tmp_path, clock)
+    await advance(service)
+    let(tmp_path, status="okupa", tenant=None, rent=0)
+    balance = await economy.balance(GUILD, ANA)
+    await economy.repository.apply(GUILD, ANA, [LedgerEntry(-balance, "prueba")])
+    for d in range(16, 16 + lending.DEFAULT_INSTALLMENTS):
+        clock.to(d)
+        await service.close_days(GUILD)
+        if d == 16 + lending.ASNEF_INSTALLMENTS - 1:
+            assert (await service.advance_desk(GUILD, ANA)).asnef
+    assert sql(tmp_path, "SELECT status FROM housing_loans") == [("vencido",)]
+    assert (await service.market(GUILD)).bank_debts.get(ANA, 0) > 0

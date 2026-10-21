@@ -92,6 +92,7 @@ from bot.services import housing as rules
 from bot.services import housing_view as view
 from bot.services.achievements import (
     StatDelta,
+    advance_orphan_stats,
     guarantee_night_stats,
     housing_action_stats,
     housing_day_stats,
@@ -1112,6 +1113,7 @@ class Panel(ui.View):
                 self._button("🔨 Subastar", "subastar", self._auction_form, row=3)
                 self._button("🏗️ Reformas", "reformas", self._go_reforms, row=3)
                 self._button("🏦 Rehipotecar", "rehipotecar", self._remortgage, row=3)
+                self._button("💸 Adelantar rentas", "anticipo", self._advance, row=3)
 
     def _reform_buttons(self) -> None:
         """🏗️ Reformas: una por botón, con dos clics porque cuesta dinero."""
@@ -1317,6 +1319,13 @@ class Panel(ui.View):
     async def _remortgage(self, interaction: discord.Interaction) -> None:
         """🏦 Rehipotecar: abre `banco` en 🔐 Garantías con este inmueble, en privado."""
         if not await banco.open_guarantees(self.cog.bot, interaction, self.listing):
+            await interaction.response.send_message(
+                "El banco está cerrado ahora mismo.", ephemeral=True
+            )
+
+    async def _advance(self, interaction: discord.Interaction) -> None:
+        """💸 Adelantar rentas: abre `banco` en 💸 Anticipos con este inmueble, en privado."""
+        if not await banco.open_advances(self.cog.bot, interaction, self.listing):
             await interaction.response.send_message(
                 "El banco está cerrado ahora mismo.", ephemeral=True
             )
@@ -2741,6 +2750,8 @@ class Pisos(commands.Cog):
             for member in run.remortgage_executions:
                 logros.note(self.bot, guild_id, member, remortgage_executed_stats())
             self._note_guarantees(guild_id, run.guarantee_claims, run.reimbursements)
+            for member in set(run.advance_orphans):
+                logros.note(self.bot, guild_id, member, advance_orphan_stats())
             everyone = (
                 set(run.members) | set(events) | set(run.bono) | set(run.installments) | set(stars)
             )

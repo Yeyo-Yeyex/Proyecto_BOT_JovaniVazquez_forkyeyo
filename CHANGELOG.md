@@ -15,6 +15,13 @@ criterio.
 - Saldo: lo que avalas, lo que debes a tu avalista y lo que te debe tu avalado
 - Logros: 11 de avales en 🏦 Banco
 
+### 9.2.0 · 2026-10-21
+
+- Banco: 💸 Anticipos, el banco te adelanta 3, 6 o 12 meses de la renta de un piso alquilado y se la cobra cada noche
+- Pisos: 💸 Adelantar rentas en 🧰 Gestionar abre el banco con el inmueble elegido; con un anticipo vivo no se puede vender
+- Saldo: la cuota del anticipo sale como «Anticipo de rentas de…»
+- Logros: 12 de anticipos de rentas en 🏦 Banco
+
 ### 9.1.0 · 2026-10-21
 
 - Banco: 🔐 Garantías, rehipotecar tus pisos: hasta el 80 % de lo que valen hoy (60 % si no es vivienda) menos lo que ya debes de ellos

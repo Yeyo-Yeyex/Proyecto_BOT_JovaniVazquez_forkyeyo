@@ -40,6 +40,12 @@ Con deuda con Hacienda, el banco no presta (`EconomyService.housing` embargaría
 que ya se tienen, para sacar dinero de lo que valen. Presta sobre lo que valen hoy en el
 mercado (la tasación, que paga quien pide) hasta el 80 % si es vivienda y el 60 % si no, menos
 lo que ya se debe de ese inmueble. Diseño entero en `docs/garantias.md`.
+
+**Anticipo de rentas** (💸 Anticipos, `advance_quote`): el banco te adelanta hoy 3, 6 o 12
+meses de tu parte de la renta de un inmueble alquilado (el valor actual de esas cuotas al
+Euríbor + 3 %, menos un 1 % de apertura) y se los cobra cada noche como un préstamo. No mira
+el 35 % al firmar (lo paga el inquilino), pero la cuota cuenta después. Uno por inmueble, no
+cuenta en `MAX_LOANS` y, si el inquilino no paga, la pones tú.
 """
 
 from __future__ import annotations
@@ -62,7 +68,7 @@ TERMS = (12, 24, 48, 96)
 #: 10 Y$ = 1 €, como un préstamo personal grande). Lo que de verdad limita es el 35 %.
 MIN_PRINCIPAL = 1_000
 MAX_PRINCIPAL = 750_000
-#: Préstamos abiertos a la vez por persona.
+#: Préstamos personales abiertos a la vez por persona (los anticipos de rentas van aparte).
 MAX_LOANS = 3
 #: Comisión de apertura, sobre lo prestado.
 OPENING_FEE = 0.01
@@ -461,3 +467,68 @@ def guarantor_of(aval: str | None) -> int | None:
 def guaranteed_room(own: int, guarantor: int) -> int:
     """Lo que cabe al mes con un avalista: lo tuyo en el 35 % más lo suyo en su 35 %."""
     return max(0, own) + max(0, guarantor)
+
+
+# -- Anticipo de rentas --------------------------------------------------------------------
+
+#: Meses de renta que adelanta el banco (días del bot).
+ADVANCE_TERMS = (3, 6, 12)
+#: Diferencial sobre el Euríbor: tres puntos, porque cobra de una renta que puede faltar
+#: (en España lo hacen empresas de factoring de alquileres, más caras que una hipoteca).
+ADVANCE_SPREAD = 0.03
+#: Comisión de apertura, sobre lo adelantado. Desaparece, como la de los préstamos.
+ADVANCE_FEE = 0.01
+
+
+@dataclass(frozen=True, slots=True)
+class AdvanceQuote:
+    """La oferta de un anticipo de rentas: el banco compra `months` cuotas de tu renta.
+
+    Attributes:
+        payment: La cuota: tu parte de la renta de hoy, que el banco se cobra cada noche.
+        months: Cuántas cuotas (meses, días del bot).
+        rate: TIN anual fijo con el que se descuentan.
+        principal: Lo que adelanta: el valor actual de las cuotas al tipo mensual `rate / 12`,
+            redondeado hacia abajo (así la última cuota siempre salda lo que queda).
+        fee: Comisión de apertura (desaparece).
+    """
+
+    payment: int
+    months: int
+    rate: float
+    principal: int
+    fee: int
+
+    @property
+    def received(self) -> int:
+        """Lo que llega al monedero al firmar: lo adelantado menos la comisión."""
+        return self.principal - self.fee
+
+    @property
+    def total(self) -> int:
+        """Lo que se paga en cuotas si se lleva hasta el final."""
+        return self.payment * self.months
+
+    @property
+    def cost(self) -> int:
+        """Lo que cuesta: las rentas que cedes menos lo que recibes hoy."""
+        return self.total - self.received
+
+    @property
+    def tae(self) -> float:
+        """TAE con la comisión dentro."""
+        return annual_equivalent(self.received, self.payment, self.months)
+
+
+def advance_quote(payment: int, months: int, rate: float) -> AdvanceQuote:
+    """La oferta de adelantar `months` cuotas de `payment` al tipo `rate`."""
+    monthly_rate = rate / 12
+    factor = months if monthly_rate <= 0 else (1 - (1 + monthly_rate) ** -months) / monthly_rate
+    principal = math.floor(max(0, payment) * factor)
+    return AdvanceQuote(
+        payment=payment,
+        months=months,
+        rate=rate,
+        principal=principal,
+        fee=math.ceil(principal * ADVANCE_FEE),
+    )

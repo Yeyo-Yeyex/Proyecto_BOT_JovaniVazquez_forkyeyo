@@ -1625,6 +1625,12 @@ class EconomyService:
           desistir (art. 28 de la Ley 16/2011) la comisión vuelve, y amortizar antes paga la
           compensación del art. 30. La deuda de un préstamo vencido se suma a la deuda con
           el banco y se embarga de las nóminas (`EconomyRepository.credit_salary`).
+        - **El anticipo de rentas** (`banco`, 💸 Anticipos, `HousingRepository.advance`):
+          un préstamo más, con su inmueble; lo adelantado se crea y la comisión
+          desaparece. No es renta: la renta del inmueble tributa cada noche al
+          devengarse (art. 14.1.a LIRPF), no al adelantarla, y el coste del anticipo no
+          deduce (art. 23.1.a.1.º LIRPF). Interés y comisión, exentos de IGIC (art. 18
+          del Decreto Legislativo 1/2025 de Canarias).
         - **La VPO** se compra a la promoción pública con IGIC al tipo cero
           (primera entrega de vivienda protegida, art. 52 de la Ley 4/2012) y solo
           paga notaría; el precio va a la cuenta del Estado, que la recompra al
