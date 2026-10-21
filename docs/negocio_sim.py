@@ -15,10 +15,16 @@ Uso, desde la raíz del repo (`PYTHONIOENCODING=utf-8` en la consola de Windows)
     python docs/negocio_sim.py               # la tabla completa
     python docs/negocio_sim.py --dias 42     # más días
     python docs/negocio_sim.py --fase2       # mejoras, tamaños y campañas (fase 2)
+    python docs/negocio_sim.py --sociedad    # autónomo o sociedad limitada (fase 3)
 
 Con `--fase2`, un jugador `bueno` en el barrio del medio de cada sector, con el cupo del
 barrio (`daily_pool`) y la amortización en el IRPF: lo que suma al día cada mejora, cada
 tamaño de local y cada campaña frente al negocio sin nada, y en cuántos días se paga.
+
+Con `--sociedad`, para cada beneficio semanal del negocio (antes de los impuestos del
+dueño), lo que se lleva el dueño al bolsillo como autónomo (IRPF de la actividad y la cuota)
+y como sociedad (gestoría, Sociedades, su sueldo con su IRPF y el resto en dividendos al
+19 %), con el mejor reparto entre sueldo y dividendos. La cuota del RETA es la misma.
 
 Jugadores: `perfecto` (todo bien y rápido), `bueno` (falla 1 de cada 8 clientes) y
 `flojo` (falla 1 de cada 3). Dedicación: 4 turnos al día (con curro a jornada completa) u
@@ -40,6 +46,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
+from bot.services import business_sl as sl  # noqa: E402
 from bot.services.business import (  # noqa: E402
     REPUTATION_MAX,
     Business,
@@ -318,11 +325,50 @@ def phase2(days: int) -> None:
                 )
 
 
+def company_take(profit: int, salary: int) -> int:
+    """Lo que se lleva el dueño de una sociedad con `profit` de beneficio y `salary` de sueldo.
+
+    La gestoría de cada noche, Sociedades sobre lo que queda tras el sueldo, la reserva legal
+    ya completa (la sociedad lleva tiempo) y el resto a dividendos con su 19 %.
+    """
+    books = 7 * (sl.BOOKKEEPING_NIGHT + igic(sl.BOOKKEEPING_NIGHT))
+    base = profit - salary - books
+    tax, _rate = sl.corporate_tax(base, weekly_sales=profit * 3)
+    dividends = max(0, base - tax)
+    pocket_salary = salary - week_tax(WeekIncome(work=salary)).quota
+    return pocket_salary + dividends - round(dividends * 0.19) - SELF_EMPLOYED_FEE
+
+
+def society(profits: tuple[int, ...]) -> None:
+    """La tabla de autónomo contra sociedad limitada."""
+    print(f"{'beneficio/semana':>17} {'autónomo':>10} {'sociedad':>10} {'mejor sueldo':>13} "
+          f"{'diferencia':>11}")  # fmt: skip
+    for profit in profits:
+        alone = (
+            profit
+            - SELF_EMPLOYED_FEE
+            - week_tax(WeekIncome(business=profit - SELF_EMPLOYED_FEE)).quota
+        )
+        books = 7 * (sl.BOOKKEEPING_NIGHT + igic(sl.BOOKKEEPING_NIGHT))
+        room = profit - books  # el sueldo no puede llevarse lo que cuesta la gestoría
+        best = max(
+            (company_take(profit, salary), salary) for salary in range(0, room + 1, room // 50)
+        )
+        print(
+            f"{profit:>17,} {alone:>10,} {best[0]:>10,} {best[1]:>13,} "
+            f"{best[0] - alone:>+11,}".replace(",", ".")
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--dias", type=int, default=28)
     parser.add_argument("--fase2", action="store_true", help="Mejoras, tamaños y campañas.")
+    parser.add_argument("--sociedad", action="store_true", help="Autónomo o sociedad.")
     args = parser.parse_args()
+    if args.sociedad:
+        society((50_000, 100_000, 150_000, 250_000, 400_000, 700_000, 1_200_000))
+        return
     if args.fase2:
         phase2(args.dias)
         return

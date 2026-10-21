@@ -23,7 +23,7 @@ Este documento recoge el sistema entero, sus cinco fases y la fase 1 al detalle;
 |---|---|---|
 | 1 | Franjas, reducción de jornada, excedencia, local en un barrio, 3 sectores con su minijuego, stock y precios, gastos fijos, cierre de cada noche y renta de actividad | 8.14.0 |
 | 2 | Crecer el local: mejoras que se amortizan, traslado a un local mayor o a uno tuyo de `pisos`, campañas de publicidad, reseñas, dos sectores más, precio por producto, traspasar o liquidar al cerrar | 9.5.0 |
-| 3 | Sociedad limitada: caja propia, Impuesto de Sociedades, sueldo de administrador o dividendos, quiebra limitada, compatibilidades por oficio | 8.x |
+| 3 | Sociedad limitada: caja propia, Impuesto sobre Sociedades, sueldo de administrador o dividendos, quiebra limitada, compatibilidades por oficio, pluriactividad | 9.6.0 |
 | 4 | Empleados artificiales estilo inquilinos (rasgos, habilidades, formación, humor, contrato y despido), turnos pasivos, nómina completa con la cotización de la empresa (`compute_payslip`), ZEC y RIC | 8.x |
 | 5 | Cadenas: varios locales, importar con nave, gerentes que automatizan, vender la empresa | 8.x |
 
@@ -32,8 +32,9 @@ Dónde engancha cada fase con lo de la 1:
 - **Fase 2 (hecha).** `Business.size`, `equipment`, `campaign` y las reseñas multiplican los clientes de
   un turno (`turn_clients`); el traslado cambia `barrio`, `size` y `own_listing`. Detalle en «Fase 2 al
   detalle».
-- **Fase 3.** `Business.form` pasa de `"autonomo"` a `"sl"`. Con `"sl"`, el dinero va a una cuenta propia del
-  negocio y no al monedero. Las rentas se apuntan en el Impuesto de Sociedades, no en `INCOME_BUSINESS`.
+- **Fase 3 (hecha).** `Business.form` pasa a `"sl"` y `Business.company` lleva la sociedad. El dinero va a su
+  cuenta (`economy.company_account`) y tributa en Sociedades, no en `INCOME_BUSINESS`. Detalle en «Fase 3 al
+  detalle».
 - **Fase 4.** Un turno pasivo es `settle_turn` con la nota que sale de las habilidades del empleado. Su
   sueldo pasa por `compute_payslip`: la cotización de la empresa, por fin, la paga alguien.
 - **Fase 5.** La clave primaria del negocio ya es `(guild_id, user_id, id)`, así que un miembro puede tener
@@ -560,4 +561,193 @@ Sin comprobar:
 - si una tienda o una heladería entran en la Ley 7/2011 o solo en la declaración responsable municipal;
 - qué es «modificación sustancial» al ampliar el local;
 - las consultas de la DGT y de la Agencia Tributaria Canaria sobre helados y bocadillos.
+
+## Fase 3 al detalle: la sociedad limitada (9.6.0)
+
+Reglas en `business_sl.py` (puras), casos de uso en `negocio.py`, el dinero en `EconomyService.business` (con
+`BusinessMove.account`), la pantalla `sociedad` en `business_view.py` y el panel 🏢 **Sociedad** en
+`cogs/business.py`. Verificado en el BOE consolidado el 21/10/2026 (tabla al final).
+
+### Constituirla
+
+- **Solo desde un negocio de autónomo:** se convierte el suyo, no se monta una nueva desde cero.
+- **Qué hace falta:**
+  - el negocio tiene que estar en un local alquilado: una sociedad en un local del socio sería una
+    operación vinculada (art. 18 LIS), que el juego no lleva;
+  - su curro tiene que dejarle administrarla (abajo, «Incompatibilidades»).
+- **El capital**, a escoger: 1 €, 3.000 € o 10.000 € (100, 300.000 o 1.000.000 Y$).
+  - Desde la Ley 18/2022, el mínimo es 1 € (art. 4.1 LSC).
+  - Por debajo de 3.000 €, el 20 % del beneficio va a la reserva legal hasta que capital y reserva sumen
+    3.000 €, y al liquidar el socio responde de lo que falte hasta 3.000 € (art. 4.1 LSC).
+- **Lo que cuesta:**
+  - notaría y registro con estatutos tipo: 60 € y 40 € con hasta 3.100 € de capital, o 150 € y 100 €
+    (art. 5 del RDL 13/2010), con su IGIC;
+  - la constitución está exenta del ITP-AJD (art. 45.I.B.11 TRLITPAJD).
+  - El dueño mete en la caja el capital y lo de la notaría (aportación de socio), y la sociedad lo paga:
+    es su primer gasto.
+- **El negocio pasa entero a la sociedad** por lo que valía en sus cuentas (stock, mejoras, obra, fianza).
+  - Es la aportación de una rama de actividad, neutral en el IRPF (art. 87 LIS) y no sujeta al IGIC (art.
+    9.1.º de la Ley 20/1991).
+  - Lo de la semana anterior a constituirla es del autónomo: no entra en Sociedades
+    (`company["offset"]`).
+- **Sin el 15 % de las entidades de nueva creación:** la actividad ya la ejercía como autónomo su socio
+  único (art. 29.1.b LIS). Tributa como microempresa desde el primer día.
+- **La cuota de autónomo sigue igual:** el dueño pasa a autónomo societario (art. 305.2.b LGSS). Su base
+  mínima en 2026, 1.424,40 € al mes por el 30,6 %, es lo que ya cobra el juego. Al convertirlo no hay tarifa
+  plana: no es un alta inicial (art. 38 ter de la Ley 20/2007).
+
+### La caja es suya
+
+- **Las ventas** van a la caja de la sociedad, sin retención de IRPF y sin los embargos de las deudas del
+  dueño.
+- **De la caja salen** las compras, las mejoras, la publicidad, el local, el traslado y, cada noche, la
+  gestoría (1.000 Y$ con su IGIC).
+- **Si la caja no llega**, el dueño tiene que meter dinero: el negocio no tira de su monedero.
+- **`saldo`** ya no le enseña el local como algo que pague él.
+
+### Del socio a su sociedad y al revés
+
+- **💶 Aportar:** aportación de socio (cuenta 118 del PGC). No es ingreso de la sociedad ni se devuelve: se
+  recupera con dividendos o al liquidarla. Exenta como operación societaria.
+- **🏦 Prestar:** sin intereses. Simplificación: entre socio y sociedad, el art. 18 LIS pediría valor de
+  mercado. Se devuelve cuando hay caja (↩️ **Devolverme**). Al liquidar, cobra el último: es subordinado
+  (arts. 281 y 283 TRLC).
+- **💼 Sueldo de administrador:**
+  - es rendimiento del trabajo del dueño (art. 17.2.e LIRPF);
+  - retiene el 35 %, o el 19 % si la sociedad factura menos de 100.000 € al año (art. 101.2 LIRPF, art.
+    80.1.3.º RIRPF). La facturación se mide con lo vendido la semana pasada, pasado al año con la vara del
+    IRPF;
+  - entra en la Renta del lunes y, como una nómina, en el IMV y en el banco;
+  - en Sociedades es gasto deducible: no es una liberalidad (art. 15.e LIS), porque los estatutos tipo
+    prevén la retribución (art. 217 LSC).
+- **💰 Dividendos:**
+  - solo de lo disponible tras Sociedades y la reserva legal, y sin dejar el patrimonio neto por debajo del
+    capital (art. 273 LSC);
+  - con deuda con Hacienda, nada;
+  - es rendimiento del capital mobiliario (art. 25.1.a LIRPF) con retención del 19 % (art. 101.4).
+    Simplificación: como en el Rastro, ese 19 % es lo que paga, sin la escala del ahorro (19/21/23/27/30 %).
+
+### El Impuesto sobre Sociedades
+
+Cada domingo por la noche, la última de la semana fiscal (el año del juego).
+
+- **La base** son las partidas de la semana (`TAX_ITEMS`):
+  - ventas, compras, local, publicidad, amortización, tasas, sueldo, gestoría y notaría;
+  - por devengo: el local cuenta la noche que toca, aunque no llegue para pagarlo;
+  - no entran la cuota de autónomo (es del dueño), los dividendos ni el propio impuesto.
+- **Las pérdidas** se compensan con las semanas siguientes sin límite (art. 26 LIS: el 70 % empieza en el
+  millón de euros).
+- **Microempresa** (factura menos de un millón al año): el 19 % hasta 50.000 € de base y el 21 % el resto
+  (art. 29.1 LIS y disposición transitoria 44.ª de la Ley 7/2024 para 2026). Si factura más, el general,
+  el 25 %. Los tramos en euros se pasan a la semana con la vara del IRPF.
+- **Se paga de la caja.** Lo que no llegue queda como deuda con Hacienda: se cobra antes que nada las
+  noches siguientes.
+- Simplificación: no hay pagos fraccionados (art. 40 LIS); se liquida entero cada semana.
+- **Del beneficio tras el impuesto**, primero la reserva legal: el 10 % hasta el 20 % del capital (art. 274
+  LSC), o el 20 % del art. 4.1. Lo demás queda disponible para dividendos.
+
+### Quiebra y responsabilidades
+
+- **Causa de disolución:** si las pérdidas dejan el patrimonio neto por debajo de la mitad del capital (art.
+  363.1.e LSC), el panel avisa.
+  - El patrimonio neto es caja, stock y lo que queda por amortizar, menos deudas y el préstamo del socio.
+  - Con dos noches (los dos meses del art. 367 LSC) sin remediarlo, el socio responde de todas sus deudas
+    al liquidarla.
+- **Liquidarla** (al cerrar, traspasarlo, en un desahucio o sin local):
+  1. lo cobrado entra en la caja;
+  2. se paga el último Sociedades, con el traspaso o la liquidación de las mejoras y la obra en la base;
+  3. luego Hacienda, el casero y el préstamo del socio, por ese orden;
+  4. lo que quede es la cuota de liquidación del dueño, con el 19 % de lo que pase de lo que metió.
+- **Lo que la sociedad no llegue a pagar:**
+  - a Hacienda se lo paga el administrador (derivación, art. 43.1.b LGT): lo que no tenga, a su deuda;
+  - al casero, el socio lo cubre hasta lo que falte para 3.000 € de capital, o entero si dejó la causa de
+    disolución sin remediar;
+  - si no, se pierde: es una sociedad de responsabilidad limitada (art. 1 LSC).
+
+### Incompatibilidades (`INCOMPATIBILITIES`)
+
+Si el curro de la `pala` no deja administrar una sociedad, no se puede constituir ni cobrar sueldo de
+administrador. Los dividendos sí: ser socio no está prohibido. De excedencia no hay incompatibilidad.
+
+| Curro | Por qué | Norma |
+|---|---|---|
+| Política (todo el oficio) | Dedicación exclusiva de los altos cargos y los diputados | art. 13 Ley 3/2015; art. 157 LOREG |
+| Funcionariado, Alta Administración | El complemento específico lleva el factor de incompatibilidad | art. 16.1 Ley 53/1984 |
+| Sanidad pública | Personal estatutario con complemento por incompatibilidad | art. 76 Ley 55/2003; art. 16 Ley 53/1984 |
+| Oficina, unicornio | Pacto de plena dedicación | art. 21.1 ET |
+| Hostelería, con cafetería o heladería | Concurrencia desleal con tu empresa | art. 21.1 ET |
+
+- Simplificación: el resto del funcionariado necesitaría el reconocimiento previo de compatibilidad (art. 14
+  Ley 53/1984); el juego lo da por concedido.
+- Las incompatibilidades miran solo la sociedad: el negocio de autónomo no cambia.
+
+### Pluriactividad (art. 313 LGSS)
+
+- **Quién:** quien cotiza a la vez por cuenta ajena (sus nóminas de la `pala`) y en el RETA (la cuota del
+  negocio).
+- **Cuánto:** cada domingo recupera el 50 % de lo que pase de 17.323,68 € al año (RDL 3/2026, art. 3.5),
+  con el tope del 50 % de lo pagado al RETA. El límite se pasa a la semana con la vara.
+- **Lo paga el Estado.** Simplificación: no tributa (en la vida real reduce el gasto de la cuota).
+- Vale también para el autónomo, no solo para la sociedad.
+
+### El Patrimonio
+
+- Las participaciones cuentan a su valor teórico (art. 16.Uno de la Ley 19/1991): caja, stock y lo que
+  queda por amortizar, menos lo que debe la sociedad (`repositories.business.companies_in`).
+- Lo que le debe al socio no se resta: es un crédito del propio dueño.
+- Salen en `perfil`, en `fortunas` y en el Impuesto sobre el Patrimonio.
+- Simplificación: no se aplica la exención de la empresa familiar (art. 4.Ocho.Dos).
+
+### Equilibrio
+
+`python docs/negocio_sim.py --sociedad`: lo que se lleva el dueño al bolsillo cada semana, según el beneficio
+del negocio antes de sus impuestos, con el mejor reparto entre sueldo y dividendos. La cuota del RETA es igual
+en los dos casos.
+
+| Beneficio por semana | Autónomo | Sociedad | Mejor sueldo | Diferencia |
+|---|---|---|---|---|
+| 50.000 | 37.561 | 32.506 | 42.500 | −5.055 |
+| 100.000 | 76.959 | 75.154 | 72.150 | −1.805 |
+| 250.000 | 178.252 | 174.911 | 184.300 | −3.341 |
+| 400.000 | 263.029 | 273.343 | 180.550 | +10.314 |
+| 700.000 | 420.454 | 465.756 | 180.050 | +45.302 |
+| 1.200.000 | 677.954 | 785.703 | 190.800 | +107.749 |
+
+- En impuestos, la sociedad compensa a partir de unos 300.000 Y$ de beneficio a la semana (unos 60.000 € al
+  año con la vara), como en la vida real.
+- Un negocio de la fase 2 deja 100.000-210.000 Y$ a la semana: solo los grandes (local grande, 8 turnos)
+  llegan.
+- Por debajo, la sociedad sirve para limitar lo que se arriesga, no para pagar menos.
+- El mejor sueldo ronda los 180.000 Y$ a la semana: hasta ahí el IRPF del trabajo pesa menos que Sociedades
+  más el 19 % de los dividendos.
+
+### Normas de la fase 3 comprobadas (21/10/2026)
+
+En el BOE consolidado:
+
+| Norma | Qué dice | Uso |
+|---|---|---|
+| Art. 4.1 LSC (Ley 18/2022) | Capital mínimo de 1 €; por debajo de 3.000 €, reserva del 20 % y responsabilidad hasta 3.000 € | Capital y liquidación |
+| Arts. 273 y 274 LSC | Dividendos solo si el patrimonio neto no baja del capital; reserva legal del 10 % hasta el 20 % del capital | Dividendos y reserva |
+| Arts. 363.1.e y 367 LSC | Causa de disolución por pérdidas; el administrador responde si no convoca en dos meses | El aviso y responder de todo |
+| Art. 45.I.B.11 TRLITPAJD; RDL 13/2010, art. 5 | Constitución exenta; aranceles de 60 + 40 € o 150 + 100 € | Lo que cuesta |
+| Art. 29.1 LIS y DT 44.ª (Ley 7/2024) | 25 % general; microempresa en 2026, 19 % hasta 50.000 € y 21 % el resto; el 15 % de nueva creación no vale si el socio ya ejercía la actividad | Los tipos |
+| Art. 26 LIS | Compensación de bases negativas | Las pérdidas |
+| Art. 15.e LIS; art. 217 LSC | La retribución del administrador no es liberalidad si los estatutos la prevén | El sueldo es gasto |
+| Arts. 17.2.e y 101.2 LIRPF; art. 80.1.3.º RIRPF | El sueldo del administrador es trabajo; retención del 35 %, o del 19 % con menos de 100.000 € de facturación | La retención |
+| Arts. 25.1.a, 46, 66, 76 y 101.4 LIRPF | Dividendos en la base del ahorro, retención del 19 %; escala 19/21/23/27/30 % | Los dividendos |
+| Art. 305.2.b LGSS; Orden PJC/297/2026 | El administrador con control es autónomo societario; base mínima de 1.424,40 € en 2026 | La cuota |
+| Art. 38 ter Ley 20/2007 | Tarifa plana solo con alta inicial | Sin tarifa al convertir |
+| Art. 87 LIS; art. 9.1.º Ley 20/1991 | Aportación de rama de actividad neutral; no sujeta al IGIC | Constituirla |
+| Art. 18 LIS | Operaciones vinculadas a valor de mercado | No al local propio; el préstamo sin intereses es simplificación |
+| Arts. 281 y 283 TRLC | El préstamo del socio es subordinado | Cobra el último |
+| Art. 313 LGSS; RDL 3/2026, art. 3.5 | Reintegro del 50 % de lo cotizado por encima de 17.323,68 €, con tope | La pluriactividad |
+| Art. 21.1 ET; arts. 14 y 16 Ley 53/1984; Ley 55/2003; arts. 13 y 15 Ley 3/2015; art. 157 LOREG | Concurrencia, plena dedicación y las incompatibilidades públicas | Incompatibilidades |
+| Art. 1 LSC; art. 43.1.b LGT | Responsabilidad limitada; derivación al administrador de los impuestos que queden | La quiebra |
+
+Sin comprobar:
+
+- la deducibilidad del sueldo de un administrador único sin estatutos (doctrina);
+- el efecto fiscal concreto del préstamo gratuito socio-sociedad;
+- el importe de la tarifa plana de 2026.
 
