@@ -7,6 +7,7 @@ como `test_negocio_service.py`, del que se toman las piezas.
 
 from __future__ import annotations
 
+import dataclasses
 import math
 import random
 import sqlite3
@@ -31,6 +32,7 @@ from test_negocio_service import (
 
 from bot.repositories.economy import HOUSING_DEPOSIT_ACCOUNT_ID, STATE_ACCOUNT_ID
 from bot.repositories.housing import HousingError, HousingRepository
+from bot.services.achievements import business_stats
 from bot.services.business import (
     LIQUIDATION_EQUIPMENT,
     LIQUIDATION_STOCK,
@@ -40,6 +42,7 @@ from bot.services.business import (
     closing_offer,
     nightly_bill,
     price_clients,
+    recommended,
     rent,
     review_of,
     size_for,
@@ -239,6 +242,15 @@ async def test_un_turno_deja_resenas_que_se_guardan(tmp_path: Path) -> None:
         assert [list(r) for r in result.reviews] == [
             r[1:] for r in business.reviews[-len(result.reviews) :]
         ]
+    # Los logros cuentan las reseñas del turno por estrellas.
+    mixed = dataclasses.replace(result, reviews=(("Ana", 5, 0), ("Leo", 1, 0), ("Eva", 5, 1)))
+    delta = business_stats(mixed)
+    assert (delta.add["biz_reviews"], delta.add["biz_reviews_5"], delta.add["biz_reviews_1"]) == (
+        3,
+        2,
+        1,
+    )
+    assert delta.peak["biz_recommended"] == int(recommended(result.business))
 
 
 # -- Trasladarse ------------------------------------------------------------------------
