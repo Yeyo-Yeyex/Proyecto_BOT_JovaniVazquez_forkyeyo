@@ -16,7 +16,8 @@ Pantallas (`screen`), todas de 1000 × 640: dia (el inicio de `pala`: las 8 fran
 negocio), montar (elegir sector), negocio (la portada y la vista previa), almacen, cuentas, cliente
 (el minijuego: comandas, caja o diagnóstico), cierre (el tique del turno) y, desde la fase 2,
 mejoras (las del local y las campañas) y resenas, desde la fase 3, sociedad (convertir el negocio
-en sociedad limitada o el balance de la suya) y, desde la fase 4, plantilla (hasta 6 tarjetas de
+en sociedad limitada o el balance de la suya, con la RIC, la chapa «ZEC 4 %» si está inscrita o
+por qué no, en una franja azul, debajo de los avisos) y, desde la fase 4, plantilla (hasta 6 tarjetas de
 empleado con su cara, contrato, humor, habilidades, rasgos y avisos, y las nóminas de la noche) y
 candidatos (los de hoy y la oferta al elegido, con el sello «sin alta» si es en B). La portada
 pinta a la plantilla en la acera (`staff`: sus caras salen de `seeds`) con su línea de hoy. Las
@@ -2293,6 +2294,13 @@ const SL_ICON = {
     fillRR(-13, 0, 26, 6, 2, c); rect(-15, 7, 30, 3.4, c); line(-18, 16, 18, 16, c, 2.4);
   },
   person(c) { circle(0, -8, 7); stroke(c, 3); g.beginPath(); g.arc(0, 18, 14, Math.PI * 1.12, Math.PI * 1.88); stroke(c, 3); },
+  palm(c) { // la palmera de la RIC: el tronco curvo, cinco hojas y el suelo
+    g.beginPath(); g.moveTo(-3, 18); g.quadraticCurveTo(-4, 2, 2, -10); stroke(c, 3.6);
+    for (const [ex, ey, qx, qy] of [[-17, -2, -10, -16], [-14, -16, -6, -18], [14, -16, 8, -19], [18, -3, 12, -15], [2, -21, 0, -16]]) {
+      g.beginPath(); g.moveTo(2, -10); g.quadraticCurveTo(qx, qy, ex, ey); stroke(c, 3);
+    }
+    line(-14, 18, 10, 18, c, 3);
+  },
   building(c) {
     rr(-12, -17, 24, 34, 2); stroke(c, 3);
     for (const y of [-11, -4, 3]) for (const x of [-6.5, 2.5]) rect(x, y, 4, 4, c);
@@ -2302,10 +2310,12 @@ const SL_ICON = {
 function slIcon(key, cx, cy, s, color) { unit(cx, cy, s, () => SL_ICON[key](color)); }
 const isZero = (v) => /^\s*[+−-]?0(\s|$)/.test(String(v || ""));
 
-// La cabecera, con la chapa «S.L.» detrás del nombre cuando ya es sociedad.
+// La cabecera, con la chapa «S.L.» detrás del nombre cuando ya es sociedad (y la de la ZEC si
+// está inscrita).
 function sociedadHeader(st, isSl) {
   const title = "SOCIEDAD", plate = isSl ? width("S.L.", F.d(18)) + 22 : 0;
-  const rightW = width(title, F.t(30)) + 40 + (plate ? plate + 16 : 0);
+  const zec = isSl && st.zec && st.zec.on ? width("ZEC 4 %", F.d(18)) + 44 : 0;
+  const rightW = width(title, F.t(30)) + 40 + (plate ? plate + 16 : 0) + (zec ? zec + 10 : 0);
   shopHeader(st, title, { sub: isSl ? "Sociedad limitada unipersonal" : "Convertir el negocio en sociedad", rightW });
   if (!isSl) return;
   const maxW = W - 104 - rightW - 20, [t, z] = fit(String(st.name || ""), maxW, F.t, 38, 20);
@@ -2314,6 +2324,14 @@ function sociedadHeader(st, isSl) {
   fillRR(x, y, plate, 30, 7, accent);
   rr(x + 3.5, y + 3.5, plate - 7, 23, 5); stroke(main, 1.6);
   T("S.L.", x + plate / 2, y + 15, { font: F.d(18), color: main, align: "center" });
+  if (!zec) return;
+  // la ZEC: chapa turquesa con su palmera, el tipo reducido de Canarias
+  const zx = x + plate + 10;
+  fillRR(zx, y + 2, zec, 30, 7, "rgba(0,0,0,0.3)");
+  fillRR(zx, y, zec, 30, 7, C.turqDk);
+  rr(zx + 3.5, y + 3.5, zec - 7, 23, 5); stroke("#fff", 1.6);
+  slIcon("palm", zx + 19, y + 15, 9, "#fff");
+  T("ZEC 4 %", zx + 32, y + 15, { font: F.d(18), color: "#fff" });
 }
 
 function paintSociedadAutonomo(st) {
@@ -2366,18 +2384,35 @@ function paintSociedadAutonomo(st) {
 function slTile(x, y, w, h, icon, color, label, value, sub) {
   card(x, y, w, h);
   dot(x + 42, y + h / 2, 26, color); (SL_ICON[icon] ? slIcon : glyph)(icon, x + 42, y + h / 2, 13, "#fff");
-  fitText(label, x + 82, y + 26, w - 96, F.m, 17, 12, { color: C.mute });
-  fitText(value || "", x + 82, y + 56, w - 96, F.d, 30, 16, { color: money(value) });
-  if (sub) fitText(sub, x + 82, y + 86, w - 96, F.m, 15, 11, { color: C.mute });
+  fitText(label, x + 82, y + h * 0.24, w - 96, F.m, 17, 12, { color: C.mute });
+  fitText(value || "", x + 82, y + h * 0.52, w - 96, F.d, 30, 16, { color: money(value) });
+  if (sub) fitText(sub, x + 82, y + h * 0.8, w - 96, F.m, 15, 11, { color: C.mute });
+}
+// Una tarjeta de cifras: el título con su icono y filas «etiqueta … valor» repartidas en lo que queda.
+function figuresCard(x, y, w, h, icon, title, items) {
+  card(x, y, w, h);
+  slIcon(icon, x + 26, y + 24, 11, C.ink);
+  fitText(title, x + 46, y + 24, w - 60, F.d, 16, 11, { color: C.ink });
+  const step = Math.min(46, (h - 46) / items.length), big = step >= 30;
+  items.forEach(([label, value, col], i) => {
+    const ry = y + 40 + i * step + step / 2;
+    if (i) line(x + 16, ry - step / 2, x + w - 16, ry - step / 2, C.line, 1.2);
+    const vw = Math.min(w * 0.45, width(value || "", F.d(big ? 20 : 17)) + 4);
+    fitText(label, x + 18, ry, w - 36 - vw - 10, F.m, big ? 18 : 16, 11, { color: C.mute });
+    fitText(value || "", x + w - 18, ry, w * 0.45, F.d, big ? 20 : 17, 12, { color: col, align: "right" });
+  });
 }
 function paintSociedadSl(st) {
-  const gap = 14, tw = (W - 32 - gap * 2) / 3, ty = 104, th = 108;
+  const gap = 14, tw = (W - 32 - gap * 2) / 3, ty = 104, th = 88;
   slTile(16, ty, tw, th, "safe", C.atl, "Caja de la sociedad", st.cash, "Su cuenta, aparte de la tuya");
   slTile(16 + tw + gap, ty, tw, th, "scale", C.laurel, "Patrimonio neto", st.equity, "Capital, reservas y resultados");
   slTile(16 + 2 * (tw + gap), ty, tw, th, "coin", C.bug, "Puedes repartir ahora", st.room, `Retención del sueldo: ${st.retention || ""}`);
-  // el balance y el último Impuesto sobre Sociedades, a la misma altura; los avisos, debajo
-  const warns = (st.warnings || []).slice(0, 3), wh = 32, bottom = 604 - (warns.length ? warns.length * (wh + 6) + 6 : 0);
-  const y = ty + th + 18, rh = 40, h = Math.min(bottom - y, 52 + 6 * rh + 10), bw = 600, rows = [
+  // los avisos y, si no está en la ZEC, por qué (o que puede), en franjas abajo
+  const zec = st.zec || {}, notes = (st.warnings || []).slice(0, 3).map((t) => [t, /disoluci|Hacienda/.test(t) ? "red" : "amber"]);
+  if (!zec.on && zec.text) notes.push([zec.text, "info"]);
+  const wh = 28, bottom = 606 - (notes.length ? notes.length * (wh + 4) + 4 : 0);
+  // el balance a la izquierda; el último Impuesto sobre Sociedades y la RIC, a la derecha
+  const y = ty + th + 16, rh = 40, h = Math.min(bottom - y, 52 + 6 * rh + 10), bw = 600, rows = [
     ["Capital social", st.capital], ["Reserva legal", st.reserve], ["Disponible para dividendos", st.retained],
     ["Préstamo del socio", st.loan], ["Deuda con Hacienda", st.tax_debt, true], ["Bases negativas por compensar", st.losses],
   ], step = (h - 62) / rows.length;
@@ -2392,31 +2427,34 @@ function paintSociedadSl(st) {
     fitText(label, 34, ry, bw * 0.6, F.m, 19, 13, { color: C.ink });
     fitText(value || "", 16 + bw - 20, ry, bw * 0.36, F.d, 20, 13, { color: col, align: "right" });
   });
-  const lx = 16 + bw + gap, lw = W - 16 - lx, last = st.last;
-  card(lx, y, lw, h);
-  slIcon("stamp", lx + 26, y + 26, 11, C.ink);
-  fitText("ÚLTIMO IMPUESTO SOBRE SOCIEDADES", lx + 46, y + 26, lw - 60, F.d, 16, 11, { color: C.ink });
+  const lx = 16 + bw + gap, lw = W - 16 - lx, last = st.last, ric = st.ric || {};
+  const lh = Math.round(44 + (h - 98) * 4 / 7), ry = y + lh + 10, rH = h - lh - 10;
   if (last) {
-    const items = [["Base imponible", last.base, money(last.base)], ["Tipo", last.rate, C.ink], ["Cuota pagada", last.tax, C.redDk], ["A la reserva legal", last.reserve, C.ink]];
-    const st2 = Math.min(46, (h - 62) / items.length);
-    items.forEach(([label, value, col], i) => {
-      const ry = y + 56 + i * st2 + st2 / 2;
-      if (i) line(lx + 16, ry - st2 / 2, lx + lw - 16, ry - st2 / 2, C.line, 1.2);
-      fitText(label, lx + 18, ry, lw * 0.5, F.m, 18, 12, { color: C.mute });
-      fitText(value || "", lx + lw - 18, ry, lw * 0.45, F.d, 20, 13, { color: col, align: "right" });
-    });
+    figuresCard(lx, y, lw, lh, "stamp", "ÚLTIMO IMPUESTO SOBRE SOCIEDADES", [
+      ["Base imponible", last.base, money(last.base)], ["Tipo", last.rate, C.ink], ["Cuota pagada", last.tax, C.redDk], ["A la reserva legal", last.reserve, C.ink],
+    ]);
   } else {
-    const cy = y + 56 + (h - 56) / 2 - 18;
-    circle(lx + lw / 2, cy, 30); g.setLineDash([6, 5]); stroke("rgba(103,95,82,0.45)", 2.4); g.setLineDash([]);
-    slIcon("stamp", lx + lw / 2, cy, 16, "rgba(103,95,82,0.5)");
-    fitText("Aún no ha cerrado ninguna semana", lx + lw / 2, cy + 52, lw - 30, F.m, 19, 13, { color: C.mute, align: "center" });
+    card(lx, y, lw, lh);
+    slIcon("stamp", lx + 26, y + 24, 11, C.ink);
+    fitText("ÚLTIMO IMPUESTO SOBRE SOCIEDADES", lx + 46, y + 24, lw - 60, F.d, 16, 11, { color: C.ink });
+    const r = clamp((lh - 90) / 2.4, 14, 30), cy = y + 44 + (lh - 44) / 2 - r * 0.6;
+    circle(lx + lw / 2, cy, r); g.setLineDash([6, 5]); stroke("rgba(103,95,82,0.45)", 2.4); g.setLineDash([]);
+    slIcon("stamp", lx + lw / 2, cy, r * 0.53, "rgba(103,95,82,0.5)");
+    fitText("Aún no ha cerrado ninguna semana", lx + lw / 2, cy + r + 20, lw - 30, F.m, 18, 13, { color: C.mute, align: "center" });
   }
-  warns.forEach((text, i) => {
-    const wy = bottom + 6 + i * (wh + 6), red = /disoluci|Hacienda/.test(text);
-    fillRR(16, wy, W - 32, wh, wh / 2, red ? "#fde3e0" : "#fdf0cc");
-    rr(16.5, wy + 0.5, W - 33, wh - 1, wh / 2); stroke(red ? C.red : C.amber, 1.6);
-    glyph("warn", 38, wy + wh / 2, 9, red ? C.red : "#c98a00");
-    fitText(text, 56, wy + wh / 2 + 1, W - 96, F.m, 17, 11, { color: red ? C.redDk : "#5a4000" });
+  // la RIC: lo que se dota cada domingo, lo que falta por invertir (y hasta cuándo) y lo bloqueado
+  figuresCard(lx, ry, lw, rH, "palm", "RESERVA PARA INVERSIONES (RIC)", [
+    ["Se dota cada domingo", ric.share, isZero(ric.share) ? C.mute : C.ink],
+    [ric.due ? `Por invertir hasta el ${ric.due}` : "Por invertir", ric.pending, isZero(ric.pending) ? C.mute : ric.due ? "#b05a00" : C.ink],
+    ["Reserva indisponible", ric.locked, isZero(ric.locked) ? C.mute : C.ink],
+  ]);
+  const NOTE = { red: ["#fde3e0", C.red, C.redDk], amber: ["#fdf0cc", C.amber, "#5a4000"], info: ["#e4f1f7", C.blue, C.atlDk] };
+  notes.forEach(([text, kind], i) => {
+    const wy = bottom + 4 + i * (wh + 4), [bg, edge, ink] = NOTE[kind];
+    fillRR(16, wy, W - 32, wh, wh / 2, bg);
+    rr(16.5, wy + 0.5, W - 33, wh - 1, wh / 2); stroke(edge, 1.6);
+    if (kind === "info") slIcon("building", 38, wy + wh / 2, 9, edge); else glyph("warn", 38, wy + wh / 2, 9, kind === "red" ? C.red : "#c98a00");
+    fitText(text, 56, wy + wh / 2 + 1, W - 96, F.m, 17, 11, { color: ink });
   });
   footer(st.foot, H - 20);
 }
@@ -2483,7 +2521,10 @@ function contractBadge(kind, text, x, y, maxW, size = 14) {
     for (let k = -size; k < w; k += 7) { g.moveTo(x + k, y + size + 14); g.lineTo(x + k + size + 14, y); }
     stroke("rgba(255,255,255,0.13)", 2.5); g.restore();
   }
-  if (rest.length) fitText(rest.join(" · "), x + w + 8, y + (size + 14) / 2 + 1, maxW - w - 8, F.m, size + 2, 12, { color: C.mute });
+  // lo que sigue va en una línea si cabe a 13 o más; si no (en prueba y su fin), en dos
+  const rw = maxW - w - 8, cy = y + (size + 14) / 2 + 1, more = rest.join(" · ");
+  if (rest.length === 1 || width(more, F.m(13)) <= rw) { if (rest.length) fitText(more, x + w + 8, cy, rw, F.m, size + 2, 12, { color: C.mute }); }
+  else rest.slice(0, 2).forEach((t, i) => fitText(t, x + w + 8, cy + (i ? 8 : -8), rw, F.m, 14, 11, { color: C.mute }));
 }
 // Tres barras de habilidad en columnas: el nombre y el valor encima, la barra debajo.
 function skillBars(skills, x, y, w) {
@@ -2677,8 +2718,8 @@ function offerPanel(o, x, y, w, h) {
   }
   const lx = x + (o.black ? 40 : 22);
   sectionLabel("La oferta", lx, y + 26);
-  // `offer.contract` llega con el nombre («Indefinido», «Temporal», «En B»), no con la clave
-  const kind = o.black ? "b" : /^indef/i.test(o.contract || "") ? "indefinido" : "temporal";
+  // `offer.kind` es la clave del contrato; `offer.contract`, su nombre
+  const kind = o.kind || (o.black ? "b" : /^indef/i.test(o.contract || "") ? "indefinido" : "temporal");
   contractBadge(kind, o.contract, lx, y + 44, 220, 20);
   shiftLine(o.shift, lx, y + 106, 230);
   const tx = x + 268, tw = (o.black ? 520 : 680) / 3 - 10;

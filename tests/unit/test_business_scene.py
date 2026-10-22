@@ -111,6 +111,11 @@ def test_las_muestras_cubren_cada_pantalla_y_las_variantes_del_contrato() -> Non
     books = [s for s in companies if s["mode"] == "sl"]
     assert {s["last"] is None for s in books} == {True, False}
     assert any(s["warnings"] for s in books) and any(not s["warnings"] for s in books)
+    assert {s["ric"]["due"] is None for s in books} == {True, False}
+    assert any(s["ric"]["pending"] != s["ric"]["locked"] for s in books)
+    assert any(len(s["warnings"]) == 3 and not s["zec"]["on"] for s in books)  # lo más lleno
+    assert {s["zec"]["on"] for s in books} == {True, False}
+    assert any(w.startswith("Invierte") for s in books for w in s["warnings"])
     teams = [s for s in states.values() if s["screen"] == "plantilla"]
     assert {len(s["staff"]) for s in teams} >= {0, 1, 6}
     cards = [e for s in teams for e in s["staff"]]
