@@ -700,6 +700,94 @@ def _phase3(today: date) -> dict[str, dict[str, Any]]:
     s["sociedad_en_perdidas"] = sociedad_state(
         CompanyView(broke, 18_000, 360_000, 0, 0.19, blocked, True)
     )
+    s.update(_phase4(today))
+    return s
+
+
+def _hire(business: Business, candidate: dict[str, Any], contract: str, **kw: Any) -> dict:
+    """Contrata a `candidate` con `new_employee`, como el cog (lo que pide, a su jornada)."""
+    from bot.services import business_staff as staff
+
+    jornada = staff.HALF_DAY if candidate["part_time"] else kw.pop("jornada", staff.FULL_DAY)
+    business.staff_seq += 1
+    employee = staff.new_employee(
+        candidate, seq=business.staff_seq, contract=contract, jornada=jornada,
+        shift=kw.pop("shift", "manana"),
+        wage=staff.ask(candidate["skills"], candidate["traits"], jornada),
+        start=kw.pop("start"),
+    )  # fmt: skip
+    business.staff.append(employee)
+    return employee
+
+
+def _phase4(today: date) -> dict[str, dict[str, Any]]:
+    """Las muestras de la plantilla y los candidatos, con candidatos de verdad del día."""
+    from bot.services import business_staff as staff
+    from bot.services.business_view import candidatos_state, plantilla_state
+
+    s: dict[str, dict[str, Any]] = {}
+    cafe = Business(
+        user_id=8, sector="cafeteria", barrio="triana", name="Cafetería La Tertulia",
+        seed=12345, reputation=82.0, day=today.isoformat(), turns_today=2, size=2,
+        sales_today=18_200, clients_today=16,
+    )  # fmt: skip
+    # Los candidatos de días pasados, para tener a quien contratar (el primero con un nombre
+    # largo de verdad, para ver que cabe).
+    pool = [c for n in range(400) for c in staff.candidates(cafe, today - timedelta(days=n))]
+    long = next(c for c in pool if c["name"] == "Mari Carmen Bethencourt")
+    full = [c for c in pool if not c["part_time"] and c is not long]
+    student = next(c for c in pool if c["part_time"])
+    week = today - timedelta(days=6)
+    hires = [
+        _hire(cafe, long, "indefinido", start=week),
+        _hire(cafe, full[0], "temporal", start=today - timedelta(days=1), shift="tarde"),
+        _hire(cafe, full[1], "b", start=week, shift="tarde"),
+        _hire(cafe, student, "indefinido", start=today, shift="tarde"),
+        _hire(cafe, full[2], "indefinido", start=week),
+        _hire(cafe, full[3], "temporal", start=today - timedelta(days=2), shift="manana"),
+    ]
+    iso = today.isoformat()
+    grades_today = (["A", "B"], ["S"], [], [], ["C", "D"], ["B"])
+    for employee, grades in zip(hires, grades_today, strict=True):
+        employee.update(grades=grades, grades_day=iso if grades else "")
+    hires[2].update(humor=22.0, unpaid=3_400, absences=2)  # quemado, con avisos
+    hires[3]["absent_day"] = iso
+    hires[4].update(course="rapidez", humor=88.0)
+    cafe.staff_today = {"turns": 6, "clients": 41, "sales": 24_600}
+    cafe.wage_debt = 3_400
+    s["plantilla_llena"] = plantilla_state(cafe, today, selected=hires[1]["id"])
+    alone = Business(
+        user_id=9, sector="taller", barrio="arucas", name="Talleres El Drago", seed=4242,
+        day=today.isoformat(), palette=5, emblem=5,
+    )  # fmt: skip
+    _hire(alone, full[4], "temporal", start=today - timedelta(days=1))
+    s["plantilla_uno"] = plantilla_state(alone, today)
+    empty = Business(
+        user_id=10, sector="heladeria", barrio="canteras", name="Heladería Dácil", seed=55,
+        day=today.isoformat(), palette=1, emblem=3,
+    )  # fmt: skip
+    s["plantilla_vacia"] = plantilla_state(empty, today)
+    # Los candidatos de un día con un parado de larga duración (bonificado) y un estudiante
+    # (solo media jornada).
+    day = next(
+        today - timedelta(days=n)
+        for n in range(400)
+        if {c["profile"] for c in staff.candidates(empty, today - timedelta(days=n))} >= {"parado"}
+        and any(c["part_time"] for c in staff.candidates(empty, today - timedelta(days=n)))
+    )
+    hoy = staff.candidates(empty, day)
+    bonified = next(c for c in hoy if c["profile"] == "parado")
+    s["candidatos_sin_oferta"] = candidatos_state(empty, hoy, day)
+    s["candidatos_oferta"] = candidatos_state(
+        empty, hoy, day, selected=bonified["key"],
+        offer={"contract": "indefinido", "jornada": staff.FULL_DAY, "shift": "tarde"},
+    )  # fmt: skip
+    other = next(c for c in hoy if c is not bonified)
+    s["candidatos_oferta_en_b"] = candidatos_state(
+        cafe, hoy, day, selected=other["key"],
+        offer={"contract": "b", "jornada": staff.HALF_DAY, "shift": "manana"},
+    )  # fmt: skip
+    s["negocio_con_plantilla"] = negocio_state(cafe, foot="Abrir gasta 1 franja. Te quedan 4.")
     return s
 
 
