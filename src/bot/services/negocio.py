@@ -718,6 +718,9 @@ class BusinessService:
                 business.roll_over(today, week)
                 business.equipment = [*business.equipment, key]
                 add_asset(business, key, base + tax, item.kind)
+                if business.is_company:
+                    # Un activo nuevo en Canarias: materializa la RIC que falte por invertir.
+                    sl.ric_invest(business.company, base + tax, today)
                 self.repository.save_in(connection, guild_id, business)
                 cost = BusinessCost(
                     "negocio:mejora", gone=base, taxes=(("igic", tax),), expense=False
@@ -935,6 +938,8 @@ class BusinessService:
             business.deposit, business.rent_debt, business.unpaid_nights = opening.deposit, 0, 0
             business.assets = [a for a in business.assets if a["key"] != "obra"]
             setup_asset(business, opening.setup + opening.setup_igic)
+            if business.is_company:
+                sl.ric_invest(business.company, opening.setup + opening.setup_igic, local_day(now))
             business.add("apertura", -opening.license)
             if owed:
                 business.add("local", -owed)
@@ -1235,6 +1240,44 @@ class BusinessService:
         return await self._company_move(
             guild_id, user_id, change, "La caja de la sociedad no tiene tanto."
         )
+
+    async def set_ric(self, guild_id: int, user_id: int, share: float) -> Business:
+        """Cuánto de la base de cada semana lleva la sociedad a la RIC (de `RIC_SHARES`).
+
+        Raises:
+            BusinessError: Si no es una sociedad o la parte no está en la lista.
+        """
+        if share not in sl.RIC_SHARES:
+            raise BusinessError("Esa dotación no está en la lista.")
+        async with self._lock(guild_id, user_id):
+            business = await self.business(guild_id, user_id)
+            if business is None or not business.is_company:
+                raise BusinessError("La RIC es de las sociedades: tu negocio no lo es.")
+            business.company["ric_share"] = share
+            return await self.repository.save(guild_id, business)
+
+    async def zec(self, guild_id: int, user_id: int, *, join: bool) -> Business:
+        """Inscribe la sociedad en el registro de la ZEC (`join`) o la da de baja.
+
+        Raises:
+            BusinessError: Si no es una sociedad o no cumple (`business_sl.zec_blocker`).
+        """
+        async with self._lock(guild_id, user_id):
+            business = await self.business(guild_id, user_id)
+            if business is None or not business.is_company:
+                raise BusinessError("La ZEC es para sociedades: tu negocio no lo es.")
+            info = business.company
+            if join:
+                jobs = sum(1 for e in business.staff if e["contract"] != "b")
+                blocked = sl.zec_blocker(
+                    business.sector, business.barrio_info.island, jobs, local_day(self._clock())
+                )
+                if blocked is not None:
+                    raise BusinessError(blocked)
+                info.update(zec=True, zec_misses=0, zec_since=local_day(self._clock()).isoformat())
+            else:
+                info["zec"] = False
+            return await self.repository.save(guild_id, business)
 
     # -- Préstamos al negocio (`banco`, 🏪 Negocio) -------------------------------------
 
@@ -2205,8 +2248,9 @@ class BusinessService:
                     - pay.cost
                 )
                 week_result = sl.settle_week(
-                    info, base, weekly_sales=business.week_totals.get("ventas", 0)
-                )
+                    info, base, weekly_sales=business.week_totals.get("ventas", 0), day=day,
+                    zec=_zec_week(business),
+                )  # fmt: skip
                 if week_result["tax"]:
                     groups.append(
                         (
@@ -2265,6 +2309,7 @@ class BusinessService:
                         business.add("sociedades", -tax)
                     if week_result is not None:
                         business.company["last"] = {"week": week_of(day), **week_result}
+                        _tell_ric(business, week_result)
                 else:
                     business.add("local", -(due - local))
                     paid_staff = (
@@ -2483,6 +2528,8 @@ class BusinessService:
                 # El último Impuesto sobre Sociedades: lo de la semana hasta hoy, con la venta.
                 offset = info["offset"] if info["offset_week"] == business.week else None
                 base = sl.tax_base(business.week_totals, offset) + stock + proceeds - offer.book
+                # La RIC que queda (sin invertir o sin mantener lo invertido) se integra.
+                base += sl.ric_close(info)
                 sales = business.week_totals.get("ventas", 0) + stock
                 result = sl.settle_week(info, base, weekly_sales=sales)
                 hacienda = info["tax_debt"] + result["tax"]
@@ -2611,6 +2658,49 @@ class BusinessService:
         if business.is_company:
             return 0, 0, fee  # el local lo paga la caja de la sociedad, no tu monedero
         return nightly_bill(business).total, business.rent_debt, fee
+
+
+def _tell_ric(business: Business, week: dict[str, Any]) -> None:
+    """Los avisos de la RIC del domingo: lo que se dota y lo que venció sin invertir."""
+    if week.get("integrated"):
+        business.tell(
+            f"🌴 {week['integrated']} Y$ de la RIC no se invirtieron en 3 semanas: tributan en "
+            "el Sociedades de esta semana (art. 27.16 de la Ley 19/1994)."
+        )
+    if week.get("ric"):
+        business.tell(
+            f"🌴 {week['ric']} Y$ a la RIC: no pagan Sociedades si los inviertes en mejoras o en "
+            f"la obra de un local antes del {sl.ric_due(business.company) or 'plazo'}."
+        )
+
+
+def _zec_week(business: Business) -> tuple[int, str] | None:
+    """`(empleos, isla)` si la sociedad tributa esta semana en la ZEC, o `None`.
+
+    Inscrita, tiene que mantener el empleo mínimo (art. 31.2.e de la Ley 19/1994): una semana
+    sin él tributa al tipo de siempre y, con `ZEC_MISSES` seguidas, se la da de baja.
+    """
+    info = business.company
+    if not info.get("zec"):
+        return None
+    island = business.barrio_info.island
+    jobs = sum(1 for e in business.staff if e["contract"] != "b")
+    if jobs >= sl.zec_jobs(island):
+        info["zec_misses"] = 0
+        return jobs, island
+    info["zec_misses"] = info.get("zec_misses", 0) + 1
+    if info["zec_misses"] >= sl.ZEC_MISSES:
+        info["zec"] = False
+        business.tell(
+            "🏝️ Dos semanas sin el empleo mínimo: tu sociedad sale del registro de la ZEC y "
+            "vuelve al tipo de siempre."
+        )
+    else:
+        business.tell(
+            f"🏝️ Esta semana no llegaste a {sl.zec_jobs(island)} empleos con alta: Sociedades al "
+            "tipo de siempre. Una semana más así y sales de la ZEC."
+        )
+    return None
 
 
 def _works(employee: dict[str, Any], day: str, franja: int) -> bool:

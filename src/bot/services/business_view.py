@@ -693,7 +693,9 @@ def sociedad_state(view: Any, *, capital: int = sl.FULL_CAPITAL, foot: str = "")
     con el elegido), lo que cuesta (`cost`) y si su curro no le deja (`blocked`). `sl`: el
     balance (`cash`, `capital`, `reserve`, `retained`, `loan`, `losses`, `tax_debt`,
     `equity`), lo que puede repartir (`room`), la retención del sueldo (`retention`), el
-    último Impuesto sobre Sociedades (`last`, o `None`) y los avisos (`warnings`).
+    último Impuesto sobre Sociedades (`last`, o `None`) y los avisos (`warnings`). Desde la
+    9.9.0, `ric` (`share`, lo que se dota cada semana; `pending`, lo que falta por invertir;
+    `due`, hasta cuándo, o `None`; `locked`, la reserva indisponible) y `zec` (`on` y `text`).
     """
     business = view.business
     blocked = f"{view.blocked.text} ({view.blocked.law})" if view.blocked else None
@@ -735,6 +737,12 @@ def sociedad_state(view: Any, *, capital: int = sl.FULL_CAPITAL, foot: str = "")
         warnings.append("Causa de disolución: el patrimonio neto no llega a la mitad del capital")
     if info.get("tax_debt"):
         warnings.append(f"Debe {format_amount(info['tax_debt'])} a Hacienda: no hay dividendos")
+    due = sl.ric_due(info)
+    if due:
+        warnings.append(
+            f"Invierte {format_amount(sl.ric_pending(info))} de la RIC antes del "
+            f"{_day_text(due)} o pagarás Sociedades por ello"
+        )
     return {
         "screen": "sociedad",
         "mode": "sl",
@@ -760,10 +768,34 @@ def sociedad_state(view: Any, *, capital: int = sl.FULL_CAPITAL, foot: str = "")
             else None
         ),
         "warnings": warnings[:3],
+        "ric": {
+            "share": f"{round(info.get('ric_share', 0.0) * 100)} %",
+            "pending": format_amount(sl.ric_pending(info)),
+            "due": _day_text(due) if due else None,
+            "locked": format_amount(sl.ric_locked(info)),
+        },
+        "zec": {"on": bool(info.get("zec")), "text": zec_text(business)},
         "foot": foot
         or "Cada domingo por la noche, el Impuesto sobre Sociedades de la semana. Lo que quede, "
         "a dividendos.",
     }
+
+
+def _day_text(iso: str) -> str:
+    """`lunes 9` de un día ISO."""
+    day = date.fromisoformat(iso)
+    return f"{DAYS[day.weekday()].lower()} {day.day}"
+
+
+def zec_text(business: Business) -> str:
+    """Cómo está la sociedad con la Zona Especial Canaria, en una línea."""
+    info = business.company
+    if info.get("zec"):
+        return "Inscrita en la ZEC: Sociedades al 4 % mientras mantenga el empleo"
+    jobs = sum(1 for e in business.staff if e["contract"] != "b")
+    today = date.fromisoformat(business.day) if business.day else date.today()
+    blocked = sl.zec_blocker(business.sector, business.barrio_info.island, jobs, today)
+    return blocked or "Puede inscribirse en la ZEC: Sociedades al 4 %"
 
 
 # -- Fase 4: la plantilla --------------------------------------------------------------
