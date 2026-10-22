@@ -1104,6 +1104,14 @@ class BusinessMove:
             4.1 LSC), o todo si dejó la causa de disolución sin remediar (art. 367 LSC). Lo que
             no llegue a pagar a Hacienda (las `bills` de concepto `sociedad:hacienda`) se le
             deriva entero como administrador (art. 43.1.b LGT): lo que no tenga, a su deuda.
+            Lo que no llegue a pagar al banco (`BANK_LOAN_CONCEPT`) tampoco entra: lo asume
+            el socio como préstamo, porque lo avalaba (`settle`).
+
+    Préstamo al negocio (`banco`, 9.7.0):
+
+    Attributes:
+        bank_loan: Lo que presta el banco: entra en la caja antes que los pagos (la comisión
+            va en `payments`). No es renta: se devuelve. El banco no existe: se crea.
     """
 
     user_id: int
@@ -1129,6 +1137,12 @@ class BusinessMove:
     liquidation_basis: int = 0
     liquidation_loan: int = 0
     cover_limit: int = 0
+    bank_loan: int = 0
+
+
+#: Los pagos de un negocio a su banco (`BusinessCost.concept`): `negocio:prestamo:intereses`,
+#: `…:cuota`, `…:cancelacion`…
+BANK_LOAN_CONCEPT = "negocio:prestamo:"
 
 
 @dataclass(frozen=True, slots=True)
@@ -5988,6 +6002,11 @@ class EconomyRepository:
                     connection, guild_id, wallet,
                     (LedgerEntry(move.refund, "negocio:fianza_devuelta"),),
                 )  # fmt: skip
+            if move.bank_loan > 0:
+                self._apply_in_transaction(
+                    connection, guild_id, wallet,
+                    (LedgerEntry(move.bank_loan, f"{BANK_LOAN_CONCEPT}firma"),),
+                )  # fmt: skip
             for amount, reason in ((move.contribution, "sociedad:aportacion"),
                                    (move.loan_in, "sociedad:prestamo")):  # fmt: skip
                 if company and amount > 0:
@@ -6064,7 +6083,7 @@ class EconomyRepository:
                     connection, guild_id, owner, now=now, concept="negocio:amortizacion",
                     kind=INCOME_BUSINESS, gross=-move.amortization, withheld=0,
                 )  # fmt: skip
-            unpaid = unpaid_tax = 0
+            unpaid = unpaid_tax = unpaid_bank = 0
             for cost in move.bills:
                 if cost.total <= 0:
                     continue
@@ -6072,6 +6091,8 @@ class EconomyRepository:
                 unpaid += cost.total - room
                 if cost.concept.startswith("sociedad:hacienda"):
                     unpaid_tax += cost.total - room
+                elif cost.concept.startswith(BANK_LOAN_CONCEPT):
+                    unpaid_bank += cost.total - room
                 if room > 0:
                     self._business_cost_in(
                         connection, guild_id, wallet, cost, now, room, owner=owner
@@ -6170,7 +6191,7 @@ class EconomyRepository:
                             """,
                             (guild_id, owner, derived),
                         )
-                rest = min(unpaid - unpaid_tax, move.cover_limit)
+                rest = min(unpaid - unpaid_tax - unpaid_bank, move.cover_limit)
                 paid = min(rest, max(0, self._ensure_wallet(connection, guild_id, owner)))
                 if paid:
                     self._apply_in_transaction(

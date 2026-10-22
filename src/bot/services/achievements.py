@@ -136,6 +136,7 @@ from bot.services.interest import (
 )
 from bot.services.levels import TIMEZONE
 from bot.services.loans import ADVANCE_TERMS, REMORTGAGE_MIN, REMORTGAGE_TERMS
+from bot.services.loans import MAX_BUSINESS_LOANS as LOAN_MAX_BUSINESS
 from bot.services.loans import MAX_GUARANTEES as LOAN_MAX_GUARANTEES
 from bot.services.loans import MAX_LOANS as LOAN_MAX_LOANS
 from bot.services.loans import MAX_PRINCIPAL as LOAN_MAX_PRINCIPAL
@@ -20140,6 +20141,57 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (20_000, "biz_pluri_20k", "Arlequín, servidor de dos cotizaciones",
          "Recibe 20.000 Y$ en devoluciones de la pluriactividad.", E),
     ], unit="money")  # fmt: skip
+    # Préstamos al negocio (`banco`, 🏪 Negocio: business_loan_*_stats y sus noches).
+    a += _tiers("negocio", "biz_loans_signed", [
+        (1, "biz_loan_1", "Business angel con corbata",
+         "Pide un préstamo a nombre de tu negocio.", C),
+        (5, "biz_loan_5", "Apalancado en la barra", "Pide 5 préstamos para tu negocio.", R),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_loan_principal_max", [
+        (300_000, "biz_loan_300k", "Capital riesgo de barrio",
+         "Pide de una vez 300.000 Y$ o más para tu negocio.", R),
+        (LOAN_MAX_PRINCIPAL, "biz_loan_max", "Ronda serie A en la sucursal",
+         f"Pide {_thousands(LOAN_MAX_PRINCIPAL)} Y$ para tu negocio, lo más que da el banco.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_loans_open_max", [
+        (LOAN_MAX_BUSINESS, "biz_loan_two", "Dos letras y un toldo",
+         f"Ten {LOAN_MAX_BUSINESS} préstamos vivos a la vez en tu negocio.", R),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_loan_company", [
+        (1, "biz_loan_sl", "Firme aquí, aquí y aquí",
+         "Pide un préstamo a nombre de tu sociedad, con tu aval.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_loan_longest", [
+        (1, "biz_loan_96", "El local lo pagan mis nietos",
+         "Pide un préstamo para tu negocio al plazo más largo.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_loan_installments", [
+        (30, "biz_loan_inst_30", "La letra del mes, cada noche",
+         "Que tu negocio pague 30 cuotas al banco.", R),
+        (200, "biz_loan_inst_200", "Cliente fiel de la ventanilla",
+         "Que tu negocio pague 200 cuotas al banco.", E),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_loans_finished", [
+        (1, "biz_loan_paid_1", "Libre de cargas y de toldo",
+         "Termina de pagar un préstamo de tu negocio cuota a cuota.", R),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_loans_repaid_early", [
+        (1, "biz_loan_early", "Liquidez de sobremesa",
+         "Amortiza antes de tiempo un préstamo de tu negocio.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_loan_unpaid", [
+        (1, "biz_loan_unpaid", "La caja no da para el banco",
+         "Que tu negocio deje sin pagar una cuota del banco.", C, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_loan_defaults", [
+        (1, "biz_loan_default", "Avalista de tu propia ruina",
+         "Que el banco dé por vencido un préstamo de tu negocio.", R, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_loan_assumed", [
+        (1, "biz_loan_assumed", "La sociedad se va, la letra se queda",
+         "Cierra tu sociedad con un préstamo que su caja no llega a pagar y que pasa a ser tuyo.",
+         R, True),
+    ])  # fmt: skip
     # Reducción de jornada y excedencia (art. 37.6 y 46.2 ET), en 🪏 General.
     a.append(Achievement(
         id="work_jornada_3_1", name="Tres cuartos de lo mismo",
@@ -24616,6 +24668,43 @@ def loan_signed_stats(
         if hit:
             delta.add[stat] = 1
     return delta
+
+
+def business_loan_signed_stats(
+    *, principal: int, months: int, corporate: bool, open_loans: int
+) -> StatDelta:
+    """Estadísticas de quien firma un préstamo a nombre de su negocio (🏪 Negocio).
+
+    Args:
+        corporate: Si lo firma su sociedad.
+        open_loans: Préstamos vivos del negocio contando este.
+    """
+    delta = StatDelta(
+        add={"biz_loans_signed": 1},
+        peak={"biz_loan_principal_max": principal, "biz_loans_open_max": open_loans},
+    )
+    if corporate:
+        delta.add["biz_loan_company"] = 1
+    if months == max(LOAN_TERMS):
+        delta.add["biz_loan_longest"] = 1
+    return delta
+
+
+def business_loan_closed_stats() -> StatDelta:
+    """Estadísticas de quien amortiza antes de tiempo un préstamo de su negocio."""
+    return StatDelta(add={"biz_loans_repaid_early": 1})
+
+
+def business_loan_night_stats(events: Iterable[str]) -> dict[str, int]:
+    """Lo que suman las cuotas de una noche de un negocio (`NightRun.loans`)."""
+    events = list(events)
+    counts = {
+        "biz_loan_installments": events.count("pagada") + events.count("devuelto"),
+        "biz_loan_unpaid": events.count("sin_pagar"),
+        "biz_loans_finished": events.count("devuelto"),
+        "biz_loan_defaults": events.count("vencido"),
+    }
+    return {stat: n for stat, n in counts.items() if n}
 
 
 def loan_closed_stats(*, status: str) -> StatDelta:

@@ -699,7 +699,8 @@ def closing_offer(business: Business, now: float) -> ClosingOffer:
         and days >= TRASPASO_MIN_DAYS
         and business.stars >= TRASPASO_MIN_STARS
     )
-    daily = max(0, sum(business.last_week.values())) / 7
+    # Quien se lo queda no se queda con los préstamos: los intereses no bajan el fondo.
+    daily = max(0, sum(v for k, v in business.last_week.items() if k != "intereses")) / 7
     goodwill = int(round(daily * GOODWILL_DAYS * business.stars / 5, -2)) if can else 0
     return ClosingOffer(
         stock=stock_value(business),

@@ -15,8 +15,10 @@ Tablas (en el mismo archivo SQLite que el resto del bot):
   hipotecaria (no hay dación en pago) o del vencimiento de un préstamo.
 - `housing_loans`: los préstamos de `banco` (reglas en `bot.services.loans`), con lo
   pendiente, el tipo fijo, la cuota, la prima del seguro, lo que se debe de cuotas sin
-  pagar y lo cobrado. `kind` dice si es personal o un anticipo de rentas (`rentas`, con su
-  inmueble en `listing`), y `aval`, quién lo avala (`docs/garantias.md`).
+  pagar y lo cobrado. `kind` dice si es personal, un anticipo de rentas (`rentas`, con su
+  inmueble en `listing`) o un préstamo al negocio de `pala` (`negocio` si es de un autónomo,
+  `sociedad` si lo firma su sociedad, con el id del negocio en `listing`), y `aval`, quién lo
+  avala (`docs/garantias.md`).
 - `housing_vpo`: de quién es cada VPO y lo que debe de recibos.
 - `housing_vpo_signups`, `housing_vpo_reservations` y `housing_vpo_draws`: quién está
   apuntado al sorteo, a quién le ha tocado y qué lunes se sorteó.
@@ -238,6 +240,12 @@ MORTGAGE_REMORTGAGE = "rehipoteca"
 LOAN_PERSONAL = "personal"
 #: Anticipo de las rentas de un inmueble (`banco`, 💸 Anticipos): `listing` dice cuál.
 LOAN_ADVANCE = "rentas"
+#: Préstamo al negocio de un autónomo (`banco`, 🏪 Negocio): `listing` es el id del negocio.
+#: Lo cobra cada noche el negocio, no `pisos`.
+LOAN_BUSINESS = "negocio"
+#: El mismo, firmado por su sociedad limitada (o pasado a ella al constituirla), con el aval
+#: de su socio: es deuda de la sociedad, no de su dueño (`user_id`).
+LOAN_COMPANY = "sociedad"
 #: Columnas añadidas después de crear las tablas: `(tabla, columna, DDL)`, para las bases de
 #: datos de antes (las migra `HousingRepository.initialize`).
 LATER_COLUMNS = (
@@ -506,8 +514,9 @@ class Loan:
         first_day: Primer cierre de `pisos` que cobra cuota (ISO); hasta entonces se puede
             desistir.
         status: `activo`, `pagado`, `desistido` o `vencido`.
-        kind: `personal` o `rentas` (anticipo de las rentas de `listing`).
-        listing: El inmueble de un anticipo de rentas.
+        kind: `personal`, `rentas` (anticipo de las rentas de `listing`), `negocio` o
+            `sociedad` (préstamo al negocio `listing`).
+        listing: El inmueble de un anticipo de rentas, o el id del negocio.
         aval: Quién lo avala (`miembro:<id>`), o `None`.
     """
 
@@ -554,6 +563,18 @@ class Loan:
         """Si es un anticipo de rentas (no cuenta en el tope de préstamos personales)."""
         return self.kind == LOAN_ADVANCE
 
+    @property
+    def business_id(self) -> int | None:
+        """El negocio de un préstamo al negocio (`None` si no lo es)."""
+        if self.kind in (LOAN_BUSINESS, LOAN_COMPANY) and self.listing:
+            return int(self.listing)
+        return None
+
+    @property
+    def corporate(self) -> bool:
+        """Si lo debe una sociedad (su dueño solo lo avala)."""
+        return self.kind == LOAN_COMPANY
+
 
 def _loan(row: sqlite3.Row) -> Loan:
     return Loan(
@@ -587,6 +608,18 @@ def loans_in(connection: sqlite3.Connection, guild_id: int) -> list[Loan]:
     rows = connection.execute(
         "SELECT * FROM housing_loans WHERE guild_id = ? AND status = 'activo' ORDER BY id",
         (guild_id,),
+    )
+    return [_loan(r) for r in rows]
+
+
+def business_loans_in(
+    connection: sqlite3.Connection, guild_id: int, business_id: int
+) -> list[Loan]:
+    """Préstamos activos de un negocio, del más antiguo al más nuevo."""
+    rows = connection.execute(
+        "SELECT * FROM housing_loans WHERE guild_id = ? AND status = 'activo' "
+        "AND kind IN (?, ?) AND listing = ? ORDER BY id",
+        (guild_id, LOAN_BUSINESS, LOAN_COMPANY, str(business_id)),
     )
     return [_loan(r) for r in rows]
 

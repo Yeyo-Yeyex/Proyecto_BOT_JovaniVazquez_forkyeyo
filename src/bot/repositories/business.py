@@ -28,6 +28,7 @@ from typing import TypeVar
 
 from bot.repositories import sqlite
 from bot.repositories.economy import company_account
+from bot.repositories.housing_finance import LOAN_COMPANY
 from bot.services.business import Business, book_value, stock_value
 
 T = TypeVar("T")
@@ -306,15 +307,28 @@ def companies_in(connection: sqlite3.Connection, guild_id: int) -> dict[int, int
     """El valor de la sociedad de cada dueño, para el Patrimonio (fase 3 de los negocios).
 
     Es el valor teórico de sus participaciones (art. 16.Uno de la Ley 19/1991): la caja, el
-    stock y lo que queda por amortizar, menos lo que debe la sociedad al casero y a Hacienda.
-    Lo que le debe al socio no se resta: es un crédito del propio dueño y se anulan.
+    stock y lo que queda por amortizar, menos lo que debe la sociedad al casero, a Hacienda y
+    al banco (sus préstamos, que su dueño solo avala). Lo que le debe al socio no se resta: es
+    un crédito del propio dueño y se anulan.
     """
     out: dict[int, int] = {}
-    exists = connection.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'business'"
-    ).fetchone()
-    if exists is None:  # sin el cog de los negocios (pruebas que no lo montan)
+    tables = {
+        str(r[0])
+        for r in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            "AND name IN ('business', 'housing_loans')"
+        )
+    }
+    if "business" not in tables:  # sin el cog de los negocios (pruebas que no lo montan)
         return out
+    bank: dict[str, int] = {}
+    if "housing_loans" in tables:
+        for listing, owed in connection.execute(
+            "SELECT listing, SUM(balance + unpaid_amount) FROM housing_loans "
+            "WHERE guild_id = ? AND status = 'activo' AND kind = ? GROUP BY listing",
+            (guild_id, LOAN_COMPANY),
+        ):
+            bank[str(listing)] = int(owed)
     for row in connection.execute("SELECT * FROM business WHERE guild_id = ?", (guild_id,)):
         business = _load(row)
         if not business.is_company:
@@ -329,6 +343,7 @@ def companies_in(connection: sqlite3.Connection, guild_id: int) -> dict[int, int
             + book_value(business)
             - business.rent_debt
             - business.company.get("tax_debt", 0)
+            - bank.get(str(business.id), 0)
         )
         out[business.user_id] = out.get(business.user_id, 0) + value
     return out

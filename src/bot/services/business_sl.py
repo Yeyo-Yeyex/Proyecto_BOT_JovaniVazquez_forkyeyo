@@ -54,8 +54,11 @@ GENERAL_RATE = 0.25
 #: dividendos ni el propio impuesto.
 TAX_ITEMS: tuple[str, ...] = (
     "ventas", "compras", "local", "marketing", "amortizacion", "apertura", "sueldo",
-    "gestoria", "constitucion", "traspaso",
+    "gestoria", "constitucion", "traspaso", "intereses",
 )  # fmt: skip
+#: Las que no mira el banco para ver lo que deja el negocio: la amortización no es un pago y
+#: los intereses son justo lo que va a pagar con ello (el resultado antes de ellos, EBITDA).
+NOT_EBITDA: frozenset[str] = frozenset({"amortizacion", "intereses"})
 
 #: Retención del sueldo de administrador (art. 101.2 LIRPF): el 35 %, o el 19 % si la
 #: sociedad factura menos de 100.000 € al año.
@@ -154,6 +157,14 @@ def tax_base(totals: dict[str, int], offset: dict[str, int] | None = None) -> in
     """La base de la semana: las partidas que cuentan, menos lo de antes de constituirla."""
     offset = offset or {}
     return sum(totals.get(k, 0) - offset.get(k, 0) for k in TAX_ITEMS)
+
+
+def ebitda(totals: dict[str, int]) -> int:
+    """Lo que deja una semana de cuentas antes de impuestos, amortizaciones e intereses.
+
+    Lo mira el banco para prestar a la sociedad (`loans.room_for`, al día).
+    """
+    return sum(totals.get(k, 0) for k in TAX_ITEMS if k not in NOT_EBITDA)
 
 
 def turnover_eur(weekly_sales: int) -> float:

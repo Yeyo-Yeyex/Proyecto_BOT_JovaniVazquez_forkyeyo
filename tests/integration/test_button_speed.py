@@ -1606,6 +1606,89 @@ async def press_banco_repay(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def banco_business_panel(client: BotClient, owner: MagicMock, *, signed: bool = False):  # noqa: ANN201
+    """El panel de `banco` en 🏪 Negocio, con un negocio montado, nómina y (o no) un préstamo."""
+    await business_panel(client, owner)
+    banco_payroll(client)
+    panel = await banco_panel(client, owner, "business")
+    if signed:
+        found = await client.negocio.loan_desk(GUILD_ID, owner.id)
+        assert found is not None
+        await client.negocio.take_loan(
+            GUILD_ID, owner.id, principal=5_000, months=12, rate=found[1].rate
+        )
+        await panel.screen()
+    return panel
+
+
+async def press_banco_business_tab(client: BotClient, owner: MagicMock) -> Click:
+    await business_panel(client, owner)
+    panel = await banco_panel(client, owner, "loans")
+    button = child(panel, discord.ui.Button, "banco:tab:business")
+
+    async def click(interaction: MagicMock) -> None:
+        await button.callback(interaction)
+
+    return click
+
+
+async def press_banco_business_term(client: BotClient, owner: MagicMock) -> Click:
+    panel = await banco_business_panel(client, owner)
+    select = child(panel, discord.ui.Select, "banco:negocio_plazo")
+
+    async def click(interaction: MagicMock) -> None:
+        select._values = ["12"]  # lo que Discord rellena al elegir
+        await select.callback(interaction)
+
+    return click
+
+
+async def press_banco_business_amount(client: BotClient, owner: MagicMock) -> Click:
+    panel = await banco_business_panel(client, owner)
+    form = module_of(client, "Banco").negocio_tab.AmountForm(panel, panel.business_most)
+
+    async def click(interaction: MagicMock) -> None:
+        form.amount._value = "5000"  # lo que Discord rellena al escribir
+        await form.on_submit(interaction)
+
+    return click
+
+
+async def press_banco_business_sign(client: BotClient, owner: MagicMock) -> Click:
+    from bot.services import loans as lending
+
+    panel = await banco_business_panel(client, owner)
+    found = await client.negocio.loan_desk(GUILD_ID, owner.id)
+    assert found is not None
+    panel.business_offer = lending.quote(5_000, 12, found[1].rate, insured=False)
+    await panel.screen()
+    button = child(panel, discord.ui.Button, "banco:negocio_firmar")
+
+    async def click(interaction: MagicMock) -> None:
+        await button.callback(interaction)
+
+    return click
+
+
+async def press_banco_business_repay(client: BotClient, owner: MagicMock) -> Click:
+    panel = await banco_business_panel(client, owner, signed=True)
+    button = child(panel, discord.ui.Button, "banco:negocio_amortizar")
+
+    async def click(interaction: MagicMock) -> None:
+        await button.callback(interaction)
+
+    return click
+
+
+async def press_business_bank(client: BotClient, owner: MagicMock) -> Click:
+    panel = await business_panel(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._bank(interaction)
+
+    return click
+
+
 async def garantias_panel(client: BotClient, owner: MagicMock):  # noqa: ANN201
     """El panel de `banco` en 🔐 Garantías con un inmueble pagado al contado y nómina."""
     banco_payroll(client)
@@ -2576,6 +2659,12 @@ CASES: dict[str, Press] = {
     "banco: pedir importe": press_banco_amount,
     "banco: firmar": press_banco_sign,
     "banco: amortizar": press_banco_repay,
+    "banco: mostrador del negocio": press_banco_business_tab,
+    "banco: plazo del préstamo al negocio": press_banco_business_term,
+    "banco: importe del préstamo al negocio": press_banco_business_amount,
+    "banco: firmar el préstamo al negocio": press_banco_business_sign,
+    "banco: amortizar el préstamo del negocio": press_banco_business_repay,
+    "negocio: abrir el banco": press_business_bank,
     "banco: elegir inmueble para rehipotecar": press_garantia_pick,
     "banco: plazo de la rehipoteca": press_garantia_term,
     "banco: importe de la rehipoteca": press_garantia_amount,

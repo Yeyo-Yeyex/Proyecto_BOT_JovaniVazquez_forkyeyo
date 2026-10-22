@@ -888,7 +888,7 @@ def _desk_in(
     return LoanDesk(
         euribor=market.euribor,
         installments=market.installments_of(user_id),
-        loans=tuple(x for x in loans if not x.advance),
+        loans=tuple(x for x in loans if x.kind == finance.LOAN_PERSONAL),
         asnef=asnef,
         bank_debt=market.bank_debts.get(user_id, 0),
         profile=profile,
@@ -1269,7 +1269,8 @@ def assets_in(connection: sqlite3.Connection, guild_id: int) -> dict[int, int]:
         out[debtor] = out.get(debtor, 0) - amount
         out[creditor] = out.get(creditor, 0) + amount
     for loan in finance.loans_in(connection, guild_id):
-        out[loan.user_id] = out.get(loan.user_id, 0) - loan.owed
+        if not loan.corporate:  # lo de una sociedad lo resta su valor (`companies_in`)
+            out[loan.user_id] = out.get(loan.user_id, 0) - loan.owed
     return out
 
 
@@ -1606,6 +1607,81 @@ class LoanDesk:
     bank_debt: int
     profile: lending.Profile
     guarantees: tuple[Mortgage | Loan, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class BusinessLoanDesk:
+    """Lo que ve el banco para prestar a un negocio (`banco`, 🏪 Negocio).
+
+    De un autónomo mira a su dueño, que es quien lo firma: el 35 % de lo que ingresa (las
+    nóminas y lo que deja el negocio). De una sociedad, el 35 % de lo que deja ella más lo
+    de su socio, que lo avala. Las cuotas de los préstamos del negocio cuentan en las del
+    dueño (`installments`): las firma él o las avala (riesgo indirecto en la CIRBE).
+
+    Attributes:
+        owner: Lo que ve del dueño: su perfil, sus cuotas y si está en el fichero.
+        loans: Los préstamos vivos del negocio.
+        income: Lo que ingresa el dueño al día (nóminas, negocio y el 70 % de las rentas).
+        company_income: Lo que deja su sociedad al día (`business_sl.ebitda` de la semana
+            pasada), o `None` si es de un autónomo.
+    """
+
+    owner: LoanDesk
+    loans: tuple[Loan, ...]
+    income: int
+    company_income: int | None = None
+
+    @property
+    def corporate(self) -> bool:
+        """Si lo pide una sociedad."""
+        return self.company_income is not None
+
+    @property
+    def room(self) -> int:
+        """Lo que cabe aún al mes en el 35 %."""
+        # Lo que deja la sociedad y lo del socio, que no resta si está en pérdidas.
+        own = max(0, self.income)
+        return lending.room_for(own + (self.company_income or 0), self.owner.installments)
+
+    @property
+    def factors(self) -> list[lending.Factor]:
+        """Lo que mueve el tipo: el perfil del dueño (sin seguro, que es de consumo)."""
+        profile = self.owner.profile
+        if self.corporate:
+            # Lo paga lo que deja la sociedad, no la nómina de su socio.
+            profile = replace(profile, payroll=True)
+        return lending.profile_factors(profile, insured=False)
+
+    @property
+    def rate(self) -> float:
+        """El TIN de hoy."""
+        return lending.business_rate(self.owner.euribor, self.factors)
+
+    def most(self, months: int) -> int:
+        """Lo más que presta a `months` meses."""
+        return lending.max_principal(self.room, self.rate, months, insured=False)
+
+
+@dataclass(frozen=True, slots=True)
+class BusinessInstallment:
+    """La cuota de esta noche de un préstamo al negocio.
+
+    Attributes:
+        loan: El préstamo.
+        balance: Lo que quedará por devolver tras la cuota.
+        pay: La cuota del mes (0 si ya no quedan: solo se debe lo atrasado).
+        interest: Lo que de ella son intereses.
+    """
+
+    loan: Loan
+    balance: int
+    pay: int
+    interest: int
+
+    @property
+    def due(self) -> int:
+        """Lo que se cobra esta noche: la cuota y lo que se debía."""
+        return self.pay + self.loan.unpaid_amount
 
 
 @dataclass(frozen=True, slots=True)
@@ -2094,7 +2170,8 @@ class HousingRepository:
         """
         market = await self.market(guild_id)
         out: dict[int, int] = dict(market.bank_debts)
-        for debt in (*market.mortgages, *market.loans):
+        # Lo que debe su sociedad no es suyo: solo lo avala (resta del valor de la sociedad).
+        for debt in (*market.mortgages, *(x for x in market.loans if not x.corporate)):
             out[debt.user_id] = out.get(debt.user_id, 0) + debt.owed
         for (creditor, debtor), amount in market.member_debts.items():
             out[debtor] = out.get(debtor, 0) + amount
@@ -2285,6 +2362,258 @@ class HousingRepository:
             return closed, HousingMove(entries=tuple(entries))
 
         return run
+
+    # -- Préstamos al negocio (`banco`, 🏪 Negocio) -------------------------------------
+    #
+    # Las de `_in` corren dentro de la transacción del negocio (`EconomyService.business`),
+    # que mueve el dinero de su caja: la del dueño si es autónomo, la de su sociedad si no.
+
+    async def business_desk(
+        self,
+        guild_id: int,
+        user_id: int,
+        business_id: int,
+        *,
+        income: int,
+        payroll: bool,
+        company_income: int | None,
+    ) -> BusinessLoanDesk:
+        """Lo que ve el banco para prestar a un negocio (ver `BusinessLoanDesk`)."""
+
+        def read() -> BusinessLoanDesk:
+            connection = self._connect()
+            try:
+                return self.business_desk_in(
+                    connection, guild_id, user_id, business_id, income=income, payroll=payroll,
+                    company_income=company_income,
+                )  # fmt: skip
+            finally:
+                connection.close()
+
+        return await self._run(read)
+
+    async def business_loans(self, guild_id: int, business_id: int) -> list[Loan]:
+        """Los préstamos vivos de un negocio (para su patrimonio neto)."""
+
+        def read() -> list[Loan]:
+            connection = self._connect()
+            try:
+                return finance.business_loans_in(connection, guild_id, business_id)
+            finally:
+                connection.close()
+
+        return await self._run(read)
+
+    def business_desk_in(
+        self,
+        connection: sqlite3.Connection,
+        guild_id: int,
+        user_id: int,
+        business_id: int,
+        *,
+        income: int,
+        payroll: bool,
+        company_income: int | None,
+    ) -> BusinessLoanDesk:
+        """`business_desk` dentro de una conexión abierta."""
+        market = _market_in(connection, guild_id)
+        return BusinessLoanDesk(
+            owner=_desk_in(connection, guild_id, user_id, market, payroll),
+            loans=tuple(finance.business_loans_in(connection, guild_id, business_id)),
+            income=income,
+            company_income=company_income,
+        )
+
+    def take_business_loan_in(
+        self,
+        connection: sqlite3.Connection,
+        guild_id: int,
+        user_id: int,
+        business_id: int,
+        *,
+        principal: int,
+        months: int,
+        rate: float,
+        income: int,
+        payroll: bool,
+        company_income: int | None,
+        day: date,
+        now: float,
+    ) -> tuple[Loan, lending.Quote]:
+        """Firma un préstamo al negocio `business_id` (el dinero lo mueve quien llama).
+
+        Args:
+            rate: El tipo de la oferta; si el perfil o el Euríbor han cambiado, no se firma.
+            company_income: Lo que deja su sociedad al día, o `None` si es de un autónomo.
+
+        Raises (dentro de la transacción):
+            HousingError: Fichero de morosos, demasiados préstamos del negocio, cifras fuera
+                de los topes, otro tipo que el de la oferta o una cuota que no cabe.
+        """
+        desk = self.business_desk_in(
+            connection, guild_id, user_id, business_id, income=income, payroll=payroll,
+            company_income=company_income,
+        )  # fmt: skip
+        if desk.owner.asnef:
+            raise HousingError(lending.ASNEF_REFUSAL)
+        if len(desk.loans) >= lending.MAX_BUSINESS_LOANS:
+            raise HousingError(
+                f"Tu negocio ya tiene {lending.MAX_BUSINESS_LOANS} préstamos: devuelve alguno "
+                "antes."
+            )
+        if months not in lending.TERMS:
+            raise HousingError("Ese plazo no lo ofrece el banco.")
+        if not lending.MIN_PRINCIPAL <= principal <= lending.MAX_PRINCIPAL:
+            raise HousingError(
+                f"El banco presta de {format_amount(lending.MIN_PRINCIPAL)} a "
+                f"{format_amount(lending.MAX_PRINCIPAL)}."
+            )
+        if desk.rate != rate:
+            raise HousingError("El tipo ha cambiado desde la oferta: vuelve a mirarla.")
+        offer = lending.quote(principal, months, rate, insured=False)
+        if offer.monthly > desk.room:
+            raise HousingError(
+                f"El banco te dice que no: la cuota ({format_amount(offer.monthly)}) no cabe en "
+                f"lo que le queda a tu 35 % ({format_amount(desk.room)} al mes)."
+            )
+        loan_id = finance.add_loan_in(
+            connection, guild_id, user_id, principal=principal, rate=rate,
+            payment=offer.payment, months=months, fee=offer.fee, premium=0, premium_tax=0,
+            covers=0, first_day=(day + timedelta(days=1)).isoformat(), now=now,
+            kind=finance.LOAN_COMPANY if desk.corporate else finance.LOAN_BUSINESS,
+            listing=str(business_id),
+        )  # fmt: skip
+        loan = finance.loan_in(connection, guild_id, loan_id)
+        assert loan is not None
+        return loan, offer
+
+    @staticmethod
+    def repay_business_loan_in(
+        connection: sqlite3.Connection, guild_id: int, business_id: int, loan_id: int,
+        now: float,
+    ) -> tuple[Loan, int]:  # fmt: skip
+        """Cierra entero un préstamo del negocio. Devuelve el préstamo y la compensación.
+
+        Raises:
+            HousingError: Si no es de ese negocio o ya está cerrado.
+        """
+        loan = finance.loan_in(connection, guild_id, loan_id)
+        if loan is None or loan.business_id != business_id:
+            raise HousingError("Ese préstamo no es de tu negocio.")
+        if loan.status != "activo":
+            raise HousingError("Ese préstamo ya está cerrado.")
+        fee = lending.early_fee(loan.balance, loan.months_left)
+        finance.close_loan_in(connection, loan.id, "pagado", now, paid=loan.owed + fee)
+        return loan, fee
+
+    @staticmethod
+    def business_night_in(
+        connection: sqlite3.Connection, guild_id: int, business_id: int, day: date
+    ) -> list[BusinessInstallment]:
+        """Las cuotas de esta noche de los préstamos de un negocio (las que ya tocan)."""
+        out = []
+        for loan in finance.business_loans_in(connection, guild_id, business_id):
+            if day.isoformat() < loan.first_day:
+                continue
+            pay = loan.payment if loan.months_left > 0 else 0
+            interest, principal = rules.mortgage_month(loan.balance, loan.rate, pay)
+            out.append(BusinessInstallment(loan, loan.balance - principal, pay, min(interest, pay)))
+        return out
+
+    @staticmethod
+    def settle_business_night_in(
+        connection: sqlite3.Connection,
+        guild_id: int,
+        installments: list[BusinessInstallment],
+        missing: dict[int, int],
+        now: float,
+    ) -> list[tuple[str, Loan, int]]:
+        """Guarda cómo quedan los préstamos de un negocio tras cobrar su noche.
+
+        Lo que no llegó se debe y cuenta como una cuota seguida sin pagar (sin seguro: no es
+        crédito al consumo). Con `DEFAULT_INSTALLMENTS`, vence: lo que queda pasa a deuda con
+        el banco de su dueño, que lo firmó como autónomo o lo avala como socio.
+
+        Args:
+            missing: Lo que no llegó de cada préstamo, por su id.
+
+        Returns:
+            `(qué, préstamo, importe)` de cada uno: `pagada` o `sin_pagar` (con lo pagado),
+            `devuelto` (la última cuota) o `vencido` (con lo que pasa a deber el dueño).
+        """
+        out = []
+        for item in installments:
+            loan = item.loan
+            lost = missing.get(loan.id, 0)
+            unpaid_count = loan.unpaid_count + 1 if lost else 0
+            finance.save_loan_in(
+                connection, loan, balance=item.balance,
+                months_left=max(0, loan.months_left - bool(item.pay)), covers_left=0,
+                unpaid_count=unpaid_count, unpaid_amount=lost,
+                paid=loan.paid + item.due - lost,
+                interest_paid=loan.interest_paid + (item.interest if not lost else 0),
+            )  # fmt: skip
+            if not item.balance and not lost:
+                finance.close_loan_in(connection, loan.id, "pagado", now)
+                out.append(("devuelto", loan, item.due))
+            elif unpaid_count >= lending.DEFAULT_INSTALLMENTS:
+                owed = item.balance + lost
+                finance.add_bank_debt_in(connection, guild_id, loan.user_id, owed)
+                finance.close_loan_in(connection, loan.id, "vencido", now)
+                out.append(("vencido", loan, owed))
+            else:
+                out.append(("sin_pagar" if lost else "pagada", loan, item.due - lost))
+        return out
+
+    @staticmethod
+    def business_loans_to_owner_in(
+        connection: sqlite3.Connection,
+        guild_id: int,
+        business_id: int,
+        now: float,
+        paid: int = 0,
+    ) -> tuple[int, int]:
+        """Al cerrar un negocio (o al hacerlo sociedad): lo que no se cancela pasa a ser un
+        préstamo personal del dueño.
+
+        Del autónomo ya eran suyos (`paid` = 0): siguen igual, ahora en las noches de `pisos`.
+        También al constituir la sociedad: el dinero se lo quedó él y el banco no ha consentido
+        que cambie el deudor (art. 1205 CC), así que la sociedad empieza sin deudas con él.
+        De una sociedad que se liquida, `paid` es lo que pagó su caja: cancela los préstamos
+        del más antiguo al más nuevo, y lo que falte lo asume su socio, que los avalaba
+        (asunción de deuda con el mismo tipo y las cuotas que quedaban, art. 1205 CC).
+
+        Returns:
+            `(lo cancelado, lo que pasa al dueño)`.
+        """
+        left = max(0, paid)
+        cancelled = moved = 0
+        for loan in finance.business_loans_in(connection, guild_id, business_id):
+            take = min(left, loan.owed)
+            left -= take
+            cancelled += take
+            rest = loan.owed - take
+            if not rest:
+                finance.close_loan_in(connection, loan.id, "pagado", now, paid=take)
+                continue
+            moved += rest
+            months = max(1, loan.months_left)
+            # Si la caja pagó una parte o había cuotas atrasadas, la cuota se rehace con lo que
+            # queda y los mismos meses.
+            payment = (
+                rules.installment(rest, loan.rate, months)
+                if take or loan.unpaid_amount or not loan.months_left
+                else loan.payment
+            )
+            connection.execute(
+                """
+                UPDATE housing_loans SET kind = ?, listing = NULL, balance = ?, unpaid_amount = 0,
+                    unpaid_count = 0, months_left = ?, payment = ?, paid = paid + ?
+                WHERE id = ?
+                """,
+                (finance.LOAN_PERSONAL, rest, months, payment, take, loan.id),
+            )
+        return cancelled, moved
 
     # -- Rehipotecar (`banco`, 🔐 Garantías) --------------------------------------------
 
@@ -3287,7 +3616,8 @@ class HousingRepository:
         # con la prima del seguro y su IPS. Lo que no llegó se vuelve a pedir.
         loan_plan: dict[int, tuple[int, int, int]] = {}
         for loan in market.loans:
-            if day.isoformat() < loan.first_day:
+            # Los del negocio los cobra su noche (`business_night_in`), de su caja.
+            if day.isoformat() < loan.first_day or loan.business_id is not None:
                 continue
             pay = loan.payment if loan.months_left > 0 else 0
             owed_interest, principal = rules.mortgage_month(loan.balance, loan.rate, pay)

@@ -22,6 +22,8 @@ debajo, que también sirve de reserva si no hay Node ni Chromium. Pantallas:
 - **Fase 2:** 🛠️ **Mejoras** (instalar mejoras del local y lanzar campañas), ⭐ **Reseñas**,
   🚚 **Traslado** (a otro barrio, a un local mayor o a uno tuyo de `pisos`), el precio de cada
   producto en el almacén y 🚪 cerrar traspasándolo o liquidando el stock y las mejoras.
+- 🏦 **Banco** (9.7.0): abre en un mensaje privado el mostrador 🏪 Negocio de `banco`, con los
+  préstamos a nombre del negocio (`banco.open_business`).
 
 Cada noche, una tarea cada 10 minutos cobra el local de cada negocio
 (`BusinessService.close_nights`) y la cuota de autónomo de la semana.
@@ -55,10 +57,10 @@ from discord import ui
 from discord.ext import commands, tasks
 
 from bot.cogs import achievements as logros
-from bot.cogs import renta
+from bot.cogs import banco, renta
 from bot.repositories.business import companies_in
 from bot.services import business_sl as sl
-from bot.services.achievements import StatDelta, business_stats
+from bot.services.achievements import StatDelta, business_loan_night_stats, business_stats
 from bot.services.business import (
     Business,
     move_quote,
@@ -621,6 +623,10 @@ class NegocioPanel(ui.LayoutView):
             f"{signed(view.equity)} · se puede repartir {format_amount(view.dividend_room)} · "
             f"retención del sueldo {round(view.retention * 100)} %",
         ]
+        if view.bank:
+            lines.append(
+                f"🏦 Debe {format_amount(view.bank)} al banco (lo avalas tú): míralo en 🏦 Banco."
+            )
         if last := info.get("last"):
             lines.append(
                 f"-# Último Sociedades: base {signed(last['base'])}, "
@@ -973,15 +979,15 @@ class NegocioPanel(ui.LayoutView):
             self._button("🎨 Rótulo", self._rotulo, "rotulo"),
             self._button("🚚 Traslado", self._traslado, "traslado"),
             self._button("🏢 Sociedad", self._sociedad, "sociedad"),
+            self._button("🏦 Banco", self._bank, "banco"),
             self._button("🚪 Cerrar", self._confirm_close, "cerrar"),
-            home,
         )
         prices = [
             discord.SelectOption(label=p.name, value=p.key, default=p.key == business.price)
             for p in PRICE_LEVELS
         ]
         price_row = ui.ActionRow(self._select("🏷️ Precios", prices, "precio", self._set_price))
-        return [main, more, price_row]
+        return [main, more, price_row, ui.ActionRow(home)]
 
     def _mejoras_rows(
         self, business: Business, back: ui.Button, home: ui.Button
@@ -1353,6 +1359,11 @@ class NegocioPanel(ui.LayoutView):
 
     async def _sociedad(self, interaction: discord.Interaction) -> None:
         await self._go(interaction, SOCIEDAD)
+
+    async def _bank(self, interaction: discord.Interaction) -> None:
+        # El banco contesta él (un mensaje privado nuevo): este panel no cambia.
+        if not await banco.open_business(self.cog.bot, interaction):
+            await notify(interaction, "El banco está cerrado ahora mismo.")
 
     async def _pick_capital(self, interaction: discord.Interaction, value: str) -> None:
         if value.isdigit() and int(value) in sl.CAPITALS:
@@ -1772,6 +1783,21 @@ class NegocioPanel(ui.LayoutView):
                 f"-# 🐶 IRPF de la ganancia (19 %): −{format_amount(closing.gain_tax)} "
                 f"({TAX_COLLECTOR})"
             )
+        if closing.bank_moved:
+            paid = (
+                f"La caja pagó {format_amount(closing.bank_paid)} al banco y el resto lo asumes "
+                "tú, que la avalabas"
+                if closing.company
+                else "Como autónomo ya eran tuyos"
+            )
+            self.notes.append(
+                f"-# 🏦 {paid}: {format_amount(closing.bank_moved)} siguen como préstamo personal, "
+                "con sus cuotas cada noche (`banco`)."
+            )
+        elif closing.bank_paid:
+            self.notes.append(
+                f"-# 🏦 La caja canceló sus préstamos: {format_amount(closing.bank_paid)}."
+            )
         self.screen = MONTAR
         await self._pet_note(Mood.GOOD if traspaso else None)
         await self.show(interaction)
@@ -1787,6 +1813,7 @@ class NegocioPanel(ui.LayoutView):
                     "biz_traspaso_money": got if traspaso else 0,
                     "biz_sl_liquidated": int(closing.company),
                     "biz_sl_sunk": int(sunk),
+                    "biz_loan_assumed": int(closing.company and closing.bank_moved > 0),
                 },
                 peak={
                     "biz_traspaso_max": got if traspaso else 0,
@@ -2049,6 +2076,7 @@ class Negocio(commands.Cog, name="Negocio"):
                     delta.peak["biz_sl_profit_max"] = max(0, week["profit"])
                 if run.refund:
                     delta.add["biz_pluri_refund"] = run.refund
+                delta.add.update(business_loan_night_stats(run.loans))
                 logros.note(self.bot, guild.id, run.user_id, delta)
 
     @_nightly.before_loop

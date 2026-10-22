@@ -1430,11 +1430,24 @@ def pending_items(
         # La primera cuota se cobra la noche siguiente a firmar (`Loan.first_day`).
         first = date.fromisoformat(loan.first_day)
         when = tonight if today >= first else _midnight(first + timedelta(days=1))
-        what = (
-            f"Anticipo de rentas de {_place(market, loan.listing)}"
-            if loan.advance and loan.listing
-            else f"Préstamo #{loan.id} del banco"
-        )
+        if loan.corporate:
+            # Lo paga la caja de su sociedad: él solo lo avala.
+            items.append(
+                Pending(
+                    Side.HELD, "business_loan_guarantee", "🏢",
+                    f"Avalas el préstamo #{loan.id} de tu sociedad: su caja paga "
+                    f"{format_amount(due)} cada noche; si no paga {lending.DEFAULT_INSTALLMENTS} "
+                    f"cuotas, el banco te reclama lo que quede ({format_amount(loan.owed)})",
+                    loan.owed, None,
+                )
+            )  # fmt: skip
+            continue
+        if loan.advance and loan.listing:
+            what = f"Anticipo de rentas de {_place(market, loan.listing)}"
+        elif loan.business_id is not None:
+            what = f"Préstamo #{loan.id} de tu negocio"
+        else:
+            what = f"Préstamo #{loan.id} del banco"
         text = f"{what}: {format_amount(due)}"
         kind = "loan"
         if loan.unpaid_count:

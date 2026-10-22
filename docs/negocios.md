@@ -757,3 +757,108 @@ Sin comprobar:
 - el efecto fiscal concreto del préstamo gratuito socio-sociedad;
 - el importe de la tarifa plana de 2026.
 
+## Préstamos al negocio (9.7.0)
+
+Pedido el 22/10/2026: «que se puedan pedir préstamos en nombre del negocio, con acceso tanto en `banco` como en
+`pala`». No es una fase: es un mostrador más del banco que mira el negocio.
+
+- **Reglas:** `loans.py` (`business_rate`, `MAX_BUSINESS_LOANS`) y `business_sl.ebitda`.
+- **El banco:** `HousingRepository` (`business_desk`, `take_business_loan_in`, `business_night_in`,
+  `settle_business_night_in`, `business_loans_to_owner_in`). Van en `housing_loans` con `kind` `negocio` (autónomo) o
+  `sociedad` y el id del negocio en `listing`.
+- **El dinero:** `BusinessService` (`loan_desk`, `take_loan`, `repay_loan`, la noche y el cierre), con
+  `BusinessMove.bank_loan`.
+- **El mostrador:** `cogs/banco_negocio.py`; la portada del negocio lo abre con `banco.open_business`.
+
+### Quién lo firma y cuánto presta
+
+- **Autónomo:** lo firma él, porque el negocio no es una persona y responde con todo lo suyo (art. 1911 CC).
+  - Entra en su monedero.
+  - Cabe en su 35 %: nóminas, lo que deja el negocio (`work_net`) y el 70 % de las rentas, como un préstamo personal.
+- **Sociedad:** lo firma ella, con el aval de su socio.
+  - Entra en su caja.
+  - Cabe en el 35 % de lo que dejó la semana pasada (`ebitda`: ventas menos gastos, sin amortizaciones ni intereses,
+    al día) más lo que ingresa el socio (cero si está en pérdidas).
+  - No lleva el punto de «sin nómina»: lo paga la sociedad.
+- **Su cuota cuenta en el 35 % del dueño** siempre: la firma él o la avala (riesgo indirecto en la CIRBE, como
+  cualquier aval del banco).
+
+### Condiciones
+
+- **Tipo:** Euríbor + 4 % (`BUSINESS_SPREAD`, el de una pyme sin historial) más el perfil del dueño, entre el 3 y el
+  15 %.
+- **Plazos y topes:**
+  - 12, 24, 48 o 96 meses, de 1.000 a 750.000 Y$, con la comisión de apertura del 1 %;
+  - hasta 2 por negocio, que no cuentan en los 3 personales.
+- **No es crédito al consumo** (art. 2 de la Ley 16/2011: quien pide actúa en su actividad):
+  - no hay desistimiento ni seguro de protección de pagos;
+  - amortizar antes cuesta lo mismo que un personal (1 % o 0,5 %). Entre empresas sería lo pactado.
+- **Con deuda con Hacienda no presta:** lo embargaría al entrar, como a un particular.
+
+### Cada noche
+
+- **Lo cobra la noche del negocio** de su caja, lo último: después del local, la gestoría y Sociedades.
+  - Lo que no llega es primero del banco.
+  - Las noches de `pisos` no lo tocan.
+- **Lo que es gasto:** los intereses y la comisión, que van a la partida `intereses` de las cuentas (y a `TAX_ITEMS`). El
+  capital no.
+  - De autónomo, en su IRPF por lo pagado (criterio de caja).
+  - De sociedad, en Sociedades por lo devengado.
+  - El límite de los gastos financieros (art. 16 LIS: el 30 % del beneficio operativo, siempre deducible hasta un millón
+    de euros al año) no se alcanza a esta escala.
+- **Si no paga:** como un personal.
+  - Con 2 cuotas seguidas, el dueño entra en el fichero de morosos.
+  - Con 3 vence, y lo que queda pasa a deuda del dueño con el banco, que se cobra cada noche y se embarga (art. 607 LEC).
+  - De una sociedad, el banco reclama a su socio, que la avalaba, y la sociedad pasa a deberle lo que pague por ella
+    (art. 1838 CC): se suma a su préstamo de socio.
+
+### Constituir la sociedad y cerrar
+
+- **Al constituir la sociedad**, los préstamos del autónomo siguen a su nombre como personales:
+  - el dinero se lo quedó él;
+  - cambiar de deudor pide el consentimiento del banco (art. 1205 CC);
+  - si pasaran a la sociedad, pagarlos con su caja sería un dividendo sin impuestos.
+- **Al cerrar de autónomo** (cierre, traspaso, desahucio o sin local), siguen igual como personales y los cobra `pisos`.
+- **Al liquidar la sociedad**, vencen:
+  - su caja los paga después de Hacienda y del casero, y antes del préstamo del socio;
+  - lo que no llegue lo asume el socio, que los avalaba, como préstamo personal con el mismo tipo y los meses que
+    quedaban;
+  - eso no entra en lo que responde por el capital (art. 4.1 LSC): ya lo paga como avalista.
+
+### Patrimonio y `saldo`
+
+- **Lo que debe una sociedad al banco** resta de su valor (`companies_in`) y de su patrimonio neto, que miran los
+  dividendos (art. 273 LSC) y la causa de disolución. No resta del patrimonio del socio ni de `perfil`: solo lo avala.
+- **En `saldo`:**
+  - el de un autónomo sale como cuota de esta noche;
+  - el de una sociedad, como un aval («Avalas el préstamo #… de tu sociedad»).
+
+### Decidido por Claude (cambiable)
+
+- De autónomo es un préstamo suyo con otro tipo, y no un préstamo de un negocio sin caja.
+- La sociedad siempre con el aval de su socio, como piden los bancos a casi todas las microempresas.
+- Euríbor + 4 %, 2 por negocio y la vara del 35 % también para la sociedad.
+- Al cerrar o constituir, lo que queda pasa a personal en vez de vencer de golpe.
+
+### Normas comprobadas (22/10/2026)
+
+En el BOE consolidado:
+
+| Norma | Qué dice | Uso |
+|---|---|---|
+| Art. 2 Ley 16/2011 | Consumidor es quien actúa al margen de su actividad comercial o profesional | Sin desistimiento ni seguro |
+| Arts. 28 y 30 Ley 16/2011 | Desistimiento de 14 días; compensación de hasta el 1 % o el 0,5 % | Solo los personales; la del negocio copia el 30 |
+| Art. 1911 CC | El deudor responde con todos sus bienes | El autónomo lo firma él |
+| Art. 1205 CC | Cambiar de deudor pide el consentimiento del acreedor | Al constituir y al liquidar |
+| Art. 1838 CC | El fiador que paga debe ser indemnizado por el deudor | La sociedad pasa a deberle al socio |
+| Art. 28.1 LIRPF | Rendimiento de actividades según las normas del IS | Intereses deducibles del autónomo |
+| Art. 16.1 LIS | Gastos financieros netos hasta el 30 % del beneficio operativo; siempre hasta 1 millón | No se alcanza |
+
+Sin comprobar: que el diferencial de una pyme ronde los 4 puntos en 2026 (estimación).
+
+### Simplificaciones
+
+- Los intereses de las cuotas atrasadas no deducen cuando se pagan tarde (autónomo).
+- 📒 Cuentas de `banco` cuenta lo prestado a los negocios, pero no suma sus cuotas en «Cobrado en cuotas de préstamos».
+- No hay líneas ICO ni préstamos participativos.
+

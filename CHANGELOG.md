@@ -8,6 +8,17 @@ criterio.
 
 ## 9.x
 
+### 9.7.0 · 2026-10-22
+
+- Negocios: pide préstamos a nombre de tu negocio en `banco` (🏪 Negocio) o desde la portada del negocio en `pala` (🏦 Banco)
+- Negocios: de autónomo lo firmas tú (entra en tu monedero y cuenta en tu 35 %); de sociedad lo firma ella (entra en su caja, cabe en lo que deja ella más lo tuyo y lo avalas)
+- Negocios: el tipo es el de una pyme (Euríbor + 4 % y tu perfil), hasta 2 por negocio aparte de los personales; sin desistimiento ni seguro, que son del crédito al consumo
+- Negocios: las cuotas las paga la noche del negocio, después del local y de Hacienda; los intereses y la comisión son gasto (IRPF o Sociedades)
+- Negocios: si no paga, fichero de morosos y vencimiento como un préstamo personal; de una sociedad te lo reclama a ti y ella pasa a debértelo
+- Negocios: al hacerlo sociedad o al cerrar, lo que quede sigue a tu nombre como préstamo personal (al liquidar la sociedad, su caja paga antes lo que pueda)
+- Patrimonio: lo que debe tu sociedad al banco resta de su valor, no del tuyo
+- Logros: 14 nuevos de los préstamos al negocio en 🏪 Negocio
+
 ### 9.6.0 · 2026-10-21
 
 - Negocios: 🏢 Sociedad, convierte tu negocio en una sociedad limitada (capital de 1 €, 3.000 € o 10.000 €; notaría y registro, sin ITP)

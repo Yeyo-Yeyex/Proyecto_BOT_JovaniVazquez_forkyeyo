@@ -74,6 +74,7 @@ ACCOUNT_ROWS: tuple[tuple[str, str, str], ...] = (
     ("sueldo", "Sueldo del administrador", "out"),
     ("gestoria", "Gestoría", "out"),
     ("constitucion", "Notaría y registro", "out"),
+    ("intereses", "Intereses y comisiones del banco", "out"),
     ("sociedades", "Impuesto sobre Sociedades", "tax"),
     ("cuota", "Cuota de autónomo", "tax"),
     ("irpf", "IRPF a cuenta", "tax"),
