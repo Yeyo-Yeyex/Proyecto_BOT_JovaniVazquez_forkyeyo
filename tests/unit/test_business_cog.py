@@ -18,9 +18,12 @@ from discord import ui
 from interaction_fakes import fake_interaction
 
 from bot.cogs.business import (
+    CANDIDATOS,
     CIERRE,
     CONFIRMAR,
+    DESPIDO,
     MONTAR,
+    PLANTILLA,
     PORTADA,
     PREVIA,
     SOCIEDAD,
@@ -455,3 +458,61 @@ async def test_constituir_la_sociedad_y_operar_con_ella_desde_el_panel(tmp_path:
     bad = click()
     await panel.company_action(bad, "prestar", "mucho")
     assert view.business.company["loan"] == 0
+
+
+# -- Fase 4: la plantilla -------------------------------------------------------------
+
+
+async def test_contratar_formar_y_despedir_desde_el_panel(tmp_path: Path) -> None:
+    _work_cog, business_cog, panel = await opened_business(tmp_path)
+    await button(panel, "👥 Plantilla").callback(click())
+    assert panel.screen == PLANTILLA
+    check_limits(panel)
+    assert "Aún no tienes a nadie" in panel.text()
+    await button(panel, "👥 Candidatos").callback(click())
+    assert panel.screen == CANDIDATOS
+    check_limits(panel)
+    business = await business_cog.service.business(GUILD, OWNER)
+    assert business is not None
+    candidate = business_cog.service.candidates(business)[0]
+    await panel._pick_candidate(click(), str(candidate["key"]))
+    await panel._pick_contract(click(), "temporal")
+    await panel._pick_shift(click(), "tarde:2")
+    check_limits(panel)
+    assert any(label.startswith("✍️ Contratar") for label in labels(panel))
+    await button(panel, "✍️ Contratar").callback(click())
+    assert panel.screen == PLANTILLA
+    business = await business_cog.service.business(GUILD, OWNER)
+    assert business is not None and len(business.staff) == 1
+    hired = business.staff[0]
+    assert (hired["contract"], hired["shift"], hired["jornada"]) == ("temporal", "tarde", 2)
+    check_limits(panel)
+    assert "📄 Hacerle fijo" in labels(panel) and "🚪 Despedir" in labels(panel)
+    await panel._raise(click(), "0.1")
+    await panel._course(click(), "trato")
+    business = await business_cog.service.business(GUILD, OWNER)
+    assert business is not None
+    assert business.staff[0]["wage"] > hired["wage"] and business.staff[0]["course"] == "trato"
+    await button(panel, "📄 Hacerle fijo").callback(click())
+    await button(panel, "🚪 Despedir").callback(click())
+    assert panel.screen == DESPIDO
+    check_limits(panel)
+    await button(panel, "No supera el período de prueba").callback(click())
+    business = await business_cog.service.business(GUILD, OWNER)
+    assert business is not None and business.staff == []
+    assert panel.screen == PLANTILLA
+
+
+async def test_la_plantilla_sale_en_texto_sin_pintor(tmp_path: Path) -> None:
+    _work_cog, business_cog, panel = await opened_business(tmp_path)
+    business = await business_cog.service.business(GUILD, OWNER)
+    assert business is not None
+    candidate = business_cog.service.candidates(business)[0]
+    jornada = 2 if candidate["part_time"] else 4
+    await business_cog.service.hire(
+        GUILD, OWNER, candidate["key"], contract="b", jornada=jornada, shift="manana"
+    )
+    await button(panel, "👥 Plantilla").callback(click())
+    assert candidate["name"] in panel.text() and "En B" in panel.text()
+    await button(panel, "👥 Candidatos").callback(click())
+    assert "Candidatos de hoy" in panel.text()

@@ -24,7 +24,7 @@ Este documento recoge el sistema entero, sus cinco fases y la fase 1 al detalle;
 | 1 | Franjas, reducción de jornada, excedencia, local en un barrio, 3 sectores con su minijuego, stock y precios, gastos fijos, cierre de cada noche y renta de actividad | 8.14.0 |
 | 2 | Crecer el local: mejoras que se amortizan, traslado a un local mayor o a uno tuyo de `pisos`, campañas de publicidad, reseñas, dos sectores más, precio por producto, traspasar o liquidar al cerrar | 9.5.0 |
 | 3 | Sociedad limitada: caja propia, Impuesto sobre Sociedades, sueldo de administrador o dividendos, quiebra limitada, compatibilidades por oficio, pluriactividad | 9.6.0 |
-| 4 | Empleados artificiales estilo inquilinos (rasgos, habilidades, formación, humor, contrato y despido), turnos pasivos, nómina completa con la cotización de la empresa (`compute_payslip`), ZEC y RIC | 8.x |
+| 4 | Empleados artificiales estilo inquilinos (rasgos, habilidades, formación, humor, contrato y despido), turnos pasivos, nómina completa con la cotización de la empresa, B con Inspección, bonificaciones, RIC y ZEC | 9.8.0 |
 | 5 | Cadenas: varios locales, importar con nave, gerentes que automatizan, vender la empresa | 8.x |
 
 Dónde engancha cada fase con lo de la 1:
@@ -35,8 +35,9 @@ Dónde engancha cada fase con lo de la 1:
 - **Fase 3 (hecha).** `Business.form` pasa a `"sl"` y `Business.company` lleva la sociedad. El dinero va a su
   cuenta (`economy.company_account`) y tributa en Sociedades, no en `INCOME_BUSINESS`. Detalle en «Fase 3 al
   detalle».
-- **Fase 4.** Un turno pasivo es `settle_turn` con la nota que sale de las habilidades del empleado. Su
-  sueldo pasa por `compute_payslip`: la cotización de la empresa, por fin, la paga alguien.
+- **Fase 4 (hecha).** Un turno pasivo es el mismo `TurnGame` jugado por el empleado con sus habilidades
+  (`business_staff.play_turn`), y su nómina lleva por fin la cotización de la empresa. No usa `compute_payslip`
+  (que mira la renta de un miembro): la retención es la de su propio sueldo. Detalle en «Fase 4 al detalle».
 - **Fase 5.** La clave primaria del negocio ya es `(guild_id, user_id, id)`, así que un miembro puede tener
   varios cambiando solo la comprobación de «uno por persona».
 
@@ -862,3 +863,336 @@ Sin comprobar: que el diferencial de una pyme ronde los 4 puntos en 2026 (estima
 - 📒 Cuentas de `banco` cuenta lo prestado a los negocios, pero no suma sus cuotas en «Cobrado en cuotas de préstamos».
 - No hay líneas ICO ni préstamos participativos.
 
+
+## Fase 4 al detalle: la plantilla (9.8.0)
+
+Pedida el 22/10/2026 con «implementa la fase 4 de los negocios». Reglas en `business_staff.py` (puras), casos
+de uso en `negocio.py` (`hire`, `dismiss`, `raise_wage`, `make_permanent`, `train`, `staff_turns` y la noche),
+las pantallas `plantilla` y `candidatos` en `business_view.py` y el panel 👥 **Plantilla** en `cogs/business.py`.
+Normas comprobadas en el BOE consolidado el 22/10/2026 (tabla al final).
+
+### Escalas
+
+- **Dinero, a la de los sueldos de la `pala`** (100 Y$ el euro): una noche de jornada completa es un día de
+  trabajo. Lo que la ley da en euros al año se reparte entre sus 365 días (`night_amount`): el salario mínimo de
+  2026 (17.094 € al año, RD 126/2026) son **4.683 Y$ la noche**, algo menos que el P1 de la obra (4 turnos de
+  1.800). Con la vara del IRPF (11.740 Y$ la noche), un empleado costaba tanto como todo lo que deja el negocio
+  (medido con el simulador).
+- **Plazos:** los meses pasan a noches a 7/12 de noche por mes, como la excedencia de la `pala` (el año son 7
+  días), y los años, a semanas: el período de prueba de 3 meses son **2 noches**, el temporal de 6 meses son **4**
+  y la bonificación de 3 años, **21**.
+- **Indemnizaciones:** la misma parte de lo cobrado que en la vida real: 33 días por año son 33/365 de lo cobrado.
+- **Multas** de una vez, a 100 Y$ el euro (como la notaría de la sociedad): 3.750 € son 375.000 Y$, unos 66
+  días de salario mínimo, como en la vida real.
+- **La retención del IRPF** de cada empleado es la de la `pala`: su semana de nóminas pasada a un año con la vara.
+  Con el salario mínimo sale casi cero, como en la vida real.
+
+### Los candidatos (`candidates`)
+
+- Llegan **3 cada día**, siempre los mismos para el negocio y el día (salen de su semilla). Uno contratado no
+  vuelve a salir.
+- **Perfil** (`PROFILES`):
+  - con experiencia (45 %);
+  - joven, de 18 a 29 años (30 %): más rápido y menos atinado;
+  - parado de larga duración, de 30 a 62 (25 %): atina más y va más despacio. Contratarle indefinido está
+    **bonificado** (art. 21 del RDL 1/2023): 110 € al mes de la cuota de la empresa durante 3 años, o 128 € con 45
+    años o más.
+  - La de Garantía Juvenil (275 €) solo valió el primer año del RDL 1/2023 y no está.
+  - El juego no mira el sexo ni ofrece los colectivos protegidos (víctimas, exclusión, discapacidad).
+- **Tres habilidades** (0-100, `SKILLS`):
+  - **acierto** (cuánto falla: un 30 % con 0, un 3 % con 100);
+  - **rapidez** (de 3,2 a 1,2 segundos por pulsación: propinas y paciencia);
+  - **trato** (pillar al listillo, acordarse de lo de siempre de un habitual y atreverse con el presupuesto caro).
+- **Dos rasgos** de 16 (`TRAITS`), que no se contradicen y van con la edad:
+  - madrugador o noctámbulo, que rinden más en su turno;
+  - simpático, despistado, meticuloso o puro nervio;
+  - estudiante, que solo quiere media jornada y aprende rápido;
+  - veterano, que llega sabiendo y pide más;
+  - quejica, tranquilo, leal, impuntual o ambicioso;
+  - el especialista de un minijuego: barista, buena con las cuentas o manitas.
+- **Lo que pide** (`ask`): el salario mínimo más la mitad de lo que sabe (con todo a 100, un 50 % más), por sus
+  rasgos. Nunca por debajo del salario mínimo. A media jornada, la mitad.
+
+### Contratar (`hire`)
+
+- **Sin dinero:** el alta es gratis; la nómina se paga cada noche.
+- **Contrato:**
+  - **indefinido**;
+  - **temporal** por circunstancias de la producción (art. 15.2 ET), que se acaba solo a las 4 noches;
+  - **en B**, sin alta ni contrato.
+  - Los dos primeros, con **período de prueba** de 2 noches (art. 14 ET: 3 meses en una empresa de menos de 25).
+- **Jornada y turno:**
+  - completa de mañana (8 a 16 h, franjas 0-3) o de tarde (16 a 24 h, franjas 4-7);
+  - media de mañana (10 a 14) o de tarde (18 a 22), las horas de más clientes.
+- **Cuántos:** 2 en un local pequeño, 4 en uno mediano y 6 en uno grande (`STAFF_CAP`).
+- **Empieza ya,** en las franjas de su turno que aún no han acabado (el alta va antes de empezar, art. 139 LGSS).
+- **Para la bonificación** hay que estar al corriente con Hacienda (art. 8 del RDL 1/2023) y no haber despedido de
+  forma improcedente a un bonificado en los últimos 12 meses (7 noches, art. 11.4).
+
+### Los turnos de la plantilla (`play_turn`, `staff_turns`)
+
+- **Cada franja de su turno, el empleado juega** con el mismo `TurnGame` que el dueño: la cola, la paciencia, el
+  cambio, el diagnóstico y el presupuesto. Su nota, sus propinas, las reseñas, la reputación y la fidelidad de los
+  habituales salen igual que las del dueño.
+- **Cómo juega:** falla según su acierto, sus rasgos (en su turno, ×0,8; en el otro, ×1,15; en su minijuego,
+  ×0,75) y su humor (×1,3 por debajo de 40; ×1,6 por debajo de 20). Va a la velocidad de su rapidez. Lo de siempre
+  de un habitual lo sabe según su trato; si no, lo pregunta (tarda tres pulsaciones más).
+- **Los clientes** son los de la hora del medio de la franja y salen del **mismo cupo del barrio** que los del
+  dueño: una plantilla que trabaja las horas en las que ya abres tú se come tu cupo.
+- **Cuándo:** una tarea cada 10 minutos juega las franjas que ya han acabado. La noche juega las que falten del día
+  antes de cerrarlo. No toca un negocio cuyo dueño está atendiendo un turno (comparten el stock): se espera a la
+  siguiente pasada.
+- **El dinero:** las ventas entran como las del dueño: con su retención a cuenta si es autónomo y en la caja si es
+  una sociedad.
+- **El azar es repetible:** el mismo turno da siempre lo mismo.
+- **Aprenden trabajando:** cada turno sube cada habilidad un 0,6 % de lo que le falta para 100 (más o menos según
+  sus rasgos).
+- **Faltas:** un 2 % de los días (un 15 % si está quemado; el doble si es impuntual) no viene ni avisa. Ese día no
+  cobra (`docked`) y cuenta para el despido disciplinario.
+
+### La nómina de cada noche (`payslip`, `payroll`)
+
+Cada noche, el bruto de su jornada (lo pactado; nada si faltó) con las cotizaciones de 2026 (Orden PJC/297/2026):
+
+| | Trabajador | Empresa |
+|---|---|---|
+| Contingencias comunes | 4,70 % | 23,60 % |
+| Desempleo (indefinido / temporal) | 1,55 / 1,60 % | 5,50 / 6,70 % |
+| FOGASA | — | 0,20 % |
+| Formación profesional | 0,10 % | 0,60 % |
+| MEI | 0,15 % | 0,75 % |
+| Accidentes de trabajo (DA 61.ª LGSS) | — | 1,50 % (hostelería), 1,65 % (comercio), 4,45 % (taller) |
+
+- **La cuota de la empresa** baja con la bonificación, si la hay.
+- **La retención** sale del bruto.
+- **Lo que le llega** desaparece (el empleado no existe). Las dos cotizaciones y la retención van al Estado
+  (`hacienda` las cuenta como Seguridad Social de la empresa e IRPF de otros).
+- **Es gasto de la actividad:** el bruto más la cuota de la empresa, en tu IRPF por lo pagado o en Sociedades por lo
+  devengado (partida `personal`).
+
+**Orden de los recibos de la noche** (lo que no llega es de los últimos, `_tail_missing`):
+1. lo que se debe a la plantilla y sus nóminas (los salarios van primero, art. 32 ET);
+2. lo que la sociedad debía a Hacienda;
+3. el local (deuda, alquiler, suministros, terraza y gestoría);
+4. los seguros sociales y las retenciones;
+5. la Inspección;
+6. Sociedades;
+7. las cuotas del banco.
+
+**Si no llega:**
+- **Lo que no cobra el empleado se le debe** (`wage_debt`, los atrasos) y es lo primero que se paga cada noche.
+  Le baja mucho el humor.
+- **Con 2 noches sin cobrar en una semana** (3 mensualidades en un año, art. 50.1.b ET desde la LO 1/2025), se va
+  con la indemnización del despido improcedente (art. 50.2).
+- **Los seguros sociales y las retenciones que no se pagan pasan a deuda con un recargo del 20 %** (art. 30.1 LGSS:
+  10 % el primer mes y 20 % después; cada noche es más de un mes):
+  - del autónomo, a su deuda con Hacienda (la cobran el embargo y el barrido de los lunes);
+  - de la sociedad, a lo que debe a Hacienda (lo primero de cada noche, y en la liquidación se deriva al
+    administrador).
+  - Simplificación: las retenciones llevan el mismo recargo que la cotización.
+
+### Humor, sueldo y formación
+
+- **Humor** de 0 a 100. Se empieza en 70 con indefinido, 55 con temporal y 45 en B. Cada noche
+  (`night_mood`):
+  - sube 2 si cobra al menos un 10 % más de lo que vale (lo que pediría hoy por lo que sabe) y 1 si cobra lo que
+    vale;
+  - si cobra menos del 95 % de lo que vale, baja de 2 a 8 (aprende cada turno, así que siempre acaba valiendo
+    algo más: hay que subirle el sueldo de vez en cuando);
+  - sus turnos de hoy: +1 por cada S, +0,5 por cada A y −1 por cada D;
+  - −1 en B y −20 si no cobra.
+  - Los rasgos lo multiplican: el quejica, ×1,6 lo malo; el tranquilo, ×0,5 todo.
+- **Quemado** (menos de 15): un 30 % de las noches se va (dimisión, sin indemnización). El leal no se va así.
+- **💶 Subirle el sueldo** un 5, 10 o 20 %: le sube el humor. Bajarlo no se puede: sería una modificación
+  sustancial (art. 41 ET), que pide causas que el juego no tiene.
+- **🎓 Curso** de una habilidad (`train`):
+  - 9.000 Y$ más IGIC de una academia; la noche siguiente, +15 puntos, y le sube el humor;
+  - el crédito de formación de FUNDAE (420 € al año para una empresa de 1 a 5 trabajadores, la semana el año) se
+    descuenta de la base: en la vida real se bonifica en la cuota;
+  - a quien está en B no le llega: no está de alta;
+  - es gasto de personal.
+- **📄 Hacerle fijo:** el temporal pasa a indefinido y su contrato ya no se acaba.
+
+### Despedir (`dismissals`, `dismiss`)
+
+| Forma | Cuándo | Cuánto | Norma |
+|---|---|---|---|
+| No supera el período de prueba | Las 2 primeras noches | Nada | art. 14.2 ET |
+| Disciplinario | Con 3 faltas sin justificar | Nada | art. 54.2.a y 55.7 ET |
+| Objetivo | Si la semana pasada fue en pérdidas | 20 días por año (tope 12 mensualidades) y 15 de preaviso pagados | arts. 51.1, 52.c y 53 ET |
+| Improcedente | Siempre | 33 días por año (tope 24 mensualidades) | art. 56.1 ET |
+| Fin del temporal | Solo, al acabar | 12 días por año | art. 49.1.c ET |
+
+- **La indemnización** es gasto deducible. Al empleado le está exenta (art. 7.e LIRPF) y no cotiza (art. 147.2.c
+  LGSS). Se paga entera o no se despide.
+- **Lo que se le debía de sueldo** sigue en los atrasos.
+- **Un despido improcedente de un bonificado antes de los 3 años** obliga a devolver lo bonificado con el recargo
+  (arts. 9 y 13 del RDL 1/2023, a la Seguridad Social) y deja 12 meses sin bonificaciones. El objetivo, el
+  disciplinario, la dimisión y la prueba no.
+- **A quien está en B** no se le despide: no vuelve.
+
+### En B y la Inspección (`inspection`)
+
+- **En B** cobra en mano su bruto entero: ni cotización ni retención. Lo pagado en B no es gasto deducible (no hay
+  nómina).
+- **La Inspección de Trabajo** pasa un 4 % de las noches en que hay alguien sin alta. La noche siguiente a que uno
+  en B se vaya enfadado (lo cuenta), un 50 %.
+- **Si los pilla:**
+  - **la multa** del art. 40.1.e LISOS por cada uno: 3.750 €, el grado mínimo de la grave del art. 22.2, que sube
+    un 20, 30, 40 o 50 % con 2, 3, 4 o 5 trabajadores o más;
+  - **las cuotas** de todo lo que se les pagó en B (empresa y trabajador, art. 18.2 LGSS: se cotiza desde el primer
+    día) con el recargo del 20 %;
+  - **pasan a fijos** (art. 15.4 ET).
+  - Ni la multa ni el recargo son gasto deducible (art. 15.c LIS).
+- **No compensa en la media:** lo que se ahorra la empresa con un SMI en B (su cuota, ~1.500 Y$ la noche) es menos que el
+  4 % de la multa (15.000 Y$ la noche).
+
+### Cerrar
+
+- **Traspasar:** la plantilla se va con el negocio sin despido (sucesión de empresa, art. 44 ET).
+- **Cerrar o liquidar** (también por desahucio o sin local): despido objetivo de todos por el cierre (20 días por
+  año, art. 52.c ET). Lo que se les debe y sus indemnizaciones son lo primero que se paga.
+- **Lo que no llegue** lo paga el FOGASA (art. 33 ET). Simplificación: el FOGASA no mueve dinero (el empleado no
+  existe) y no reclama nada al dueño.
+
+### La sociedad
+
+- La plantilla de una sociedad la paga su caja.
+- **En Sociedades** son gasto `personal`, `despidos` y `formacion` (`TAX_ITEMS`). Lo pagado en B, las multas y los
+  recargos (`negro`, `multas`) no.
+- 📊 **Cuentas** enseña las partidas nuevas.
+
+
+### La RIC y la ZEC (solo para sociedades)
+
+Los dos incentivos fiscales de Canarias de la Ley 19/1994, en `business_sl.py` («RIC y ZEC»), en el Sociedades
+de cada domingo (`settle_week`) y en 🏢 **Sociedad** (el desplegable 🌴 de la RIC y el botón 🏝️ de la ZEC).
+
+**Reserva para Inversiones en Canarias (art. 27):**
+
+- **Dotación:** la sociedad elige llevar cada domingo un 0, un 50 o un 90 % de la base de la semana (`ric_share`;
+  el 90 % es el tope del art. 27.2). Esa parte no paga Sociedades.
+- **Reserva indisponible:**
+  - sale del beneficio de la semana, antes que la reserva legal, y no se puede repartir;
+  - sin beneficio contable que la cubra, no hay dotación;
+  - lo que vence y se integra no se vuelve a dotar.
+- **Invertirla en 3 años** (3 semanas: `RIC_NIGHTS`) en activos nuevos en Canarias: las mejoras del local y la obra
+  de un traslado (`ric_invest`, de la dotación más vieja a la más nueva).
+- **Lo que no se invierte a tiempo** se integra en la base del domingo en que vence (art. 27.16). Simplificación:
+  sin los intereses de demora.
+- **Lo invertido se mantiene 5 años** (5 semanas, `RIC_KEEP_NIGHTS`). Después la reserva vuelve a lo disponible.
+- **Al liquidar la sociedad**, lo que quede (sin invertir o sin haber mantenido lo invertido) se integra en el
+  último Sociedades.
+- **Autónomos, no:** la RIC del IRPF (una deducción en la cuota, art. 27.15) no está, porque la Renta del juego no
+  lleva deducciones por actividad.
+
+**Zona Especial Canaria (arts. 29 a 44):**
+
+- **Tipo:** Sociedades al **4 %** (art. 43) hasta su base máxima: 1,8 millones de euros, más 0,5 millones por cada
+  empleo por encima del mínimo (art. 44.6), pasados a la semana con la vara. Lo que pase, al tipo de siempre.
+- **Actividad:** solo las del anexo. De los sectores del juego, el **taller** (división 45 de la NACE); el comercio
+  minorista y la hostelería no están.
+- **Empleo:** 5 empleos con alta en Gran Canaria y Tenerife (3 en el resto de islas, art. 31.2.e).
+  - La inversión de 100.000 € (art. 31.2.d), a 100 Y$ el euro, no la alcanza nadie. Se puede dispensar creando
+    más empleos que el mínimo, así que el juego pide **6**, y eso pide un local grande.
+- **Plazo de inscripción:** hasta el 31/12/2026, el fin del reglamento europeo de ayudas (art. 29). Los ya inscritos
+  siguen.
+- **Cada domingo** tiene que mantener el empleo mínimo:
+  - una semana sin él tributa al tipo de siempre;
+  - con dos seguidas, sale del registro (`ZEC_MISSES`).
+- **Simplificaciones:**
+  - no hay tasa de inscripción;
+  - la base máxima no mira el resto de requisitos;
+  - el «de nueva creación» lo cumple la sociedad (se constituye nueva, aunque el negocio venga del autónomo).
+- **Rara vez compensa:** con el simulador, un taller con seis empleados pierde dinero. Es el régimen de las grandes
+  empresas, como en la vida real.
+
+| Norma | Qué dice | Uso |
+|---|---|---|
+| Art. 27.2, 27.4, 27.8 y 27.16 de la Ley 19/1994 | RIC: hasta el 90 % del beneficio no distribuido; materializar en 3 años; mantener 5; si no, se integra con intereses | La RIC |
+| Arts. 29, 31.2.d-e, 43 y 44.6 y anexo de la Ley 19/1994 | ZEC: inscripción hasta el fin del RGEC; 100.000 € y 5 empleos (o más empleos sin la inversión); 4 %; 1,8 M€ + 0,5 M€ por empleo de más; división 45 sí, 47 y 55/56 no | La ZEC |
+### Equilibrio
+
+`python docs/negocio_sim.py --plantilla`: el barrio del medio de cada sector con el cupo, días 15 a 28, media de 6
+semillas. Lo que deja al día el negocio llevado por empleados indefinidos a jornada completa, con las tres
+habilidades a 30, 50 o 70, frente al dueño solo (jugador bueno, 4 turnos):
+
+| Sector | Dueño, 4 turnos | 1 de mañana (30 / 50 / 70) | Mañana y tarde (30 / 50 / 70) | Dueño + 1 de tarde (50) | 2 y 2 (50) |
+|---|---|---|---|---|---|
+| Cafetería | 16.800 | 600 / 5.500 / 10.200 | 7.400 / 12.200 / 14.500 | 18.200 | −1.100 |
+| Tienda | 14.000 | −1.800 / 200 / 1.400 | 5.200 / 5.400 / 5.200 | 12.300 | −8.200 |
+| Taller | 5.900 | −2.000 / −800 / 2.000 | −2.500 / −100 / 4.700 | 6.700 | −12.200 |
+| Heladería | 12.800 | −1.200 / 1.700 / 5.300 | 1.800 / 3.500 / 4.900 | 9.900 | −11.700 |
+| Ferretería | 17.100 | 5.100 / 6.500 / 7.700 | 13.300 / 13.200 / 12.900 | 19.000 | 1.000 |
+
+- **Lo pasivo rinde menos que lo activo:**
+  - una plantilla buena cubriendo mañana y tarde deja entre la mitad y lo mismo que el dueño jugando 4 turnos, sin
+    gastar franjas;
+  - con alguien que sabe poco, en la cafetería y la ferretería se gana algo y en el resto se pierde.
+- **Lo que más pesa es el sector y el turno:**
+  - la cafetería y la ferretería tienen margen por turno;
+  - la tienda casi no (lo que sabe el empleado le cambia poco);
+  - el taller y la heladería piden su hora (el taller, de mañana; la heladería, de tarde).
+- **Contratar las horas en las que abres tú** se come tu cupo: en la heladería y la tienda, deja menos que abrir solo.
+- **Cuatro a jornada completa pierden dinero en todos:** el cupo del barrio no da para tantos turnos.
+
+### Pantallas y medido (22/10/2026)
+
+| `screen` | Para qué |
+|---|---|
+| `plantilla` | Hasta 6 tarjetas: la cara (por su semilla, con el delantal del negocio), el contrato, el turno, el sueldo, el humor, las tres habilidades, los rasgos y los avisos; las nóminas de esta noche y lo que se debe |
+| `candidatos` | Los tres de hoy con su perfil, la bonificación y lo que piden, y la oferta al elegido (bruto, lo que le llega y lo que cuesta; en B, el sello «sin alta») |
+
+- **La portada** enseña a la plantilla de pie en la acera, con sus turnos y ventas de hoy.
+- **El panel:** 👥 **Plantilla** junto a 🏠 Inicio. Dentro, el desplegable de la persona, 💶 la subida, 🎓 el curso, 📄
+  hacerle fijo y 🚪 despedir (con lo que cuesta cada forma). En 👥 **Candidatos**, el candidato, el contrato y la
+  jornada con el turno, y ✍️ Contratar.
+- **Pintar antes del clic:** desde la portada se pinta la plantilla; desde la plantilla, los candidatos.
+- **Dibujo** (`docs/medir_dibujos.py`, 4 hilos de este PC, ms con 1 proceso abierto / en caliente): plantilla
+  121-128 / 120, candidatos 111-115 / 112.
+- **Node contra Chrome 155** (las 62 muestras): la peor, 2,47/255; las nuevas, de 1,06 a 2,18.
+
+### Normas de la fase 4 comprobadas (22/10/2026)
+
+En el BOE consolidado:
+
+| Norma | Qué dice | Uso |
+|---|---|---|
+| RD 126/2026, arts. 1 y 3 | SMI de 2026: 40,70 €/día, 1.221 €/mes, 17.094 € al año | El sueldo mínimo |
+| Art. 14 ET | Prueba: 2 meses (3 en empresas de menos de 25), sin indemnización | Prueba de 2 noches |
+| Art. 15.2 y 15.5 ET | Circunstancias de la producción: 6 meses (1 año por convenio sectorial) | El temporal |
+| Arts. 49.1.c, 52, 53, 54, 55.7 y 56.1 ET | 12, 20 (tope 12 mensualidades, preaviso de 15 días pagable) y 33 días (tope 24) | Despidos |
+| Art. 50 ET (LO 1/2025) | Tres mensualidades sin cobrar en un año: extinción con la indemnización del improcedente | Se va sin cobrar |
+| Arts. 32 y 33 ET | Superprivilegio de los últimos 30 días de salario; el FOGASA paga salarios e indemnizaciones en insolvencia | Orden de cobro y cierre |
+| Art. 44 ET | La sucesión de empresa mantiene los contratos | Traspasar |
+| Orden PJC/297/2026, arts. 4, 16 y 33 | Tipos de 2026: 23,60/4,70, desempleo 5,50/1,55 (temporal 6,70/1,60), FOGASA 0,20, FP 0,60/0,10, MEI 0,75/0,15 | La nómina |
+| DA 61.ª LGSS (RDL 3/2026) | Tarifa de accidentes con la CNAE-2025: 56 → 1,50 %, 47 → 1,65 %, 9531 → 4,45 % | La cuota de la empresa |
+| Art. 30.1 LGSS (Ley 6/2017) | Recargos del 10 % y del 20 % (20 y 35 % sin presentar) | Lo que no se paga |
+| RDL 1/2023, arts. 8, 9, 11.4, 13 y 21 | Parado de larga duración: 110 €/mes (128 con 45 años) 3 años; mantener 3 años; reintegro con recargo; 12 meses de exclusión | La bonificación |
+| LISOS, arts. 22.2 y 40.1.e | Sin alta: grave, 3.750-7.500 € en grado mínimo por trabajador, +20/30/40/50 % con varios | La Inspección |
+| Art. 18.2 LGSS | Se cotiza desde el inicio de la actividad | Las cuotas del B |
+| Art. 7.e LIRPF | Indemnización obligatoria exenta hasta 180.000 € | El despido |
+| DA 92.ª.Cinco Ley 31/2022 (prorrogada) | Crédito de FUNDAE de 420 € para empresas de 1 a 5 trabajadores | El curso |
+
+Sin comprobar o simplificado:
+
+- la «presunción de alta» del B no está escrita así en la ley (la obligación de cotizar nace con la actividad, art.
+  18.2 LGSS);
+- el modelo 111 trimestral y sus recargos de la LGT (del 1 al 20 %): las retenciones llevan el de la cotización;
+- las vacaciones (art. 38 ET), las pagas extra (van prorrateadas en el sueldo) y el preaviso de la dimisión;
+- el encadenamiento de temporales (art. 15.5 ET): un temporal se acaba y no se renueva;
+- el FOGASA no reclama al dueño lo que pagó (en la vida real se subroga);
+- el reintegro de la bonificación cuando se va por el art. 50 ET.
+
+### Decidido por Claude (cambiable)
+
+- Los sueldos a la escala de la `pala` y no a la vara del IRPF.
+- Las 3 habilidades y los 16 rasgos.
+- El tope de empleados por tamaño de local.
+- Los turnos de mañana y tarde, y las horas de la media jornada.
+- Que trabajen solos cada 10 minutos, con el mismo minijuego.
+- El humor y sus umbrales.
+- El curso de 9.000 Y$ y +15.
+- La Inspección al 4 % por noche.
+- Que se vaya con 2 noches sin cobrar.
+- El recargo del 20 % a todo lo que no se paga.

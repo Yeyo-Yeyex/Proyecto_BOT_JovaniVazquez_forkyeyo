@@ -217,6 +217,20 @@ class Business:
         company: La sociedad limitada, si `form` es `sl` (fase 3): ver
             `bot.services.business_sl.new_company`.
         pluri_week: Última semana (lunes ISO) en que se miró el reintegro de pluriactividad.
+        staff: La plantilla (fase 4): un diccionario por empleado, ver
+            `bot.services.business_staff.new_employee`.
+        staff_seq: El número del último empleado contratado.
+        seen: Las claves de los candidatos ya contratados o descartados (las últimas).
+        staff_day: Día (ISO) de las franjas de la plantilla ya jugadas (`staff_done`).
+        staff_done: Franjas de `staff_day` ya jugadas por la plantilla (la siguiente a jugar).
+        staff_today: Lo de la plantilla hoy: `turns`, `clients` y `sales`.
+        wage_debt: Lo que se debe a la plantilla y a quien se fue (sueldos e indemnizaciones).
+        bonus_ban: Último día (ISO) sin bonificaciones por un despido improcedente de alguien
+            bonificado (art. 11.4 del RDL 1/2023).
+        tipoff: Día (ISO) en que alguien en B se fue enfadado: esa noche, la Inspección es
+            más probable.
+        fundae_week: Semana (lunes ISO) de `fundae_used`.
+        fundae_used: Lo gastado esa semana del crédito de formación de FUNDAE.
     """
 
     user_id: int
@@ -258,6 +272,17 @@ class Business:
     reviews: list[list[Any]] = field(default_factory=list)
     company: dict[str, Any] = field(default_factory=dict)
     pluri_week: str = ""
+    staff: list[dict[str, Any]] = field(default_factory=list)
+    staff_seq: int = 0
+    seen: list[int] = field(default_factory=list)
+    staff_day: str = ""
+    staff_done: int = 0
+    staff_today: dict[str, int] = field(default_factory=dict)
+    wage_debt: int = 0
+    bonus_ban: str = ""
+    tipoff: str = ""
+    fundae_week: str = ""
+    fundae_used: int = 0
     id: int = 0
 
     @property
@@ -313,6 +338,7 @@ class Business:
         if self.day != today.isoformat():
             self.day = today.isoformat()
             self.turns_today = self.sales_today = self.clients_today = 0
+            self.staff_today = {}
         if self.week != week:
             if self.week:
                 self.last_week = dict(self.week_totals)

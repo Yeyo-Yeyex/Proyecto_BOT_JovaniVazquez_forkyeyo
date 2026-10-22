@@ -15,8 +15,14 @@ Python:
 Pantallas (`screen`), todas de 1000 × 640: dia (el inicio de `pala`: las 8 franjas, el curro y el
 negocio), montar (elegir sector), negocio (la portada y la vista previa), almacen, cuentas, cliente
 (el minijuego: comandas, caja o diagnóstico), cierre (el tique del turno) y, desde la fase 2,
-mejoras (las del local y las campañas) y resenas y, desde la fase 3, sociedad (convertir el negocio
-en sociedad limitada o el balance de la suya). El contrato de cada una está en la docstring de
+mejoras (las del local y las campañas) y resenas, desde la fase 3, sociedad (convertir el negocio
+en sociedad limitada o el balance de la suya, con la RIC, la chapa «ZEC 4 %» si está inscrita o
+por qué no, en una franja azul, debajo de los avisos) y, desde la fase 4, plantilla (hasta 6 tarjetas de
+empleado con su cara, contrato, humor, habilidades, rasgos y avisos, y las nóminas de la noche) y
+candidatos (los de hoy y la oferta al elegido, con el sello «sin alta» si es en B). La portada
+pinta a la plantilla en la acera (`staff`: sus caras salen de `seeds`) con su línea de hoy. Las
+caras de empleados y candidatos son las de la gente (`person`, de `seed`) con el delantal del
+negocio. El contrato de cada una está en la docstring de
 bot/services/business_view.py. Una pantalla desconocida lanza un error. Los cinco sectores
 (cafetería, tienda, taller, heladería y ferretería) tienen su fachada y su sala; cada producto
 (`PRODUCT`) y cada mejora (`EQUIP`) tiene su icono, y la terraza se ve en la fachada.
@@ -1095,6 +1101,14 @@ function person(cx, top, R, seed, o = {}) {
     }
     fillRR(px, py, pw, ph, 3, shade(L.shirt, -0.12)); line(px + 2, py + ph * 0.25, px + pw - 2, py + ph * 0.25, "rgba(0,0,0,0.18)", 1.2);
   }
+  // el delantal de la plantilla (`o.apron`, el color del negocio), con sus tirantes y el bolsillo
+  if (o.apron) {
+    const ax = bw * 0.34, ay = bodyTop + R * 0.75, ab = o.full ? bodyBot + R * 0.9 : bodyBot;
+    line(cx - ax + R * 0.1, ay + 1, cx - R * 0.3, bodyTop + R * 0.05, o.apron, R * 0.13);
+    line(cx + ax - R * 0.1, ay + 1, cx + R * 0.3, bodyTop + R * 0.05, o.apron, R * 0.13);
+    fillRR(cx - ax, ay, ax * 2, ab - ay, R * 0.12, o.apron);
+    fillRR(cx - ax * 0.45, ay + R * 0.45, ax * 0.9, R * 0.5, R * 0.08, o.pocketColor || shade(o.apron, -0.2));
+  }
   // las orejas y la cabeza
   dot(cx - R * 0.95, cy + R * 0.08, R * 0.2, shade(L.skin, -0.06)); dot(cx + R * 0.95, cy + R * 0.08, R * 0.2, shade(L.skin, -0.06));
   if (L.earrings) { dot(cx - R * 0.95, cy + R * 0.32, R * 0.08, C.gold); dot(cx + R * 0.95, cy + R * 0.32, R * 0.08, C.gold); }
@@ -1759,6 +1773,24 @@ function rosette(cx, cy, r) {
   fillRR(cx - r * 1.2, cy + r * 0.2, r * 2.4, r * 0.46, 4, C.bugDk);
   fitText("RECOMENDADO", cx, cy + r * 0.43, r * 2.2, F.d, Math.round(r * 0.3), 9, { color: "#fff", align: "center" });
 }
+// La plantilla en la acera, con el delantal del negocio, y su línea de hoy encima en una nota.
+// Devuelve dónde empieza por la izquierda (para que las etiquetas no la pisen).
+function streetStaff(st, fx, fy, fw, fh) {
+  const seeds = (st.staff.seeds || []).slice(0, 6), n = seeds.length, step = 40, floor = fy + fh - 10;
+  const x1 = fx + fw - 34, x0 = x1 - (n - 1) * step;
+  seeds.forEach((seed, i) => {
+    const cx = x0 + i * step, lift = i % 2 ? 0 : 6; // a dos alturas, para que no parezca una fila de soldados
+    ell(cx, floor - lift + 1, 17, 4, "rgba(0,0,0,0.25)");
+    person(cx, floor - lift - 84, 10.5, seed || 1, { full: true, floor: floor - lift, apron: st.main || C.atl, pocketColor: st.accent || C.gold });
+  });
+  if (st.staff.line) {
+    const lw = Math.min(fw - 28, width(st.staff.line, F.d(16)) + 52), lx = Math.min(x0 - 22, fx + fw - 14 - lw), ly = floor - 136;
+    fillRR(lx, ly + 3, lw, 34, 17, "rgba(0,0,0,0.22)"); fillRR(lx, ly, lw, 34, 17, "#fffdf6");
+    dot(lx + 18, ly + 17, 12, C.turqDk); smallIcon("people", lx + 18, ly + 18, 7.5, "#fff");
+    fitText(st.staff.line, lx + 38, ly + 17.5, lw - 48, F.d, 16, 12, { color: C.ink });
+  }
+  return n ? x0 - 26 : fx + fw - 14;
+}
 function paintNegocio(st) {
   const preview = st.mode === "preview";
   shopHeader(st, "", {
@@ -1770,12 +1802,14 @@ function paintNegocio(st) {
   rr(fx, fy, fw, fh, 16); stroke("rgba(0,0,0,0.15)", 2);
   // las etiquetas, pegadas abajo en la foto de la fachada
   if (!preview) {
+    // la plantilla (fase 4), en la acera a la derecha: las etiquetas se quedan a su izquierda
+    const right = st.staff ? streetStaff(st, fx, fy, fw, fh) : fx + fw - 14, tagMax = right - fx - 14;
     let tx = fx + 14, ty = fy + fh - 42;
     for (const t of (st.tags || []).slice(0, 4)) {
       const kind = /poco|sin |debe|deuda|cerrad/i.test(t) ? "amber" : "ink", icon = kind === "amber" ? "warn" : null;
-      const tw = tagW(t, 17, icon, fw - 28);
-      if (tx > fx + 14 && tx + tw > fx + fw - 14) { tx = fx + 14; ty -= 38; }
-      tag(t, tx, ty, kind, icon, 17, fw - 28); tx += tw + 8;
+      const tw = tagW(t, 17, icon, tagMax);
+      if (tx > fx + 14 && tx + tw > right) { tx = fx + 14; ty -= 38; }
+      tag(t, tx, ty, kind, icon, 17, tagMax); tx += tw + 8;
     }
     // arriba, sobre el cielo: la campaña en marcha, las mejoras instaladas y el distintivo
     let oy = fy + 14;
@@ -2260,6 +2294,13 @@ const SL_ICON = {
     fillRR(-13, 0, 26, 6, 2, c); rect(-15, 7, 30, 3.4, c); line(-18, 16, 18, 16, c, 2.4);
   },
   person(c) { circle(0, -8, 7); stroke(c, 3); g.beginPath(); g.arc(0, 18, 14, Math.PI * 1.12, Math.PI * 1.88); stroke(c, 3); },
+  palm(c) { // la palmera de la RIC: el tronco curvo, cinco hojas y el suelo
+    g.beginPath(); g.moveTo(-3, 18); g.quadraticCurveTo(-4, 2, 2, -10); stroke(c, 3.6);
+    for (const [ex, ey, qx, qy] of [[-17, -2, -10, -16], [-14, -16, -6, -18], [14, -16, 8, -19], [18, -3, 12, -15], [2, -21, 0, -16]]) {
+      g.beginPath(); g.moveTo(2, -10); g.quadraticCurveTo(qx, qy, ex, ey); stroke(c, 3);
+    }
+    line(-14, 18, 10, 18, c, 3);
+  },
   building(c) {
     rr(-12, -17, 24, 34, 2); stroke(c, 3);
     for (const y of [-11, -4, 3]) for (const x of [-6.5, 2.5]) rect(x, y, 4, 4, c);
@@ -2269,10 +2310,12 @@ const SL_ICON = {
 function slIcon(key, cx, cy, s, color) { unit(cx, cy, s, () => SL_ICON[key](color)); }
 const isZero = (v) => /^\s*[+−-]?0(\s|$)/.test(String(v || ""));
 
-// La cabecera, con la chapa «S.L.» detrás del nombre cuando ya es sociedad.
+// La cabecera, con la chapa «S.L.» detrás del nombre cuando ya es sociedad (y la de la ZEC si
+// está inscrita).
 function sociedadHeader(st, isSl) {
   const title = "SOCIEDAD", plate = isSl ? width("S.L.", F.d(18)) + 22 : 0;
-  const rightW = width(title, F.t(30)) + 40 + (plate ? plate + 16 : 0);
+  const zec = isSl && st.zec && st.zec.on ? width("ZEC 4 %", F.d(18)) + 44 : 0;
+  const rightW = width(title, F.t(30)) + 40 + (plate ? plate + 16 : 0) + (zec ? zec + 10 : 0);
   shopHeader(st, title, { sub: isSl ? "Sociedad limitada unipersonal" : "Convertir el negocio en sociedad", rightW });
   if (!isSl) return;
   const maxW = W - 104 - rightW - 20, [t, z] = fit(String(st.name || ""), maxW, F.t, 38, 20);
@@ -2281,6 +2324,14 @@ function sociedadHeader(st, isSl) {
   fillRR(x, y, plate, 30, 7, accent);
   rr(x + 3.5, y + 3.5, plate - 7, 23, 5); stroke(main, 1.6);
   T("S.L.", x + plate / 2, y + 15, { font: F.d(18), color: main, align: "center" });
+  if (!zec) return;
+  // la ZEC: chapa turquesa con su palmera, el tipo reducido de Canarias
+  const zx = x + plate + 10;
+  fillRR(zx, y + 2, zec, 30, 7, "rgba(0,0,0,0.3)");
+  fillRR(zx, y, zec, 30, 7, C.turqDk);
+  rr(zx + 3.5, y + 3.5, zec - 7, 23, 5); stroke("#fff", 1.6);
+  slIcon("palm", zx + 19, y + 15, 9, "#fff");
+  T("ZEC 4 %", zx + 32, y + 15, { font: F.d(18), color: "#fff" });
 }
 
 function paintSociedadAutonomo(st) {
@@ -2333,18 +2384,35 @@ function paintSociedadAutonomo(st) {
 function slTile(x, y, w, h, icon, color, label, value, sub) {
   card(x, y, w, h);
   dot(x + 42, y + h / 2, 26, color); (SL_ICON[icon] ? slIcon : glyph)(icon, x + 42, y + h / 2, 13, "#fff");
-  fitText(label, x + 82, y + 26, w - 96, F.m, 17, 12, { color: C.mute });
-  fitText(value || "", x + 82, y + 56, w - 96, F.d, 30, 16, { color: money(value) });
-  if (sub) fitText(sub, x + 82, y + 86, w - 96, F.m, 15, 11, { color: C.mute });
+  fitText(label, x + 82, y + h * 0.24, w - 96, F.m, 17, 12, { color: C.mute });
+  fitText(value || "", x + 82, y + h * 0.52, w - 96, F.d, 30, 16, { color: money(value) });
+  if (sub) fitText(sub, x + 82, y + h * 0.8, w - 96, F.m, 15, 11, { color: C.mute });
+}
+// Una tarjeta de cifras: el título con su icono y filas «etiqueta … valor» repartidas en lo que queda.
+function figuresCard(x, y, w, h, icon, title, items) {
+  card(x, y, w, h);
+  slIcon(icon, x + 26, y + 24, 11, C.ink);
+  fitText(title, x + 46, y + 24, w - 60, F.d, 16, 11, { color: C.ink });
+  const step = Math.min(46, (h - 46) / items.length), big = step >= 30;
+  items.forEach(([label, value, col], i) => {
+    const ry = y + 40 + i * step + step / 2;
+    if (i) line(x + 16, ry - step / 2, x + w - 16, ry - step / 2, C.line, 1.2);
+    const vw = Math.min(w * 0.45, width(value || "", F.d(big ? 20 : 17)) + 4);
+    fitText(label, x + 18, ry, w - 36 - vw - 10, F.m, big ? 18 : 16, 11, { color: C.mute });
+    fitText(value || "", x + w - 18, ry, w * 0.45, F.d, big ? 20 : 17, 12, { color: col, align: "right" });
+  });
 }
 function paintSociedadSl(st) {
-  const gap = 14, tw = (W - 32 - gap * 2) / 3, ty = 104, th = 108;
+  const gap = 14, tw = (W - 32 - gap * 2) / 3, ty = 104, th = 88;
   slTile(16, ty, tw, th, "safe", C.atl, "Caja de la sociedad", st.cash, "Su cuenta, aparte de la tuya");
   slTile(16 + tw + gap, ty, tw, th, "scale", C.laurel, "Patrimonio neto", st.equity, "Capital, reservas y resultados");
   slTile(16 + 2 * (tw + gap), ty, tw, th, "coin", C.bug, "Puedes repartir ahora", st.room, `Retención del sueldo: ${st.retention || ""}`);
-  // el balance y el último Impuesto sobre Sociedades, a la misma altura; los avisos, debajo
-  const warns = (st.warnings || []).slice(0, 3), wh = 32, bottom = 604 - (warns.length ? warns.length * (wh + 6) + 6 : 0);
-  const y = ty + th + 18, rh = 40, h = Math.min(bottom - y, 52 + 6 * rh + 10), bw = 600, rows = [
+  // los avisos y, si no está en la ZEC, por qué (o que puede), en franjas abajo
+  const zec = st.zec || {}, notes = (st.warnings || []).slice(0, 3).map((t) => [t, /disoluci|Hacienda/.test(t) ? "red" : "amber"]);
+  if (!zec.on && zec.text) notes.push([zec.text, "info"]);
+  const wh = 28, bottom = 606 - (notes.length ? notes.length * (wh + 4) + 4 : 0);
+  // el balance a la izquierda; el último Impuesto sobre Sociedades y la RIC, a la derecha
+  const y = ty + th + 16, rh = 40, h = Math.min(bottom - y, 52 + 6 * rh + 10), bw = 600, rows = [
     ["Capital social", st.capital], ["Reserva legal", st.reserve], ["Disponible para dividendos", st.retained],
     ["Préstamo del socio", st.loan], ["Deuda con Hacienda", st.tax_debt, true], ["Bases negativas por compensar", st.losses],
   ], step = (h - 62) / rows.length;
@@ -2359,31 +2427,34 @@ function paintSociedadSl(st) {
     fitText(label, 34, ry, bw * 0.6, F.m, 19, 13, { color: C.ink });
     fitText(value || "", 16 + bw - 20, ry, bw * 0.36, F.d, 20, 13, { color: col, align: "right" });
   });
-  const lx = 16 + bw + gap, lw = W - 16 - lx, last = st.last;
-  card(lx, y, lw, h);
-  slIcon("stamp", lx + 26, y + 26, 11, C.ink);
-  fitText("ÚLTIMO IMPUESTO SOBRE SOCIEDADES", lx + 46, y + 26, lw - 60, F.d, 16, 11, { color: C.ink });
+  const lx = 16 + bw + gap, lw = W - 16 - lx, last = st.last, ric = st.ric || {};
+  const lh = Math.round(44 + (h - 98) * 4 / 7), ry = y + lh + 10, rH = h - lh - 10;
   if (last) {
-    const items = [["Base imponible", last.base, money(last.base)], ["Tipo", last.rate, C.ink], ["Cuota pagada", last.tax, C.redDk], ["A la reserva legal", last.reserve, C.ink]];
-    const st2 = Math.min(46, (h - 62) / items.length);
-    items.forEach(([label, value, col], i) => {
-      const ry = y + 56 + i * st2 + st2 / 2;
-      if (i) line(lx + 16, ry - st2 / 2, lx + lw - 16, ry - st2 / 2, C.line, 1.2);
-      fitText(label, lx + 18, ry, lw * 0.5, F.m, 18, 12, { color: C.mute });
-      fitText(value || "", lx + lw - 18, ry, lw * 0.45, F.d, 20, 13, { color: col, align: "right" });
-    });
+    figuresCard(lx, y, lw, lh, "stamp", "ÚLTIMO IMPUESTO SOBRE SOCIEDADES", [
+      ["Base imponible", last.base, money(last.base)], ["Tipo", last.rate, C.ink], ["Cuota pagada", last.tax, C.redDk], ["A la reserva legal", last.reserve, C.ink],
+    ]);
   } else {
-    const cy = y + 56 + (h - 56) / 2 - 18;
-    circle(lx + lw / 2, cy, 30); g.setLineDash([6, 5]); stroke("rgba(103,95,82,0.45)", 2.4); g.setLineDash([]);
-    slIcon("stamp", lx + lw / 2, cy, 16, "rgba(103,95,82,0.5)");
-    fitText("Aún no ha cerrado ninguna semana", lx + lw / 2, cy + 52, lw - 30, F.m, 19, 13, { color: C.mute, align: "center" });
+    card(lx, y, lw, lh);
+    slIcon("stamp", lx + 26, y + 24, 11, C.ink);
+    fitText("ÚLTIMO IMPUESTO SOBRE SOCIEDADES", lx + 46, y + 24, lw - 60, F.d, 16, 11, { color: C.ink });
+    const r = clamp((lh - 90) / 2.4, 14, 30), cy = y + 44 + (lh - 44) / 2 - r * 0.6;
+    circle(lx + lw / 2, cy, r); g.setLineDash([6, 5]); stroke("rgba(103,95,82,0.45)", 2.4); g.setLineDash([]);
+    slIcon("stamp", lx + lw / 2, cy, r * 0.53, "rgba(103,95,82,0.5)");
+    fitText("Aún no ha cerrado ninguna semana", lx + lw / 2, cy + r + 20, lw - 30, F.m, 18, 13, { color: C.mute, align: "center" });
   }
-  warns.forEach((text, i) => {
-    const wy = bottom + 6 + i * (wh + 6), red = /disoluci|Hacienda/.test(text);
-    fillRR(16, wy, W - 32, wh, wh / 2, red ? "#fde3e0" : "#fdf0cc");
-    rr(16.5, wy + 0.5, W - 33, wh - 1, wh / 2); stroke(red ? C.red : C.amber, 1.6);
-    glyph("warn", 38, wy + wh / 2, 9, red ? C.red : "#c98a00");
-    fitText(text, 56, wy + wh / 2 + 1, W - 96, F.m, 17, 11, { color: red ? C.redDk : "#5a4000" });
+  // la RIC: lo que se dota cada domingo, lo que falta por invertir (y hasta cuándo) y lo bloqueado
+  figuresCard(lx, ry, lw, rH, "palm", "RESERVA PARA INVERSIONES (RIC)", [
+    ["Se dota cada domingo", ric.share, isZero(ric.share) ? C.mute : C.ink],
+    [ric.due ? `Por invertir hasta el ${ric.due}` : "Por invertir", ric.pending, isZero(ric.pending) ? C.mute : ric.due ? "#b05a00" : C.ink],
+    ["Reserva indisponible", ric.locked, isZero(ric.locked) ? C.mute : C.ink],
+  ]);
+  const NOTE = { red: ["#fde3e0", C.red, C.redDk], amber: ["#fdf0cc", C.amber, "#5a4000"], info: ["#e4f1f7", C.blue, C.atlDk] };
+  notes.forEach(([text, kind], i) => {
+    const wy = bottom + 4 + i * (wh + 4), [bg, edge, ink] = NOTE[kind];
+    fillRR(16, wy, W - 32, wh, wh / 2, bg);
+    rr(16.5, wy + 0.5, W - 33, wh - 1, wh / 2); stroke(edge, 1.6);
+    if (kind === "info") slIcon("building", 38, wy + wh / 2, 9, edge); else glyph("warn", 38, wy + wh / 2, 9, kind === "red" ? C.red : "#c98a00");
+    fitText(text, 56, wy + wh / 2 + 1, W - 96, F.m, 17, 11, { color: ink });
   });
   footer(st.foot, H - 20);
 }
@@ -2393,9 +2464,287 @@ function paintSociedad(st) {
   (isSl ? paintSociedadSl : paintSociedadAutonomo)(st);
 }
 
+// -- plantilla y candidatos: los empleados (fase 4) ------------------------------------------
+
+// El color de cada contrato (la clave de `contract`) y de cada perfil de candidato.
+const CONTRACT_KIND = { indefinido: "green", temporal: "blue", b: "ink" };
+const PROFILE_COLOR = { general: "#44546a", joven: C.turqDk, parado: C.bugDk };
+// El humor: color, el tono oscuro para el texto y el nombre (la cara de `moodFace` va aparte).
+const MOOD = {
+  contento: { color: C.green, dark: C.greenDk, label: "Contento" },
+  normal: { color: C.amber, dark: "#7a5600", label: "Normal" },
+  quemado: { color: C.red, dark: C.redDk, label: "Quemado" },
+};
+const SKILL_COLOR = { acierto: C.turqDk, rapidez: C.sun, trato: C.bug };
+
+// La cara del humor, de trazos: sonrisa, boca recta o boca triste con las cejas caídas.
+function moodFace(mood, cx, cy, r) {
+  const m = MOOD[mood] || MOOD.normal, ink = mood === "normal" ? "#3a2800" : "#fff";
+  dot(cx, cy, r, m.color); circle(cx, cy, r); stroke("#fff", Math.max(1.5, r * 0.14));
+  dot(cx - r * 0.34, cy - r * 0.16, r * 0.13, ink); dot(cx + r * 0.34, cy - r * 0.16, r * 0.13, ink);
+  g.lineCap = "round"; g.beginPath();
+  if (mood === "contento") g.arc(cx, cy + r * 0.02, r * 0.46, 0.18 * Math.PI, 0.82 * Math.PI);
+  else if (mood === "quemado") g.arc(cx, cy + r * 0.72, r * 0.42, 1.22 * Math.PI, 1.78 * Math.PI);
+  else { g.moveTo(cx - r * 0.34, cy + r * 0.36); g.lineTo(cx + r * 0.34, cy + r * 0.36); }
+  stroke(ink, r * 0.15);
+  if (mood === "quemado") for (const sx of [-1, 1]) line(cx + sx * r * 0.6, cy - r * 0.34, cx + sx * r * 0.16, cy - r * 0.52, ink, r * 0.12);
+  g.lineCap = "butt";
+}
+// El retrato de un empleado o candidato: su busto (de `seed`) con el delantal del negocio.
+function portrait(x, y, s, seed, st, age) {
+  const main = st.main || C.atl;
+  fillRR(x, y, s, s, 14, mix(main, "#ffffff", 0.82));
+  g.save(); rr(x, y, s, s, 14); g.clip();
+  rect(x, y + s * 0.62, s, s * 0.38, mix(main, "#ffffff", 0.7));
+  person(x + s / 2, y + s * 0.1, s * 0.25, seed || 1, { cut: y + s + 6, apron: main, pocketColor: st.accent || C.gold });
+  if (age != null) { // la edad, en una pastilla sobre la foto
+    const t = `${age} años`, tw = width(t, F.d(14)) + 14;
+    fillRR(x + 5, y + s - 25, tw, 20, 10, "rgba(20,28,36,0.72)");
+    T(t, x + 5 + tw / 2, y + s - 15, { font: F.d(14), color: "#fff", align: "center" });
+  }
+  g.restore();
+  rr(x + 0.5, y + 0.5, s - 1, s - 1, 14); stroke("rgba(0,0,0,0.14)", 1.4);
+}
+// El nombre en una línea si cabe a `big`; si no, en dos a `small` (y si ni así, con «…»).
+function nameBlock(name, x, cy, w, big, small) {
+  const [t, z] = fit(name, w, F.d, big, big - 3);
+  if (width(name, F.d(big - 3)) <= w) { T(t, x, cy, { font: F.d(z), color: C.ink }); return; }
+  const lines = wrap(name, w, F.d(small), 2);
+  lines.forEach((l, i) => T(l, x, cy + (i - (lines.length - 1) / 2) * (small + 4), { font: F.d(small), color: C.ink }));
+}
+// El distintivo del contrato: la clave en su color y lo que sigue al « · » (la prueba, el fin) al lado.
+function contractBadge(kind, text, x, y, maxW, size = 14) {
+  const [head, ...rest] = String(text || "").split(" · ");
+  const w = chip(head, x, y, CONTRACT_KIND[kind] || "grey", { size, maxW: Math.min(maxW, 170) });
+  if (kind === "b") { // en B: unas rayas encima, que se note sin mirar el color
+    g.save(); rr(x, y, w, size + 14, (size + 14) / 2); g.clip(); g.beginPath();
+    for (let k = -size; k < w; k += 7) { g.moveTo(x + k, y + size + 14); g.lineTo(x + k + size + 14, y); }
+    stroke("rgba(255,255,255,0.13)", 2.5); g.restore();
+  }
+  // lo que sigue va en una línea si cabe a 13 o más; si no (en prueba y su fin), en dos
+  const rw = maxW - w - 8, cy = y + (size + 14) / 2 + 1, more = rest.join(" · ");
+  if (rest.length === 1 || width(more, F.m(13)) <= rw) { if (rest.length) fitText(more, x + w + 8, cy, rw, F.m, size + 2, 12, { color: C.mute }); }
+  else rest.slice(0, 2).forEach((t, i) => fitText(t, x + w + 8, cy + (i ? 8 : -8), rw, F.m, 14, 11, { color: C.mute }));
+}
+// Tres barras de habilidad en columnas: el nombre y el valor encima, la barra debajo.
+function skillBars(skills, x, y, w) {
+  const items = (skills || []).slice(0, 3), gap = 12, cw = (w - gap * 2) / 3;
+  items.forEach((s, i) => {
+    const sx = x + i * (cw + gap), v = clamp(Number(s.value) || 0, 0, 100), col = SKILL_COLOR[s.key] || C.atl;
+    fitText(s.name || "", sx, y, cw - 30, F.m, 15, 12, { color: C.mute });
+    T(String(Math.round(v)), sx + cw, y, { font: F.d(15), color: C.ink, align: "right" });
+    fillRR(sx, y + 10, cw, 8, 4, "#ece2cc");
+    if (v > 0) fillRR(sx, y + 10, Math.max(8, cw * v / 100), 8, 4, col);
+  });
+}
+// Los rasgos como etiquetas claras, repartiendo el ancho si no caben.
+function traitTags(traits, x, cy, w, size = 15) {
+  const items = (traits || []).slice(0, 2).map((t) => t.name || ""), h = size + 10, gap = 6;
+  const want = items.map((t) => width(t, F.m(size)) + 18), total = want.reduce((a, b) => a + b, 0) + gap * (items.length - 1);
+  const k = total > w ? (w - gap * (items.length - 1)) / (total - gap * (items.length - 1)) : 1;
+  let tx = x;
+  items.forEach((t, i) => {
+    const tw = want[i] * k;
+    fillRR(tx, cy - h / 2, tw, h, h / 2, "#f2e9d4"); rr(tx + 0.5, cy - h / 2 + 0.5, tw - 1, h - 1, h / 2); stroke("rgba(160,120,60,0.3)", 1);
+    T(ellipsize(t, tw - 16, F.m(size)), tx + 9, cy + 0.5, { font: F.m(size), color: C.ink });
+    tx += tw + gap;
+  });
+}
+// El humor: la cara, la palabra, la barra de 0 a 100 y la cifra.
+function humorRow(mood, humor, x, cy, w) {
+  const m = MOOD[mood] || MOOD.normal, v = clamp(Number(humor) || 0, 0, 100);
+  moodFace(mood, x + 11, cy, 11);
+  T(m.label, x + 28, cy, { font: F.d(15), color: m.dark });
+  const bx = x + 28 + width(m.label, F.d(15)) + 10, bw = w - (bx - x) - 34;
+  fillRR(bx, cy - 4, bw, 8, 4, "#ece2cc");
+  if (v > 0) fillRR(bx, cy - 4, Math.max(8, bw * v / 100), 8, 4, m.color);
+  T(String(Math.round(v)), x + w, cy, { font: F.d(15), color: C.ink, align: "right" });
+}
+// El turno («Mañana · …» o «Tarde · …»), con su sol o su luna.
+function shiftLine(text, x, cy, maxW) {
+  const night = /^tarde/i.test(String(text || ""));
+  if (night) glyph("moon", x + 8, cy, 8, "#7a3aa8"); else smallIcon("sun", x + 8, cy, 8, C.sunDk);
+  fitText(text || "", x + 22, cy, maxW - 22, F.m, 15, 12, { color: C.ink });
+}
+// La selección: un marco naranja y un visto en la esquina (no solo el color).
+function selectedFrame(x, y, w, h) {
+  fillRR(x - 5, y - 5, w + 10, h + 10, 19, C.sun);
+}
+function selectedMark(x, y) {
+  dot(x, y, 15, C.sun); circle(x, y, 15); stroke("#fff", 2.5); smallIcon("check", x, y, 9, "#fff");
+}
+
+function staffCard(e, x, y, w, h, st) {
+  if (e.selected) selectedFrame(x, y, w, h);
+  card(x, y, w, h);
+  const p = 12, fs = 80, rx = x + p + fs + 12, rw = x + w - p - rx, iw = w - 2 * p;
+  portrait(x + p, y + p, fs, e.seed, st, e.age);
+  nameBlock(e.name || "", rx, y + 30, rw, 19, 17);
+  contractBadge(e.contract, e.contract_name, rx, y + 52, rw, 13);
+  glyph("calendar", rx + 8, y + 98, 7.5, C.mute);
+  fitText(e.today || "", rx + 21, y + 98, rw - 21, F.m, 15, 12, { color: /no ha venido/i.test(e.today || "") ? C.redDk : C.ink });
+  humorRow(e.mood, e.humor, x + p, y + 115, iw);
+  const ww = width(e.wage || "", F.d(15));
+  shiftLine(e.shift, x + p, y + 138, iw - Math.min(ww, iw * 0.55) - 10);
+  fitText(e.wage || "", x + w - p, y + 138, iw * 0.55, F.d, 15, 12, { color: C.ink, align: "right" });
+  skillBars(e.skills, x + p, y + 159, iw);
+  traitTags(e.traits, x + p, y + 193, iw);
+  // los avisos, en una franja ámbar abajo
+  const alerts = (e.alerts || []).slice(0, 2);
+  if (alerts.length) {
+    const by = y + h - 28;
+    g.save(); rr(x, y, w, h, 14); g.clip();
+    rect(x, by, w, 28, "#fdf0cc"); rect(x, by, w, 1.5, "rgba(200,140,20,0.5)"); g.restore();
+    glyph("warn", x + p + 9, by + 14, 8.5, "#c98a00");
+    fitText(alerts.join(" · "), x + p + 24, by + 15, iw - 24, F.d, 14, 11, { color: "#5a4000" });
+  }
+  if (e.selected) selectedMark(x + w - 4, y + 4);
+}
+// El hueco libre de la plantilla: invita a contratar en Candidatos.
+function hireSlot(x, y, w, h, big) {
+  dashedCard(x, y, w, h);
+  const cx = x + w / 2, cy = y + h * (big ? 0.36 : 0.4), r = big ? 56 : 36;
+  if (big) { // tres siluetas en la acera, a la espera, y el «+» de contratar
+    ell(cx, cy + 74, 150, 10, "rgba(103,95,82,0.1)");
+    [[-92, 11, 150], [0, 23, 168], [92, 37, 144]].forEach(([dx, seed, hh]) => silhouette(cx + dx, cy + 74, hh, seed, "rgba(103,95,82,0.2)"));
+    dot(cx + 150, cy - 40, 24, C.sun); glyph("plus", cx + 150, cy - 40, 14, "#fff");
+  } else {
+    dot(cx, cy, r, "rgba(103,95,82,0.1)");
+    smallIcon("people", cx, cy + r * 0.08, r * 0.55, "rgba(103,95,82,0.55)");
+    dot(cx + r * 0.78, cy - r * 0.7, r * 0.34, C.sun); glyph("plus", cx + r * 0.78, cy - r * 0.7, r * 0.2, "#fff");
+  }
+  if (big) {
+    TX("Aún no hay plantilla", cx, y + h * 0.66, { font: F.t(34), color: C.ink, align: "center" });
+    fitText("Contrata en Candidatos: cada día llegan caras nuevas.", cx, y + h * 0.66 + 42, w - 60, F.m, 21, 14, { color: C.mute, align: "center" });
+  } else {
+    fitText("Puesto libre", cx, y + h * 0.66, w - 30, F.t, 24, 16, { color: C.ink, align: "center", fancy: true });
+    fitText("Contrata en Candidatos", cx, y + h * 0.66 + 30, w - 30, F.m, 17, 13, { color: C.mute, align: "center" });
+  }
+}
+// Una pastilla de las cuentas de abajo, con su icono. Devuelve su ancho.
+function accountPill(text, x, cy, icon, kind, maxW) {
+  const [bg, ink, line_] = kind === "red" ? ["#fde3e0", C.redDk, C.red] : ["#fffdf6", C.ink, "rgba(160,120,60,0.35)"];
+  const [t, z] = fit(text, maxW - 44, F.d, 16, 12), w = width(t, F.d(z)) + 44, h = 30;
+  fillRR(x, cy - h / 2 + 2, w, h, h / 2, "rgba(92,58,20,0.12)"); fillRR(x, cy - h / 2, w, h, h / 2, bg);
+  rr(x + 0.5, cy - h / 2 + 0.5, w - 1, h - 1, h / 2); stroke(line_, 1.4);
+  glyph(icon, x + 18, cy, 8, kind === "red" ? C.red : C.atl);
+  T(t, x + 32, cy + 0.5, { font: F.d(z), color: ink });
+  return w;
+}
+function paintPlantilla(st) {
+  shopHeader(st, "PLANTILLA", { sub: st.cap || "", h: 84 });
+  const team = (st.staff || []).slice(0, 6), gap = 12, cw = (W - 32 - gap * 2) / 3, ch = 236, y0 = 94;
+  if (!team.length) hireSlot(16, y0, W - 32, ch * 2 + gap, true);
+  team.forEach((e, i) => staffCard(e, 16 + (i % 3) * (cw + gap), y0 + Math.floor(i / 3) * (ch + gap), cw, ch, st));
+  if (team.length && team.length < 6) { const i = team.length; hireSlot(16 + (i % 3) * (cw + gap), y0 + Math.floor(i / 3) * (ch + gap), cw, ch, false); }
+  // las cuentas: nóminas, lo de hoy y lo que se debe
+  let px = 16;
+  const py = y0 + ch * 2 + gap + 22, pills = [[st.payroll, "coin", ""], [st.today, "calendar", ""], [st.debt, "warn", "red"]].filter(([t]) => t);
+  pills.forEach(([t, icon, kind]) => { px += accountPill(t, px, py, icon, kind, W - 16 - px) + 10; });
+  footer(st.foot, H - 13);
+}
+
+// Una tarjeta de candidato: retrato, nombre, perfil, lo que trae, habilidades, rasgos y lo que pide.
+function candidateCard(c, x, y, w, h, st) {
+  if (c.selected) selectedFrame(x, y, w, h);
+  card(x, y, w, h);
+  const p = 12, fs = 88, rx = x + p + fs + 12, rw = x + w - p - rx, iw = w - 2 * p;
+  portrait(x + p, y + p, fs, c.seed, st, c.age);
+  nameBlock(c.name || "", rx, y + 32, rw, 19, 17);
+  const pc = PROFILE_COLOR[c.profile] || C.mute;
+  dot(rx + 6, y + 70, 6, pc);
+  fitText(c.profile_name || "", rx + 18, y + 70, rw - 18, F.d, 15, 11, { color: pc });
+  let cy = y + p + fs + 12;
+  if (c.part_time || c.bonus) { // lo que trae: solo media jornada y la bonificación
+    if (c.part_time) { chip("Solo media jornada", rx, y + 84, "amber", { size: 13, maxW: rw }); }
+    if (c.bonus) {
+      const lines = wrap(c.bonus, iw - 40, F.m(14), 2), bh = 12 + lines.length * 18;
+      fillRR(x + p, cy, iw, bh, 10, "#e3f4e8"); rr(x + p + 0.5, cy + 0.5, iw - 1, bh - 1, 10); stroke("rgba(31,157,85,0.45)", 1.2);
+      glyph("coin", x + p + 16, cy + bh / 2, 8, C.greenDk);
+      lines.forEach((l, i) => T(l, x + p + 32, cy + 15 + i * 18, { font: F.m(14), color: C.greenDk }));
+      cy += bh + 10;
+    }
+  }
+  skillBars(c.skills, x + p, cy + 8, iw);
+  cy += 38;
+  // lo que pide, en una nota al pie: en una línea o partida por el « · »
+  const askW = iw - 40, askText = String(c.ask || "");
+  const ask = width(askText, F.d(15)) <= askW ? [askText] : askText.split(" · ").slice(0, 2).map((l, i, a) => ellipsize(i < a.length - 1 ? l + " ·" : l, askW, F.d(15)));
+  const askH = 14 + ask.length * 18, ay = y + h - p - askH;
+  // los rasgos: el nombre y lo que hace, solo si cabe entero (si no, solo los nombres)
+  const traits = (c.traits || []).slice(0, 2), tw = iw - 18, font = F.r(14);
+  const texts = traits.map((t) => wrap(t.text || "", tw, font, 3));
+  const need = texts.reduce((a, l) => a + 19 + l.length * 16, 0) + 6 * (traits.length - 1);
+  if (texts.every((l) => l.length <= 2 && !l.some((s) => s.endsWith("…"))) && need <= ay - 8 - cy) {
+    let ty = cy;
+    traits.forEach((t, i) => {
+      starPath(x + p + 6, ty + 8, 6, C.gold);
+      fitText(t.name || "", x + p + 18, ty + 8, tw, F.d, 15, 12, { color: C.ink });
+      texts[i].forEach((l, k) => T(l, x + p + 18, ty + 26 + k * 16, { font, color: C.mute }));
+      ty += 19 + texts[i].length * 16 + 6;
+    });
+  } else traitTags(traits, x + p, cy + 10, iw);
+  fillRR(x + p, ay, iw, askH, 10, "#fbf6ea"); rr(x + p + 0.5, ay + 0.5, iw - 1, askH - 1, 10); stroke(C.line, 1.2);
+  glyph("coin", x + p + 16, ay + askH / 2, 8.5, C.atl);
+  ask.forEach((l, i) => T(l, x + p + 32, ay + askH / 2 + (i - (ask.length - 1) / 2) * 18, { font: F.d(15), color: C.ink }));
+  if (c.selected) selectedMark(x + w - 4, y + 4);
+}
+// «Bruto: 5.860 Y$ la noche» → la etiqueta pequeña encima y la cifra grande debajo.
+function offerTile(text, x, y, w, h, color) {
+  const s = String(text || ""), i = s.indexOf(": "), label = i > 0 ? s.slice(0, i) : "", value = i > 0 ? s.slice(i + 2) : s;
+  fillRR(x, y, w, h, 12, "#fbf6ea"); rr(x + 0.5, y + 0.5, w - 1, h - 1, 12); stroke(C.line, 1.2);
+  fitText(label, x + 14, y + 22, w - 24, F.m, 16, 12, { color: C.mute });
+  fitText(value, x + 14, y + 52, w - 24, F.d, 24, 14, { color: color || C.ink });
+}
+// El sello de «sin alta» de la oferta en B, torcido y con doble marco.
+function blackStamp(cx, cy) {
+  g.save(); g.translate(cx, cy); g.rotate(-0.16);
+  rr(-74, -30, 148, 60, 8); stroke(C.red, 4); rr(-66, -22, 132, 44, 5); stroke(C.red, 1.6);
+  TX("SIN ALTA", 0, -1, { font: F.t(28), color: C.red, align: "center" });
+  g.restore();
+}
+function offerPanel(o, x, y, w, h) {
+  if (!o) {
+    dashedCard(x, y, w, h);
+    dot(x + 60, y + h / 2, 30, "rgba(103,95,82,0.12)");
+    unit(x + 60, y + h / 2, 16, () => { g.rotate(-Math.PI / 2); GLYPH.arrow("rgba(103,95,82,0.6)"); }); // apunta a las tarjetas
+    TX("Elige a alguien para hacerle una oferta", x + 108, y + h / 2, { font: F.t(28), color: C.ink });
+    return;
+  }
+  card(x, y, w, h, o.black ? { fill: "#f4efe6" } : {});
+  if (o.black) { // la franja rayada de la izquierda: sin contrato ni alta
+    g.save(); rr(x, y, w, h, 14); g.clip(); rect(x, y, 22, h, C.pico);
+    g.beginPath(); for (let k = -30; k < h; k += 14) { g.moveTo(x, y + k + 22); g.lineTo(x + 22, y + k); } stroke(C.gold, 5); g.restore();
+  }
+  const lx = x + (o.black ? 40 : 22);
+  sectionLabel("La oferta", lx, y + 26);
+  // `offer.kind` es la clave del contrato; `offer.contract`, su nombre
+  const kind = o.kind || (o.black ? "b" : /^indef/i.test(o.contract || "") ? "indefinido" : "temporal");
+  contractBadge(kind, o.contract, lx, y + 44, 220, 20);
+  shiftLine(o.shift, lx, y + 106, 230);
+  const tx = x + 268, tw = (o.black ? 520 : 680) / 3 - 10;
+  [[o.gross, C.ink], [o.net, C.greenDk], [o.cost, C.redDk]].forEach(([t, col], i) => offerTile(t, tx + i * (tw + 10), y + 16, tw, 74, col));
+  if (o.bonus) tag(o.bonus, tx, y + h - 42, "green", "down", 16, 3 * tw + 20);
+  if (o.black) blackStamp(x + w - 92, y + h / 2);
+}
+function paintCandidatos(st) {
+  shopHeader(st, "CANDIDATOS", { sub: SECTOR_NAME[st.sector] || "" });
+  sectionLabel("Los de hoy", 18, 114);
+  if (st.room) chip(st.room, W - 16, 100, /libre/i.test(st.room) ? "green" : "red", { align: "right", size: 15 });
+  const list = (st.candidates || []).slice(0, 3), gap = 14, cw = (W - 32 - gap * 2) / 3, cy = 136, ch = 316;
+  list.forEach((c, i) => candidateCard(c, 16 + i * (cw + gap), cy, cw, ch, st));
+  if (!list.length) {
+    dashedCard(16, cy, W - 32, ch);
+    TX("Hoy no queda nadie por ver", W / 2, cy + ch / 2 - 10, { font: F.t(32), color: C.ink, align: "center" });
+    fitText("Mañana llegan candidatos nuevos.", W / 2, cy + ch / 2 + 30, W - 80, F.m, 20, 14, { color: C.mute, align: "center" });
+  }
+  offerPanel(st.offer || null, 16, cy + ch + 14, W - 32, 138);
+  footer(st.foot, H - 15);
+}
+
 // -- Entrada ---------------------------------------------------------------------------------
 
-const SCREENS = { dia: paintDia, montar: paintMontar, negocio: paintNegocio, almacen: paintAlmacen, cuentas: paintCuentas, cliente: paintCliente, cierre: paintCierre, mejoras: paintMejoras, resenas: paintResenas, sociedad: paintSociedad };
+const SCREENS = { dia: paintDia, montar: paintMontar, negocio: paintNegocio, almacen: paintAlmacen, cuentas: paintCuentas, cliente: paintCliente, cierre: paintCierre, mejoras: paintMejoras, resenas: paintResenas, sociedad: paintSociedad, plantilla: paintPlantilla, candidatos: paintCandidatos };
 
 function paintScreen(st) {
   const draw = SCREENS[st.screen];

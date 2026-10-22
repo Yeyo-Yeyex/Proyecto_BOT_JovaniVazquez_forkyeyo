@@ -24,8 +24,12 @@ debajo, que también sirve de reserva si no hay Node ni Chromium. Pantallas:
   producto en el almacén y 🚪 cerrar traspasándolo o liquidando el stock y las mejoras.
 - 🏦 **Banco** (9.7.0): abre en un mensaje privado el mostrador 🏪 Negocio de `banco`, con los
   préstamos a nombre del negocio (`banco.open_business`).
+- **Fase 4:** 👥 **Plantilla**: los empleados, con su subida de sueldo, su curso, hacerle fijo
+  y despedirle (con lo que cuesta cada forma), y los **candidatos** de hoy con el contrato,
+  la jornada y el turno que se les ofrece.
 
-Cada noche, una tarea cada 10 minutos cobra el local de cada negocio
+Una tarea cada 10 minutos juega las franjas de la plantilla que ya han acabado
+(`BusinessService.staff_turns`) y, cada noche, cobra el local de cada negocio y las nóminas
 (`BusinessService.close_nights`) y la cuota de autónomo de la semana.
 
 Dinero: todo por `EconomyService.business` (detalle fiscal allí) y la cuota con
@@ -60,7 +64,19 @@ from bot.cogs import achievements as logros
 from bot.cogs import banco, renta
 from bot.repositories.business import companies_in
 from bot.services import business_sl as sl
-from bot.services.achievements import StatDelta, business_loan_night_stats, business_stats
+from bot.services import business_staff as staff
+from bot.services.achievements import (
+    StatDelta,
+    business_loan_night_stats,
+    business_stats,
+    staff_course_stats,
+    staff_fire_stats,
+    staff_hire_stats,
+    staff_night_stats,
+    staff_permanent_stats,
+    staff_raise_stats,
+    staff_turns_stats,
+)
 from bot.services.business import (
     Business,
     move_quote,
@@ -86,21 +102,26 @@ from bot.services.business_catalog import (
 from bot.services.business_games import COINS, QUOTES, TurnGame
 from bot.services.business_scene import BusinessScene
 from bot.services.business_view import (
+    CONTRACT_NAMES,
     almacen_state,
     campaign_state,
+    candidatos_state,
     cierre_state,
     cliente_state,
     cuentas_state,
     mejoras_state,
     montar_state,
     negocio_state,
+    plantilla_state,
     preview_state,
     resenas_state,
+    shift_text,
     signed,
     size_text,
     sociedad_state,
     traslado_state,
     turn_lines,
+    zec_text,
 )
 from bot.services.economy import format_amount, next_daily_at, parse_amount
 from bot.services.housing_catalog import BARRIO_BY_KEY, BARRIOS, ISLANDS, THEMES
@@ -173,6 +194,20 @@ MEJORAS = "mejoras"
 RESENAS = "resenas"
 TRASLADO = "traslado"
 SOCIEDAD = "sociedad"
+PLANTILLA = "plantilla"
+CANDIDATOS = "candidatos"
+DESPIDO = "despido"
+#: Horas de cada turno y jornada de la plantilla, para los desplegables.
+SHIFT_HOURS = {
+    ("manana", staff.FULL_DAY): "8:00-16:00", ("manana", staff.HALF_DAY): "10:00-14:00",
+    ("tarde", staff.FULL_DAY): "16:00-24:00", ("tarde", staff.HALF_DAY): "18:00-22:00",
+}  # fmt: skip
+#: Los contratos que se ofrecen: `(clave, nombre, descripción)`.
+CONTRACTS: tuple[tuple[str, str, str], ...] = (
+    ("indefinido", "Indefinido", "Con período de prueba; al parado de larga duración, bonificado"),
+    ("temporal", "Temporal (6 meses)", "Se acaba solo y cotiza algo más de desempleo"),
+    ("b", "En B, sin alta", "Ni cotiza ni contrato. Si pasa la Inspección, multa de 3.750 €"),
+)
 
 
 def game_id(token: int, round_index: int, action: str) -> str:
@@ -307,6 +342,12 @@ class NegocioPanel(ui.LayoutView):
         #: 🏢 Sociedad: el capital elegido para constituirla y la foto de la sociedad.
         self.capital = sl.FULL_CAPITAL
         self.company: CompanyView | None = None
+        #: 👥 Plantilla: el empleado elegido, el candidato elegido y lo que se le ofrece.
+        self.employee: int | None = None
+        self.candidate: int | None = None
+        self.offer: dict[str, Any] = {
+            "contract": "indefinido", "jornada": staff.FULL_DAY, "shift": "manana",
+        }  # fmt: skip
         self.token = cog.new_token()
         self._shown = ""
         self._lock = TimedLock("negocio:NegocioPanel._lock")
@@ -353,6 +394,13 @@ class NegocioPanel(ui.LayoutView):
             return resenas_state(business, self._today())
         if self.screen == SOCIEDAD and self.company is not None:
             return sociedad_state(self.company, capital=self.capital)
+        if self.screen in (PLANTILLA, DESPIDO):
+            return plantilla_state(business, self._today(), selected=self.employee)
+        if self.screen == CANDIDATOS:
+            return candidatos_state(
+                business, self.service.candidates(business), self._today(),
+                selected=self.candidate, offer=self._offer(business),
+            )  # fmt: skip
         if self.screen == TRASLADO and (target := self._move_target()) is not None:
             barrio, size, quote, own = target
             return traslado_state(business, barrio, size, quote, own=own)
@@ -380,6 +428,16 @@ class NegocioPanel(ui.LayoutView):
             out.append(mejoras_state(business, self._today()))
             out.append(cuentas_state(business))
             out.append(resenas_state(business, self._today()))
+            out.append(plantilla_state(business, self._today(), selected=self.employee))
+        elif self.screen == PLANTILLA:
+            out = [
+                candidatos_state(business, self.service.candidates(business), self._today()),
+                negocio_state(
+                    business, foot=self._foot(), rivals=self.status.rivals if self.status else 0
+                ),
+            ]
+        elif self.screen in (CANDIDATOS, DESPIDO):
+            out = [plantilla_state(business, self._today(), selected=self.employee)]
         elif self.screen in (
             ALMACEN, CUENTAS, ROTULO, CERRAR, MEJORAS, RESENAS, TRASLADO, SOCIEDAD,
         ):  # fmt: skip
@@ -392,6 +450,29 @@ class NegocioPanel(ui.LayoutView):
 
     def _today(self) -> Any:
         return local_day(self.service.now())
+
+    def _chosen(self, business: Business) -> dict[str, Any] | None:
+        """El empleado elegido en 👥 Plantilla (el primero si no hay otro), o `None`."""
+        found = next((e for e in business.staff if e["id"] == self.employee), None)
+        if found is None and business.staff:
+            found = business.staff[0]
+        self.employee = found["id"] if found is not None else None
+        return found
+
+    def _candidate(self, business: Business) -> dict[str, Any] | None:
+        """El candidato elegido, si sigue entre los de hoy."""
+        return next(
+            (c for c in self.service.candidates(business) if c["key"] == self.candidate), None
+        )
+
+    def _offer(self, business: Business) -> dict[str, Any] | None:
+        """Lo que se ofrece al candidato elegido (la media jornada, si solo quiere esa)."""
+        candidate = self._candidate(business)
+        if candidate is None:
+            return None
+        if candidate["part_time"]:
+            self.offer["jornada"] = staff.HALF_DAY
+        return dict(self.offer)
 
     def _move_target(self) -> tuple[str, int, Any, bool] | None:
         """El local que se mira en 🚚 Traslado: `(barrio, tamaño, presupuesto, propio)`."""
@@ -492,6 +573,12 @@ class NegocioPanel(ui.LayoutView):
                     lines.extend(self._traslado_lines(business))
                 elif self.screen == SOCIEDAD and self.company is not None:
                     lines.extend(self._sociedad_lines(self.company))
+                elif self.screen == PLANTILLA:
+                    lines.extend(self._plantilla_lines(business))
+                elif self.screen == CANDIDATOS:
+                    lines.extend(self._candidatos_lines(business))
+                elif self.screen == DESPIDO:
+                    lines.extend(self._despido_lines(business))
                 else:
                     bill = nightly_bill(business)
                     lines.append(
@@ -518,6 +605,12 @@ class NegocioPanel(ui.LayoutView):
                         )
                     if campaign := campaign_state(business, self._today()):
                         extras.append(f"📣 {campaign['name']} ({campaign['left']})")
+                    if business.staff:
+                        done = business.staff_today
+                        extras.append(
+                            f"👥 {len(business.staff)} en plantilla · hoy "
+                            f"{done.get('turns', 0)} turnos, {signed(done.get('sales', 0))}"
+                        )
                     lines.append("-# " + " · ".join(extras))
                     if blocker := status.blocker:
                         lines.append(f"-# ⚠️ {blocker}")
@@ -638,6 +731,84 @@ class NegocioPanel(ui.LayoutView):
             lines.append("⚠️ Causa de disolución: aporta dinero o responderás de sus deudas.")
         if view.blocked:
             lines.append(f"⛔ No puedes cobrar de administrador: {view.blocked.text}")
+        share = round(info.get("ric_share", 0.0) * 100)
+        pending = sl.ric_pending(info)
+        lines.append(
+            f"🌴 RIC: dotas el {share} % de la base cada domingo · por invertir "
+            f"{format_amount(pending)} · reserva indisponible {format_amount(sl.ric_locked(info))}"
+        )
+        lines.append(f"🏝️ {zec_text(business)}")
+        return lines
+
+    def _plantilla_lines(self, business: Business) -> list[str]:
+        today = self._today()
+        pay = staff.payroll(business, today)
+        lines = [
+            f"👥 **Plantilla** · {len(business.staff)} de {staff.cap(business.size)} puestos · "
+            f"nóminas de esta noche {format_amount(pay.cost + pay.black)}"
+        ]
+        if not business.staff:
+            lines.append("Aún no tienes a nadie. Mira los candidatos de hoy en 👥 Candidatos.")
+        for employee in business.staff:
+            skills = " · ".join(
+                f"{staff.SKILL_NAMES[k][:3]} {round(staff.skill(employee, k))}"
+                for k in staff.SKILLS
+            )
+            mark = "▶️ " if employee["id"] == self.employee else ""
+            lines.append(
+                f"{mark}**{employee['name']}** ({employee['age']}) · "
+                f"{CONTRACT_NAMES[employee['contract']]} · "
+                f"{shift_text(employee['shift'], employee['jornada'])} · "
+                f"{format_amount(employee['wage'])} la noche · humor {round(employee['humor'])} · "
+                f"{skills}"
+            )
+        if business.wage_debt:
+            lines.append(f"⚠️ Les debes {format_amount(business.wage_debt)}: se paga lo primero.")
+        return lines
+
+    def _candidatos_lines(self, business: Business) -> list[str]:
+        lines = ["👥 **Candidatos de hoy** · mañana llegan otros"]
+        candidates = self.service.candidates(business)
+        if not candidates:
+            lines.append("Ya has visto a todos los de hoy.")
+        for c in candidates:
+            traits = ", ".join(staff.TRAIT_BY_KEY[t].name.lower() for t in c["traits"])
+            skills = " · ".join(
+                f"{staff.SKILL_NAMES[k][:3]} {round(c['skills'][k])}" for k in staff.SKILLS
+            )
+            mark = "▶️ " if c["key"] == self.candidate else ""
+            lines.append(
+                f"{mark}**{c['name']}** ({c['age']}) · "
+                f"{staff.PROFILE_BY_KEY[c['profile']].name} · {traits} · {skills} · pide "
+                f"{format_amount(c['ask'])} la noche"
+                + (" · solo media jornada" if c["part_time"] else "")
+            )
+        candidate = self._candidate(business)
+        offer = self._offer(business)
+        if candidate is not None and offer is not None:
+            jornada = offer["jornada"]
+            wage = staff.ask(candidate["skills"], candidate["traits"], jornada)
+            lines.append(
+                f"✍️ Oferta: {CONTRACT_NAMES[offer['contract']]} · "
+                f"{shift_text(offer['shift'], jornada)} · {format_amount(wage)} brutos la noche"
+            )
+        return lines
+
+    def _despido_lines(self, business: Business) -> list[str]:
+        employee = self._chosen(business)
+        if employee is None:
+            return ["No hay nadie a quien despedir."]
+        lines = [f"🚪 **¿Despides a {employee['name']}?**"]
+        for option in self.service.dismissal_options(business, employee):
+            mark = "✅" if option.allowed else "⛔"
+            law = f" ({option.law})" if option.law else ""
+            lines.append(
+                f"{mark} **{option.name}** · {format_amount(option.amount)}{law}: {option.why}"
+            )
+        if employee["unpaid"]:
+            lines.append(
+                f"-# Lo que se le debe ({format_amount(employee['unpaid'])}) se le paga igual."
+            )
         return lines
 
     def _traslado_lines(self, business: Business) -> list[str]:
@@ -919,6 +1090,12 @@ class NegocioPanel(ui.LayoutView):
             return self._traslado_rows(business, back)
         if self.screen == SOCIEDAD:
             return self._sociedad_rows(back, home)
+        if self.screen == PLANTILLA:
+            return self._plantilla_rows(business, back, home)
+        if self.screen == CANDIDATOS:
+            return self._candidatos_rows(business, home)
+        if self.screen == DESPIDO:
+            return self._despido_rows(business)
         if self.screen == ROTULO:
             return [*self._style_rows(), ui.ActionRow(
                 self._button("✏️ Nombre", self._rename, "nombre"),
@@ -987,7 +1164,172 @@ class NegocioPanel(ui.LayoutView):
             for p in PRICE_LEVELS
         ]
         price_row = ui.ActionRow(self._select("🏷️ Precios", prices, "precio", self._set_price))
-        return [main, more, price_row, ui.ActionRow(home)]
+        team = self._button("👥 Plantilla", self._plantilla, "plantilla", style=blue)
+        return [main, more, price_row, ui.ActionRow(team, home)]
+
+    def _plantilla_rows(
+        self, business: Business, back: ui.Button, home: ui.Button
+    ) -> list[ui.ActionRow]:
+        green, blue, red = (
+            discord.ButtonStyle.success,
+            discord.ButtonStyle.primary,
+            discord.ButtonStyle.danger,
+        )
+        rows = []
+        employee = self._chosen(business)
+        if business.staff:
+            options = [
+                discord.SelectOption(
+                    label=f"{e['name']} · {CONTRACT_NAMES[e['contract']]}"[:100],
+                    value=str(e["id"]),
+                    description=(
+                        f"{shift_text(e['shift'], e['jornada'])} · "
+                        f"{format_amount(e['wage'])} la noche"
+                    )[:100],
+                    default=e["id"] == self.employee,
+                )
+                for e in business.staff
+            ]
+            rows.append(
+                ui.ActionRow(
+                    self._select("Elige a alguien", options, "empleado", self._pick_employee)
+                )
+            )
+        if employee is not None:
+            raises = [
+                discord.SelectOption(
+                    label=(
+                        f"+{round(share * 100)} %: "
+                        f"{format_amount(int(round(employee['wage'] * (1 + share), -1)))} la noche"
+                    ),
+                    value=str(share),
+                )
+                for share in staff.RAISES
+            ]
+            rows.append(
+                ui.ActionRow(self._select("💶 Subirle el sueldo", raises, "subida", self._raise))
+            )
+            if not employee["course"]:
+                price = format_amount(staff.COURSE_COST + igic(staff.COURSE_COST))
+                courses = [
+                    discord.SelectOption(
+                        label=(
+                            f"Curso de {staff.SKILL_NAMES[k].lower()} "
+                            f"(ahora {round(employee['skills'][k])})"
+                        ),
+                        value=k,
+                        description=f"+{staff.COURSE_POINTS} la noche que viene · {price} con IGIC",
+                    )
+                    for k in staff.SKILLS
+                ]
+                rows.append(
+                    ui.ActionRow(
+                        self._select("🎓 Pagarle un curso", courses, "curso", self._course)
+                    )
+                )
+            actions = ui.ActionRow()
+            if employee["contract"] == "temporal":
+                actions.add_item(
+                    self._button("📄 Hacerle fijo", self._permanent, "fijo", style=blue)
+                )
+            actions.add_item(self._button("🚪 Despedir", self._to_dismiss, "despedir", style=red))
+            rows.append(actions)
+        room = len(business.staff) < staff.cap(business.size)
+        rows.append(
+            ui.ActionRow(
+                self._button(
+                    "👥 Candidatos", self._candidatos, "candidatos", style=green, disabled=not room
+                ),
+                back,
+                home,
+            )
+        )
+        return rows
+
+    def _candidatos_rows(self, business: Business, home: ui.Button) -> list[ui.ActionRow]:
+        green = discord.ButtonStyle.success
+        to_staff = self._button("⬅️ Plantilla", self._plantilla, "a-plantilla")
+        candidates = self.service.candidates(business)
+        rows = []
+        if candidates:
+            options = [
+                discord.SelectOption(
+                    label=f"{c['name']} ({c['age']})"[:100],
+                    value=str(c["key"]),
+                    description=(
+                        f"{staff.PROFILE_BY_KEY[c['profile']].name} · pide "
+                        f"{format_amount(c['ask'])}"
+                        + (" · media jornada" if c["part_time"] else "")
+                    )[:100],
+                    default=c["key"] == self.candidate,
+                )
+                for c in candidates
+            ]
+            rows.append(
+                ui.ActionRow(
+                    self._select("Elige un candidato", options, "candidato", self._pick_candidate)
+                )
+            )
+        candidate = self._candidate(business)
+        offer = self._offer(business)
+        if candidate is None or offer is None:
+            rows.append(ui.ActionRow(to_staff, home))
+            return rows
+        contracts = [
+            discord.SelectOption(
+                label=name, value=key, description=text[:100], default=key == offer["contract"]
+            )
+            for key, name, text in CONTRACTS
+        ]
+        rows.append(
+            ui.ActionRow(self._select("Contrato", contracts, "contrato", self._pick_contract))
+        )
+        shifts = [
+            discord.SelectOption(
+                label=f"{shift_text(shift, jornada)} ({SHIFT_HOURS[shift, jornada]})",
+                value=f"{shift}:{jornada}",
+                default=shift == offer["shift"] and jornada == offer["jornada"],
+            )
+            for shift in staff.SHIFTS
+            for jornada in (staff.FULL_DAY, staff.HALF_DAY)
+            if not (candidate["part_time"] and jornada == staff.FULL_DAY)
+        ]
+        rows.append(
+            ui.ActionRow(self._select("Jornada y turno", shifts, "turno", self._pick_shift))
+        )
+        wage = staff.ask(candidate["skills"], candidate["traits"], offer["jornada"])
+        room = len(business.staff) < staff.cap(business.size)
+        rows.append(
+            ui.ActionRow(
+                self._button(
+                    f"✍️ Contratar · {format_amount(wage)} la noche",
+                    self._hire,
+                    "contratar",
+                    style=green,
+                    disabled=not room,
+                ),
+                to_staff,
+                home,
+            )
+        )
+        return rows
+
+    def _despido_rows(self, business: Business) -> list[ui.ActionRow]:
+        employee = self._chosen(business)
+        row = ui.ActionRow()
+        if employee is not None:
+            for option in self.service.dismissal_options(business, employee):
+                row.add_item(
+                    self._button(
+                        f"{option.name} · {format_amount(option.amount)}",
+                        self._fire(option.kind),
+                        f"despido:{option.kind}",
+                        style=discord.ButtonStyle.danger,
+                        disabled=not option.allowed,
+                    )
+                )
+        row.add_item(self._button("⬅️ No", self._plantilla, "despedir-no"))
+        return [row]
 
     def _mejoras_rows(
         self, business: Business, back: ui.Button, home: ui.Button
@@ -1093,7 +1435,29 @@ class NegocioPanel(ui.LayoutView):
                 disabled=not view.dividend_room,
             ),
         )
-        return [actions, ui.ActionRow(back, home)]
+        shares = [
+            discord.SelectOption(
+                label=f"RIC: dotar el {round(share * 100)} % de la base",
+                value=str(share),
+                description=(
+                    "Sin reserva"
+                    if not share
+                    else "No paga Sociedades si lo inviertes en 3 semanas"
+                ),
+                default=share == info.get("ric_share", 0.0),
+            )
+            for share in sl.RIC_SHARES
+        ]
+        zec = self._button(
+            "🏝️ Salir de la ZEC" if info.get("zec") else "🏝️ Inscribirse en la ZEC",
+            self._zec,
+            "zec",
+        )
+        return [
+            actions,
+            ui.ActionRow(self._select("🌴 Reserva para Inversiones", shares, "ric", self._ric)),
+            ui.ActionRow(zec, back, home),
+        ]
 
     def _traslado_rows(self, business: Business, back: ui.Button) -> list[ui.ActionRow]:
         target = self._move_target()
@@ -1360,6 +1724,153 @@ class NegocioPanel(ui.LayoutView):
     async def _sociedad(self, interaction: discord.Interaction) -> None:
         await self._go(interaction, SOCIEDAD)
 
+    async def _plantilla(self, interaction: discord.Interaction) -> None:
+        await self._go(interaction, PLANTILLA)
+
+    async def _candidatos(self, interaction: discord.Interaction) -> None:
+        await self._go(interaction, CANDIDATOS)
+
+    async def _to_dismiss(self, interaction: discord.Interaction) -> None:
+        await self._go(interaction, DESPIDO)
+
+    async def _pick_employee(self, interaction: discord.Interaction, value: str) -> None:
+        self.employee = int(value) if value.isdigit() else None
+        await self._go(interaction, PLANTILLA)
+
+    async def _pick_candidate(self, interaction: discord.Interaction, value: str) -> None:
+        self.candidate = int(value) if value.isdigit() else None
+        await self._go(interaction, CANDIDATOS)
+
+    async def _pick_contract(self, interaction: discord.Interaction, value: str) -> None:
+        if any(key == value for key, _name, _text in CONTRACTS):
+            self.offer["contract"] = value
+        await self._go(interaction, CANDIDATOS)
+
+    async def _pick_shift(self, interaction: discord.Interaction, value: str) -> None:
+        shift, _, jornada = value.partition(":")
+        if shift in staff.SHIFTS and jornada in (str(staff.FULL_DAY), str(staff.HALF_DAY)):
+            self.offer.update(shift=shift, jornada=int(jornada))
+        await self._go(interaction, CANDIDATOS)
+
+    async def _hire(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
+        if self.candidate is None:
+            await notify(interaction, "Elige antes a un candidato.")
+            return
+        offer = dict(self.offer)
+        try:
+            business, employee = await self.service.hire(
+                self.guild_id, self.owner.id, self.candidate, contract=offer["contract"],
+                jornada=offer["jornada"], shift=offer["shift"],
+            )  # fmt: skip
+        except BusinessError as error:
+            await notify(interaction, str(error))
+            return
+        hours = SHIFT_HOURS[employee["shift"], employee["jornada"]]
+        contract = CONTRACT_NAMES[employee["contract"]].lower()
+        self.notes.append(
+            f"✍️ **{employee['name']} empieza a trabajar contigo**: {contract}, "
+            f"{shift_text(employee['shift'], employee['jornada']).lower()} ({hours}), "
+            f"{format_amount(employee['wage'])} brutos cada noche. Hoy trabaja las franjas de "
+            "su turno que quedan."
+        )
+        if employee["bonus"]:
+            self.notes.append(
+                f"-# Bonificado (RDL 1/2023): la cuota de la empresa baja "
+                f"{format_amount(employee['bonus'])} cada noche durante tres semanas. Si le "
+                "despides sin causa antes, la devuelves con recargo."
+            )
+        if employee["contract"] == "b":
+            self.notes.append(
+                "-# 🕵️ Sin alta ni contrato: no cotiza, pero si pasa la Inspección de Trabajo "
+                f"son {format_amount(staff.FINE_PER_WORKER)} de multa por cabeza y sus cuotas "
+                "con recargo."
+            )
+        self.candidate, self.employee = None, employee["id"]
+        self.screen = PLANTILLA
+        await self._pet_note()
+        await self.show(interaction)
+        await self._track(staff_hire_stats(business, employee))
+
+    async def _raise(self, interaction: discord.Interaction, value: str) -> None:
+        await ack(interaction)
+        try:
+            share = float(value)
+            _business, employee = await self.service.raise_wage(
+                self.guild_id, self.owner.id, self.employee or 0, share
+            )
+        except (BusinessError, ValueError) as error:
+            await notify(interaction, str(error))
+            return
+        self.notes.append(
+            f"💶 **{employee['name']}** cobra ahora {format_amount(employee['wage'])} brutos la "
+            "noche. Se le nota contento."
+        )
+        await self.show(interaction)
+        await self._track(staff_raise_stats(employee))
+
+    async def _course(self, interaction: discord.Interaction, value: str) -> None:
+        await ack(interaction)
+        try:
+            _business, employee, paid, credit = await self.service.train(
+                self.guild_id, self.owner.id, self.employee or 0, value
+            )
+        except BusinessError as error:
+            await notify(interaction, str(error))
+            return
+        self.notes.append(
+            f"🎓 **{employee['name']}** empieza un curso de "
+            f"{staff.SKILL_NAMES[value].lower()}: pagas {format_amount(paid)}"
+            + (f" ({format_amount(credit)} los pone el crédito de FUNDAE)" if credit else "")
+            + f". La noche que viene, +{staff.COURSE_POINTS}."
+        )
+        await self.show(interaction)
+        await renta.remind(self.cog.bot, interaction)
+        await self._track(staff_course_stats(employee, paid, credit))
+
+    async def _permanent(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
+        try:
+            _business, employee = await self.service.make_permanent(
+                self.guild_id, self.owner.id, self.employee or 0
+            )
+        except BusinessError as error:
+            await notify(interaction, str(error))
+            return
+        self.notes.append(f"📄 **{employee['name']}** ya es fijo: su contrato no se acaba.")
+        await self._pet_note(Mood.GOOD)
+        await self.show(interaction)
+        await self._track(staff_permanent_stats())
+
+    def _fire(self, kind: str) -> Callable[[discord.Interaction], Awaitable[None]]:
+        """El botón de una forma de despedir al empleado elegido."""
+
+        async def callback(interaction: discord.Interaction) -> None:
+            await ack(interaction)
+            try:
+                _business, employee, choice, refund = await self.service.dismiss(
+                    self.guild_id, self.owner.id, self.employee or 0, kind
+                )
+            except BusinessError as error:
+                await notify(interaction, str(error))
+                return
+            paid = f"Le pagas {format_amount(choice.amount)}." if choice.amount else "Sin pagar."
+            self.notes.append(f"🚪 **{choice.name} de {employee['name']}.** {paid}")
+            if refund:
+                self.notes.append(
+                    f"-# Devuelves {format_amount(refund)} de bonificaciones con recargo y no "
+                    "tendrás otras en una semana (art. 11.4 del RDL 1/2023)."
+                )
+            self.employee = None
+            self.screen = PLANTILLA
+            await self._pet_note(Mood.BAD if kind == "improcedente" else None)
+            await self.show(interaction)
+            if choice.amount or refund:
+                await renta.remind(self.cog.bot, interaction)
+            await self._track(staff_fire_stats(choice, refund))
+
+        return callback
+
     async def _bank(self, interaction: discord.Interaction) -> None:
         # El banco contesta él (un mensaje privado nuevo): este panel no cambia.
         if not await banco.open_business(self.cog.bot, interaction):
@@ -1392,6 +1903,44 @@ class NegocioPanel(ui.LayoutView):
         await self._track(
             StatDelta(add={"biz_sl_founded": 1}, peak={"biz_sl_capital_max": self.capital})
         )
+
+    async def _ric(self, interaction: discord.Interaction, value: str) -> None:
+        await ack(interaction)
+        try:
+            share = float(value)
+            await self.service.set_ric(self.guild_id, self.owner.id, share)
+        except (BusinessError, ValueError) as error:
+            await notify(interaction, str(error))
+            return
+        self.notes.append(
+            f"🌴 Cada domingo llevas a la RIC el {round(share * 100)} % de la base de Sociedades: "
+            "no tributa si lo inviertes en mejoras o en la obra de un local en 3 semanas."
+            if share
+            else "🌴 Ya no dotas la RIC."
+        )
+        await self.show(interaction)
+        if share:
+            await self._track(StatDelta(add={"biz_ric_set": 1}))
+
+    async def _zec(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
+        view = self.company
+        join = not (view is not None and view.business.company.get("zec"))
+        try:
+            await self.service.zec(self.guild_id, self.owner.id, join=join)
+        except BusinessError as error:
+            await notify(interaction, str(error))
+            return
+        self.notes.append(
+            "🏝️ **Tu sociedad entra en la Zona Especial Canaria**: Sociedades al 4 % cada semana "
+            "que mantengas el empleo."
+            if join
+            else "🏝️ Tu sociedad sale de la ZEC: vuelve al tipo de siempre."
+        )
+        await self._pet_note(Mood.GOOD if join else None)
+        await self.show(interaction)
+        if join:
+            await self._track(StatDelta(add={"biz_zec_joined": 1}))
 
     def _ask(self, action: str) -> Callable[[discord.Interaction], Awaitable[None]]:
         """Un botón de 🏢 Sociedad que pide el importe en un formulario."""
@@ -1783,6 +2332,21 @@ class NegocioPanel(ui.LayoutView):
                 f"-# 🐶 IRPF de la ganancia (19 %): −{format_amount(closing.gain_tax)} "
                 f"({TAX_COLLECTOR})"
             )
+        if closing.staff and traspaso:
+            self.notes.append(
+                f"-# 👥 Tu plantilla ({closing.staff}) se va con el negocio: quien lo compra se "
+                "queda con sus contratos (art. 44 ET)."
+            )
+        elif closing.staff:
+            self.notes.append(
+                f"-# 👥 Despides a tu plantilla por el cierre: {format_amount(closing.severance)} "
+                "de indemnizaciones (20 días por año, art. 52.c ET)"
+                + (
+                    f"; {format_amount(closing.fogasa)} que no llegaban los paga el FOGASA."
+                    if closing.fogasa
+                    else "."
+                )
+            )
         if closing.bank_moved:
             paid = (
                 f"La caja pagó {format_amount(closing.bank_paid)} al banco y el resto lo asumes "
@@ -2072,12 +2636,35 @@ class Negocio(commands.Cog, name="Negocio"):
                         biz_sl_weeks=1,
                         biz_sl_tax_paid=week["tax"],
                         biz_sl_loss=int(week["base"] < 0),
+                        biz_ric_reserved=week.get("ric", 0),
+                        biz_ric_lost=int(week.get("integrated", 0) > 0),
+                        biz_zec_weeks=int(week.get("zec", False)),
                     )
                     delta.peak["biz_sl_profit_max"] = max(0, week["profit"])
                 if run.refund:
                     delta.add["biz_pluri_refund"] = run.refund
                 delta.add.update(business_loan_night_stats(run.loans))
+                night = staff_night_stats(run)
+                for stat, value in night.add.items():
+                    delta.add[stat] = delta.add.get(stat, 0) + value
+                for stat, value in night.peak.items():
+                    delta.peak[stat] = max(delta.peak.get(stat, 0), value)
                 logros.note(self.bot, guild.id, run.user_id, delta)
+            try:
+                # Los dueños que atienden un turno ahora comparten el stock: se espera.
+                played = await self.service.staff_turns(
+                    guild.id, skip=lambda user_id, g=guild.id: (g, user_id) in self.working
+                )
+            except Exception:
+                logger.exception(
+                    "Fallo inesperado con la plantilla de los negocios en %s", guild.id
+                )
+                continue
+            mine: dict[int, list[Any]] = {}
+            for turn in played:
+                mine.setdefault(turn.user_id, []).append(turn)
+            for user_id, turns in mine.items():
+                logros.note(self.bot, guild.id, user_id, staff_turns_stats(turns))
 
     @_nightly.before_loop
     async def _before_nightly(self) -> None:
@@ -2214,6 +2801,7 @@ async def pending(bot: commands.Bot, guild_id: int, user_id: int) -> list[Pendin
         return []
     try:
         tonight, debt, fee = await cog.service.dues(guild_id, user_id)
+        payroll, owed = await cog.service.staff_dues(guild_id, user_id)
     except (OSError, sqlite3.Error):
         logger.exception("No se pudo leer lo pendiente del negocio de %s", user_id)
         return []
@@ -2233,6 +2821,23 @@ async def pending(bot: commands.Bot, guild_id: int, user_id: int) -> list[Pendin
                 Side.PAY, "business_debt", "🧾",
                 f"Le debes {format_amount(debt)} al casero del local · se cobra cada noche",
                 debt,
+            )
+        )  # fmt: skip
+    if payroll:
+        items.append(
+            Pending(
+                Side.PAY, "business_payroll", "👥",
+                f"Nóminas de tu plantilla esta noche: {format_amount(payroll)} (con la cuota "
+                "de la empresa)",
+                payroll, next_daily_at(cog.service.now()),
+            )
+        )  # fmt: skip
+    if owed:
+        items.append(
+            Pending(
+                Side.PAY, "business_wages", "⚠️",
+                f"Le debes {format_amount(owed)} a tu plantilla · se paga lo primero cada noche",
+                owed,
             )
         )  # fmt: skip
     if fee:
