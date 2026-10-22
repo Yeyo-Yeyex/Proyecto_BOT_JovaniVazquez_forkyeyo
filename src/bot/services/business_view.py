@@ -841,7 +841,7 @@ def staff_card(employee: dict[str, Any], today: date, *, selected: bool = False)
     contract = CONTRACT_NAMES[employee["contract"]]
     if staff.in_trial(employee, today):
         contract += " · en prueba"
-    elif employee["until"]:
+    if employee["until"]:
         end = date.fromisoformat(employee["until"])
         contract += f" · hasta el {DAYS[end.weekday()].lower()}"
     if employee["absent_day"] == iso:
@@ -938,8 +938,8 @@ def candidatos_state(
     Cada candidato: `key`, `name`, `age`, `seed`, `profile` (clave) y `profile_name`, `bonus`
     (la bonificación de contratarle indefinido, o `None`), `traits`, `skills`, `ask` (a
     jornada completa y a media), `part_time` y `selected`. `offer` es la oferta al elegido
-    (`None` si no hay): el contrato, el turno, el bruto, lo que le llega, lo que cuesta a la
-    empresa, la bonificación y si es en B (`black`).
+    (`None` si no hay): el contrato (`kind`, la clave, y `contract`, su nombre), el turno, el
+    bruto, lo que le llega, lo que cuesta a la empresa, la bonificación y si es en B (`black`).
     """
     cards = []
     for c in candidates:
@@ -976,6 +976,7 @@ def candidatos_state(
     if chosen is not None and offer is not None:
         probe, slip = offer_slip(chosen, offer, business.sector, today)
         deal = {
+            "kind": offer["contract"],
             "contract": CONTRACT_NAMES[offer["contract"]],
             "shift": shift_text(offer["shift"], offer["jornada"]),
             "gross": f"Bruto: {format_amount(slip.gross)} la noche",
