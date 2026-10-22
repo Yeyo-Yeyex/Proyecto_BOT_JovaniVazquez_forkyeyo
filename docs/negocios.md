@@ -1135,6 +1135,22 @@ habilidades a 30, 50 o 70, frente al dueño solo (jugador bueno, 4 turnos):
 - **Contratar las horas en las que abres tú** se come tu cupo: en la heladería y la tienda, deja menos que abrir solo.
 - **Cuatro a jornada completa pierden dinero en todos:** el cupo del barrio no da para tantos turnos.
 
+### Pantallas y medido (22/10/2026)
+
+| `screen` | Para qué |
+|---|---|
+| `plantilla` | Hasta 6 tarjetas: la cara (por su semilla, con el delantal del negocio), el contrato, el turno, el sueldo, el humor, las tres habilidades, los rasgos y los avisos; las nóminas de esta noche y lo que se debe |
+| `candidatos` | Los tres de hoy con su perfil, la bonificación y lo que piden, y la oferta al elegido (bruto, lo que le llega y lo que cuesta; en B, el sello «sin alta») |
+
+- **La portada** enseña a la plantilla de pie en la acera, con sus turnos y ventas de hoy.
+- **El panel:** 👥 **Plantilla** junto a 🏠 Inicio. Dentro, el desplegable de la persona, 💶 la subida, 🎓 el curso, 📄
+  hacerle fijo y 🚪 despedir (con lo que cuesta cada forma). En 👥 **Candidatos**, el candidato, el contrato y la
+  jornada con el turno, y ✍️ Contratar.
+- **Pintar antes del clic:** desde la portada se pinta la plantilla; desde la plantilla, los candidatos.
+- **Dibujo** (`docs/medir_dibujos.py`, 4 hilos de este PC, ms con 1 proceso abierto / en caliente): plantilla
+  121-128 / 120, candidatos 111-115 / 112.
+- **Node contra Chrome 155** (las 62 muestras): la peor, 2,47/255; las nuevas, de 1,06 a 2,18.
+
 ### Normas de la fase 4 comprobadas (22/10/2026)
 
 En el BOE consolidado:
