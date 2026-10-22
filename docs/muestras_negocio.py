@@ -664,6 +664,7 @@ def _phase2() -> dict[str, dict[str, Any]]:
 def _phase3(today: date) -> dict[str, dict[str, Any]]:
     """Las muestras de la pantalla 🏢 Sociedad, con las funciones de verdad."""
     from bot.services import business_sl as sl
+    from bot.services import business_staff as staff
     from bot.services.business_view import sociedad_state
     from bot.services.negocio import CompanyView
 
@@ -684,10 +685,13 @@ def _phase3(today: date) -> dict[str, dict[str, Any]]:
     )  # fmt: skip
     company.company = sl.new_company(300_000, 325_000, 0)
     company.company.update(reserve=42_000, retained=168_000, loan=50_000)
-    company.company["last"] = {
-        "week": "2026-10-12", "base": 210_000, "compensated": 0, "tax": 39_900,
-        "rate": 0.19, "reserve": 34_020, "profit": 170_100,
-    }  # fmt: skip
+    # La RIC al 90 %: dos domingos dotados, parte invertida y el resto por invertir (con aviso).
+    company.company["ric_share"] = 0.9
+    sunday = today - timedelta(days=(today.weekday() + 1) % 7)
+    sl.settle_week(company.company, 150_000, 400_000, day=sunday - timedelta(days=7))
+    sl.ric_invest(company.company, 90_000, sunday - timedelta(days=3))
+    last = sl.settle_week(company.company, 210_000, 450_000, day=sunday)
+    company.company["last"] = {**last, "week": (sunday - timedelta(days=6)).isoformat()}
     s["sociedad_sl"] = sociedad_state(
         CompanyView(company, 412_000, 560_000, 168_000, 0.19, None, False)
     )
@@ -699,6 +703,26 @@ def _phase3(today: date) -> dict[str, dict[str, Any]]:
     broke.company.update(retained=-640_000, losses=640_000, tax_debt=12_000)
     s["sociedad_en_perdidas"] = sociedad_state(
         CompanyView(broke, 18_000, 360_000, 0, 0.19, blocked, True)
+    )
+    # Un taller con seis empleos con alta: puede entrar en la ZEC y, en otra muestra, ya está.
+    garage = Business(
+        user_id=11, sector="taller", barrio="arucas", name="Talleres El Drago", seed=4242,
+        day=today.isoformat(), form="sl", palette=5, emblem=5, size=2,
+    )  # fmt: skip
+    garage.company = sl.new_company(300_000, 300_000, 0)
+    pool = [c for n in range(30) for c in staff.candidates(garage, today - timedelta(days=n))]
+    for candidate in [c for c in pool if not c["part_time"]][:6]:
+        _hire(garage, candidate, "indefinido", start=today - timedelta(days=10))
+    s["sociedad_zec_puede"] = sociedad_state(
+        CompanyView(garage, 240_000, 300_000, 0, 0.19, None, False)
+    )
+    zec = copy.deepcopy(garage)
+    zec.company.update(zec=True, zec_misses=0, zec_since=today.isoformat(), ric_share=0.5)
+    island = zec.barrio_info.island
+    last = sl.settle_week(zec.company, 180_000, 420_000, day=sunday, zec=(6, island))
+    zec.company["last"] = {**last, "week": (sunday - timedelta(days=6)).isoformat()}
+    s["sociedad_zec"] = sociedad_state(
+        CompanyView(zec, 330_000, 470_000, 90_000, 0.19, None, False)
     )
     s.update(_phase4(today))
     return s
