@@ -20146,6 +20146,32 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (20_000, "biz_pluri_20k", "Arlequín, servidor de dos cotizaciones",
          "Recibe 20.000 Y$ en devoluciones de la pluriactividad.", E),
     ], unit="money")  # fmt: skip
+    # Fase 4 bis: la RIC y la ZEC (Ley 19/1994), solo para sociedades. La ZEC pide un taller
+    # con 6 empleados con alta en un local grande, y solo hasta el 31/12/2026.
+    a += _tiers("negocio", "biz_ric_set", [
+        (1, "biz_ric_set_1", "Pan para hoy, RIC para mañana",
+         "Elige dotar la Reserva para Inversiones en Canarias (RIC) de tu sociedad.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_ric_reserved", [
+        (100_000, "biz_ric_100k", "Cochinito negro de la RIC", "Lleva 100.000 Y$ a la RIC.", R),
+        (1_000_000, "biz_ric_1m", "Ábrete, Sésamo fiscal", "Lleva 1.000.000 Y$ a la RIC.", E),
+        (5_000_000, "biz_ric_5m", "El tesoro de los guanches", "Lleva 5.000.000 Y$ a la RIC.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_ric_lost", [
+        (1, "biz_ric_lost_1", "Cenicienta fiscal",
+         "Deja vencer una dotación de la RIC sin invertirla y paga Sociedades por ella.", E,
+         True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_zec_joined", [
+        (1, "biz_zec_joined_1", "Delaware con papas arrugadas",
+         "Inscribe tu sociedad en la Zona Especial Canaria (ZEC).", L),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_zec_weeks", [
+        (4, "biz_zec_weeks_4", "Cuatro por ciento y mojo picón",
+         "Tributa 4 semanas al tipo de la ZEC.", L),
+        (10, "biz_zec_weeks_10", "Mónaco de Arguineguín", "Tributa 10 semanas al tipo de la ZEC.",
+         M),
+    ])  # fmt: skip
     # Préstamos al negocio (`banco`, 🏪 Negocio: business_loan_*_stats y sus noches).
     a += _tiers("negocio", "biz_loans_signed", [
         (1, "biz_loan_1", "Business angel con corbata",

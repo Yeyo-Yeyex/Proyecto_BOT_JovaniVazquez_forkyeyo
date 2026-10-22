@@ -228,6 +228,8 @@ PRODUCED_STATS = {
     "biz_loans_signed", "biz_loan_principal_max", "biz_loans_open_max", "biz_loan_company",
     "biz_loan_longest", "biz_loans_repaid_early", "biz_loan_installments", "biz_loan_unpaid",
     "biz_loans_finished", "biz_loan_defaults", "biz_loan_assumed",
+    # La RIC y la ZEC (fase 4 bis), desde el cog.
+    "biz_ric_set", "biz_ric_reserved", "biz_ric_lost", "biz_zec_joined", "biz_zec_weeks",
     # La plantilla (fase 4): staff_*_stats.
     "staff_turns", "staff_clients", "staff_sales", "staff_turn_s", "staff_turn_d",
     "staff_absences", "staff_idle", "staff_sales_turn_max", "staff_clients_turn_max",
