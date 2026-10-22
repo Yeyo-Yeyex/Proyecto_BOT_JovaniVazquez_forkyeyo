@@ -45,8 +45,10 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from bot.cogs import achievements as logros
+from bot.cogs import business as negocio
 from bot.cogs import pisos
 from bot.cogs import shop as tienda
+from bot.repositories.business import companies_in
 from bot.repositories.housing import assets_in as housing_assets_in
 from bot.repositories.shop import wealth_goods_in
 from bot.services.achievements import StatDelta, patrimonio_stats
@@ -184,11 +186,14 @@ class Patrimonio(commands.Cog):
         if (guild.id, last_week) in self._done:
             return
         housing = self.housing
-        assets = (
-            (lambda connection: housing_assets_in(connection, guild.id))
-            if housing is not None
-            else None
-        )
+
+        def assets(connection: sqlite3.Connection) -> dict[int, int]:
+            """Pisos a su valor fiscal y sociedades a su valor teórico, sumados."""
+            out = housing_assets_in(connection, guild.id) if housing is not None else {}
+            for user_id, value in companies_in(connection, guild.id).items():
+                out[user_id] = out.get(user_id, 0) + value
+            return out
+
         goods = (
             (lambda connection: wealth_goods_in(connection, guild.id, time.time()))
             if self.shop is not None
@@ -254,13 +259,17 @@ class Patrimonio(commands.Cog):
             await self.housing.member_values(guild_id) if self.housing else ({}, {})
         )
         debts = await self.housing.member_debts(guild_id) if self.housing else {}
-        users = set(balances) | {row[0] for row in holdings} | set(lottery) | set(homes)
+        companies = await negocio.company_values(self.bot, guild_id)
+        users = (
+            set(balances) | {row[0] for row in holdings} | set(lottery) | set(homes)
+            | set(companies)
+        )  # fmt: skip
         renta = {}
         for user_id in users:
             pending = await self.economy.pending_declarations(guild_id, user_id)
             if total := sum(d.refund for d in pending):
                 renta[user_id] = total
-        return build(balances, holdings, lottery, renta, homes, homes_fiscal, debts)
+        return build(balances, holdings, lottery, renta, homes, homes_fiscal, debts, companies)
 
     @staticmethod
     def _name(guild: discord.Guild, user_id: int) -> str:
@@ -321,6 +330,11 @@ class Patrimonio(commands.Cog):
         lines = [
             f"💵 Efectivo: **{format_amount(worth.cash)}**",
             f"🏠 Pisos: **{format_amount(worth.homes)}**",
+            *(
+                [f"🏢 Su sociedad: **{format_amount(worth.companies)}** (valor teórico)"]
+                if worth.companies
+                else []
+            ),
             f"🛍️ Bienes de la tienda: **{format_amount(worth.goods_value)}** ({len(worth.goods)})",
             f"🎟️ Boletos de lotería por sortear: **{format_amount(worth.lottery)}**",
             f"📬 Renta por cobrar: **{format_amount(worth.renta)}**",
@@ -359,7 +373,11 @@ class Patrimonio(commands.Cog):
             embed.add_field(name="Bienes", value=text[:1_024], inline=False)
         objects = sum(item.value for item in worth.goods if item.kind == Kind.TROPHY.value)
         quote = await self.quote(
-            guild.id, target.id, cash=worth.cash, homes_fiscal=worth.homes_fiscal, objects=objects
+            guild.id,
+            target.id,
+            cash=worth.cash,
+            homes_fiscal=worth.homes_fiscal + worth.companies,
+            objects=objects,
         )
         debt = await self.economy.tax_debt(guild.id, target.id)
         text = (
@@ -508,8 +526,13 @@ async def wealth_due(
         homes = (await cog.housing.member_values(guild_id))[1] if cog.housing else {}
         goods = await cog.shop.holdings(guild_id, user_id, time.time()) if cog.shop else []
         objects = sum(value for _u, _n, _e, kind, value, _x in goods if kind == Kind.TROPHY.value)
+        companies = await negocio.company_values(bot, guild_id)
         return await cog.quote(
-            guild_id, user_id, cash=cash, homes_fiscal=homes.get(user_id, 0), objects=objects
+            guild_id,
+            user_id,
+            cash=cash,
+            homes_fiscal=homes.get(user_id, 0) + companies.get(user_id, 0),
+            objects=objects,
         )
     except (OSError, sqlite3.Error):
         logger.exception("No se pudo calcular el Patrimonio de %s", user_id)

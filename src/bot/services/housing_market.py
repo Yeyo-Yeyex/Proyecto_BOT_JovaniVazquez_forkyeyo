@@ -119,14 +119,19 @@ class HousingService:
         work = await self.economy.work_net_days(guild_id, user_id, rules.INCOME_DAYS)
         return work // rules.INCOME_DAYS
 
-    async def loan_desk(self, guild_id: int, user_id: int) -> tuple[LoanDesk, int]:
-        """Lo que ve el banco de un miembro para un préstamo y lo que ingresa al día."""
+    async def lender_view(self, guild_id: int, user_id: int) -> tuple[int, bool]:
+        """`(lo que el banco cree que ingresa al día, si cobra nómina, pensión o negocio)`."""
         work = await self.economy.work_net_days(guild_id, user_id, rules.INCOME_DAYS)
         rent = await self.repository.income(
             guild_id, user_id, self.today() - timedelta(days=rules.INCOME_DAYS)
         )
-        desk = await self.repository.loan_desk(guild_id, user_id, payroll=work > 0)
-        return desk, rules.daily_income(work, rent.rent)
+        return rules.daily_income(work, rent.rent), work > 0
+
+    async def loan_desk(self, guild_id: int, user_id: int) -> tuple[LoanDesk, int]:
+        """Lo que ve el banco de un miembro para un préstamo y lo que ingresa al día."""
+        income, payroll = await self.lender_view(guild_id, user_id)
+        desk = await self.repository.loan_desk(guild_id, user_id, payroll=payroll)
+        return desk, income
 
     async def take_loan(
         self,

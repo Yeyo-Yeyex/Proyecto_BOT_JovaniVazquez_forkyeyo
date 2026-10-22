@@ -686,6 +686,28 @@ class EconomyService:
         """La hora del servicio en epoch (la del reloj inyectado, en las pruebas)."""
         return self._clock()
 
+    async def contributions(
+        self, guild_id: int, user_id: int, start: float, end: float
+    ) -> tuple[int, int]:
+        """`(por cuenta ajena, RETA)`: lo cotizado entre `start` y `end` (la pluriactividad)."""
+        return await self.repository.contributions(guild_id, user_id, start, end)
+
+    async def refund_contributions(self, guild_id: int, user_id: int, *, amount: int) -> int:
+        """El reintegro de cuotas de la pluriactividad (art. 313 LGSS): del Estado al miembro.
+
+        Tratamiento fiscal: devolución de cotizaciones; simplificación, sin IRPF (en la vida
+        real minora el gasto de la cuota que se dedujo). Devuelve el saldo final.
+        """
+        if amount <= 0:
+            raise ValueError("El reintegro debe ser positivo.")
+        return await self.repository.transfer_from_state(
+            guild_id, user_id, amount=amount, reason="seguridad_social:reintegro"
+        )
+
+    async def account_balance(self, guild_id: int, account: int) -> int:
+        """El saldo de una cuenta que no es de un miembro (la caja de una sociedad), sin abrirla."""
+        return await self.repository.account_balance(guild_id, account)
+
     async def balance(self, guild_id: int, user_id: int) -> int:
         """Saldo actual; abre el monedero con `STARTING_BALANCE` si no existía."""
         return await self.repository.balance(guild_id, user_id)

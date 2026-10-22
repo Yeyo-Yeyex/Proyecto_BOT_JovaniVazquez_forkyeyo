@@ -67,6 +67,8 @@ TAX_KINDS: tuple[TaxKind, ...] = (
             Group.DIRECT, "arts. 25.2, 33 y 66 LIRPF"),
     TaxKind("irpf_alquiler", "🔑", "IRPF de los alquileres", "IRPF alq.", Group.DIRECT,
             "arts. 22 y 23 LIRPF"),
+    TaxKind("sociedades", "🏭", "Impuesto sobre Sociedades (de tu sociedad)", "Sociedades",
+            Group.DIRECT, "Ley 27/2014"),
     TaxKind("ibi", "🏘️", "IBI de los pisos", "IBI", Group.DIRECT, "art. 60 RDL 2/2004"),
     TaxKind("ss_trabajador", "🧑‍🏭", "Seguridad Social del trabajador y autónomos", "SS",
             Group.DIRECT, "LGSS"),

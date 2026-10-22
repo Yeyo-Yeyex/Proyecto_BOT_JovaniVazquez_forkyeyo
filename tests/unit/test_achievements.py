@@ -220,6 +220,14 @@ PRODUCED_STATS = {
     "biz_own_local", "biz_size_max", "biz_traspasos", "biz_traspaso_money", "biz_traspaso_max",
     "work_jornada_3",
     "work_excedencia", "work_excedencia_back",
+    "biz_sl_founded", "biz_sl_capital_max", "biz_sl_contributed", "biz_sl_lent", "biz_sl_repaid",
+    "biz_sl_salaries", "biz_sl_salary_paid", "biz_sl_dividends", "biz_sl_dividend_paid",
+    "biz_sl_weeks", "biz_sl_tax_paid", "biz_sl_loss", "biz_sl_profit_max", "biz_sl_liquidated",
+    "biz_sl_sunk", "biz_sl_quota_max", "biz_pluri_refund",
+    # Préstamos al negocio: business_loan_*_stats (banco_negocio), sus noches y el cierre.
+    "biz_loans_signed", "biz_loan_principal_max", "biz_loans_open_max", "biz_loan_company",
+    "biz_loan_longest", "biz_loans_repaid_early", "biz_loan_installments", "biz_loan_unpaid",
+    "biz_loans_finished", "biz_loan_defaults", "biz_loan_assumed",
     # cogs/achievements.py: mensajes, voz, reacciones y la siembra del historial
     *message_stats("x", when=datetime(2026, 1, 1, tzinfo=TIMEZONE)).keys(),
     "msg_night", "msg_morning", "msg_long", "msg_short", "msg_caps", "msg_questions",

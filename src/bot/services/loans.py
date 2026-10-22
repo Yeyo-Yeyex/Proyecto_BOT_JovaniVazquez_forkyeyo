@@ -46,6 +46,14 @@ meses de tu parte de la renta de un inmueble alquilado (el valor actual de esas 
 Euríbor + 3 %, menos un 1 % de apertura) y se los cobra cada noche como un préstamo. No mira
 el 35 % al firmar (lo paga el inquilino), pero la cuota cuenta después. Uno por inmueble, no
 cuenta en `MAX_LOANS` y, si el inquilino no paga, la pones tú.
+
+**Préstamo al negocio** (🏪 Negocio, 9.7.0, `business_rate`): para la actividad del negocio de
+`pala`. No es crédito al consumo (art. 2 de la Ley 16/2011: el que pide actúa en su actividad
+empresarial), así que no hay desistimiento ni seguro de protección de pagos, y el tipo es el
+de una pyme: Euríbor + `BUSINESS_SPREAD`. Sus intereses y la comisión son gasto del negocio.
+De un autónomo lo firma él (responde con todo lo suyo, art. 1911 CC) y cabe en su 35 %; de una
+sociedad, la sociedad, con el aval de su socio, y cabe en el 35 % de lo que deja la sociedad
+más lo de su socio. Diseño en `docs/negocios.md` («Préstamos al negocio»).
 """
 
 from __future__ import annotations
@@ -533,3 +541,19 @@ def advance_quote(payment: int, months: int, rate: float) -> AdvanceQuote:
         principal=principal,
         fee=math.ceil(principal * ADVANCE_FEE),
     )
+
+
+# -- Préstamo al negocio -------------------------------------------------------------------
+
+#: Diferencial sobre el Euríbor de un préstamo para la actividad: el de una pyme sin
+#: historial, un punto por debajo del personal (los préstamos a empresas de menos de un millón
+#: rondan el 4-6 % TAE en 2026, frente al 7-9 % del consumo).
+BUSINESS_SPREAD = 0.04
+#: Préstamos vivos a la vez por negocio (no cuentan en `MAX_LOANS`).
+MAX_BUSINESS_LOANS = 2
+
+
+def business_rate(euribor: float, factors: list[Factor]) -> float:
+    """TIN anual fijo de un préstamo al negocio: Euríbor + diferencial de pyme + perfil."""
+    rate = euribor + BUSINESS_SPREAD + sum(f.points for f in factors)
+    return round(min(MAX_RATE, max(MIN_RATE, rate)), 4)

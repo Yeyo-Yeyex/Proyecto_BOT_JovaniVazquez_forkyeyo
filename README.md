@@ -446,7 +446,10 @@ python -m bot
   paga el 19 % de la plusvalía. Con `trueque <tu objeto> <miembro> <su objeto>
   [dinero]` le propones cambiar un objeto por otro, con dinero encima si
   quieres: cada uno paga el ITP de lo que recibe y la plusvalía de lo que da.
-- **Banco** (`banco`): un panel con cuatro mostradores. **Garantías**: rehipotecar
+- **Banco** (`banco`): un panel con cinco mostradores. **Negocio**: préstamos a
+  nombre de tu negocio de `pala` (también desde su portada), al tipo de una pyme; de
+  autónomo los firmas tú y de sociedad los firma ella con tu aval, y los paga la noche
+  del negocio. **Garantías**: rehipotecar
   tus pisos (hasta el 80 % de lo que valen hoy si son vivienda, el 60 % si no, menos
   lo que ya debes de ellos; sus intereses no desgravan). **Anticipos**: el banco te
   adelanta 3, 6 o 12 meses de la renta de un piso alquilado y se la cobra cada noche

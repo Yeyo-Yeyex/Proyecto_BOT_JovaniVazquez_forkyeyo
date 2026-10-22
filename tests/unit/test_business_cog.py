@@ -23,6 +23,7 @@ from bot.cogs.business import (
     MONTAR,
     PORTADA,
     PREVIA,
+    SOCIEDAD,
     TURNO,
     Negocio,
     NegocioPanel,
@@ -321,7 +322,7 @@ async def test_mejorar_el_local_y_trasladarlo_desde_el_panel(tmp_path: Path) -> 
 
 async def test_cerrar_liquidando_desde_el_panel(tmp_path: Path) -> None:
     _work_cog, business_cog, panel = await opened_business(tmp_path)
-    await button(panel, "🚪 Cerrar el negocio").callback(click())
+    await button(panel, "🚪 Cerrar").callback(click())
     assert not any(label.startswith("🤝 Traspasar") for label in labels(panel))
     await button(panel, "🚪 Cerrar y liquidar").callback(click())
     assert await business_cog.service.business(GUILD, OWNER) is None
@@ -432,3 +433,25 @@ async def test_del_negocio_se_vuelve_al_inicio(tmp_path: Path) -> None:
     assert panel not in business_cog.panels
     home = next(iter(work_cog.panels))
     assert "🏪 Negocio" in labels(home)
+
+
+async def test_constituir_la_sociedad_y_operar_con_ella_desde_el_panel(tmp_path: Path) -> None:
+    _work_cog, business_cog, panel = await opened_business(tmp_path)
+    await button(panel, "🏢 Sociedad").callback(click())
+    assert panel.screen == SOCIEDAD
+    check_limits(panel)
+    await panel._pick_capital(click(), "100")
+    await button(panel, "✍️ Constituir").callback(click())
+    business = await business_cog.service.business(GUILD, OWNER)
+    assert business is not None and business.is_company
+    assert business.company["capital"] == 100
+    check_limits(panel)
+    assert "💶 Aportar" in labels(panel) and "💼 Sueldo" in labels(panel)
+    await panel.company_action(click(), "aportar", "50k")
+    await panel.company_action(click(), "sueldo", "20000")
+    view = await business_cog.service.company_view(GUILD, OWNER)
+    assert view is not None and view.cash == 100 + 50_000 - 20_000
+    # Un importe mal escrito avisa y no hace nada.
+    bad = click()
+    await panel.company_action(bad, "prestar", "mucho")
+    assert view.business.company["loan"] == 0

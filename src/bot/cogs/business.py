@@ -8,7 +8,7 @@ debajo, que también sirve de reserva si no hay Node ni Chromium. Pantallas:
 - **Montar** (sin negocio): el sector, luego el barrio, el nombre, la paleta y el emblema
   con la vista previa de la fachada, y la confirmación con lo que cuesta.
 - **Portada:** la fachada con las cifras de hoy. 🔑 **Abrir** (un turno, una franja),
-  📦 **Almacén**, 📊 **Cuentas**, 🎨 **Rótulo**, 🚪 **Cerrar el negocio**, el desplegable
+  📦 **Almacén**, 📊 **Cuentas**, 🎨 **Rótulo**, 🚪 **Cerrar**, el desplegable
   de precios y 🏠 **Inicio** (vuelve al inicio de `pala`).
 - **Turno:** el minijuego del sector, un cliente por imagen. Sus botones no los atiende la
   vista sino `Negocio.on_interaction`, por su `custom_id` (`negocio:<panel>:<ronda>:<acción>`),
@@ -16,9 +16,14 @@ debajo, que también sirve de reserva si no hay Node ni Chromium. Pantallas:
   siguiente cliente se pinta mientras se atiende al de ahora, y una tarea despide al
   cliente al que se le acaba la paciencia.
 - **Tique** del turno, con la nómina del negocio: caja, IRPF a cuenta y embargo.
+- **Fase 3:** 🏢 **Sociedad**: constituir la sociedad limitada (con su capital) y, con ella,
+  aportar, prestarle, recuperar el préstamo, cobrar sueldo de administrador y repartir
+  dividendos, cada importe en un formulario.
 - **Fase 2:** 🛠️ **Mejoras** (instalar mejoras del local y lanzar campañas), ⭐ **Reseñas**,
   🚚 **Traslado** (a otro barrio, a un local mayor o a uno tuyo de `pisos`), el precio de cada
   producto en el almacén y 🚪 cerrar traspasándolo o liquidando el stock y las mejoras.
+- 🏦 **Banco** (9.7.0): abre en un mensaje privado el mostrador 🏪 Negocio de `banco`, con los
+  préstamos a nombre del negocio (`banco.open_business`).
 
 Cada noche, una tarea cada 10 minutos cobra el local de cada negocio
 (`BusinessService.close_nights`) y la cuota de autónomo de la semana.
@@ -52,8 +57,10 @@ from discord import ui
 from discord.ext import commands, tasks
 
 from bot.cogs import achievements as logros
-from bot.cogs import renta
-from bot.services.achievements import StatDelta, business_stats
+from bot.cogs import banco, renta
+from bot.repositories.business import companies_in
+from bot.services import business_sl as sl
+from bot.services.achievements import StatDelta, business_loan_night_stats, business_stats
 from bot.services.business import (
     Business,
     move_quote,
@@ -91,10 +98,11 @@ from bot.services.business_view import (
     resenas_state,
     signed,
     size_text,
+    sociedad_state,
     traslado_state,
     turn_lines,
 )
-from bot.services.economy import format_amount, next_daily_at
+from bot.services.economy import format_amount, next_daily_at, parse_amount
 from bot.services.housing_catalog import BARRIO_BY_KEY, BARRIOS, ISLANDS, THEMES
 from bot.services.levels import local_day
 from bot.services.negocio import (
@@ -102,6 +110,7 @@ from bot.services.negocio import (
     BusinessError,
     BusinessService,
     BusinessStatus,
+    CompanyView,
     OwnLocal,
     Turn,
     TurnPlan,
@@ -110,7 +119,7 @@ from bot.services.negocio import (
 from bot.services.pending import Pending, Side
 from bot.services.pets import Event as PetEvent
 from bot.services.pets import Moment, Mood
-from bot.services.taxes import TAX_COLLECTOR
+from bot.services.taxes import TAX_COLLECTOR, igic
 from bot.services.telemetry import LISTENER_ITEM, TimedLock
 from bot.utils.cogs import find_cog
 from bot.utils.interactions import ack, claim_custom_ids, edit, notify
@@ -163,6 +172,7 @@ CIERRE = "cierre"
 MEJORAS = "mejoras"
 RESENAS = "resenas"
 TRASLADO = "traslado"
+SOCIEDAD = "sociedad"
 
 
 def game_id(token: int, round_index: int, action: str) -> str:
@@ -294,6 +304,9 @@ class NegocioPanel(ui.LayoutView):
         #: El traslado que se mira: barrio y tamaño, o un local propio (`own`).
         self.move: dict[str, Any] = {"barrio": "", "size": 0, "own": ""}
         self.own_locals: list[OwnLocal] = []
+        #: 🏢 Sociedad: el capital elegido para constituirla y la foto de la sociedad.
+        self.capital = sl.FULL_CAPITAL
+        self.company: CompanyView | None = None
         self.token = cog.new_token()
         self._shown = ""
         self._lock = TimedLock("negocio:NegocioPanel._lock")
@@ -338,6 +351,8 @@ class NegocioPanel(ui.LayoutView):
             return mejoras_state(business, self._today())
         if self.screen == RESENAS:
             return resenas_state(business, self._today())
+        if self.screen == SOCIEDAD and self.company is not None:
+            return sociedad_state(self.company, capital=self.capital)
         if self.screen == TRASLADO and (target := self._move_target()) is not None:
             barrio, size, quote, own = target
             return traslado_state(business, barrio, size, quote, own=own)
@@ -365,7 +380,9 @@ class NegocioPanel(ui.LayoutView):
             out.append(mejoras_state(business, self._today()))
             out.append(cuentas_state(business))
             out.append(resenas_state(business, self._today()))
-        elif self.screen in (ALMACEN, CUENTAS, ROTULO, CERRAR, MEJORAS, RESENAS, TRASLADO):
+        elif self.screen in (
+            ALMACEN, CUENTAS, ROTULO, CERRAR, MEJORAS, RESENAS, TRASLADO, SOCIEDAD,
+        ):  # fmt: skip
             out = [
                 negocio_state(
                     business, foot=self._foot(), rivals=self.status.rivals if self.status else 0
@@ -473,6 +490,8 @@ class NegocioPanel(ui.LayoutView):
                     lines.extend(self._resenas_lines(business))
                 elif self.screen == TRASLADO:
                     lines.extend(self._traslado_lines(business))
+                elif self.screen == SOCIEDAD and self.company is not None:
+                    lines.extend(self._sociedad_lines(self.company))
                 else:
                     bill = nightly_bill(business)
                     lines.append(
@@ -578,6 +597,47 @@ class NegocioPanel(ui.LayoutView):
         for _day, who, n, line in reversed(business.reviews[-5:]):
             text = REVIEW_LINES[n][line % len(REVIEW_LINES[n])]
             lines.append(f"{'★' * n}{'☆' * (5 - n)} **{who}**: {text}")
+        return lines
+
+    def _sociedad_lines(self, view: CompanyView) -> list[str]:
+        business = view.business
+        if not business.is_company:
+            fees = sl.constitution_fees(self.capital)
+            lines = [
+                "🏢 **Convertirlo en sociedad limitada.** Tributa en Sociedades (19 % y 21 %), "
+                "no en tu IRPF; cobras con sueldo o dividendos, y si se hunde solo pierdes lo "
+                "que hay dentro.",
+                f"Capital: **{format_amount(self.capital)}** · notaría y registro "
+                f"{format_amount(fees)} + IGIC · gestoría {format_amount(sl.BOOKKEEPING_NIGHT)} "
+                "cada noche.",
+            ]
+            if view.blocked:
+                lines.append(f"⛔ {view.blocked.text} ({view.blocked.law})")
+            return lines
+        info = business.company
+        lines = [
+            f"🏦 Caja **{format_amount(view.cash)}** · capital {format_amount(info['capital'])} "
+            f"· reserva legal {format_amount(info['reserve'])} · disponible "
+            f"{signed(info['retained'])}",
+            f"Préstamo tuyo {format_amount(info['loan'])} · patrimonio neto "
+            f"{signed(view.equity)} · se puede repartir {format_amount(view.dividend_room)} · "
+            f"retención del sueldo {round(view.retention * 100)} %",
+        ]
+        if view.bank:
+            lines.append(
+                f"🏦 Debe {format_amount(view.bank)} al banco (lo avalas tú): míralo en 🏦 Banco."
+            )
+        if last := info.get("last"):
+            lines.append(
+                f"-# Último Sociedades: base {signed(last['base'])}, "
+                f"{round(last['rate'] * 100, 1)} % → {format_amount(last['tax'])}".replace(
+                    ".0 %", " %"
+                )
+            )
+        if view.dissolution:
+            lines.append("⚠️ Causa de disolución: aporta dinero o responderás de sus deudas.")
+        if view.blocked:
+            lines.append(f"⛔ No puedes cobrar de administrador: {view.blocked.text}")
         return lines
 
     def _traslado_lines(self, business: Business) -> list[str]:
@@ -857,6 +917,8 @@ class NegocioPanel(ui.LayoutView):
             return self._mejoras_rows(business, back, home)
         if self.screen == TRASLADO:
             return self._traslado_rows(business, back)
+        if self.screen == SOCIEDAD:
+            return self._sociedad_rows(back, home)
         if self.screen == ROTULO:
             return [*self._style_rows(), ui.ActionRow(
                 self._button("✏️ Nombre", self._rename, "nombre"),
@@ -916,15 +978,16 @@ class NegocioPanel(ui.LayoutView):
         more = ui.ActionRow(
             self._button("🎨 Rótulo", self._rotulo, "rotulo"),
             self._button("🚚 Traslado", self._traslado, "traslado"),
-            self._button("🚪 Cerrar el negocio", self._confirm_close, "cerrar"),
-            home,
+            self._button("🏢 Sociedad", self._sociedad, "sociedad"),
+            self._button("🏦 Banco", self._bank, "banco"),
+            self._button("🚪 Cerrar", self._confirm_close, "cerrar"),
         )
         prices = [
             discord.SelectOption(label=p.name, value=p.key, default=p.key == business.price)
             for p in PRICE_LEVELS
         ]
         price_row = ui.ActionRow(self._select("🏷️ Precios", prices, "precio", self._set_price))
-        return [main, more, price_row]
+        return [main, more, price_row, ui.ActionRow(home)]
 
     def _mejoras_rows(
         self, business: Business, back: ui.Button, home: ui.Button
@@ -978,6 +1041,59 @@ class NegocioPanel(ui.LayoutView):
         last.add_item(home)
         rows.append(last)
         return rows
+
+    def _sociedad_rows(self, back: ui.Button, home: ui.Button) -> list[ui.ActionRow]:
+        view = self.company
+        if view is None:
+            return [ui.ActionRow(back, home)]
+        green = discord.ButtonStyle.success
+        if not view.business.is_company:
+            options = [
+                discord.SelectOption(
+                    label=f"Capital de {format_amount(c)} ({c // 100:,} €)".replace(",", "."),
+                    value=str(c),
+                    default=c == self.capital,
+                    description=(
+                        "Reserva del 20 % y respondes hasta 3.000 €"
+                        if c < sl.FULL_CAPITAL
+                        else "Responsabilidad limitada al capital"
+                    ),
+                )
+                for c in sl.CAPITALS
+            ]
+            fees = sl.constitution_fees(self.capital)
+            cost = self.capital + fees + igic(fees)
+            found = self._button(
+                f"✍️ Constituir · {format_amount(cost)}",
+                self._constitute,
+                "constituir",
+                style=green,
+                disabled=view.blocked is not None or bool(view.business.own_listing),
+            )
+            return [
+                ui.ActionRow(
+                    self._select("Elige el capital", options, "capital", self._pick_capital)
+                ),
+                ui.ActionRow(found, back, home),
+            ]
+        info = view.business.company
+        actions = ui.ActionRow(
+            self._button("💶 Aportar", self._ask("aportar"), "aportar", style=green),
+            self._button("🏦 Prestar", self._ask("prestar"), "prestar"),
+            self._button(
+                "↩️ Devolverme", self._ask("devolver"), "devolver", disabled=not info["loan"]
+            ),
+            self._button(
+                "💼 Sueldo", self._ask("sueldo"), "sueldo", disabled=view.blocked is not None
+            ),
+            self._button(
+                "💰 Dividendos",
+                self._ask("dividendo"),
+                "dividendo",
+                disabled=not view.dividend_room,
+            ),
+        )
+        return [actions, ui.ActionRow(back, home)]
 
     def _traslado_rows(self, business: Business, back: ui.Button) -> list[ui.ActionRow]:
         target = self._move_target()
@@ -1136,10 +1252,12 @@ class NegocioPanel(ui.LayoutView):
     # -- Enseñar ----------------------------------------------------------------------
 
     async def refresh(self) -> None:
-        """Vuelve a leer el negocio."""
+        """Vuelve a leer el negocio (y su sociedad, si se está mirando)."""
         self.status = await self.service.status(self.guild_id, self.owner.id)
         if self.status is None and self.screen not in (MONTAR, PREVIA, CONFIRMAR):
             self.screen = MONTAR
+        if self.screen == SOCIEDAD:
+            self.company = await self.service.company_view(self.guild_id, self.owner.id)
 
     def _where(self) -> tuple[Any, ...]:
         game = self.turn.game if self.turn else None
@@ -1238,6 +1356,107 @@ class NegocioPanel(ui.LayoutView):
             }
         self.screen = TRASLADO
         await self.show(interaction)
+
+    async def _sociedad(self, interaction: discord.Interaction) -> None:
+        await self._go(interaction, SOCIEDAD)
+
+    async def _bank(self, interaction: discord.Interaction) -> None:
+        # El banco contesta él (un mensaje privado nuevo): este panel no cambia.
+        if not await banco.open_business(self.cog.bot, interaction):
+            await notify(interaction, "El banco está cerrado ahora mismo.")
+
+    async def _pick_capital(self, interaction: discord.Interaction, value: str) -> None:
+        if value.isdigit() and int(value) in sl.CAPITALS:
+            self.capital = int(value)
+        await self._go(interaction, SOCIEDAD)
+
+    async def _constitute(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
+        if self.turn is not None:
+            await notify(interaction, "Acaba el turno antes de ir al notario.")
+            return
+        try:
+            business, total = await self.service.constitute(
+                self.guild_id, self.owner.id, self.capital
+            )
+        except BusinessError as error:
+            await notify(interaction, str(error))
+            return
+        self.notes.append(
+            f"🏢 **{business.name} ya es una sociedad limitada.** Pusiste {format_amount(total)}: "
+            "el capital y la notaría. Desde hoy, el negocio cobra y paga desde su caja."
+        )
+        await self._pet_note(Mood.GOOD)
+        await self.show(interaction)
+        await renta.remind(self.cog.bot, interaction)
+        await self._track(
+            StatDelta(add={"biz_sl_founded": 1}, peak={"biz_sl_capital_max": self.capital})
+        )
+
+    def _ask(self, action: str) -> Callable[[discord.Interaction], Awaitable[None]]:
+        """Un botón de 🏢 Sociedad que pide el importe en un formulario."""
+
+        async def callback(interaction: discord.Interaction) -> None:
+            # Un formulario es la primera respuesta: aquí solo se mira memoria.
+            view = self.company
+            info = view.business.company if view is not None else {}
+            most = {
+                "aportar": None,
+                "prestar": None,
+                "devolver": info.get("loan", 0),
+                "sueldo": view.cash if view else 0,
+                "dividendo": view.dividend_room if view else 0,
+            }[action]
+            await interaction.response.send_modal(CompanyAmountForm(self, action, most))
+
+        return callback
+
+    async def company_action(
+        self, interaction: discord.Interaction, action: str, text: str
+    ) -> None:
+        """Lo que se pide en un formulario de 🏢 Sociedad (llega de `CompanyAmountForm`)."""
+        await ack(interaction)
+        view = self.company
+        cash = view.cash if view is not None else 0
+        try:
+            amount = parse_amount(text, cash)
+        except ValueError as error:
+            await notify(interaction, str(error))
+            return
+        calls = {
+            "aportar": self.service.contribute,
+            "prestar": self.service.lend,
+            "devolver": self.service.repay,
+            "sueldo": self.service.pay_salary,
+            "dividendo": self.service.pay_dividend,
+        }
+        try:
+            _business, paid = await calls[action](self.guild_id, self.owner.id, amount)
+        except BusinessError as error:
+            await notify(interaction, str(error))
+            return
+        money = format_amount(amount)
+        notes = {
+            "aportar": f"💶 Aportas {money} a la caja de la sociedad.",
+            "prestar": f"🏦 Le prestas {money} a tu sociedad: te lo devolverá cuando pueda.",
+            "devolver": f"↩️ Tu sociedad te devuelve {money} del préstamo.",
+            "sueldo": f"💼 Cobras {money} de sueldo de administrador; te retienen "
+            f"{format_amount(paid.salary_tax)} de IRPF ({TAX_COLLECTOR}).",
+            "dividendo": f"💰 Te repartes {money} de dividendo; te retienen "
+            f"{format_amount(paid.dividend_tax)} (19 %, {TAX_COLLECTOR}).",
+        }
+        self.notes.append(notes[action])
+        await self._pet_note(Mood.GOOD if action in ("sueldo", "dividendo") else None)
+        await self.show(interaction)
+        await renta.remind(self.cog.bot, interaction)
+        stats = {
+            "aportar": {"biz_sl_contributed": amount},
+            "prestar": {"biz_sl_lent": amount},
+            "devolver": {"biz_sl_repaid": amount},
+            "sueldo": {"biz_sl_salaries": 1, "biz_sl_salary_paid": amount},
+            "dividendo": {"biz_sl_dividends": 1, "biz_sl_dividend_paid": amount},
+        }
+        await self._track(StatDelta(add=stats[action]))
 
     async def _pick_equipment(self, interaction: discord.Interaction, value: str) -> None:
         self.equipment = value if value in EQUIPMENT_BY_KEY else ""
@@ -1530,21 +1749,61 @@ class NegocioPanel(ui.LayoutView):
             return
         verb = "traspasado" if traspaso else "cerrado"
         got = closing.stock + closing.proceeds
-        self.notes.append(
-            f"🚪 **{closing.business.name} se ha {verb}.** Cobras {format_amount(got)} por el "
-            f"stock{', las mejoras y la clientela' if traspaso else ' y las mejoras'} y te "
-            f"devuelven {format_amount(closing.refund)} de la fianza."
-        )
+        if closing.company:
+            self.notes.append(
+                f"🚪 **{closing.business.name} se ha {verb} y la sociedad, liquidado.** Te "
+                f"llegan {format_amount(closing.liquidated)} de cuota de liquidación"
+                + (
+                    f" y {format_amount(closing.loan_repaid)} de tu préstamo"
+                    if closing.loan_repaid
+                    else ""
+                )
+                + "."
+            )
+            if closing.covered or closing.derived_debt:
+                self.notes.append(
+                    f"-# ⚖️ La sociedad no llegaba para sus deudas: pagas "
+                    f"{format_amount(closing.covered)}"
+                    + (
+                        f" y te quedan {format_amount(closing.derived_debt)} de deuda con "
+                        "Hacienda (art. 43.1.b LGT)"
+                        if closing.derived_debt
+                        else ""
+                    )
+                    + "."
+                )
+        else:
+            self.notes.append(
+                f"🚪 **{closing.business.name} se ha {verb}.** Cobras {format_amount(got)} por el "
+                f"stock{', las mejoras y la clientela' if traspaso else ' y las mejoras'} y te "
+                f"devuelven {format_amount(closing.refund)} de la fianza."
+            )
         if closing.gain_tax:
             self.notes.append(
                 f"-# 🐶 IRPF de la ganancia (19 %): −{format_amount(closing.gain_tax)} "
                 f"({TAX_COLLECTOR})"
+            )
+        if closing.bank_moved:
+            paid = (
+                f"La caja pagó {format_amount(closing.bank_paid)} al banco y el resto lo asumes "
+                "tú, que la avalabas"
+                if closing.company
+                else "Como autónomo ya eran tuyos"
+            )
+            self.notes.append(
+                f"-# 🏦 {paid}: {format_amount(closing.bank_moved)} siguen como préstamo personal, "
+                "con sus cuotas cada noche (`banco`)."
+            )
+        elif closing.bank_paid:
+            self.notes.append(
+                f"-# 🏦 La caja canceló sus préstamos: {format_amount(closing.bank_paid)}."
             )
         self.screen = MONTAR
         await self._pet_note(Mood.GOOD if traspaso else None)
         await self.show(interaction)
         await renta.remind(self.cog.bot, interaction)
         week = sum(closing.business.week_totals.values())
+        sunk = closing.company and (closing.covered > 0 or closing.derived_debt > 0)
         await self._track(
             StatDelta(
                 add={
@@ -1552,8 +1811,14 @@ class NegocioPanel(ui.LayoutView):
                     "biz_closed_red": int(week < 0),
                     "biz_traspasos": int(traspaso),
                     "biz_traspaso_money": got if traspaso else 0,
+                    "biz_sl_liquidated": int(closing.company),
+                    "biz_sl_sunk": int(sunk),
+                    "biz_loan_assumed": int(closing.company and closing.bank_moved > 0),
                 },
-                peak={"biz_traspaso_max": got if traspaso else 0},
+                peak={
+                    "biz_traspaso_max": got if traspaso else 0,
+                    "biz_sl_quota_max": closing.liquidated,
+                },
             )
         )
 
@@ -1699,6 +1964,31 @@ def _advanced(game: TurnGame) -> TurnGame:
     return ahead
 
 
+class CompanyAmountForm(ui.Modal):
+    """💶 El importe de una operación con la sociedad (aportar, prestar, sueldo…)."""
+
+    TITLES = {
+        "aportar": "💶 Aportar a la sociedad",
+        "prestar": "🏦 Prestar a la sociedad",
+        "devolver": "↩️ Que te devuelva el préstamo",
+        "sueldo": "💼 Sueldo de administrador",
+        "dividendo": "💰 Repartir dividendos",
+    }
+
+    def __init__(self, panel: NegocioPanel, action: str, most: int | None) -> None:
+        super().__init__(title=self.TITLES[action][:45])
+        self.panel = panel
+        self.action = action
+        label = "Importe" if most is None else f"Importe (hasta {format_amount(most)})"
+        self.amount: ui.TextInput = ui.TextInput(
+            label=label[:45], default=str(most) if most else None, max_length=20
+        )
+        self.add_item(self.amount)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        await self.panel.company_action(interaction, self.action, str(self.amount.value))
+
+
 class NameModal(ui.Modal, title="Nombre del negocio"):
     """Formulario para el nombre del negocio (hasta 24 caracteres)."""
 
@@ -1777,6 +2067,16 @@ class Negocio(commands.Cog, name="Negocio"):
                 delta = StatDelta(add={"biz_nights": 1, "biz_nights_unpaid": int(run.unpaid > 0)})
                 if run.evicted:
                     delta.add["biz_evicted"] = 1
+                if (week := run.corporate) is not None:
+                    delta.add.update(
+                        biz_sl_weeks=1,
+                        biz_sl_tax_paid=week["tax"],
+                        biz_sl_loss=int(week["base"] < 0),
+                    )
+                    delta.peak["biz_sl_profit_max"] = max(0, week["profit"])
+                if run.refund:
+                    delta.add["biz_pluri_refund"] = run.refund
+                delta.add.update(business_loan_night_stats(run.loans))
                 logros.note(self.bot, guild.id, run.user_id, delta)
 
     @_nightly.before_loop
@@ -1893,6 +2193,18 @@ async def business_line(bot: commands.Bot, guild_id: int, user_id: int) -> str |
         f"{sector.emoji} **{business.name}** · {sector.name} en {business.barrio_info.name} · "
         f"{_stars_text(business.stars)}"
     )
+
+
+async def company_values(bot: commands.Bot, guild_id: int) -> dict[int, int]:
+    """El valor de la sociedad de cada dueño (para `perfil` y `fortunas`). Vacío sin el cog."""
+    cog = find_cog(bot, Negocio)
+    if cog is None:
+        return {}
+    try:
+        return await cog.service.repository.read(lambda c: companies_in(c, guild_id))
+    except (OSError, sqlite3.Error):
+        logger.exception("No se pudieron leer las sociedades de %s", guild_id)
+        return {}
 
 
 async def pending(bot: commands.Bot, guild_id: int, user_id: int) -> list[Pending]:

@@ -10,7 +10,8 @@ cabecera de la escena.
 Pantallas: `dia` (el inicio de `pala`), `montar`, `negocio` (portada y vista previa),
 `almacen`, `cuentas`, `cliente` (el minijuego) y `cierre` (el resumen del turno). Desde la
 fase 2, también `mejoras` (las mejoras del local y las campañas) y `resenas`; el traslado
-se enseña con la vista previa de `negocio` (`traslado_state`).
+se enseña con la vista previa de `negocio` (`traslado_state`). Desde la fase 3, `sociedad`
+(constituirla o su balance, `sociedad_state`).
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
+from bot.services import business_sl as sl
 from bot.services.agenda import JORNADA_NAMES, Agenda
 from bot.services.business import (
     RECOMMENDED_RATING,
@@ -51,7 +53,7 @@ from bot.services.business_games import TurnGame
 from bot.services.economy import format_amount
 from bot.services.housing_catalog import BARRIO_BY_KEY, BARRIOS
 from bot.services.levels import TIMEZONE
-from bot.services.taxes import igic
+from bot.services.taxes import format_rate, igic
 
 State = dict[str, Any]
 
@@ -69,6 +71,11 @@ ACCOUNT_ROWS: tuple[tuple[str, str, str], ...] = (
     ("marketing", "Publicidad", "out"),
     ("amortizacion", "Amortización", "out"),
     ("apertura", "Tasas de apertura y traslado", "out"),
+    ("sueldo", "Sueldo del administrador", "out"),
+    ("gestoria", "Gestoría", "out"),
+    ("constitucion", "Notaría y registro", "out"),
+    ("intereses", "Intereses y comisiones del banco", "out"),
+    ("sociedades", "Impuesto sobre Sociedades", "tax"),
     ("cuota", "Cuota de autónomo", "tax"),
     ("irpf", "IRPF a cuenta", "tax"),
 )
@@ -301,6 +308,8 @@ def negocio_state(business: Business, *, foot: str, rivals: int = 0) -> State:
     bill = nightly_bill(business)
     week = sum(business.week_totals.values())
     tags = [PRICE_BY_KEY[business.price].name.split(" (")[0] + " de precio"]
+    if business.is_company:
+        tags.insert(0, "Sociedad limitada")
     if alert := _alert(business):
         tags.append(alert)
     if rivals:
@@ -639,3 +648,94 @@ def turn_lines(result: Any) -> list[str]:
     if gone := summary.count("gone"):
         lines.append(plural(gone, "se quedó en la cola", "se quedaron en la cola"))
     return lines
+
+
+# -- Fase 3: la sociedad ----------------------------------------------------------------
+
+#: Qué cambia de autónomo a sociedad, para la pantalla de constituirla.
+COMPARE: tuple[tuple[str, str, str], ...] = (
+    ("Impuesto", "IRPF por tramos, con el resto de tu renta", "Sociedades: 19 % y 21 % por tramos"),
+    ("Tu dinero", "Es el del negocio", "Sueldo (trabajo) o dividendos (19 %)"),
+    ("Si se hunde", "Respondes con todo lo tuyo", "Solo pierdes lo que hay dentro"),
+    ("Papeleo", "Ninguno", "Gestoría cada noche y notaría al empezar"),
+)
+
+
+def sociedad_state(view: Any, *, capital: int = sl.FULL_CAPITAL, foot: str = "") -> State:
+    """La pantalla 🏢 Sociedad (`negocio.CompanyView`).
+
+    Dos modos. `autonomo`: lo que cambia (`compare`), los capitales para escoger (`capitals`,
+    con el elegido), lo que cuesta (`cost`) y si su curro no le deja (`blocked`). `sl`: el
+    balance (`cash`, `capital`, `reserve`, `retained`, `loan`, `losses`, `tax_debt`,
+    `equity`), lo que puede repartir (`room`), la retención del sueldo (`retention`), el
+    último Impuesto sobre Sociedades (`last`, o `None`) y los avisos (`warnings`).
+    """
+    business = view.business
+    blocked = f"{view.blocked.text} ({view.blocked.law})" if view.blocked else None
+    if not business.is_company:
+        fees = sl.constitution_fees(capital)
+        options = []
+        for amount in sl.CAPITALS:
+            low = amount < sl.FULL_CAPITAL
+            options.append(
+                {
+                    "amount": format_amount(amount),
+                    "euros": f"{amount // 100:,} €".replace(",", "."),
+                    "note": (
+                        "Reserva legal del 20 % y respondes hasta 3.000 €"
+                        if low
+                        else "Responsabilidad limitada al capital"
+                    ),
+                    "selected": amount == capital,
+                }
+            )
+        return {
+            "screen": "sociedad",
+            "mode": "autonomo",
+            **_style(business),
+            "compare": [{"label": a, "autonomo": b, "sl": c} for a, b, c in COMPARE],
+            "capitals": options,
+            "cost": format_amount(capital + fees + igic(fees)),
+            "fees": f"Notaría y registro: {format_amount(fees)} + IGIC",
+            "blocked": blocked,
+            "foot": foot
+            or "El negocio pasa entero a la sociedad (art. 87 LIS): sin IRPF ni IGIC al hacerlo.",
+        }
+    info = business.company
+    last = info.get("last")
+    warnings = []
+    if blocked:
+        warnings.append(f"No puedes cobrar de administrador: {blocked}")
+    if view.dissolution:
+        warnings.append("Causa de disolución: el patrimonio neto no llega a la mitad del capital")
+    if info.get("tax_debt"):
+        warnings.append(f"Debe {format_amount(info['tax_debt'])} a Hacienda: no hay dividendos")
+    return {
+        "screen": "sociedad",
+        "mode": "sl",
+        **_style(business),
+        "cash": format_amount(view.cash),
+        "capital": format_amount(info["capital"]),
+        "reserve": format_amount(info["reserve"]),
+        "retained": signed(info["retained"]),
+        "loan": format_amount(info["loan"]),
+        "losses": format_amount(info["losses"]),
+        "tax_debt": format_amount(info.get("tax_debt", 0)),
+        "equity": signed(view.equity),
+        "room": format_amount(view.dividend_room),
+        "retention": format_rate(view.retention).replace(",00", ""),
+        "last": (
+            {
+                "base": signed(last["base"]),
+                "rate": format_rate(last["rate"]).replace(",00", ""),
+                "tax": format_amount(last["tax"]),
+                "reserve": format_amount(last["reserve"]),
+            }
+            if last
+            else None
+        ),
+        "warnings": warnings[:3],
+        "foot": foot
+        or "Cada domingo por la noche, el Impuesto sobre Sociedades de la semana. Lo que quede, "
+        "a dividendos.",
+    }

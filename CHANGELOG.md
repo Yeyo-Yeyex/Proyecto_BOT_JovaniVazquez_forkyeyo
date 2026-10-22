@@ -8,6 +8,30 @@ criterio.
 
 ## 9.x
 
+### 9.7.0 · 2026-10-22
+
+- Negocios: pide préstamos a nombre de tu negocio en `banco` (🏪 Negocio) o desde la portada del negocio en `pala` (🏦 Banco)
+- Negocios: de autónomo lo firmas tú (entra en tu monedero y cuenta en tu 35 %); de sociedad lo firma ella (entra en su caja, cabe en lo que deja ella más lo tuyo y lo avalas)
+- Negocios: el tipo es el de una pyme (Euríbor + 4 % y tu perfil), hasta 2 por negocio aparte de los personales; sin desistimiento ni seguro, que son del crédito al consumo
+- Negocios: las cuotas las paga la noche del negocio, después del local y de Hacienda; los intereses y la comisión son gasto (IRPF o Sociedades)
+- Negocios: si no paga, fichero de morosos y vencimiento como un préstamo personal; de una sociedad te lo reclama a ti y ella pasa a debértelo
+- Negocios: al hacerlo sociedad o al cerrar, lo que quede sigue a tu nombre como préstamo personal (al liquidar la sociedad, su caja paga antes lo que pueda)
+- Patrimonio: lo que debe tu sociedad al banco resta de su valor, no del tuyo
+- Logros: 14 nuevos de los préstamos al negocio en 🏪 Negocio
+
+### 9.6.0 · 2026-10-21
+
+- Negocios: 🏢 Sociedad, convierte tu negocio en una sociedad limitada (capital de 1 €, 3.000 € o 10.000 €; notaría y registro, sin ITP)
+- Negocios: la sociedad tiene caja propia: cobra las ventas sin IRPF y paga el local, las compras, las mejoras y una gestoría cada noche
+- Negocios: cada domingo, el Impuesto sobre Sociedades de la semana (19 % y 21 % como microempresa), con su reserva legal y la compensación de pérdidas
+- Negocios: cobra de tu sociedad un sueldo de administrador (con su retención, cuenta como nómina) o dividendos (19 %); apórtale o préstale dinero
+- Negocios: si se hunde, solo pierdes lo que hay dentro (salvo los 3.000 € del capital mínimo, lo que debe a Hacienda y las pérdidas sin remediar); al cerrar se liquida y te llevas la cuota
+- Negocios: algunos curros no dejan administrar una sociedad (altos cargos, Alta Administración, sanidad pública, el unicornio y la hostelería con una cafetería o heladería)
+- Negocios: quien cotiza por la `pala` y por su negocio recupera cada domingo lo que cotice de más (pluriactividad)
+- Patrimonio: tu sociedad cuenta en `perfil`, `fortunas` y el Impuesto sobre el Patrimonio
+- Hacienda: el Impuesto sobre Sociedades sale aparte
+- Logros: 35 nuevos de la sociedad en 🏪 Negocio
+
 ### 9.5.0 · 2026-10-21
 
 - Negocios: dos sectores nuevos, 🍦 heladería (comandas) y 🔩 ferretería (la caja)

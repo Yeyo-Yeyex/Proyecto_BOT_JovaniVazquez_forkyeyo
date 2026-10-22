@@ -903,6 +903,27 @@ async def test_un_turno_del_negocio_llega_a_logros_saldo_y_perfil_con_el_bot_rea
         await client.close()
 
 
+async def test_la_sociedad_del_negocio_sale_en_el_patrimonio_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """`patrimonio` encuentra el cog del negocio y suma el valor de la sociedad."""
+    client = await load_bot(tmp_path)
+    try:
+        cog = client.get_cog("Negocio")
+        patrimonio = client.get_cog("Patrimonio")
+        assert cog is not None and patrimonio is not None
+        await client.economy.repository.apply(GUILD, OWNER_ID, [LedgerEntry(2_000_000, "x")])
+        await cog.service.open(
+            GUILD, OWNER_ID, sector="tienda", barrio="triana", name="Pino", palette=0,
+            emblem=0,
+        )  # fmt: skip
+        await cog.service.constitute(GUILD, OWNER_ID, 300_000)
+        worth = next(w for w in await patrimonio.fortunes(GUILD) if w.user_id == OWNER_ID)
+        assert worth.companies >= 300_000  # la caja (el capital) más la obra por amortizar
+    finally:
+        await client.close()
+
+
 async def test_los_intereses_encuentran_los_logros_con_el_bot_real(tmp_path: Path) -> None:
     """`Intereses` carga antes que los logros: sus avisos deben llegar al cog real."""
     client = await load_bot(tmp_path)
@@ -2346,6 +2367,73 @@ async def test_pisos_abre_las_garantias_y_se_rehipoteca_con_el_bot_real(tmp_path
         casino = client.get_cog("Casino")
         kinds = {item.kind for item in await casino._pending(GUILD, OWNER_ID, 0, own=True)}  # noqa: SLF001
         assert "mortgage" in kinds
+    finally:
+        await client.close()
+
+
+async def test_el_negocio_abre_el_banco_y_pide_un_prestamo_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """🏦 Banco de la portada del negocio abre `banco` en 🏪 Negocio; desde ahí se pide y se
+    firma a nombre del negocio, los logros se apuntan y la cuota sale en `saldo`."""
+    client = await load_bot(tmp_path)
+    try:
+        negocio = client.get_cog("Negocio")
+        await client.economy.repository.apply(GUILD, OWNER_ID, [LedgerEntry(5_000_000, "test")])
+        await negocio.service.open(
+            GUILD, OWNER_ID, sector="cafeteria", barrio="triana", name="Bar Pepe", palette=0,
+            emblem=0,
+        )  # fmt: skip
+        connection = client.housing._connect()  # noqa: SLF001
+        try:
+            connection.execute(
+                "INSERT INTO economy_payroll (guild_id, user_id, concept, gross, ss_worker, "
+                "ss_employer, irpf, net, created_at) VALUES (?, ?, 'pala:obra', 600000, 0, 0, "
+                "0, 600000, ?)",
+                (GUILD, OWNER_ID, client.get_cog("Banco").clock() - 86_400),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        owner = MagicMock(spec=discord.Member)
+        owner.id, owner.bot, owner.display_name = OWNER_ID, False, "Diego"
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = GUILD_ID
+        owner.guild = guild
+        panel = importer("Negocio", client).NegocioPanel(
+            negocio, guild_id=GUILD, owner=owner, channel=None
+        )
+        interaction = fake_interaction(owner)
+        interaction.client, interaction.guild, interaction.channel = client, guild, None
+        await panel._bank(interaction)  # noqa: SLF001
+        shown = interaction.edit_original_response.await_args.kwargs
+        assert shown["embed"].title == "🏪 Banco · Bar Pepe"
+        bank = shown["view"]
+        assert bank.tab == "business" and bank.business_most > 50_000
+
+        tab = importer("Banco", client).negocio_tab
+        form = tab.AmountForm(bank, bank.business_most)
+        form.amount._value = "50000"
+        clicked = fake_interaction(owner)
+        clicked.client, clicked.guild, clicked.channel = client, guild, None
+        await form.on_submit(clicked)
+        assert bank.business_offer is not None
+        await bank.screen()
+        sign = next(
+            c for c in bank.children if getattr(c, "custom_id", "") == "banco:negocio_firmar"
+        )
+        clicked = fake_interaction(owner)
+        clicked.client, clicked.guild, clicked.channel = client, guild, None
+        await sign.callback(clicked)
+        found = await negocio.service.loan_desk(GUILD, OWNER_ID)
+        assert found is not None
+        (loan,) = found[1].loans
+        assert loan.principal == 50_000 and loan.business_id == found[0].id
+        profile = await client.achievements.profile(GUILD, OWNER_ID)
+        assert profile.stats["biz_loans_signed"] == 1 and "biz_loan_1" in profile.unlocked
+        casino = client.get_cog("Casino")
+        items = await casino._pending(GUILD, OWNER_ID, 0, own=True)  # noqa: SLF001
+        assert any(item.kind == "loan" and "de tu negocio" in item.text for item in items)
     finally:
         await client.close()
 

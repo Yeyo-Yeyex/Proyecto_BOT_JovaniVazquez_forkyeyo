@@ -16,6 +16,9 @@ Qué cuenta como activo y cómo se valora:
 - **Derechos de cobro:** lo que la renta semanal le tiene que devolver y aún
   no ha presentado.
 - **Inmuebles de `pisos`**, a su valor de mercado de hoy (con el índice del barrio).
+- **Su sociedad** (los negocios de la fase 3), a su valor teórico: caja, stock y lo que
+  queda por amortizar, menos sus deudas (`repositories.business.companies_in`). El
+  Patrimonio la cuenta igual (art. 16 de la Ley 19/1991).
 
 El patrimonio neto es lo que tiene menos lo que debe al banco (`debts`): hipotecas y
 rehipotecas, préstamos y la deuda tras un vencimiento o una ejecución. Así pedir prestado no
@@ -56,6 +59,7 @@ class NetWorth:
         homes: Sus inmuebles de `pisos`, a precio de mercado.
         homes_fiscal: Los mismos, a su valor fiscal (lo que mira el Patrimonio).
         debts: Lo que debe al banco (hipotecas, préstamos y deuda).
+        companies: Su sociedad limitada, a su valor teórico.
     """
 
     user_id: int
@@ -66,6 +70,7 @@ class NetWorth:
     homes: int = 0
     homes_fiscal: int = 0
     debts: int = 0
+    companies: int = 0
 
     @property
     def goods_value(self) -> int:
@@ -75,7 +80,9 @@ class NetWorth:
     @property
     def assets(self) -> int:
         """Todo lo que tiene, sin restar lo que debe."""
-        return self.cash + self.goods_value + self.lottery + self.renta + self.homes
+        return (
+            self.cash + self.goods_value + self.lottery + self.renta + self.homes + self.companies
+        )
 
     @property
     def total(self) -> int:
@@ -96,6 +103,7 @@ def build(
     homes: dict[int, int] | None = None,
     homes_fiscal: dict[int, int] | None = None,
     debts: dict[int, int] | None = None,
+    companies: dict[int, int] | None = None,
 ) -> list[NetWorth]:
     """Junta las piezas en un `NetWorth` por miembro, del más rico al menos.
 
@@ -107,14 +115,19 @@ def build(
         homes: Valor de mercado de los inmuebles por miembro.
         homes_fiscal: Valor fiscal de los inmuebles por miembro.
         debts: Lo que debe al banco cada miembro.
+        companies: El valor de la sociedad de cada miembro.
     """
+    companies = companies or {}
     homes = homes or {}
     homes_fiscal = homes_fiscal or {}
     debts = debts or {}
     goods: dict[int, list[Holding]] = {}
     for user_id, name, emoji, kind, value, expires in holdings:
         goods.setdefault(user_id, []).append(Holding(name, emoji, kind, value, expires))
-    users = set(balances) | set(goods) | set(lottery) | set(renta) | set(homes) | set(debts)
+    users = (
+        set(balances) | set(goods) | set(lottery) | set(renta) | set(homes) | set(debts)
+        | set(companies)
+    )  # fmt: skip
     out = [
         NetWorth(
             user_id=user_id,
@@ -125,6 +138,7 @@ def build(
             homes=homes.get(user_id, 0),
             homes_fiscal=homes_fiscal.get(user_id, 0),
             debts=debts.get(user_id, 0),
+            companies=companies.get(user_id, 0),
         )
         for user_id in users
     ]
