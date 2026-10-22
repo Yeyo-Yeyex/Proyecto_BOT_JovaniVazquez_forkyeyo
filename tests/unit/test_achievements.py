@@ -228,6 +228,17 @@ PRODUCED_STATS = {
     "biz_loans_signed", "biz_loan_principal_max", "biz_loans_open_max", "biz_loan_company",
     "biz_loan_longest", "biz_loans_repaid_early", "biz_loan_installments", "biz_loan_unpaid",
     "biz_loans_finished", "biz_loan_defaults", "biz_loan_assumed",
+    # La plantilla (fase 4): staff_*_stats.
+    "staff_turns", "staff_clients", "staff_sales", "staff_turn_s", "staff_turn_d",
+    "staff_absences", "staff_idle", "staff_sales_turn_max", "staff_clients_turn_max",
+    "staff_nights", "staff_payroll", "staff_unpaid", "staff_inspected", "staff_fines",
+    "staff_courses_done", "staff_trials", "staff_contract_end", "staff_art50", "staff_quit",
+    "staff_hired", "staff_hired_indefinido", "staff_hired_temporal", "staff_hired_b",
+    "staff_hired_half", "staff_hired_bonus", "staff_hired_senior", "staff_hired_young",
+    "staff_size_max", "staff_wage_max", "staff_fired", "staff_fired_prueba",
+    "staff_fired_disciplinario", "staff_fired_objetivo", "staff_fired_improcedente",
+    "staff_fired_b", "staff_severance", "staff_bonus_refund", "staff_raises",
+    "staff_permanent", "staff_courses", "staff_course_spent", "staff_fundae", "staff_skill_max",
     # cogs/achievements.py: mensajes, voz, reacciones y la siembra del historial
     *message_stats("x", when=datetime(2026, 1, 1, tzinfo=TIMEZONE)).keys(),
     "msg_night", "msg_morning", "msg_long", "msg_short", "msg_caps", "msg_questions",
