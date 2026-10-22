@@ -230,19 +230,25 @@ def settle_week(
         compensated = min(taxed, company["losses"])
         company["losses"] -= compensated
         taxable = taxed - compensated
-    ric = 0
-    if day is not None and taxable > 0:
-        ric = round(taxable * min(RIC_MAX, company.get("ric_share", 0.0)))
-        taxable -= ric
-    if zec is not None:
-        tax, rate = zec_tax(taxable, *zec, weekly_sales=weekly_sales)
-    else:
-        tax, rate = corporate_tax(taxable, weekly_sales=weekly_sales)
+    # La RIC sale del beneficio de la semana: lo que se integra ahora no se vuelve a dotar.
+    share = min(RIC_MAX, company.get("ric_share", 0.0)) if day is not None else 0.0
+    ric = round(min(taxable, max(0, base)) * share)
+
+    def tax_on(amount: int) -> tuple[int, float]:
+        if zec is not None:
+            return zec_tax(amount, *zec, weekly_sales=weekly_sales)
+        return corporate_tax(amount, weekly_sales=weekly_sales)
+
+    tax, rate = tax_on(taxable - ric)
     # Lo integrado de la RIC paga el impuesto, pero no es beneficio nuevo: ya estaba en la
     # reserva, que vuelve a lo disponible.
     profit = base - tax
-    reserve = legal_reserve(company, profit) if profit > 0 else 0
-    ric = max(0, min(ric, profit - reserve))
+    if ric > profit:
+        # Sin beneficio contable que la cubra no hay dotación (no se dota de pérdidas).
+        ric = 0
+        tax, rate = tax_on(taxable)
+        profit = base - tax
+    reserve = legal_reserve(company, profit - ric) if profit - ric > 0 else 0
     company["reserve"] += reserve
     company["retained"] += profit - reserve - ric + integrated + released
     if ric and day is not None:
