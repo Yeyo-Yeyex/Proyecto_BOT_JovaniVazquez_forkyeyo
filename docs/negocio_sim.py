@@ -16,6 +16,7 @@ Uso, desde la raíz del repo (`PYTHONIOENCODING=utf-8` en la consola de Windows)
     python docs/negocio_sim.py --dias 42     # más días
     python docs/negocio_sim.py --fase2       # mejoras, tamaños y campañas (fase 2)
     python docs/negocio_sim.py --sociedad    # autónomo o sociedad limitada (fase 3)
+    python docs/negocio_sim.py --plantilla   # empleados (fase 4)
 
 Con `--fase2`, un jugador `bueno` en el barrio del medio de cada sector, con el cupo del
 barrio (`daily_pool`) y la amortización en el IRPF: lo que suma al día cada mejora, cada
@@ -25,6 +26,10 @@ Con `--sociedad`, para cada beneficio semanal del negocio (antes de los impuesto
 dueño), lo que se lleva el dueño al bolsillo como autónomo (IRPF de la actividad y la cuota)
 y como sociedad (gestoría, Sociedades, su sueldo con su IRPF y el resto en dividendos al
 19 %), con el mejor reparto entre sueldo y dividendos. La cuota del RETA es la misma.
+
+Con `--plantilla`, el barrio del medio de cada sector con el cupo: lo que deja al día el
+negocio llevado por empleados (con sus turnos jugados por `business_staff.play_turn`, su
+nómina con la cuota de la empresa y su humor) frente al dueño solo, según lo que saben.
 
 Jugadores: `perfecto` (todo bien y rápido), `bueno` (falla 1 de cada 8 clientes) y
 `flojo` (falla 1 de cada 3). Dedicación: 4 turnos al día (con curro a jornada completa) u
@@ -47,6 +52,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from bot.services import business_sl as sl  # noqa: E402
+from bot.services import business_staff as staff_rules  # noqa: E402
 from bot.services.business import (  # noqa: E402
     REPUTATION_MAX,
     Business,
@@ -177,8 +183,12 @@ def simulate(
     equipment: tuple[str, ...] = (),
     campaign: str = "",
     pool: bool = False,
+    staff: tuple[dict, ...] = (),
 ) -> Run:
-    """Juega `days` días. Con la fase 2: tamaño, mejoras, una campaña que se repite y el cupo."""
+    """Juega `days` días. Con la fase 2: tamaño, mejoras, una campaña que se repite y el cupo.
+
+    Con `staff` (fase 4), sus empleados juegan sus franjas y cobran su nómina cada noche.
+    """
     rng = random.Random(seed)
     business = Business(1, sector.key, barrio.key, "Sim", seed=seed, size=size)
     quote = opening_quote(sector, barrio, SIZES[size])
@@ -207,17 +217,29 @@ def simulate(
         left = daily_pool(sector, barrio) * pool_factor(business, today) if pool else math.inf
         used: dict[str, int] = {}
         sales = 0
-        for hour in HOURS[turns]:
+        shifts: list[tuple[int, dict | None, int]] = [(h, None, -1) for h in HOURS.get(turns, ())]
+        for emp in staff:
+            if not staff_rules.absent(emp, seed, today):
+                shifts += [(staff_rules.demand_hour(f), emp, f) for f in staff_rules.franjas(emp)]
+        grades: dict[int, list[str]] = {}
+        for hour, emp, franja in sorted(shifts, key=lambda s: s[0]):
             count = min(turn_clients(business, hour, rng.random(), today), math.floor(left))
             left -= count
             clients = make_clients(business, count, rng.randrange(2**31))
             if not clients:
                 continue
-            game = TurnGame(business, clients, now=0.0)
-            now = 0.0
-            while not game.finished(now):
-                now = play_client(game, now, rng, miss)
+            if emp is None:
+                game = TurnGame(business, clients, now=0.0)
+                now = 0.0
+                while not game.finished(now):
+                    now = play_client(game, now, rng, miss)
+            else:
+                start = (day * 24 + hour) * 3600.0
+                game = staff_rules.play_turn(business, emp, clients, start=start, franja=franja)
+                staff_rules.learn(emp)
             summary = game.summary()
+            if emp is not None:
+                grades.setdefault(emp["id"], []).append(summary.grade)
             for key, units in summary.units.items():
                 business.stock[key] = max(0, business.stock.get(key, 0) - units)
                 used[key] = used.get(key, 0) + units
@@ -233,7 +255,13 @@ def simulate(
         if turns == 0:
             drift(business)
         fee = (FLAT_RATE_FEE if day < 7 else SELF_EMPLOYED_FEE) if day % 7 == 0 else 0
-        day_net = sales - spent - bill - fee
+        payroll = 0
+        for emp in staff:
+            docked = staff_rules.absent(emp, seed, today)
+            payroll += staff_rules.payslip(emp, sector.key, today, docked=docked).cost
+            staff_rules.night_mood(emp, paid=True, grades=grades.get(emp["id"], []))
+            emp["nights"] += 1
+        day_net = sales - spent - bill - fee - payroll
         week_net += day_net - amortize(business)  # la amortización baja la base, no la caja
         tax = 0
         if day % 7 == 6:  # la declaración del lunes: la actividad es toda su renta
@@ -360,12 +388,61 @@ def society(profits: tuple[int, ...]) -> None:
         )
 
 
+def hire(level: float, shift: str, seq: int, jornada: int = 4) -> dict:
+    """Un empleado de prueba con las tres habilidades a `level`, sin rasgos, indefinido."""
+    skills = dict.fromkeys(staff_rules.SKILLS, level)
+    candidate = {
+        "key": seq, "name": f"E{seq}", "age": 30, "profile": "general", "traits": [],
+        "skills": skills,
+    }  # fmt: skip
+    wage = staff_rules.ask(skills, (), jornada)
+    return staff_rules.new_employee(
+        candidate, seq=seq, contract="indefinido", jornada=jornada, shift=shift, wage=wage,
+        start=DAY0,
+    )  # fmt: skip
+
+
+def plantilla(days: int) -> None:
+    """El negocio con empleados frente al dueño solo (jugador bueno a 4 turnos)."""
+    print(f"SMI de una noche a jornada completa: {staff_rules.smi_night():,} Y$".replace(",", "."))
+    print(f"{'sector':<10} {'quién abre':<34} {'sabe':>4} {'neto/día':>9} {'nómina/día':>10}")
+    for sector in SECTORS:
+        barrio = barrios_for(sector)[1]
+        base = mean_run(sector, barrio, 4, PLAYERS["bueno"], days)
+        print(f"{sector.key:<10} {'dueño, 4 turnos (bueno)':<34} {'':>4} "
+              f"{base.net_day:>9,.0f}".replace(",", "."))  # fmt: skip
+        for label, turns, specs in (
+            ("1 de mañana", 0, (("manana", 4),)),
+            ("mañana y tarde", 0, (("manana", 4), ("tarde", 4))),
+            ("dueño 4 turnos + 1 de tarde", 4, (("tarde", 4),)),
+            ("2 de mañana y 2 de tarde", 0,
+             (("manana", 4), ("manana", 4), ("tarde", 4), ("tarde", 4))),
+        ):  # fmt: skip
+            for level in (30, 50, 70):
+                runs = []
+                payroll = 0
+                for seed in SEEDS:
+                    team = tuple(hire(level, s, i + 1, j) for i, (s, j) in enumerate(specs))
+                    payroll = sum(staff_rules.payslip(e, sector.key, DAY0).cost for e in team)
+                    runs.append(
+                        simulate(sector, barrio, turns, PLAYERS["bueno"], days, seed,
+                                 pool=True, staff=team)
+                    )  # fmt: skip
+                net = sum(r.net_day for r in runs) / len(runs)
+                print(f"{'':<10} {label:<34} {level:>4} {net:>9,.0f} "
+                      f"{payroll:>10,}".replace(",", "."))  # fmt: skip
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--dias", type=int, default=28)
     parser.add_argument("--fase2", action="store_true", help="Mejoras, tamaños y campañas.")
     parser.add_argument("--sociedad", action="store_true", help="Autónomo o sociedad.")
+    parser.add_argument("--plantilla", action="store_true", help="Empleados (fase 4).")
     args = parser.parse_args()
+    if args.plantilla:
+        plantilla(args.dias)
+        return
     if args.sociedad:
         society((50_000, 100_000, 150_000, 250_000, 400_000, 700_000, 1_200_000))
         return

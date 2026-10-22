@@ -51,10 +51,12 @@ MICRO_TURNOVER_EUR = 1_000_000.0
 GENERAL_RATE = 0.25
 #: Partidas de las cuentas de la semana (`Business.week_totals`) que entran en la base del
 #: Impuesto sobre Sociedades. No entran la cuota de autónomo (la paga el dueño), el IRPF, los
-#: dividendos ni el propio impuesto.
+#: dividendos ni el propio impuesto. Desde la fase 4, la plantilla: sus nóminas con la cuota
+#: de la empresa (`personal`), las indemnizaciones y la formación son gasto. Lo pagado en B,
+#: las multas y los recargos, no (art. 15.c y 15.e LIS).
 TAX_ITEMS: tuple[str, ...] = (
     "ventas", "compras", "local", "marketing", "amortizacion", "apertura", "sueldo",
-    "gestoria", "constitucion", "traspaso", "intereses",
+    "gestoria", "constitucion", "traspaso", "intereses", "personal", "despidos", "formacion",
 )  # fmt: skip
 #: Las que no mira el banco para ver lo que deja el negocio: la amortización no es un pago y
 #: los intereses son justo lo que va a pagar con ello (el resultado antes de ellos, EBITDA).

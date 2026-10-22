@@ -607,3 +607,19 @@ REVIEW_LINES: dict[int, tuple[str, ...]] = {
         "Pedí un cortado y me sirvieron un disgusto.",
     ),
 }
+
+# -- Fase 4: la plantilla (`bot.services.business_staff`) ------------------------------
+
+#: Nombres y apellidos de los candidatos a empleado.
+STAFF_FIRST_NAMES: tuple[str, ...] = (
+    "Yaiza", "Ayoze", "Iballa", "Nayra", "Airam", "Acerina", "Echedey", "Guacimara", "Jonay",
+    "Tanausú", "Dácil", "Idaira", "Nauzet", "Yeray", "Aythami", "Gara", "Cristo", "Desirée",
+    "Marta", "Carmen", "Pedro", "José Luis", "Lucía", "Sergio", "Laura", "Javi", "Marina",
+    "Andrea", "Pablo", "Rocío", "Kevin", "Jessica", "Saúl", "Loli", "Paco", "Mari Carmen",
+    "Héctor", "Noemí", "Raúl", "Elena",
+)  # fmt: skip
+STAFF_LAST_NAMES: tuple[str, ...] = (
+    "Perdomo", "Hernández", "Rodríguez", "Cabrera", "Santana", "Suárez", "Afonso", "Déniz",
+    "Trujillo", "Melián", "Betancor", "Falcón", "Quintana", "Ojeda", "Mesa", "Padrón", "Armas",
+    "Bethencourt", "Expósito", "Morales", "González", "Díaz", "Pérez", "Medina",
+)  # fmt: skip

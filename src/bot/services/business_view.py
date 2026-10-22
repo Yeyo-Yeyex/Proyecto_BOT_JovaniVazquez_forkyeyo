@@ -11,7 +11,8 @@ Pantallas: `dia` (el inicio de `pala`), `montar`, `negocio` (portada y vista pre
 `almacen`, `cuentas`, `cliente` (el minijuego) y `cierre` (el resumen del turno). Desde la
 fase 2, también `mejoras` (las mejoras del local y las campañas) y `resenas`; el traslado
 se enseña con la vista previa de `negocio` (`traslado_state`). Desde la fase 3, `sociedad`
-(constituirla o su balance, `sociedad_state`).
+(constituirla o su balance, `sociedad_state`). Desde la fase 4, `plantilla` (los empleados,
+`plantilla_state`) y `candidatos` (los de hoy y la oferta, `candidatos_state`).
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from datetime import date, datetime
 from typing import Any
 
 from bot.services import business_sl as sl
+from bot.services import business_staff as staff
 from bot.services.agenda import JORNADA_NAMES, Agenda
 from bot.services.business import (
     RECOMMENDED_RATING,
@@ -75,6 +77,11 @@ ACCOUNT_ROWS: tuple[tuple[str, str, str], ...] = (
     ("gestoria", "Gestoría", "out"),
     ("constitucion", "Notaría y registro", "out"),
     ("intereses", "Intereses y comisiones del banco", "out"),
+    ("personal", "Plantilla (sueldos y Seguridad Social)", "out"),
+    ("despidos", "Indemnizaciones", "out"),
+    ("formacion", "Formación", "out"),
+    ("negro", "Pagado en B", "out"),
+    ("multas", "Multas y recargos", "out"),
     ("sociedades", "Impuesto sobre Sociedades", "tax"),
     ("cuota", "Cuota de autónomo", "tax"),
     ("irpf", "IRPF a cuenta", "tax"),
@@ -303,9 +310,26 @@ def negocio_state(business: Business, *, foot: str, rivals: int = 0) -> State:
 
     Fase 2: `rating` (media de las reseñas, cuántas y si sale recomendado), `campaign` (la
     campaña de hoy y lo que le queda), `equipment` (las claves de las mejoras instaladas) y
-    `size` (el tamaño del local y si es propio).
+    `size` (el tamaño del local y si es propio). Fase 4: `staff` (`None` sin plantilla, o
+    `{"count", "line", "seeds"}`: cuántos son, sus turnos de hoy en una línea y la semilla de
+    cada uno para dibujarlos), y «Esta noche» ya cuenta las nóminas.
     """
     bill = nightly_bill(business)
+    tonight = bill.total
+    team = None
+    if business.staff:
+        day = date.fromisoformat(business.day) if business.day else date.today()
+        pay = staff.payroll(business, day)
+        tonight += pay.cost + pay.black
+        done = business.staff_today
+        team = {
+            "count": len(business.staff),
+            "line": (
+                f"{plural(done.get('turns', 0), 'turno', 'turnos')} de la plantilla hoy · "
+                f"{signed(done.get('sales', 0))}"
+            ),
+            "seeds": [e["key"] for e in business.staff],
+        }
     week = sum(business.week_totals.values())
     tags = [PRICE_BY_KEY[business.price].name.split(" (")[0] + " de precio"]
     if business.is_company:
@@ -328,7 +352,7 @@ def negocio_state(business: Business, *, foot: str, rivals: int = 0) -> State:
             {"label": "Caja de hoy", "value": signed(business.sales_today)},
             {"label": "Clientes hoy", "value": str(business.clients_today)},
             {"label": "Turnos hoy", "value": str(business.turns_today)},
-            {"label": "Esta noche", "value": signed(-bill.total)},
+            {"label": "Esta noche", "value": signed(-tonight)},
             {"label": "Esta semana", "value": signed(week)},
             {"label": "Mejor turno", "value": signed(business.best_turn)},
         ],
@@ -341,6 +365,7 @@ def negocio_state(business: Business, *, foot: str, rivals: int = 0) -> State:
         "campaign": campaign_state(business, today) if today else None,
         "equipment": list(business.equipment),
         "size": size_text(business),
+        "staff": team,
         "foot": foot,
     }
 
@@ -738,4 +763,203 @@ def sociedad_state(view: Any, *, capital: int = sl.FULL_CAPITAL, foot: str = "")
         "foot": foot
         or "Cada domingo por la noche, el Impuesto sobre Sociedades de la semana. Lo que quede, "
         "a dividendos.",
+    }
+
+
+# -- Fase 4: la plantilla --------------------------------------------------------------
+
+#: Cómo se llama cada contrato en las tarjetas.
+CONTRACT_NAMES = {"indefinido": "Indefinido", "temporal": "Temporal", "b": "En B"}
+
+
+def _skills(skills: dict[str, float], traits: list[str]) -> list[State]:
+    probe = {"skills": skills, "traits": traits}
+    return [
+        {"key": k, "name": staff.SKILL_NAMES[k], "value": round(staff.skill(probe, k))}
+        for k in staff.SKILLS
+    ]
+
+
+def _traits(keys: list[str]) -> list[State]:
+    return [
+        {"key": k, "name": staff.TRAIT_BY_KEY[k].name, "text": staff.TRAIT_BY_KEY[k].text}
+        for k in keys
+    ]
+
+
+def shift_text(shift: str, jornada: int) -> str:
+    """`Mañana · completa` o `Tarde · media`."""
+    whole = "completa" if jornada >= staff.FULL_DAY else "media"
+    return f"{staff.SHIFT_NAMES[shift].capitalize()} · {whole}"
+
+
+def mood_name(humor: float) -> str:
+    """`contento`, `normal` o `quemado` (la escena pone la cara)."""
+    return "contento" if humor >= 65 else "quemado" if humor < 35 else "normal"
+
+
+def staff_card(employee: dict[str, Any], today: date, *, selected: bool = False) -> State:
+    """La tarjeta de un empleado (`plantilla`).
+
+    `seed` dibuja su cara. `contract` es la clave (`indefinido`, `temporal` o `b`) y
+    `contract_name` lo que pone, con el período de prueba o el día en que se acaba. `today`
+    dice lo de hoy en una línea. `alerts`, lo que hay que mirar (dos como mucho).
+    """
+    iso = today.isoformat()
+    contract = CONTRACT_NAMES[employee["contract"]]
+    if staff.in_trial(employee, today):
+        contract += " · en prueba"
+    elif employee["until"]:
+        end = date.fromisoformat(employee["until"])
+        contract += f" · hasta el {DAYS[end.weekday()].lower()}"
+    if employee["absent_day"] == iso:
+        line = "Hoy no ha venido"
+    elif employee["grades_day"] == iso and employee["grades"]:
+        turns = plural(len(employee["grades"]), "turno", "turnos")
+        line = f"Hoy: {turns} · nota " + " ".join(employee["grades"])
+    else:
+        line = "Hoy aún no ha trabajado"
+    alerts = []
+    if employee["unpaid"]:
+        alerts.append(f"Se le deben {format_amount(employee['unpaid'])}")
+    if employee["course"]:
+        alerts.append(f"De curso: {staff.SKILL_NAMES[employee['course']].lower()}")
+    worth = staff.worth(employee)
+    if employee["wage"] < worth:
+        alerts.append(f"Ya vale {format_amount(worth)}")
+    if employee["absences"]:
+        alerts.append(plural(employee["absences"], "falta", "faltas"))
+    return {
+        "id": employee["id"],
+        "name": employee["name"],
+        "age": employee["age"],
+        "seed": employee["key"],
+        "contract": employee["contract"],
+        "contract_name": contract,
+        "shift": shift_text(employee["shift"], employee["jornada"]),
+        "skills": _skills(employee["skills"], employee["traits"]),
+        "humor": round(employee["humor"]),
+        "mood": mood_name(employee["humor"]),
+        "wage": f"{format_amount(employee['wage'])} la noche",
+        "today": line,
+        "traits": _traits(employee["traits"]),
+        "alerts": alerts[:2],
+        "selected": selected,
+    }
+
+
+def plantilla_state(
+    business: Business, today: date, *, selected: int | None = None, foot: str = ""
+) -> State:
+    """La pantalla 👥 Plantilla: una tarjeta por empleado (`staff_card`) y las cuentas.
+
+    `cap` es cuántos hay de cuántos caben; `payroll`, lo que cuesta la plantilla esta noche;
+    `debt`, lo que se le debe (o `None`); `today`, sus turnos de hoy.
+    """
+    pay = staff.payroll(business, today)
+    done = business.staff_today
+    turns = plural(done.get("turns", 0), "turno", "turnos")
+    clients = plural(done.get("clients", 0), "cliente", "clientes")
+    return {
+        "screen": "plantilla",
+        **_style(business),
+        "staff": [staff_card(e, today, selected=e["id"] == selected) for e in business.staff],
+        "cap": f"{len(business.staff)} de {staff.cap(business.size)} puestos",
+        "payroll": f"Nóminas de esta noche: {format_amount(pay.cost + pay.black)}",
+        "debt": (
+            f"Se debe a la plantilla: {format_amount(business.wage_debt)}"
+            if business.wage_debt
+            else None
+        ),
+        "today": f"Hoy: {turns} · {clients} · {signed(done.get('sales', 0))}",
+        "foot": foot
+        or "Trabajan solos las franjas de su turno y cobran cada noche, con la cuota de la "
+        "empresa.",
+    }
+
+
+def offer_slip(
+    candidate: dict[str, Any], offer: dict[str, Any], sector: str, today: date
+) -> tuple[dict[str, Any], Any]:
+    """`(el empleado que saldría, su nómina de una noche)` con la oferta (`contract`,
+    `jornada`, `shift`) y lo que pide."""
+    jornada = offer["jornada"]
+    probe = staff.new_employee(
+        candidate, seq=0, contract=offer["contract"], jornada=jornada, shift=offer["shift"],
+        wage=staff.ask(candidate["skills"], candidate["traits"], jornada), start=today,
+        bonified=offer.get("bonified", True),
+    )  # fmt: skip
+    return probe, staff.payslip(probe, sector, today)
+
+
+def candidatos_state(
+    business: Business,
+    candidates: list[dict[str, Any]],
+    today: date,
+    *,
+    selected: int | None = None,
+    offer: dict[str, Any] | None = None,
+    foot: str = "",
+) -> State:
+    """La pantalla de los candidatos de hoy y la oferta al elegido.
+
+    Cada candidato: `key`, `name`, `age`, `seed`, `profile` (clave) y `profile_name`, `bonus`
+    (la bonificación de contratarle indefinido, o `None`), `traits`, `skills`, `ask` (a
+    jornada completa y a media), `part_time` y `selected`. `offer` es la oferta al elegido
+    (`None` si no hay): el contrato, el turno, el bruto, lo que le llega, lo que cuesta a la
+    empresa, la bonificación y si es en B (`black`).
+    """
+    cards = []
+    for c in candidates:
+        profile = staff.PROFILE_BY_KEY[c["profile"]]
+        bonus = None
+        if profile.bonus_eur_month:
+            senior = c["age"] >= staff.SENIOR_AGE
+            monthly = profile.bonus_senior if senior else profile.bonus_eur_month
+            per_night = format_amount(staff.night_amount(monthly * 12))
+            bonus = f"Indefinido: −{per_night} de cuota cada noche, {profile.bonus_years} semanas"
+        half = format_amount(staff.ask(c["skills"], c["traits"], staff.HALF_DAY))
+        cards.append(
+            {
+                "key": c["key"],
+                "name": c["name"],
+                "age": c["age"],
+                "seed": c["key"],
+                "profile": c["profile"],
+                "profile_name": profile.name,
+                "bonus": bonus,
+                "traits": _traits(c["traits"]),
+                "skills": _skills(c["skills"], c["traits"]),
+                "ask": (
+                    f"Pide {half} (media)"
+                    if c["part_time"]
+                    else f"Pide {format_amount(c['ask'])} (completa) · {half} (media)"
+                ),
+                "part_time": c["part_time"],
+                "selected": c["key"] == selected,
+            }
+        )
+    deal = None
+    chosen = next((c for c in candidates if c["key"] == selected), None)
+    if chosen is not None and offer is not None:
+        probe, slip = offer_slip(chosen, offer, business.sector, today)
+        deal = {
+            "contract": CONTRACT_NAMES[offer["contract"]],
+            "shift": shift_text(offer["shift"], offer["jornada"]),
+            "gross": f"Bruto: {format_amount(slip.gross)} la noche",
+            "net": f"Le llega: {format_amount(slip.net)}",
+            "cost": f"Te cuesta: {format_amount(slip.cost)}",
+            "bonus": (
+                f"Bonificación: −{format_amount(probe['bonus'])}" if probe["bonus"] else None
+            ),
+            "black": offer["contract"] == "b",
+        }
+    room = staff.cap(business.size) - len(business.staff)
+    return {
+        "screen": "candidatos",
+        **_style(business),
+        "candidates": cards,
+        "offer": deal,
+        "room": plural(room, "puesto libre", "puestos libres") if room > 0 else "No queda sitio",
+        "foot": foot or "Cada día llegan candidatos nuevos. El período de prueba es de dos noches.",
     }
