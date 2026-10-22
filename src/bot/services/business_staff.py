@@ -574,6 +574,10 @@ def learn(employee: dict[str, Any], turns: int = 1) -> None:
 # -- Humor, faltas y marcharse ------------------------------------------------------------
 
 
+#: Lo que cobra frente a lo que vale por debajo de lo cual se queja.
+WORTH_SLACK = 0.95
+
+
 def worth(employee: dict[str, Any]) -> int:
     """Lo que pediría hoy por lo que sabe (a su jornada)."""
     return ask(employee["skills"], employee["traits"], employee["jornada"])
@@ -599,7 +603,8 @@ def night_mood(employee: dict[str, Any], *, paid: bool, grades: list[str]) -> fl
         delta += 2.0
     elif employee["wage"] >= value:
         delta += 1.0
-    else:
+    elif employee["wage"] < value * WORTH_SLACK:
+        # Aprende cada turno, así que siempre vale algo más: se queja con un 5 % de diferencia.
         delta -= 2.0 + 6.0 * min(1.0, (value - employee["wage"]) / value)
     delta += sum({"S": 1.0, "A": 0.5, "D": -1.0}.get(g, 0.0) for g in grades)
     if employee["contract"] == "b":

@@ -857,7 +857,7 @@ def staff_card(employee: dict[str, Any], today: date, *, selected: bool = False)
     if employee["course"]:
         alerts.append(f"De curso: {staff.SKILL_NAMES[employee['course']].lower()}")
     worth = staff.worth(employee)
-    if employee["wage"] < worth:
+    if employee["wage"] < worth * staff.WORTH_SLACK:
         alerts.append(f"Ya vale {format_amount(worth)}")
     if employee["absences"]:
         alerts.append(plural(employee["absences"], "falta", "faltas"))

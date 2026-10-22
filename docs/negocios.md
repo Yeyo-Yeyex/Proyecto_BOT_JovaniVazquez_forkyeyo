@@ -997,7 +997,8 @@ Cada noche, el bruto de su jornada (lo pactado; nada si faltó) con las cotizaci
   (`night_mood`):
   - sube 2 si cobra al menos un 10 % más de lo que vale (lo que pediría hoy por lo que sabe) y 1 si cobra lo que
     vale;
-  - si cobra menos, baja de 2 a 8;
+  - si cobra menos del 95 % de lo que vale, baja de 2 a 8 (aprende cada turno, así que siempre acaba valiendo
+    algo más: hay que subirle el sueldo de vez en cuando);
   - sus turnos de hoy: +1 por cada S, +0,5 por cada A y −1 por cada D;
   - −1 en B y −20 si no cobra.
   - Los rasgos lo multiplican: el quejica, ×1,6 lo malo; el tranquilo, ×0,5 todo.
