@@ -3973,7 +3973,7 @@ class EconomyRepository:
             SELECT user_id,
                    CASE kind WHEN 'tasa' THEN 'tasas' WHEN 'retencion' THEN 'irpf_otros'
                         WHEN 'retencion_plantilla' THEN 'irpf_otros'
-                        WHEN 'cotizacion' THEN 'ss_empresa'
+                        WHEN 'cotizacion' THEN 'ss_empresa' WHEN 'multa' THEN 'multas'
                         WHEN 'plusvalia' THEN 'irpf_ahorro' WHEN 'dividendo' THEN 'irpf_ahorro'
                         WHEN 'sociedades' THEN 'sociedades' ELSE 'igic' END,
                    tax, created_at

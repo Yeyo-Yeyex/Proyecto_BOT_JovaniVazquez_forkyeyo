@@ -8,6 +8,19 @@ criterio.
 
 ## 9.x
 
+### 9.8.0 · 2026-10-22
+
+- Negocios: 👥 Plantilla, contrata empleados entre los tres candidatos que llegan cada día, cada uno con su perfil, dos rasgos y tres habilidades (acierto, rapidez y trato)
+- Negocios: contrato indefinido o temporal (6 meses), los dos con período de prueba, o en B; jornada completa o media, de mañana o de tarde; de 2 a 6 según el tamaño del local
+- Negocios: la plantilla atiende sola las franjas de su turno con el mismo minijuego que tú, y sus ventas, reseñas y estrellas cuentan igual; aprenden trabajando y se forman con cursos (con el crédito de FUNDAE)
+- Negocios: cada noche, su nómina con las cotizaciones de 2026 y la cuota de la empresa, que por fin paga alguien; el salario mínimo de 2026 y la bonificación del parado de larga duración
+- Negocios: si no llega para pagarles se les debe y es lo primero que se paga; con dos noches sin cobrar se van con la indemnización del despido improcedente, y los seguros sociales que no se pagan llevan un 20 % de recargo
+- Negocios: humor, faltas y dimisiones; súbeles el sueldo o hazlos fijos; despido en prueba, disciplinario, objetivo o improcedente, cada uno con su indemnización
+- Negocios: quien está en B no cotiza, pero si pasa la Inspección de Trabajo hay multa de la LISOS y las cuotas atrasadas con recargo
+- Negocios: al cerrar, la plantilla se despide con 20 días por año; al traspasar, se va con el negocio
+- Negocios: las sociedades pueden dotar la Reserva para Inversiones en Canarias (RIC) y, un taller con seis empleados, entrar en la Zona Especial Canaria (Sociedades al 4 %)
+- Logros: 63 nuevos de la plantilla, la RIC y la ZEC en 🏪 Negocio
+
 ### 9.7.0 · 2026-10-22
 
 - Negocios: pide préstamos a nombre de tu negocio en `banco` (🏪 Negocio) o desde la portada del negocio en `pala` (🏦 Banco)

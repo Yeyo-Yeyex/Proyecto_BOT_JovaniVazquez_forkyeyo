@@ -24,7 +24,7 @@ Este documento recoge el sistema entero, sus cinco fases y la fase 1 al detalle;
 | 1 | Franjas, reducción de jornada, excedencia, local en un barrio, 3 sectores con su minijuego, stock y precios, gastos fijos, cierre de cada noche y renta de actividad | 8.14.0 |
 | 2 | Crecer el local: mejoras que se amortizan, traslado a un local mayor o a uno tuyo de `pisos`, campañas de publicidad, reseñas, dos sectores más, precio por producto, traspasar o liquidar al cerrar | 9.5.0 |
 | 3 | Sociedad limitada: caja propia, Impuesto sobre Sociedades, sueldo de administrador o dividendos, quiebra limitada, compatibilidades por oficio, pluriactividad | 9.6.0 |
-| 4 | Empleados artificiales estilo inquilinos (rasgos, habilidades, formación, humor, contrato y despido), turnos pasivos, nómina completa con la cotización de la empresa, B con Inspección, bonificaciones | 9.8.0 |
+| 4 | Empleados artificiales estilo inquilinos (rasgos, habilidades, formación, humor, contrato y despido), turnos pasivos, nómina completa con la cotización de la empresa, B con Inspección, bonificaciones, RIC y ZEC | 9.8.0 |
 | 5 | Cadenas: varios locales, importar con nave, gerentes que automatizan, vender la empresa | 8.x |
 
 Dónde engancha cada fase con lo de la 1:
@@ -1061,6 +1061,55 @@ Cada noche, el bruto de su jornada (lo pactado; nada si faltó) con las cotizaci
   recargos (`negro`, `multas`) no.
 - 📊 **Cuentas** enseña las partidas nuevas.
 
+
+### La RIC y la ZEC (solo para sociedades)
+
+Los dos incentivos fiscales de Canarias de la Ley 19/1994, en `business_sl.py` («RIC y ZEC»), en el Sociedades
+de cada domingo (`settle_week`) y en 🏢 **Sociedad** (el desplegable 🌴 de la RIC y el botón 🏝️ de la ZEC).
+
+**Reserva para Inversiones en Canarias (art. 27):**
+
+- **Dotación:** la sociedad elige llevar cada domingo un 0, un 50 o un 90 % de la base de la semana (`ric_share`;
+  el 90 % es el tope del art. 27.2). Esa parte no paga Sociedades.
+- **Reserva indisponible:**
+  - sale del beneficio de la semana, antes que la reserva legal, y no se puede repartir;
+  - sin beneficio contable que la cubra, no hay dotación;
+  - lo que vence y se integra no se vuelve a dotar.
+- **Invertirla en 3 años** (3 semanas: `RIC_NIGHTS`) en activos nuevos en Canarias: las mejoras del local y la obra
+  de un traslado (`ric_invest`, de la dotación más vieja a la más nueva).
+- **Lo que no se invierte a tiempo** se integra en la base del domingo en que vence (art. 27.16). Simplificación:
+  sin los intereses de demora.
+- **Lo invertido se mantiene 5 años** (5 semanas, `RIC_KEEP_NIGHTS`). Después la reserva vuelve a lo disponible.
+- **Al liquidar la sociedad**, lo que quede (sin invertir o sin haber mantenido lo invertido) se integra en el
+  último Sociedades.
+- **Autónomos, no:** la RIC del IRPF (una deducción en la cuota, art. 27.15) no está, porque la Renta del juego no
+  lleva deducciones por actividad.
+
+**Zona Especial Canaria (arts. 29 a 44):**
+
+- **Tipo:** Sociedades al **4 %** (art. 43) hasta su base máxima: 1,8 millones de euros, más 0,5 millones por cada
+  empleo por encima del mínimo (art. 44.6), pasados a la semana con la vara. Lo que pase, al tipo de siempre.
+- **Actividad:** solo las del anexo. De los sectores del juego, el **taller** (división 45 de la NACE); el comercio
+  minorista y la hostelería no están.
+- **Empleo:** 5 empleos con alta en Gran Canaria y Tenerife (3 en el resto de islas, art. 31.2.e).
+  - La inversión de 100.000 € (art. 31.2.d), a 100 Y$ el euro, no la alcanza nadie. Se puede dispensar creando
+    más empleos que el mínimo, así que el juego pide **6**, y eso pide un local grande.
+- **Plazo de inscripción:** hasta el 31/12/2026, el fin del reglamento europeo de ayudas (art. 29). Los ya inscritos
+  siguen.
+- **Cada domingo** tiene que mantener el empleo mínimo:
+  - una semana sin él tributa al tipo de siempre;
+  - con dos seguidas, sale del registro (`ZEC_MISSES`).
+- **Simplificaciones:**
+  - no hay tasa de inscripción;
+  - la base máxima no mira el resto de requisitos;
+  - el «de nueva creación» lo cumple la sociedad (se constituye nueva, aunque el negocio venga del autónomo).
+- **Rara vez compensa:** con el simulador, un taller con seis empleados pierde dinero. Es el régimen de las grandes
+  empresas, como en la vida real.
+
+| Norma | Qué dice | Uso |
+|---|---|---|
+| Art. 27.2, 27.4, 27.8 y 27.16 de la Ley 19/1994 | RIC: hasta el 90 % del beneficio no distribuido; materializar en 3 años; mantener 5; si no, se integra con intereses | La RIC |
+| Arts. 29, 31.2.d-e, 43 y 44.6 y anexo de la Ley 19/1994 | ZEC: inscripción hasta el fin del RGEC; 100.000 € y 5 empleos (o más empleos sin la inversión); 4 %; 1,8 M€ + 0,5 M€ por empleo de más; división 45 sí, 47 y 55/56 no | La ZEC |
 ### Equilibrio
 
 `python docs/negocio_sim.py --plantilla`: el barrio del medio de cada sector con el cupo, días 15 a 28, media de 6

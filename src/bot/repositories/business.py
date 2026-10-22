@@ -307,8 +307,8 @@ def companies_in(connection: sqlite3.Connection, guild_id: int) -> dict[int, int
     """El valor de la sociedad de cada dueño, para el Patrimonio (fase 3 de los negocios).
 
     Es el valor teórico de sus participaciones (art. 16.Uno de la Ley 19/1991): la caja, el
-    stock y lo que queda por amortizar, menos lo que debe la sociedad al casero, a Hacienda y
-    al banco (sus préstamos, que su dueño solo avala). Lo que le debe al socio no se resta: es
+    stock y lo que queda por amortizar, menos lo que debe la sociedad al casero, a Hacienda, a
+    su plantilla y al banco (sus préstamos, que su dueño solo avala). Lo que le debe al socio no se resta: es
     un crédito del propio dueño y se anulan.
     """
     out: dict[int, int] = {}
@@ -343,6 +343,7 @@ def companies_in(connection: sqlite3.Connection, guild_id: int) -> dict[int, int
             + book_value(business)
             - business.rent_debt
             - business.company.get("tax_debt", 0)
+            - business.wage_debt
             - bank.get(str(business.id), 0)
         )
         out[business.user_id] = out.get(business.user_id, 0) + value
