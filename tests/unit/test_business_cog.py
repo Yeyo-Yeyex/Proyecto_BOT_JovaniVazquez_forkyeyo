@@ -7,6 +7,7 @@ pantalla (o `None`, para ver el panel en texto).
 
 from __future__ import annotations
 
+import asyncio
 import random
 from pathlib import Path
 from typing import Any
@@ -410,6 +411,22 @@ async def test_un_clic_de_una_ronda_vieja_no_cuenta(tmp_path: Path) -> None:
     await panel.game_click(click(), old, "p:cafe")
     await panel.game_click(click(), old + 50, "serve")  # de un cliente que ya no está
     assert panel.turn is not None and panel.turn.game.outcomes == []
+
+
+async def test_un_clic_con_el_panel_subiendo_otra_imagen_se_acepta_sin_esperar(
+    tmp_path: Path,
+) -> None:
+    _work_cog, _business_cog, panel = await opened_business(tmp_path)
+    await button(panel, "🔑 Abrir").callback(click())
+    assert panel.turn is not None
+    interaction = click()
+    # El reloj de la paciencia (u otro clic) tiene el candado mientras sube su imagen.
+    await panel._render_lock.acquire()
+    pressed = asyncio.create_task(panel.game_click(interaction, panel.turn.game.round, "p:cafe"))
+    await asyncio.sleep(0)
+    assert interaction.response.is_done()
+    panel._render_lock.release()
+    await pressed
 
 
 async def test_mientras_atiendes_tu_negocio_no_se_ficha_en_la_pala(tmp_path: Path) -> None:

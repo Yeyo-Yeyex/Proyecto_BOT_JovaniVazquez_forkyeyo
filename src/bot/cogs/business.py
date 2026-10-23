@@ -2451,6 +2451,10 @@ class NegocioPanel(ui.LayoutView):
             return
         self._ticket += 1
         ticket = self._ticket
+        if self._render_lock.locked():
+            # Otro clic o el reloj de la paciencia están subiendo una imagen (hasta ~4 s
+            # en el informe): se acepta ya, antes de esperar el candado.
+            await ack(interaction)
         async with self._render_lock:
             if ticket != self._ticket or self.turn is not turn:
                 await ack(interaction)

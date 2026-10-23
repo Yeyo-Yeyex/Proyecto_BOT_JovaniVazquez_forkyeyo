@@ -8,6 +8,11 @@ criterio.
 
 ## 9.x
 
+### 9.8.1 · 2026-10-23
+
+- Tienda: la 🎒 Mochila vuelve a abrirse a quien tiene a la vez un título y una skin (daba «Algo ha fallado con ese botón»)
+- Negocios: un clic en el minijuego mientras el panel sube la imagen del cliente siguiente se acepta al momento, sin esperar a que acabe la subida
+
 ### 9.8.0 · 2026-10-22
 
 - Negocios: 👥 Plantilla, contrata empleados entre los tres candidatos que llegan cada día, cada uno con su perfil, dos rasgos y tres habilidades (acierto, rapidez y trato)
