@@ -8,6 +8,10 @@ criterio.
 
 ## 9.x
 
+### 9.10.0 · 2026-10-23
+
+- Patrimonio: vuelve `patrimonio` (también `.patrimonio @miembro`) y cada piso sale con la parte que tienes según tus participaciones
+
 ### 9.9.0 · 2026-10-23
 
 - Reinicios: antes de reiniciarse, el bot espera a que acabe lo que hay a medias (turnos de `pala` y del negocio, partidas y paneles en uso), como mucho 15 minutos; también en la actualización de las 5:00
