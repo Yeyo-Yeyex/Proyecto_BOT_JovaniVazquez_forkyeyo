@@ -942,14 +942,14 @@ class Backpack(ui.LayoutView):
         titles = [e for e in self.entries if is_title(e.catalog_key)]
         if titles and self.viewer.id == self.member.id:
             # Uno a la vez; si hubiera dos marcados, vale el más reciente.
-            worn = max((e.id for e in titles if e.equipped), default=None)
+            shown = max((e.id for e in titles if e.equipped), default=None)
             title_options = [
                 discord.SelectOption(
                     label=e.name[:100],
                     value=e.catalog_key or "",
                     emoji=_select_emoji(e.emoji),
-                    description="Lo luces ahora" if e.id == worn else "Elígelo para lucirlo",
-                    default=e.id == worn,
+                    description="Lo luces ahora" if e.id == shown else "Elígelo para lucirlo",
+                    default=e.id == shown,
                 )
                 for e in titles[:24]
             ]

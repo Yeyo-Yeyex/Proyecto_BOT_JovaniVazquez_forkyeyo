@@ -1035,16 +1035,22 @@ class BusinessCost:
     Attributes:
         concept: Motivo del libro (`negocio:compras`, `negocio:alquiler`…).
         gone: Lo que se lleva quien no existe (el mayorista, el casero, la luz).
-        taxes: `(clase, importe)` que van al Estado: `igic`, `tasa` o `retencion` (la del
-            IRPF del casero, art. 100 RIRPF). Se cobran antes que `gone`.
+        taxes: `(clase, importe)` que van al Estado: `igic`, `tasa`, `retencion` (la del
+            IRPF del casero, art. 100 RIRPF), `cotizacion` (los seguros sociales de la
+            plantilla) o `retencion_plantilla` (el IRPF de sus nóminas). Se cobran antes que
+            `gone`.
         expense: Si lo pagado es gasto deducible de la actividad (`INCOME_BUSINESS` en
             negativo, con criterio de caja: se apunta lo que de verdad se paga).
+        debt_surcharge: Si es un recibo (`BusinessMove.bills`) de un autónomo y no llega
+            entero, lo que falta pasa a su deuda con Hacienda con este recargo (los seguros
+            sociales de la plantilla, art. 30 LGSS). `None`: queda como deuda del negocio.
     """
 
     concept: str
     gone: int = 0
     taxes: tuple[tuple[str, int], ...] = ()
     expense: bool = True
+    debt_surcharge: float | None = None
 
     @property
     def total(self) -> int:
@@ -3966,6 +3972,8 @@ class EconomyRepository:
             UNION ALL
             SELECT user_id,
                    CASE kind WHEN 'tasa' THEN 'tasas' WHEN 'retencion' THEN 'irpf_otros'
+                        WHEN 'retencion_plantilla' THEN 'irpf_otros'
+                        WHEN 'cotizacion' THEN 'ss_empresa' WHEN 'multa' THEN 'multas'
                         WHEN 'plusvalia' THEN 'irpf_ahorro' WHEN 'dividendo' THEN 'irpf_ahorro'
                         WHEN 'sociedades' THEN 'sociedades' ELSE 'igic' END,
                    tax, created_at
@@ -6093,6 +6101,18 @@ class EconomyRepository:
                     unpaid_tax += cost.total - room
                 elif cost.concept.startswith(BANK_LOAN_CONCEPT):
                     unpaid_bank += cost.total - room
+                if cost.total > room and not company and cost.debt_surcharge is not None:
+                    # Lo que el autónomo no paga de esto es deuda suya con Hacienda, con su
+                    # recargo: la cobran el embargo y el barrido de los lunes.
+                    connection.execute(
+                        """
+                        INSERT INTO economy_tax_debts (guild_id, user_id, amount)
+                        VALUES (?, ?, ?)
+                        ON CONFLICT (guild_id, user_id)
+                        DO UPDATE SET amount = amount + excluded.amount
+                        """,
+                        (guild_id, owner, round((cost.total - room) * (1 + cost.debt_surcharge))),
+                    )
                 if room > 0:
                     self._business_cost_in(
                         connection, guild_id, wallet, cost, now, room, owner=owner

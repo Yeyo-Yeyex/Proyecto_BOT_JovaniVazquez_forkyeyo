@@ -68,7 +68,7 @@ def test_las_muestras_cubren_cada_pantalla_y_las_variantes_del_contrato() -> Non
     screens = {s["screen"] for s in states.values()}
     assert screens == {
         "dia", "montar", "negocio", "almacen", "cuentas", "cliente", "cierre", "mejoras", "resenas",
-        "sociedad",
+        "sociedad", "plantilla", "candidatos",
     }  # fmt: skip
     sectors = {sector.key for sector in SECTORS}
     clients = [s for s in states.values() if s["screen"] == "cliente"]
@@ -111,6 +111,28 @@ def test_las_muestras_cubren_cada_pantalla_y_las_variantes_del_contrato() -> Non
     books = [s for s in companies if s["mode"] == "sl"]
     assert {s["last"] is None for s in books} == {True, False}
     assert any(s["warnings"] for s in books) and any(not s["warnings"] for s in books)
+    assert {s["ric"]["due"] is None for s in books} == {True, False}
+    assert any(s["ric"]["pending"] != s["ric"]["locked"] for s in books)
+    assert any(len(s["warnings"]) == 3 and not s["zec"]["on"] for s in books)  # lo más lleno
+    assert {s["zec"]["on"] for s in books} == {True, False}
+    assert any(w.startswith("Invierte") for s in books for w in s["warnings"])
+    teams = [s for s in states.values() if s["screen"] == "plantilla"]
+    assert {len(s["staff"]) for s in teams} >= {0, 1, 6}
+    cards = [e for s in teams for e in s["staff"]]
+    assert {e["contract"] for e in cards} == {"indefinido", "temporal", "b"}
+    assert {e["mood"] for e in cards} == {"contento", "normal", "quemado"}
+    assert any("en prueba" in e["contract_name"] for e in cards)
+    assert any(e["alerts"] for e in cards) and any(e["selected"] for e in cards)
+    assert any(e["name"] == "Mari Carmen Bethencourt" for e in cards)
+    assert any(s["debt"] for s in teams) and any(s["debt"] is None for s in teams)
+    hiring = [s for s in states.values() if s["screen"] == "candidatos"]
+    assert {s["offer"] is None for s in hiring} == {True, False}
+    offers = [s["offer"] for s in hiring if s["offer"]]
+    assert {o["black"] for o in offers} == {True, False} and any(o["bonus"] for o in offers)
+    people = [c for s in hiring for c in s["candidates"]]
+    assert any(c["bonus"] for c in people) and any(c["part_time"] for c in people)
+    assert {s["room"] == "No queda sitio" for s in hiring} == {True, False}
+    assert any(s.get("staff") for s in shops) and any(s.get("staff") is None for s in covers)
 
 
 async def test_sin_node_ni_chromium_no_se_pinta_y_el_panel_va_en_texto() -> None:

@@ -46,15 +46,20 @@ ADMIN_ONLY_ERROR = "Solo los administradores pueden usar este comando."
 BLOCKED_ERROR = (
     "🔒 Esto está desactivado mientras se arregla un fallo. Volverá en cuanto esté arreglado."
 )
-#: Comando nuevo con un reinicio en marcha (`reinicio`, ver `bot.cogs.deploy`).
-RESTART_ERROR = (
-    "🔁 Me voy a reiniciar en breve, así que no se abren partidas ni paneles nuevos. "
-    "Vuelve en unos minutos."
+#: Primer comando de cada uno mientras se prepara la versión nueva (`bot.cogs.deploy`).
+RESTART_SOON = (
+    "🔁 Aviso: en unos minutos me reinicio para actualizarme. Puedes seguir: antes de "
+    "reiniciarme espero a que acabe lo que tengas a medias."
 )
-#: Primer clic de cada uno en un panel abierto mientras espera el reinicio.
+#: Comando nuevo mientras el reinicio espera a que acabe lo que hay a medias.
+RESTART_ERROR = (
+    "🔁 Estoy a punto de reiniciarme: espero a que acaben las partidas que hay a medias y "
+    "no se abren nuevas. Vuelve en unos minutos."
+)
+#: Primer clic de cada uno en un panel abierto mientras el reinicio espera.
 RESTART_CLICK = (
-    "🔁 Me voy a reiniciar en unos minutos: termina lo que tengas abierto, que no se pueden "
-    "abrir partidas nuevas."
+    "🔁 Estoy a punto de reiniciarme: acaba lo que tienes abierto, que te espero. Si lo "
+    "dejas parado un par de minutos, me reinicio igual."
 )
 #: Clic con el bot ya apagándose: las partidas se están cerrando.
 CLOSING_CLICK = "🔌 Me estoy reiniciando ahora mismo. Vuelve en un par de minutos."

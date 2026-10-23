@@ -14,12 +14,22 @@
 #   3. Guarda la imagen actual como `bot-jovani-vazquez:anterior`, pone el
 #      código en el último commit y reconstruye la imagen. Si la construcción
 #      falla, el bot viejo sigue funcionando y se reintenta al día siguiente.
-#   4. Reinicia el contenedor con la imagen nueva y espera 90 s. Si en ese
+#   4. Antes de reiniciar, espera a que el bot cierre lo que hay a medias
+#      (ver "Esperar a las partidas" abajo).
+#   5. Reinicia el contenedor con la imagen nueva y espera 90 s. Si en ese
 #      tiempo el bot se cae o entra en bucle de reinicios (un PR roto), vuelve
 #      a la imagen anterior y no reintenta ese commit hasta que haya otro.
-#   5. Si el bot nuevo arranca bien, deja en el buzón la lista de PR que trae
+#   6. Si el bot nuevo arranca bien, deja en el buzón la lista de PR que trae
 #      (`novedades.txt`) para que el bot la publique en Discord.
-#   6. Borra las imágenes huérfanas para no llenar el disco.
+#   7. Borra las imágenes huérfanas para no llenar el disco.
+#
+# Esperar a las partidas (de noche y con `reinicio`): al decidir que actualiza,
+# deja `buzon/aviso.json` y el bot avisa a quien use un comando. Con la imagen
+# ya construida deja `buzon/preparar.json`: el bot deja de abrir partidas, espera
+# a que acaben las que hay a medias y contesta `buzon/listo.json`. Se espera como
+# mucho ESPERA_PARTIDAS segundos (900 de serie) y luego se reinicia igual. Solo se
+# espera si el bot dejó `buzon/sabe_esperar` y el contenedor está en marcha (un
+# bot de antes no contestaría). Protocolo en bot/services/deploy.py.
 #
 # La reconstrucción semanal aunque no haya cambios trae la última versión de
 # yt-dlp, que YouTube deja inservible cada pocas semanas.
@@ -80,6 +90,9 @@ set -uo pipefail
 MODO_SOLICITUD=0
 BUZON=""
 RESUMEN=""
+# Solo la ejecución que tiene el candado toca las notas de espera: el cron de cada
+# minuto no puede borrar las de un despliegue en marcha.
+DUENO_NOTAS=0
 
 # Escribe un mensaje en el log y lo guarda como resumen para el bot.
 fin() {
@@ -132,6 +145,7 @@ main() {
         return 0
     fi
 
+    DUENO_NOTAS=1
     echo "===== $(date '+%F %T') ====="
     if [[ "$MODO_SOLICITUD" == 1 ]]; then
         mv -f "$BUZON/solicitud.json" "$BUZON/en_curso.json"
@@ -221,6 +235,7 @@ main() {
         return 0
     fi
     echo "Actualizo: $motivo"
+    nota_bot aviso.json
 
     # Imagen de respaldo para volver atrás sin reconstruir.
     local hay_respaldo=0
@@ -237,12 +252,16 @@ main() {
         return 1
     fi
 
+    esperar_partidas "$contenedor"
+
     # --force-recreate deja el contador de reinicios a cero para la comprobación.
     if ! "${compose[@]}" up -d --force-recreate --no-build; then
         fin "docker compose up ha fallado."
         volver_atras
         return 1
     fi
+    # El bot nuevo no tiene que ver las notas de este despliegue.
+    limpiar_notas
 
     echo "Esperando ${espera} s para comprobar que el bot arranca..."
     sleep "$espera"
@@ -264,6 +283,47 @@ main() {
     apuntar_novedades "$actual" "$nuevo"
     docker image prune -f >/dev/null 2>&1 || true
     fin "Desplegado ${nuevo:0:7}: $("${git[@]}" log -1 --format=%s "$nuevo")"
+}
+
+# Deja al bot la nota $1 del buzón con la hora (epoch) en que se deja.
+nota_bot() {
+    date +%s >"$BUZON/$1.tmp"
+    # El bot (uid 1000) tiene que poder leerla y, si caduca, borrarla.
+    chmod 666 "$BUZON/$1.tmp" 2>/dev/null || true
+    mv -f "$BUZON/$1.tmp" "$BUZON/$1"
+}
+
+# Borra las notas del protocolo de espera (ver "Esperar a las partidas").
+limpiar_notas() {
+    [[ "$DUENO_NOTAS" == 1 && -n "$BUZON" ]] || return 0
+    rm -f "$BUZON/aviso.json" "$BUZON/preparar.json" "$BUZON/listo.json"
+}
+
+# Pide al bot del contenedor $1 que cierre lo que hay a medias y espera su
+# `listo.json` (como mucho ESPERA_PARTIDAS segundos).
+esperar_partidas() {
+    local limite inicio
+    if [[ ! -f "$BUZON/sabe_esperar" ]]; then
+        echo "El bot no sabe esperar a las partidas (versión de antes); reinicio sin esperar."
+        return 0
+    fi
+    if [[ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" != "true" ]]; then
+        echo "El bot no está en marcha; no hay partidas que esperar."
+        return 0
+    fi
+    rm -f "$BUZON/listo.json"
+    nota_bot preparar.json
+    inicio="$(date +%s)"
+    limite=$((inicio + ${ESPERA_PARTIDAS:-900}))
+    echo "Espero a que el bot cierre lo que hay a medias (como mucho $((limite - inicio)) s)..."
+    while [[ ! -f "$BUZON/listo.json" ]] && (($(date +%s) < limite)); do
+        sleep 5
+    done
+    if [[ -f "$BUZON/listo.json" ]]; then
+        echo "El bot ya no tiene nada a medias ($(($(date +%s) - inicio)) s)."
+    else
+        echo "El bot sigue con cosas a medias tras $((limite - inicio)) s; reinicio igualmente."
+    fi
 }
 
 # Vuelve a la imagen guardada antes de construir. El código queda en el
@@ -365,4 +425,4 @@ recortar_log() {
     fi
 }
 
-main "$@"; codigo=$?; avisar_bot "$codigo"; recortar_log "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.despliegue/actualizar.log"; exit "$codigo"
+main "$@"; codigo=$?; limpiar_notas; avisar_bot "$codigo"; recortar_log "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.despliegue/actualizar.log"; exit "$codigo"

@@ -44,6 +44,7 @@ que junta estas mismas acciones en un menú.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import functools
 import io
@@ -79,7 +80,7 @@ from bot.services.moderation import (
     parse_user_id,
 )
 from bot.services.shop import Kind, ShopItem
-from bot.services.telemetry import TelemetryService
+from bot.services.telemetry import LISTENER_ITEM, TelemetryService
 from bot.services.welcome import GifError, classify_gif
 from bot.utils.cogs import find_cog
 from bot.utils.interactions import notify
@@ -223,6 +224,21 @@ _DISPATCHERS: tuple[tuple[type, str, Locate], ...] = (
 )
 
 
+#: Lo que se espera a que el listener conteste un botón suyo antes de avisar del reinicio.
+LISTENER_WAIT = 2.5
+
+
+async def _after_listener(args: tuple[Any, ...], interaction: discord.Interaction) -> None:
+    """Si el botón lo contesta un listener (el minijuego de `pala` o del negocio), le
+    deja contestar primero: así el aviso va aparte y no le quita la respuesta."""
+    item = args[0] if args else None
+    if not getattr(item, LISTENER_ITEM, False):
+        return
+    deadline = time.monotonic() + LISTENER_WAIT
+    while not interaction.response.is_done() and time.monotonic() < deadline:
+        await asyncio.sleep(0.05)
+
+
 def _guarded(original: Callable[..., Awaitable[Any]], locate: Locate) -> Callable[..., Any]:
     """Envuelve un reparto de discord.py: el clic bloqueado se contesta y no sigue.
 
@@ -238,16 +254,19 @@ def _guarded(original: Callable[..., Awaitable[Any]], locate: Locate) -> Callabl
             return None
         restart = _restart(interaction.client)
         if restart is not None and restart.closing:
-            await notify(interaction, CLOSING_CLICK)
+            await _after_listener(args, interaction)
+            with contextlib.suppress(discord.HTTPException):
+                await notify(interaction, CLOSING_CLICK)
             return None
         result = await original(self, *args)
         # Después del clic, para no comerle sus 3 segundos. shortcut: el 🔁 de otra
-        # partida es un clic y la abre igual (se cierra al apagar como las demás); si
-        # da guerra, que el 🔁 de cada juego mire `restarting` antes de cobrar.
+        # partida es un clic y la abre igual (el reinicio la espera como a las demás);
+        # si da guerra, que el 🔁 de cada juego mire `restarting` antes de cobrar.
         if restart is not None and interaction.user.id not in restart.warned:
+            restart.warned.add(interaction.user.id)
+            await _after_listener(args, interaction)
             with contextlib.suppress(discord.HTTPException):
                 await notify(interaction, RESTART_CLICK)
-                restart.warned.add(interaction.user.id)
         return result
 
     return run

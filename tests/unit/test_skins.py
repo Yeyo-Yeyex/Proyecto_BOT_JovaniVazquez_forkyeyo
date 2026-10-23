@@ -192,6 +192,18 @@ async def test_cambiar_de_skin_desde_la_mochila(tmp_path: Path) -> None:
     assert cog.skin(GUILD, BUYER, "moneda") == GRANATE
 
 
+async def test_la_mochila_se_abre_con_un_titulo_y_una_skin_a_la_vez(tmp_path: Path) -> None:
+    title = replace(CATALOG_BY_KEY["verificado"], price=100)
+    cog = await make_cog(tmp_path, Clock(), catalog=(GRANATE_ITEM, title))
+    guild = make_guild()
+    member = make_member(guild)
+    await pay_for(cog, guild, member, GRANATE.catalog_key)
+    await pay_for(cog, guild, member, "verificado")
+    backpack = await cog.backpack_view(guild, member, member)
+    assert "Puestas:" in texts(backpack)
+    assert any(o.value == "ruleta" for o in skin_select(backpack).options)
+
+
 async def test_no_te_puedes_poner_una_skin_que_no_tienes(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path, Clock(), catalog=(GRANATE_ITEM,))
     guild = make_guild()

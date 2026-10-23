@@ -39,7 +39,7 @@ from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from enum import Enum
 from fractions import Fraction
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from bot.services.allatu import ROUNDS as ALLATU_ROUNDS
 from bot.services.allatu import TABLES as ALLATU_TABLES
@@ -78,6 +78,9 @@ from bot.services.bus import Status as BusStatus
 from bot.services.bus import chance as bus_chance
 from bot.services.bus import picks_for as bus_picks_for
 from bot.services.business import recommended as business_recommended
+from bot.services.business_staff import COURSE_POINTS as STAFF_COURSE_POINTS
+from bot.services.business_staff import HALF_DAY as STAFF_HALF_DAY
+from bot.services.business_staff import SENIOR_AGE as STAFF_SENIOR_AGE
 from bot.services.casino_stats import GAMES as CASINO_GAMES
 from bot.services.chicken import ChickenGame
 from bot.services.chicken import Status as ChickenStatus
@@ -207,7 +210,9 @@ from bot.services.work_catalog import JOBS as WORK_JOBS
 from bot.services.work_tools import TOOLS as WORK_TOOLS
 
 if TYPE_CHECKING:
-    from bot.services.negocio import TurnResult
+    from bot.services.business import Business
+    from bot.services.business_staff import Dismissal
+    from bot.services.negocio import NightRun, StaffTurn, TurnResult
     from bot.services.pala import ShiftOutcome
 
 from bot.services.taxes import (
@@ -20141,6 +20146,32 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (20_000, "biz_pluri_20k", "Arlequín, servidor de dos cotizaciones",
          "Recibe 20.000 Y$ en devoluciones de la pluriactividad.", E),
     ], unit="money")  # fmt: skip
+    # Fase 4 bis: la RIC y la ZEC (Ley 19/1994), solo para sociedades. La ZEC pide un taller
+    # con 6 empleados con alta en un local grande, y solo hasta el 31/12/2026.
+    a += _tiers("negocio", "biz_ric_set", [
+        (1, "biz_ric_set_1", "Pan para hoy, RIC para mañana",
+         "Elige dotar la Reserva para Inversiones en Canarias (RIC) de tu sociedad.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_ric_reserved", [
+        (100_000, "biz_ric_100k", "Cochinito negro de la RIC", "Lleva 100.000 Y$ a la RIC.", R),
+        (1_000_000, "biz_ric_1m", "Ábrete, Sésamo fiscal", "Lleva 1.000.000 Y$ a la RIC.", E),
+        (5_000_000, "biz_ric_5m", "El tesoro de los guanches", "Lleva 5.000.000 Y$ a la RIC.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_ric_lost", [
+        (1, "biz_ric_lost_1", "Cenicienta fiscal",
+         "Deja vencer una dotación de la RIC sin invertirla y paga Sociedades por ella.", E,
+         True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_zec_joined", [
+        (1, "biz_zec_joined_1", "Delaware con papas arrugadas",
+         "Inscribe tu sociedad en la Zona Especial Canaria (ZEC).", L),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_zec_weeks", [
+        (4, "biz_zec_weeks_4", "Cuatro por ciento y mojo picón",
+         "Tributa 4 semanas al tipo de la ZEC.", L),
+        (10, "biz_zec_weeks_10", "Mónaco de Arguineguín", "Tributa 10 semanas al tipo de la ZEC.",
+         M),
+    ])  # fmt: skip
     # Préstamos al negocio (`banco`, 🏪 Negocio: business_loan_*_stats y sus noches).
     a += _tiers("negocio", "biz_loans_signed", [
         (1, "biz_loan_1", "Business angel con corbata",
@@ -20191,6 +20222,193 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "biz_loan_assumed", "La sociedad se va, la letra se queda",
          "Cierra tu sociedad con un préstamo que su caja no llega a pagar y que pasa a ser tuyo.",
          R, True),
+    ])  # fmt: skip
+    # Fase 4: la plantilla (staff_*_stats: contratar, subir el sueldo, hacer fijo, cursos,
+    # despedir, sus turnos y la noche). Una plantilla de 6 pide un local grande; 21 noches son
+    # los tres años de la bonificación.
+    a += _tiers("negocio", "staff_hired", [
+        (1, "staff_hired_1", "Primer fichaje del mercado de invierno",
+         "Contrata a tu primer empleado en el negocio.", C),
+        (10, "staff_hired_10", "Recursos muy humanos", "Contrata a 10 empleados en total.", R),
+        (50, "staff_hired_50", "Más altas que el Teide", "Contrata a 50 empleados en total.", E),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_hired_indefinido", [
+        (1, "staff_hired_indef", "Indefinido, que no infinito",
+         "Contrata a alguien con contrato indefinido.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_hired_temporal", [
+        (1, "staff_hired_temp", "Seis meses y un día",
+         "Contrata a alguien con contrato temporal.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_hired_b", [
+        (1, "staff_hired_b", "La B de Bárcenas",
+         "Contrata a alguien en B, sin alta ni contrato.", C, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_hired_half", [
+        (1, "staff_hired_half", "Media naranja con mandil",
+         "Contrata a alguien a media jornada.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_hired_bonus", [
+        (1, "staff_hired_bonus", "El SEPE invita a esta ronda",
+         "Contrata con bonificación a un parado de larga duración.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_hired_senior", [
+        (1, "staff_hired_senior", "Más sabe el diablo por viejo",
+         "Contrata a alguien de 45 años o más.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_hired_young", [
+        (1, "staff_hired_young", "Recién eclosionado",
+         "Contrata a alguien de 21 años o menos.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_size_max", [
+        (4, "staff_size_4", "Los cuatro fantásticos del mostrador",
+         "Ten 4 empleados a la vez (hace falta un local mediano).", R),
+        (6, "staff_size_6", "Fútbol sala con banquillo",
+         "Ten 6 empleados a la vez (hace falta un local grande).", E),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_permanent", [
+        (1, "staff_permanent_1", "Sacó la plaza sin opositar",
+         "Haz fijo a un empleado con contrato temporal.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_raises", [
+        (1, "staff_raise_1", "Scrooge en Nochebuena", "Sube el sueldo a un empleado.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_wage_max", [
+        (10_000, "staff_wage_10k", "Adiós, mileurista",
+         "Paga a un empleado 10.000 Y$ brutos por noche.", R),
+        (20_000, "staff_wage_20k", "Fichaje galáctico de Florentino",
+         "Paga a un empleado 20.000 Y$ brutos por noche.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "staff_courses", [
+        (1, "staff_course_1", "La letra con IGIC entra",
+         "Paga un curso de formación a un empleado.", C),
+        (10, "staff_course_10", "Hogwarts de la hostelería",
+         "Paga 10 cursos de formación a tus empleados.", R),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_fundae", [
+        (1, "staff_fundae_1", "Becado por la casa",
+         "Usa el crédito de formación de FUNDAE en un curso.", C),
+        (5_000, "staff_fundae_5k", "Jugo de FUNDAE del bueno",
+         "Usa 5.000 Y$ del crédito de formación de FUNDAE.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "staff_skill_max", [
+        (100, "staff_skill_100", "Maestro Jedi del mostrador",
+         "Lleva una habilidad de un empleado a 100 con un curso.", R),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_turns", [
+        (10, "staff_turns_10", "Delegar es de sabios", "Que tu plantilla haga 10 turnos.", C),
+        (100, "staff_turns_100", "Trabajo en equipo, siesta en solitario",
+         "Que tu plantilla haga 100 turnos.", R),
+        (2000, "staff_turns_2000", "Cuéntame cómo pasó el turno",
+         "Que tu plantilla haga 2.000 turnos.", L),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_clients", [
+        (100, "staff_clients_100", "Ya le atiende mi compañera",
+         "Que tu plantilla atienda a 100 clientes.", C),
+        (2500, "staff_clients_2500", "Hora punta en el Mercadona",
+         "Que tu plantilla atienda a 2.500 clientes.", E),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_sales", [
+        (1_000_000, "staff_sales_1m", "Rentista de mostrador",
+         "Que tu plantilla venda 1.000.000 Y$ en total.", R),
+        (10_000_000, "staff_sales_10m", "Plusvalía, querido Watson",
+         "Que tu plantilla venda 10.000.000 Y$ en total.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "staff_sales_turn_max", [
+        (20_000, "staff_turn_20k", "Te come la tostada",
+         "Que un empleado venda 20.000 Y$ en un solo turno.", R),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "staff_turn_s", [
+        (1, "staff_s_1", "El alumno supera al maestro",
+         "Que un empleado saque una S en un turno.", C),
+        (100, "staff_s_100", "Empleado del mes cada semana",
+         "Que tus empleados saquen una S en 100 turnos.", E),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_nights", [
+        (1, "staff_nights_1", "Fin de mes cada noche",
+         "Cierra una noche pagando la nómina a tu plantilla.", C),
+        (21, "staff_nights_21", "La mili de tres años",
+         "Cierra 21 noches con plantilla (los tres años de una bonificación).", E),
+        (100, "staff_nights_100", "Cien años de compañía", "Cierra 100 noches con plantilla.", L),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_payroll", [
+        (100_000, "staff_payroll_100k", "Nómina va, nómina viene",
+         "Gasta 100.000 Y$ en la plantilla (nóminas, cuotas y el B).", R),
+        (1_000_000, "staff_payroll_1m", "Mecenas de la Seguridad Social",
+         "Gasta 1.000.000 Y$ en la plantilla (nóminas, cuotas y el B).", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "staff_fired", [
+        (1, "staff_fired_1", "El ERE de uno", "Despide a un empleado.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_fired_prueba", [
+        (1, "staff_fired_prueba", "Suspenso en el examen práctico",
+         "Despide a alguien en el período de prueba.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_fired_disciplinario", [
+        (1, "staff_fired_disc", "Tres strikes y a la calle",
+         "Despide a alguien con un despido disciplinario por sus faltas.", R),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_fired_objetivo", [
+        (1, "staff_fired_obj", "Tijeretazo de Bruselas",
+         "Despide a alguien con un despido objetivo por pérdidas.", R),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_fired_improcedente", [
+        (1, "staff_fired_improc", "Improcedente pero contundente",
+         "Despide a alguien con un despido improcedente.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_fired_b", [
+        (1, "staff_fired_b", "El empleado fantasma",
+         "Echa a alguien que trabajaba en B.", C, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_severance", [
+        (10_000, "staff_severance_10k", "Por la puerta grande",
+         "Paga 10.000 Y$ en indemnizaciones por despido.", R),
+        (100_000, "staff_severance_100k", "Paracaídas dorado del Ibex",
+         "Paga 100.000 Y$ en indemnizaciones por despido.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "staff_trials", [
+        (1, "staff_trial_1", "Superó la fase de grupos",
+         "Que un empleado supere el período de prueba.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_contract_end", [
+        (1, "staff_contract_end", "Consumir preferentemente antes de seis meses",
+         "Que se acabe el contrato temporal de un empleado.", R),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_absences", [
+        (1, "staff_absent_1", "La abuela se murió otra vez",
+         "Que un empleado falte sin justificar a su turno.", C, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_turn_d", [
+        (1, "staff_d_1", "Ha sido el sobrino", "Que un empleado acabe un turno con nota D.", C,
+         True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_idle", [
+        (1, "staff_idle_1", "Mano sobre mano",
+         "Que un empleado pase un turno sin ningún cliente.", C, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_unpaid", [
+        (1, "staff_unpaid_1", "Ya te pago el lunes",
+         "Cierra una noche sin poder pagar la nómina a un empleado.", C, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_art50", [
+        (1, "staff_art50", "Se fue con el Estatuto bajo el brazo",
+         "Que un empleado se vaya por no cobrar y pida la indemnización (art. 50 ET).", R, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_quit", [
+        (1, "staff_quit_1", "Ahí te quedas con el chiringuito",
+         "Que un empleado quemado se despida.", R, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_inspected", [
+        (1, "staff_inspected", "Nadie espera a la Inspección de Trabajo",
+         "Que la Inspección de Trabajo te pille a alguien sin alta.", R, True),
+    ])  # fmt: skip
+    a += _tiers("negocio", "staff_fines", [
+        (1_000_000, "staff_fine_1m", "El Gordo de la Inspección",
+         "Paga 1.000.000 Y$ en multas y cuotas atrasadas de la Inspección de Trabajo.", E, True),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "staff_bonus_refund", [
+        (1, "staff_bonus_refund", "Bonificación con bumerán",
+         "Devuelve la bonificación de un contrato por un despido improcedente.", R, True),
     ])  # fmt: skip
     # Reducción de jornada y excedencia (art. 37.6 y 46.2 ET), en 🪏 General.
     a.append(Achievement(
@@ -25813,4 +26031,104 @@ def business_stats(result: TurnResult, *, tired: bool = False) -> StatDelta:
             "biz_recommended": int(business_recommended(business)),
             "balance_max": result.balance,
         },
+    )
+
+
+def _nonzero(add: Mapping[str, int]) -> dict[str, int]:
+    return {stat: value for stat, value in add.items() if value}
+
+
+def staff_turns_stats(turns: Iterable[StaffTurn]) -> StatDelta:
+    """Estadísticas de los turnos que jugó la plantilla (`BusinessService.staff_turns`)."""
+    turns = list(turns)
+    played = [t.summary for t in turns if t.summary is not None]
+    add = {
+        "staff_turns": len(played),
+        "staff_clients": sum(s.served for s in played),
+        "staff_sales": sum(s.sales for s in played),
+        "staff_turn_s": sum(1 for s in played if s.grade == "S"),
+        "staff_turn_d": sum(1 for s in played if s.grade == "D"),
+        "staff_absences": sum(1 for t in turns if t.absent),
+        "staff_idle": sum(1 for t in turns if t.summary is None and not t.absent),
+    }
+    peak = {}
+    if played:
+        peak = {
+            "staff_sales_turn_max": max(s.sales for s in played),
+            "staff_clients_turn_max": max(s.served for s in played),
+        }
+    return StatDelta(add=_nonzero(add), peak=peak)
+
+
+def staff_night_stats(run: NightRun) -> StatDelta:
+    """Estadísticas de la plantilla en la noche de un negocio (`NightRun`), con sus turnos."""
+    events = run.staff
+    delta = StatDelta(
+        add=_nonzero(
+            {
+                "staff_nights": int(run.payroll > 0),
+                "staff_payroll": run.payroll,
+                "staff_unpaid": events.count("sin_cobrar"),
+                "staff_inspected": events.count("inspeccion"),
+                "staff_fines": run.fine,
+                "staff_courses_done": events.count("curso"),
+                "staff_trials": events.count("prueba_superada"),
+                "staff_contract_end": events.count("fin_contrato"),
+                "staff_art50": events.count("art50"),
+                "staff_quit": events.count("dimision"),
+            }
+        )
+    )
+    delta.merge(staff_turns_stats(run.turns))
+    return delta
+
+
+def staff_hire_stats(business: Business, employee: Mapping[str, Any]) -> StatDelta:
+    """Estadísticas de quien contrata a un empleado (`BusinessService.hire`)."""
+    add = {
+        "staff_hired": 1,
+        f"staff_hired_{employee['contract']}": 1,
+        "staff_hired_half": int(employee["jornada"] == STAFF_HALF_DAY),
+        "staff_hired_bonus": int(employee["bonus"] > 0),
+        "staff_hired_senior": int(employee["age"] >= STAFF_SENIOR_AGE),
+        "staff_hired_young": int(employee["age"] <= 21),
+    }
+    return StatDelta(
+        add=_nonzero(add),
+        peak={"staff_size_max": len(business.staff), "staff_wage_max": employee["wage"]},
+    )
+
+
+def staff_fire_stats(dismissal: Dismissal, refund: int) -> StatDelta:
+    """Estadísticas de quien despide a un empleado (`BusinessService.dismiss`)."""
+    add = {
+        "staff_fired": 1,
+        f"staff_fired_{dismissal.kind}": 1,
+        "staff_severance": dismissal.amount,
+        "staff_bonus_refund": refund,
+    }
+    return StatDelta(add=_nonzero(add))
+
+
+def staff_raise_stats(employee: Mapping[str, Any]) -> StatDelta:
+    """Estadísticas de quien sube el sueldo a un empleado (`BusinessService.raise_wage`)."""
+    return StatDelta(add={"staff_raises": 1}, peak={"staff_wage_max": employee["wage"]})
+
+
+def staff_permanent_stats() -> StatDelta:
+    """Estadísticas de quien hace fijo a un temporal (`BusinessService.make_permanent`)."""
+    return StatDelta(add={"staff_permanent": 1})
+
+
+def staff_course_stats(employee: Mapping[str, Any], paid: int, credit: int) -> StatDelta:
+    """Estadísticas de quien paga un curso (`BusinessService.train`).
+
+    La habilidad del curso sube la noche siguiente: se mira cómo quedará.
+    """
+    skills = dict(employee["skills"])
+    if course := employee.get("course"):
+        skills[course] = min(100.0, skills[course] + STAFF_COURSE_POINTS)
+    return StatDelta(
+        add=_nonzero({"staff_courses": 1, "staff_course_spent": paid, "staff_fundae": credit}),
+        peak={"staff_skill_max": int(max(skills.values(), default=0))},
     )

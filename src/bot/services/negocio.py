@@ -23,6 +23,12 @@ Fase 2 (9.5.0): mejoras que se amortizan cada noche (`buy_equipment`), campañas
 publicidad (`start_campaign`), precio por producto (`set_price`), traslado a otro local o a
 uno propio de `pisos` (`move`, `move_to_own`) y reseñas al acabar cada turno.
 
+Fase 4 (9.8.0), la plantilla (`hire`, `dismiss`, `raise_wage`, `make_permanent`, `train`):
+empleados artificiales que se contratan entre los candidatos del día. Juegan solos las
+franjas de su turno (`staff_turns`, cada 10 minutos, y lo que falte antes de cerrar cada
+noche) con el mismo minijuego que el dueño, y cobran su nómina cada noche, con la cotización
+de la empresa y la retención (`_close_night`). Reglas en `bot.services.business_staff`.
+
 Préstamos al negocio (9.7.0, `loan_desk`, `take_loan`, `repay_loan`): los pide el dueño en
 `banco` (🏪 Negocio, también desde la portada). Entran en la caja del negocio y su noche cobra
 las cuotas después del local (y de Sociedades): sus intereses y la comisión son gasto. Al
@@ -48,8 +54,9 @@ from bot.repositories.economy import BANK_LOAN_CONCEPT, company_account
 from bot.repositories.housing import BusinessLoanDesk, HousingError
 from bot.repositories.housing_finance import Loan, business_loans_in
 from bot.services import business_sl as sl
+from bot.services import business_staff as staff
 from bot.services import loans as lending
-from bot.services.agenda import Agenda
+from bot.services.agenda import FRANJAS_DIA, Agenda
 from bot.services.business import (
     EVICTION_NIGHTS,
     FLAT_RATE_DAYS,
@@ -98,6 +105,7 @@ from bot.services.business_games import (
     apply_loyalty,
     make_clients,
 )
+from bot.services.business_staff import Dismissal, Payroll
 from bot.services.economy import (
     BalanceLimitError,
     BusinessCost,
@@ -306,6 +314,11 @@ class NightRun:
         refund: El reintegro de la pluriactividad que le llegó esa noche (fase 3).
         loans: Cómo fue la cuota de cada préstamo al negocio: `pagada`, `sin_pagar`,
             `devuelto` (la última) o `vencido` (`HousingRepository.settle_business_night_in`).
+        payroll: Lo que costó la plantilla esa noche (brutos, cuota de la empresa y el B).
+        staff: Lo que pasó con la plantilla (`_settle_staff`): `sin_cobrar`, `inspeccion`,
+            `curso`, `prueba_superada`, `fin_contrato`, `art50` y `dimision`.
+        fine: La multa y las cuotas de la Inspección de Trabajo (0 si no pasó).
+        turns: Los turnos de la plantilla de ese día que se jugaron antes de cerrarlo.
     """
 
     user_id: int
@@ -319,6 +332,33 @@ class NightRun:
     corporate: dict[str, Any] | None = None
     refund: int = 0
     loans: tuple[str, ...] = ()
+    payroll: int = 0
+    staff: tuple[str, ...] = ()
+    fine: int = 0
+    turns: tuple[StaffTurn, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class StaffTurn:
+    """Un turno de un empleado, que juega solo (`BusinessService.staff_turns`).
+
+    Attributes:
+        user_id: El dueño del negocio.
+        name: El empleado.
+        employee: Su número en la plantilla.
+        day: El día.
+        franja: La franja (0-7).
+        summary: Lo que pasó con sus clientes, o `None` si no hubo turno.
+        absent: Si faltó sin justificar.
+    """
+
+    user_id: int
+    name: str
+    employee: int
+    day: date
+    franja: int
+    summary: TurnSummary | None = None
+    absent: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -343,6 +383,9 @@ class Closing:
         corporate_tax: El último Impuesto sobre Sociedades.
         bank_paid: Lo que pagó la caja de la sociedad de sus préstamos al liquidarla.
         bank_moved: Lo que queda de los préstamos del negocio, ahora personales de su dueño.
+        staff: Cuántos empleados tenía (se van con el traspaso o se les despide).
+        severance: Las indemnizaciones del cierre (despido objetivo, 20 días por año).
+        fogasa: Lo que no se pudo pagar a la plantilla y paga el FOGASA (art. 33 ET).
     """
 
     business: Business
@@ -362,6 +405,9 @@ class Closing:
     corporate_tax: int = 0
     bank_paid: int = 0
     bank_moved: int = 0
+    staff: int = 0
+    severance: int = 0
+    fogasa: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -672,6 +718,9 @@ class BusinessService:
                 business.roll_over(today, week)
                 business.equipment = [*business.equipment, key]
                 add_asset(business, key, base + tax, item.kind)
+                if business.is_company:
+                    # Un activo nuevo en Canarias: materializa la RIC que falte por invertir.
+                    sl.ric_invest(business.company, base + tax, today)
                 self.repository.save_in(connection, guild_id, business)
                 cost = BusinessCost(
                     "negocio:mejora", gone=base, taxes=(("igic", tax),), expense=False
@@ -889,6 +938,8 @@ class BusinessService:
             business.deposit, business.rent_debt, business.unpaid_nights = opening.deposit, 0, 0
             business.assets = [a for a in business.assets if a["key"] != "obra"]
             setup_asset(business, opening.setup + opening.setup_igic)
+            if business.is_company:
+                sl.ric_invest(business.company, opening.setup + opening.setup_igic, local_day(now))
             business.add("apertura", -opening.license)
             if owed:
                 business.add("local", -owed)
@@ -1190,6 +1241,44 @@ class BusinessService:
             guild_id, user_id, change, "La caja de la sociedad no tiene tanto."
         )
 
+    async def set_ric(self, guild_id: int, user_id: int, share: float) -> Business:
+        """Cuánto de la base de cada semana lleva la sociedad a la RIC (de `RIC_SHARES`).
+
+        Raises:
+            BusinessError: Si no es una sociedad o la parte no está en la lista.
+        """
+        if share not in sl.RIC_SHARES:
+            raise BusinessError("Esa dotación no está en la lista.")
+        async with self._lock(guild_id, user_id):
+            business = await self.business(guild_id, user_id)
+            if business is None or not business.is_company:
+                raise BusinessError("La RIC es de las sociedades: tu negocio no lo es.")
+            business.company["ric_share"] = share
+            return await self.repository.save(guild_id, business)
+
+    async def zec(self, guild_id: int, user_id: int, *, join: bool) -> Business:
+        """Inscribe la sociedad en el registro de la ZEC (`join`) o la da de baja.
+
+        Raises:
+            BusinessError: Si no es una sociedad o no cumple (`business_sl.zec_blocker`).
+        """
+        async with self._lock(guild_id, user_id):
+            business = await self.business(guild_id, user_id)
+            if business is None or not business.is_company:
+                raise BusinessError("La ZEC es para sociedades: tu negocio no lo es.")
+            info = business.company
+            if join:
+                jobs = sum(1 for e in business.staff if e["contract"] != "b")
+                blocked = sl.zec_blocker(
+                    business.sector, business.barrio_info.island, jobs, local_day(self._clock())
+                )
+                if blocked is not None:
+                    raise BusinessError(blocked)
+                info.update(zec=True, zec_misses=0, zec_since=local_day(self._clock()).isoformat())
+            else:
+                info["zec"] = False
+            return await self.repository.save(guild_id, business)
+
     # -- Préstamos al negocio (`banco`, 🏪 Negocio) -------------------------------------
 
     async def loan_desk(
@@ -1327,6 +1416,447 @@ class BusinessService:
             loan, fee = closed[0]
             return business, loan, fee, paid
 
+    # -- Fase 4: la plantilla -----------------------------------------------------------
+
+    def candidates(self, business: Business) -> list[dict[str, Any]]:
+        """Los candidatos de hoy para `business` (siempre los mismos ese día)."""
+        return staff.candidates(business, local_day(self._clock()))
+
+    def dismissal_options(self, business: Business, employee: dict[str, Any]) -> list[Dismissal]:
+        """Las formas de despedir hoy a `employee`, con lo que cuesta cada una."""
+        return staff.dismissals(
+            employee, local_day(self._clock()), losses=sl.tax_base(business.last_week) < 0
+        )
+
+    def payroll_tonight(self, business: Business) -> Payroll:
+        """Las nóminas de esta noche."""
+        return staff.payroll(business, local_day(self._clock()))
+
+    async def _bonified(self, guild_id: int, user_id: int, business: Business, day: date) -> bool:
+        """Si una contratación de hoy puede llevar bonificación: al corriente con Hacienda
+        (art. 8 del RDL 1/2023) y sin la exclusión por un despido improcedente (art. 11.4)."""
+        if business.bonus_ban >= day.isoformat():
+            return False
+        if business.is_company:
+            return not business.company.get("tax_debt", 0)
+        return await self.economy.tax_debt(guild_id, user_id) <= 0
+
+    async def hire(
+        self,
+        guild_id: int,
+        user_id: int,
+        key: int,
+        *,
+        contract: str,
+        jornada: int,
+        shift: str,
+        wage: int | None = None,
+    ) -> tuple[Business, dict[str, Any]]:
+        """Contrata a un candidato de hoy. No mueve dinero: la nómina se paga cada noche.
+
+        Empieza ya, en las franjas de su turno que aún no han acabado (el alta va antes de
+        empezar, art. 139 LGSS). Con contrato `indefinido` o `temporal` (art. 15.2 ET, 6
+        meses: `business_staff.TEMPORARY_NIGHTS` noches), los dos con período de prueba; o
+        en `b`, sin alta ni contrato.
+
+        Args:
+            wage: El bruto de cada noche que se le ofrece (por defecto, lo que pide).
+
+        Raises:
+            BusinessError: Sin negocio, sin sitio en el local, si el candidato ya no está o
+                si no acepta lo ofrecido.
+        """
+        if contract not in ("indefinido", "temporal", "b"):
+            raise BusinessError("Ese contrato no existe.")
+        if jornada not in (staff.FULL_DAY, staff.HALF_DAY):
+            raise BusinessError("La jornada es completa o media.")
+        if shift not in staff.SHIFTS:
+            raise BusinessError("El turno es de mañana o de tarde.")
+        async with self._lock(guild_id, user_id):
+            now = self._clock()
+            today, week = self._today(now)
+            business = await self.repository.business(guild_id, user_id)
+            if business is None:
+                raise BusinessError("No tienes negocio.")
+            business.roll_over(today, week)
+            room = staff.cap(business.size)
+            if len(business.staff) >= room:
+                raise BusinessError(
+                    f"En un local {business.size_info.name.lower()} caben {room} empleados. "
+                    "Trasládate a uno mayor para contratar a más."
+                )
+            candidate = next(
+                (c for c in staff.candidates(business, today) if c["key"] == key), None
+            )
+            if candidate is None:
+                raise BusinessError("Ese candidato ya no está: mira los de hoy.")
+            name = candidate["name"].split()[0]
+            if candidate["part_time"] and jornada != staff.HALF_DAY:
+                raise BusinessError(f"{name} solo quiere media jornada.")
+            asked = staff.ask(candidate["skills"], candidate["traits"], jornada)
+            pay = asked if wage is None else wage
+            if pay < asked:
+                raise BusinessError(f"{name} pide al menos {asked} Y$ brutos cada noche.")
+            bonified = contract == "indefinido" and await self._bonified(
+                guild_id, user_id, business, today
+            )
+            business.staff_seq += 1
+            employee = staff.new_employee(
+                candidate, seq=business.staff_seq, contract=contract, jornada=jornada,
+                shift=shift, wage=pay, start=today, bonified=bonified,
+            )  # fmt: skip
+            # Las franjas de hoy que ya han acabado no las trabaja.
+            employee["from_franja"] = staff.franjas_done(datetime.fromtimestamp(now, TIMEZONE).hour)
+            business.staff = [*business.staff, employee]
+            business.seen = [*business.seen, key][-30:]
+            await self.repository.save(guild_id, business)
+            return business, employee
+
+    def _employee(self, business: Business, employee_id: int) -> dict[str, Any]:
+        found = next((e for e in business.staff if e["id"] == employee_id), None)
+        if found is None:
+            raise BusinessError("Esa persona ya no trabaja contigo.")
+        return found
+
+    async def _staff_change(
+        self, guild_id: int, user_id: int, change: Callable[[Business], Any]
+    ) -> tuple[Business, Any]:
+        """Cambia la plantilla sin mover dinero (`change` lanza `BusinessError` si no puede)."""
+        async with self._lock(guild_id, user_id):
+            business = await self.business(guild_id, user_id)
+            if business is None:
+                raise BusinessError("No tienes negocio.")
+            result = change(business)
+            await self.repository.save(guild_id, business)
+            return business, result
+
+    async def raise_wage(
+        self, guild_id: int, user_id: int, employee_id: int, share: float
+    ) -> tuple[Business, dict[str, Any]]:
+        """Le sube el sueldo un `share` (de `business_staff.RAISES`): le sube el humor.
+
+        Bajarlo no se puede: sería una modificación sustancial de las condiciones (art. 41 ET),
+        que pide causas que el juego no tiene.
+        """
+        if share not in staff.RAISES:
+            raise BusinessError("Esa subida no está en la lista.")
+
+        def change(business: Business) -> dict[str, Any]:
+            employee = self._employee(business, employee_id)
+            employee["wage"] = int(round(employee["wage"] * (1 + share), -1))
+            staff.mood_change(employee, min(15.0, share * 100))
+            return employee
+
+        return await self._staff_change(guild_id, user_id, change)
+
+    async def make_permanent(
+        self, guild_id: int, user_id: int, employee_id: int
+    ) -> tuple[Business, dict[str, Any]]:
+        """Hace fijo a quien tiene un contrato temporal: ya no se acaba (ni cobra los 12 días)."""
+
+        def change(business: Business) -> dict[str, Any]:
+            employee = self._employee(business, employee_id)
+            if employee["contract"] != "temporal":
+                raise BusinessError("Solo se hace fijo a quien tiene un contrato temporal.")
+            employee["contract"] = "indefinido"
+            employee["until"] = ""
+            staff.mood_change(employee, 10.0)
+            return employee
+
+        return await self._staff_change(guild_id, user_id, change)
+
+    async def train(
+        self, guild_id: int, user_id: int, employee_id: int, skill: str
+    ) -> tuple[Business, dict[str, Any], int, int]:
+        """Le paga un curso de `skill`: la noche siguiente sube `COURSE_POINTS`.
+
+        Tratamiento fiscal: lo cobra una academia con IGIC (al Estado); la base desaparece.
+        Es gasto de personal deducible (art. 28.1 LIRPF o LIS). El crédito de formación de
+        FUNDAE de la semana (`business_staff.fundae_week`) se descuenta de la base: en la vida
+        real se bonifica en los seguros sociales. A quien está en B no le llega: no está de
+        alta.
+
+        Returns:
+            `(el negocio, el empleado, lo pagado, lo bonificado por FUNDAE)`.
+        """
+        if skill not in staff.SKILLS:
+            raise BusinessError("Ese curso no existe.")
+        async with self._lock(guild_id, user_id):
+            now = self._clock()
+            today, week = self._today(now)
+            current = await self.repository.business(guild_id, user_id)
+            if current is None:
+                raise BusinessError("No tienes negocio.")
+            held: list[tuple[dict[str, Any], int, int]] = []
+
+            def prepare(connection: sqlite3.Connection) -> tuple[Business, BusinessMove]:
+                business = self.repository.business_in(connection, guild_id, user_id)
+                if business is None:
+                    raise BusinessError("No tienes negocio.")
+                business.roll_over(today, week)
+                employee = self._employee(business, employee_id)
+                if employee["course"]:
+                    raise BusinessError(f"{employee['name']} ya está con un curso.")
+                if business.fundae_week != week:
+                    business.fundae_week, business.fundae_used = week, 0
+                credit = 0
+                if employee["contract"] != "b":
+                    credit = min(staff.COURSE_COST, staff.fundae_week() - business.fundae_used)
+                    business.fundae_used += credit
+                base = staff.COURSE_COST - credit
+                tax = igic(staff.COURSE_COST)
+                employee["course"] = skill
+                staff.mood_change(employee, 8.0)
+                business.add("formacion", -(base + tax))
+                self.repository.save_in(connection, guild_id, business)
+                held.append((employee, base + tax, credit))
+                cost = BusinessCost("negocio:formacion", gone=base, taxes=(("igic", tax),))
+                return business, BusinessMove(
+                    user_id=user_id, payments=(cost,), account=_account(business)
+                )
+
+            try:
+                business, _paid = await self.economy.business(guild_id, prepare)
+            except InsufficientFundsError as error:
+                total = staff.COURSE_COST + igic(staff.COURSE_COST)
+                raise BusinessError(_broke(current, total)) from error
+            employee, paid, credit = held[0]
+            return business, employee, paid, credit
+
+    async def dismiss(
+        self, guild_id: int, user_id: int, employee_id: int, kind: str
+    ) -> tuple[Business, dict[str, Any], Dismissal, int]:
+        """Despide a un empleado de la forma `kind` (`business_staff.dismissals`).
+
+        Tratamiento fiscal: la indemnización es gasto de personal deducible y al empleado le
+        está exenta (art. 7.e LIRPF) y no cotiza (art. 147.2.c LGSS); se paga entera o no se
+        despide. Lo que se le debía de sueldo sigue en los atrasos de cada noche. Un despido
+        improcedente de alguien bonificado obliga a devolver lo bonificado con recargo (art. 13
+        del RDL 1/2023, a la Seguridad Social) y deja 12 meses sin bonificaciones (art. 11.4).
+
+        Returns:
+            `(el negocio, el empleado, el despido, lo devuelto de la bonificación)`.
+        """
+        async with self._lock(guild_id, user_id):
+            now = self._clock()
+            today, week = self._today(now)
+            current = await self.repository.business(guild_id, user_id)
+            if current is None:
+                raise BusinessError("No tienes negocio.")
+            held: list[tuple[dict[str, Any], Dismissal, int]] = []
+
+            def prepare(connection: sqlite3.Connection) -> tuple[Business, BusinessMove]:
+                business = self.repository.business_in(connection, guild_id, user_id)
+                if business is None:
+                    raise BusinessError("No tienes negocio.")
+                business.roll_over(today, week)
+                employee = self._employee(business, employee_id)
+                options = {
+                    d.kind: d
+                    for d in staff.dismissals(
+                        employee, today, losses=sl.tax_base(business.last_week) < 0
+                    )
+                }
+                choice = options.get(kind)
+                if choice is None:
+                    raise BusinessError("Ese despido no vale para esta persona.")
+                if not choice.allowed:
+                    raise BusinessError(f"No puedes: {choice.why}")
+                refund = staff.bonus_refund(employee, today) if kind == "improcedente" else 0
+                if refund:
+                    business.bonus_ban = (
+                        today + timedelta(days=staff.BONUS_BAN_NIGHTS)
+                    ).isoformat()
+                    business.add("multas", -refund)
+                business.staff = [e for e in business.staff if e["id"] != employee_id]
+                if choice.amount:
+                    business.add("despidos", -choice.amount)
+                self.repository.save_in(connection, guild_id, business)
+                held.append((employee, choice, refund))
+                payments = []
+                if choice.amount:
+                    payments.append(BusinessCost("negocio:despido", gone=choice.amount))
+                if refund:
+                    payments.append(
+                        BusinessCost(
+                            "negocio:bonificacion:reintegro",
+                            taxes=(("cotizacion", refund),),
+                            expense=False,
+                        )
+                    )
+                return business, BusinessMove(
+                    user_id=user_id, payments=tuple(payments), account=_account(business)
+                )
+
+            try:
+                business, _paid = await self.economy.business(guild_id, prepare)
+            except InsufficientFundsError as error:
+                _employee, choice, refund = held[0]
+                raise BusinessError(_broke(current, choice.amount + refund)) from error
+            employee, choice, refund = held[0]
+            return business, employee, choice, refund
+
+    async def staff_dues(self, guild_id: int, user_id: int) -> tuple[int, int]:
+        """`(nóminas de esta noche, atrasos con la plantilla)` de un autónomo (para `saldo`).
+
+        Solo lee. Las de una sociedad las paga su caja: `(0, 0)`.
+        """
+        business = await self.repository.business(guild_id, user_id)
+        if business is None or business.is_company:
+            return 0, 0
+        pay = self.payroll_tonight(business)
+        return pay.cost + pay.black, business.wage_debt
+
+    async def staff_turns(
+        self, guild_id: int, *, skip: Callable[[int], bool] | None = None
+    ) -> list[StaffTurn]:
+        """Juega las franjas de hoy que ya han acabado en los negocios con plantilla.
+
+        Cada franja va en su propia transacción. `skip` dice de qué dueños no tocar el negocio
+        ahora (los que atienden un turno: el stock es el mismo); se juega en la siguiente
+        pasada. Si un negocio falla, se sigue con el resto.
+        """
+        now = self._clock()
+        today = local_day(now)
+        upto = staff.franjas_done(datetime.fromtimestamp(now, TIMEZONE).hour)
+        played: list[StaffTurn] = []
+        if not upto:
+            return played
+        for business in await self.repository.businesses(guild_id):
+            if not business.staff or (skip is not None and skip(business.user_id)):
+                continue
+            try:
+                async with self._lock(guild_id, business.user_id):
+                    played.extend(
+                        await self._staff_franjas(guild_id, business.user_id, today, upto)
+                    )
+            except (OSError, sqlite3.Error):
+                logger.exception("No se pudieron jugar los turnos de la plantilla %s", business.id)
+        return played
+
+    async def _staff_franjas(
+        self, guild_id: int, user_id: int, day: date, upto: int
+    ) -> list[StaffTurn]:
+        """Juega las franjas de la plantilla de `day` que falten, hasta `upto` (sin incluirla).
+
+        El candado lo tiene quien llama. Una franja en la que no trabaja nadie no abre
+        transacción.
+        """
+        business = await self.repository.business(guild_id, user_id)
+        if business is None or not business.staff:
+            return []
+        iso = day.isoformat()
+        if business.staff_day > iso:
+            return []
+        first = business.staff_done if business.staff_day == iso else 0
+        played: list[StaffTurn] = []
+        for franja in range(first, upto):
+            if not any(_works(e, iso, franja) for e in business.staff):
+                continue
+            turns = await self._staff_franja(guild_id, user_id, day, franja)
+            if turns is None:
+                break
+            played.extend(turns)
+        return played
+
+    async def _staff_franja(
+        self, guild_id: int, user_id: int, day: date, franja: int
+    ) -> list[StaffTurn] | None:
+        """Una franja de la plantilla: cada uno en su sitio juega su turno con el minijuego.
+
+        Las ventas entran en la caja como las del dueño (con su retención si es autónomo) y
+        los clientes salen del mismo cupo del barrio. `None` si el negocio ya no existe.
+        """
+        holder: list[StaffTurn] = []
+        iso = day.isoformat()
+        today = local_day(self._clock())
+        start = datetime(
+            day.year, day.month, day.day, staff.franja_hour(franja), tzinfo=TIMEZONE
+        ).timestamp()
+
+        def prepare(connection: sqlite3.Connection) -> tuple[Business | None, BusinessMove]:
+            business = self.repository.business_in(connection, guild_id, user_id)
+            if business is None:
+                return None, BusinessMove(user_id=user_id)
+            if business.staff_day > iso or (
+                business.staff_day == iso and business.staff_done > franja
+            ):
+                return business, BusinessMove(user_id=user_id)
+            if business.staff_day != iso:
+                business.staff_day, business.staff_done = iso, 0
+            if day == today:
+                business.roll_over(day, week_of(day))
+            pool_left = daily_pool(business.sector_info, business.barrio_info) * pool_factor(
+                business, day
+            ) - self.repository.pool_used_in(
+                connection, guild_id, business.barrio, business.sector, day
+            )
+            sales = sold = 0
+            for employee in business.staff:
+                if not _works(employee, iso, franja):
+                    continue
+                name = employee["name"]
+                if employee["roll_day"] != iso:
+                    employee["roll_day"] = iso
+                    if staff.absent(employee, business.seed, day):
+                        employee["absent_day"] = iso
+                        employee["absences"] += 1
+                        business.tell(
+                            f"🚫 {name} no vino hoy y no avisó: es su falta número "
+                            f"{employee['absences']}. Hoy no cobra."
+                        )
+                        holder.append(
+                            StaffTurn(user_id, name, employee["id"], day, franja, absent=True)
+                        )
+                if employee["absent_day"] == iso:
+                    continue
+                rng = random.Random(f"{business.seed}:plantilla:{iso}:{franja}:{employee['id']}")
+                wanted = turn_clients(business, staff.demand_hour(franja), rng.random(), day)
+                clients = make_clients(
+                    business, min(wanted, math.floor(pool_left)), rng.randrange(2**31)
+                )
+                if not clients:
+                    holder.append(StaffTurn(user_id, name, employee["id"], day, franja))
+                    continue
+                pool_left -= len(clients)
+                self.repository.take_pool_in(
+                    connection, guild_id, business.barrio, business.sector, day, len(clients)
+                )
+                game = staff.play_turn(business, employee, clients, start=start, franja=franja)
+                summary = game.summary()
+                _apply_turn(business, summary, f"{start}:{employee['id']}", day)
+                staff.learn(employee)
+                if employee["grades_day"] != iso:
+                    employee["grades_day"], employee["grades"] = iso, []
+                employee["grades"].append(summary.grade)
+                employee["turns"] += 1
+                employee["clients"] += summary.served
+                employee["sales"] += summary.sales
+                employee["best"] = max(employee["best"], summary.sales)
+                if day == today:
+                    business.sales_today += summary.sales
+                    business.clients_today += summary.served
+                    for key, value in (
+                        ("turns", 1), ("clients", summary.served), ("sales", summary.sales)
+                    ):  # fmt: skip
+                        business.staff_today[key] = business.staff_today.get(key, 0) + value
+                sales += summary.sales
+                sold += summary.sold_cost
+                holder.append(StaffTurn(user_id, name, employee["id"], day, franja, summary))
+            business.staff_done = franja + 1
+            self.repository.save_in(connection, guild_id, business)
+            return business, BusinessMove(
+                user_id=user_id, sales=sales, sold_cost=sold, account=_account(business)
+            )
+
+        business, paid = await self.economy.business(guild_id, prepare)
+        if business is None:
+            return None
+        if paid.withheld:
+            business.add("irpf", -paid.withheld)
+            await self.repository.save(guild_id, business)
+        return holder
+
     # -- Comprar ------------------------------------------------------------------------
 
     async def buy(
@@ -1456,26 +1986,11 @@ class BusinessService:
                 if business is None or business.id != turn.business.id:
                     raise BusinessError("Tu negocio ya no existe: este turno no cuenta.")
                 business.roll_over(today, week)
-                for key, units in summary.units.items():
-                    business.stock[key] = max(0, business.stock.get(key, 0) - units)
-                change = turn_reputation(
-                    business.sector_info,
-                    summary.reputation,
-                    summary.served,
-                    price_reputation(business),
-                )
-                business.reputation = max(0.0, min(REPUTATION_MAX, business.reputation + change))
-                business.regulars = apply_loyalty(business.regulars, summary.loyalty)
+                reviews.extend(_apply_turn(business, summary, f"{game.started}", today))
                 business.sales_today += summary.sales
                 business.clients_today += summary.served
-                business.add("ventas", summary.sales)
                 best.append(summary.sales > business.best_turn)
                 business.best_turn = max(business.best_turn, summary.sales)
-                # Reseñas con un azar propio del turno: no gastan el de las colas.
-                rng = random.Random(f"{business.seed}:{game.started}")
-                left = [r for o in summary.outcomes if (r := review_of(o, rng)) is not None]
-                add_reviews(business, today, left)
-                reviews.extend(left)
                 self.repository.save_in(connection, guild_id, business)
                 move = BusinessMove(
                     user_id=user_id,
@@ -1535,9 +2050,12 @@ class BusinessService:
             )
             day = max(last + timedelta(days=1), today - timedelta(days=CATCH_UP_NIGHTS))
             while day < today:
+                # La plantilla acaba las franjas de ese día antes de cerrarlo.
+                turns = await self._staff_franjas(guild_id, user_id, day, FRANJAS_DIA)
                 run = await self._close_night(guild_id, user_id, current.id, day, now)
                 if run is None:
                     break
+                run = replace(run, turns=tuple(turns))
                 runs.append(run)
                 if run.evicted:
                     return runs
@@ -1585,7 +2103,14 @@ class BusinessService:
     async def _close_night(
         self, guild_id: int, user_id: int, business_id: int, day: date, now: float
     ) -> NightRun | None:
-        """Cobra una noche de un negocio y, si toca, lo desahucia. `None` si ya no existe."""
+        """Cobra una noche de un negocio y, si toca, lo desahucia. `None` si ya no existe.
+
+        Los recibos van por orden y lo que no llega es de los últimos: lo que se debe a la
+        plantilla y sus nóminas (los salarios, primero, art. 32 ET), lo que la sociedad debe a
+        Hacienda, el local (su deuda, el alquiler, los suministros, la terraza y la gestoría),
+        los seguros sociales y las retenciones de la plantilla, la Inspección, Sociedades y las
+        cuotas del banco.
+        """
         holder: list[NightRun] = []
         evict: list[str] = []
 
@@ -1599,25 +2124,59 @@ class BusinessService:
                 return None, BusinessMove(user_id=user_id)
             bill = nightly_bill(business)
             debt = business.rent_debt
-            bills = []
+            company = business.is_company
+            pay = staff.payroll(business, day)
+            groups: list[tuple[str, BusinessCost]] = []
+            owed_staff = business.wage_debt
+            if owed_staff:
+                groups.append(
+                    ("atrasos", BusinessCost("negocio:plantilla:atrasos", gone=owed_staff))
+                )
+            if pay.net:
+                groups.append(("nominas", BusinessCost("negocio:nominas", gone=pay.net)))
+            if pay.black:
+                groups.append(
+                    ("negro", BusinessCost("negocio:negro", gone=pay.black, expense=False))
+                )
+            old_tax = business.company.get("tax_debt", 0) if company else 0
+            if old_tax:
+                # Lo que la sociedad ya debía a Hacienda, antes que el local.
+                groups.append(
+                    (
+                        "hacienda",
+                        BusinessCost(
+                            "sociedad:hacienda:deuda",
+                            taxes=(("sociedades", old_tax),),
+                            expense=False,
+                        ),
+                    )
+                )
             if debt:
-                bills.append(BusinessCost("negocio:deuda_local", gone=debt))
-            bills.append(
-                BusinessCost(
-                    "negocio:alquiler",
-                    gone=bill.rent - bill.withholding,
-                    taxes=(("igic", bill.rent_igic), ("retencion", bill.withholding)),
+                groups.append(("local", BusinessCost("negocio:deuda_local", gone=debt)))
+            groups.append(
+                (
+                    "local",
+                    BusinessCost(
+                        "negocio:alquiler",
+                        gone=bill.rent - bill.withholding,
+                        taxes=(("igic", bill.rent_igic), ("retencion", bill.withholding)),
+                    ),
                 )
             )
-            bills.append(
-                BusinessCost(
-                    "negocio:suministros",
-                    gone=bill.utilities,
-                    taxes=(("igic", bill.utilities_igic),),
+            groups.append(
+                (
+                    "local",
+                    BusinessCost(
+                        "negocio:suministros",
+                        gone=bill.utilities,
+                        taxes=(("igic", bill.utilities_igic),),
+                    ),
                 )
             )
             if bill.fees:
-                bills.append(BusinessCost("negocio:terraza", taxes=(("tasa", bill.fees),)))
+                groups.append(
+                    ("local", BusinessCost("negocio:terraza", taxes=(("tasa", bill.fees),)))
+                )
             due = debt + bill.total
             spoiled = spoil(business)
             if business.last_open_day != day.isoformat():
@@ -1635,49 +2194,74 @@ class BusinessService:
                     connection, guild_id, user_id, business.own_listing
                 )
             )
-            company = business.is_company
             books = sl.BOOKKEEPING_NIGHT + igic(sl.BOOKKEEPING_NIGHT) if company else 0
-            week_result: dict[str, Any] | None = None
-            old_tax = business.company.get("tax_debt", 0) if company else 0
             if company:
-                # Primero lo que se debe a Hacienda; la gestoría, con el local.
-                if old_tax:
-                    bills.insert(
-                        0,
+                groups.append(
+                    (
+                        "local",
                         BusinessCost(
-                            "sociedad:hacienda:deuda",
-                            taxes=(("sociedades", old_tax),),
-                            expense=False,
+                            "sociedad:gestoria",
+                            gone=sl.BOOKKEEPING_NIGHT,
+                            taxes=(("igic", books - sl.BOOKKEEPING_NIGHT),),
                         ),
                     )
-                bills.append(
-                    BusinessCost(
-                        "sociedad:gestoria",
-                        gone=sl.BOOKKEEPING_NIGHT,
-                        taxes=(("igic", books - sl.BOOKKEEPING_NIGHT),),
+                )
+            if pay.state:
+                # Lo que un autónomo no paga de esto pasa a su deuda con Hacienda, con recargo.
+                groups.append(
+                    (
+                        "seguros",
+                        BusinessCost(
+                            "negocio:seguros_sociales",
+                            taxes=(("cotizacion", pay.ss), ("retencion_plantilla", pay.irpf)),
+                            debt_surcharge=staff.LATE_SURCHARGE,
+                        ),
                     )
                 )
-                if day.weekday() == 6:
-                    # La última noche de la semana fiscal, el Impuesto sobre Sociedades, con lo
-                    # de esta noche ya devengado (aunque no llegue para pagarlo).
-                    week = week_of(day)
-                    business.roll_over(day, week)
-                    info = business.company
-                    offset = info["offset"] if info["offset_week"] == week else None
-                    base = (
-                        sl.tax_base(business.week_totals, offset) - bill.total - amortized - books
+            caught = staff.inspection(business, day, pay.black)
+            if caught is not None:
+                fine, arrears = caught
+                groups.append(
+                    (
+                        "inspeccion",
+                        BusinessCost(
+                            "negocio:inspeccion",
+                            taxes=(("multa", fine), ("cotizacion", arrears)),
+                            expense=False,
+                            debt_surcharge=0.0,
+                        ),
                     )
-                    week_result = sl.settle_week(
-                        info, base, weekly_sales=business.week_totals.get("ventas", 0)
-                    )
-                    if week_result["tax"]:
-                        bills.append(
+                )
+            week_result: dict[str, Any] | None = None
+            if company and day.weekday() == 6:
+                # La última noche de la semana fiscal, el Impuesto sobre Sociedades, con lo de
+                # esta noche ya devengado (aunque no llegue para pagarlo).
+                week = week_of(day)
+                business.roll_over(day, week)
+                info = business.company
+                offset = info["offset"] if info["offset_week"] == week else None
+                base = (
+                    sl.tax_base(business.week_totals, offset)
+                    - bill.total
+                    - amortized
+                    - books
+                    - pay.cost
+                )
+                week_result = sl.settle_week(
+                    info, base, weekly_sales=business.week_totals.get("ventas", 0), day=day,
+                    zec=_zec_week(business),
+                )  # fmt: skip
+                if week_result["tax"]:
+                    groups.append(
+                        (
+                            "is",
                             BusinessCost(
                                 "sociedad:hacienda:is",
                                 taxes=(("sociedades", week_result["tax"]),),
                                 expense=False,
-                            )
+                            ),
                         )
+                    )
             # Las cuotas de sus préstamos, lo último: el banco cobra después del local y de
             # Hacienda. Los intereses son gasto; la parte de capital, no.
             installments = (
@@ -1685,14 +2269,18 @@ class BusinessService:
                 if housing is not None
                 else []
             )
+            loans_bills = []
             for item in installments:
-                bills.append(BusinessCost(f"{BANK_LOAN_CONCEPT}intereses", gone=item.interest))
-                bills.append(
+                loans_bills.append(
+                    BusinessCost(f"{BANK_LOAN_CONCEPT}intereses", gone=item.interest)
+                )
+                loans_bills.append(
                     BusinessCost(
                         f"{BANK_LOAN_CONCEPT}cuota", gone=item.due - item.interest, expense=False
                     )
                 )
             loan_events: list[str] = []
+            staff_events: list[str] = []
 
             def settle(connection: sqlite3.Connection, unpaid: int) -> None:
                 business.roll_over(day, week_of(day))
@@ -1701,49 +2289,65 @@ class BusinessService:
                     unpaid = self._settle_loans_in(
                         connection, guild_id, business, installments, unpaid, now, loan_events
                     )
+                missing = _tail_missing(groups, unpaid)
+                local = missing.get("local", 0)
                 if company:
-                    # Lo que no llegó: primero el impuesto de esta noche, luego lo del local y,
-                    # si aún falta, lo que ya se le debía a Hacienda (las facturas van por orden).
                     tax = week_result["tax"] if week_result else 0
-                    unpaid_tax = min(tax, unpaid)
-                    rest = unpaid - unpaid_tax
-                    unpaid_old = max(0, rest - (due + books))
-                    unpaid = rest - unpaid_old
-                    business.company["tax_debt"] = unpaid_old + unpaid_tax
-                    # Sociedades va por devengo: el local y la gestoría cuentan esta noche.
+                    business.company["tax_debt"] = (
+                        missing.get("hacienda", 0)
+                        + missing.get("is", 0)
+                        + missing.get("inspeccion", 0)
+                        + round(missing.get("seguros", 0) * (1 + staff.LATE_SURCHARGE))
+                    )
+                    # Sociedades va por devengo: el local, la gestoría y la plantilla cuentan
+                    # esta noche.
                     business.add("local", -(due - debt))
                     business.add("gestoria", -books)
+                    business.add("personal", -pay.cost)
+                    business.add("negro", -pay.black)
                     if tax:
                         business.add("sociedades", -tax)
                     if week_result is not None:
                         business.company["last"] = {"week": week_of(day), **week_result}
+                        _tell_ric(business, week_result)
                 else:
-                    business.add("local", -(due - unpaid))
+                    business.add("local", -(due - local))
+                    paid_staff = (
+                        owed_staff - missing.get("atrasos", 0)
+                        + pay.net - missing.get("nominas", 0)
+                        + pay.state - missing.get("seguros", 0)
+                    )  # fmt: skip
+                    business.add("personal", -paid_staff)
+                    business.add("negro", -(pay.black - missing.get("negro", 0)))
+                if caught is not None:
+                    business.add("multas", -sum(caught))
                 business.add("amortizacion", -amortized)
-                business.rent_debt = unpaid
-                business.unpaid_nights = business.unpaid_nights + 1 if unpaid else 0
-                if unpaid:
+                business.rent_debt = local
+                business.unpaid_nights = business.unpaid_nights + 1 if local else 0
+                if local:
                     whose = "la caja de la sociedad" if company else "para el local"
                     business.tell(
-                        f"🧾 Anoche no llegó {whose}: debes {unpaid} Y$ al casero "
+                        f"🧾 Anoche no llegó {whose}: debes {local} Y$ al casero "
                         f"({business.unpaid_nights} de {EVICTION_NIGHTS} noches)."
                     )
                 if spoiled:
                     units = sum(spoiled.values())
                     business.tell(f"🗑️ Se te estropearon {units} unidades de lo perecedero.")
+                staff_events.extend(_settle_staff(business, pay, missing, day, caught))
                 self.repository.save_in(connection, guild_id, business)
                 gone = business.unpaid_nights >= EVICTION_NIGHTS or lost_local
                 holder.append(
-                    NightRun(user_id, business.name, day, due, unpaid, spoiled,
+                    NightRun(user_id, business.name, day, due, local, spoiled,
                              evicted=gone, amortized=amortized, corporate=week_result,
-                             loans=tuple(loan_events))
+                             loans=tuple(loan_events), payroll=pay.cost + pay.black,
+                             staff=tuple(staff_events), fine=sum(caught) if caught else 0)
                 )  # fmt: skip
                 if gone:
                     evict.append("sin_local" if lost_local else "desahucio")
 
             return business, BusinessMove(
                 user_id=user_id,
-                bills=tuple(bills),
+                bills=(*(c for _, c in groups), *loans_bills),
                 settle=settle,
                 amortization=amortized,
                 account=_account(business),
@@ -1876,6 +2480,8 @@ class BusinessService:
         today = local_day(now)
         #: `(lo que pagó la caja a sus préstamos, lo que se queda el dueño)`.
         bank: list[tuple[int, int]] = []
+        #: Lo que no llegó a la plantilla y paga el FOGASA.
+        fogasa: list[int] = []
 
         def prepare(connection: sqlite3.Connection) -> tuple[Closing, BusinessMove]:
             business = self.repository.business_in(connection, guild_id, user_id)
@@ -1884,6 +2490,28 @@ class BusinessService:
             offer = closing_offer(business, now)
             forfeit = min(business.deposit, business.rent_debt)
             refund = business.deposit - forfeit
+            # La plantilla: con el traspaso se va con el negocio (art. 44 ET, sin despido); si
+            # no, despido objetivo por el cierre (20 días por año, art. 52.c ET). Lo que se le
+            # debía va con sus finiquitos, antes que nada (art. 32 ET).
+            severances = (
+                0
+                if traspaso
+                else sum(
+                    staff.severance(e, "objetivo")
+                    for e in business.staff
+                    if e["contract"] != "b" and not staff.in_trial(e, today)
+                )
+            )
+            owed_staff = business.wage_debt + severances
+            business.roll_over(today, week_of(today))
+            if severances:
+                business.add("despidos", -severances)
+            finiquitos = (
+                (BusinessCost("negocio:plantilla:finiquitos", gone=owed_staff),)
+                if owed_staff
+                else ()
+            )
+            team = len(business.staff)
             if traspaso:
                 stock, proceeds = offer.stock, offer.book + offer.goodwill
                 gain = offer.goodwill
@@ -1900,11 +2528,13 @@ class BusinessService:
                 # El último Impuesto sobre Sociedades: lo de la semana hasta hoy, con la venta.
                 offset = info["offset"] if info["offset_week"] == business.week else None
                 base = sl.tax_base(business.week_totals, offset) + stock + proceeds - offer.book
+                # La RIC que queda (sin invertir o sin mantener lo invertido) se integra.
+                base += sl.ric_close(info)
                 sales = business.week_totals.get("ventas", 0) + stock
                 result = sl.settle_week(info, base, weekly_sales=sales)
                 hacienda = info["tax_debt"] + result["tax"]
                 owed = business.rent_debt - forfeit
-                bills = []
+                bills = list(finiquitos)
                 if hacienda:
                     bills.append(
                         BusinessCost(
@@ -1934,6 +2564,9 @@ class BusinessService:
                                 connection, guild_id, business.id, now, paid
                             )
                         )
+                    # Lo que no llega de los finiquitos (los primeros: solo si no llega para
+                    # nada) lo paga el FOGASA.
+                    fogasa.append(max(0, unpaid - (sum(b.total for b in bills) - owed_staff)))
 
                 limit = (
                     owed + hacienda
@@ -1942,7 +2575,7 @@ class BusinessService:
                 )
                 closing = Closing(
                     business, refund, forfeit, 0, traspaso, stock, proceeds, reason=reason,
-                    company=True, corporate_tax=result["tax"],
+                    company=True, corporate_tax=result["tax"], staff=team, severance=severances,
                 )  # fmt: skip
                 move = BusinessMove(
                     user_id=user_id,
@@ -1966,8 +2599,13 @@ class BusinessService:
                     housing.business_loans_to_owner_in(connection, guild_id, business.id, now)
                 )
             closing = Closing(
-                business, refund, forfeit, 0, traspaso, stock, proceeds, reason=reason
-            )
+                business, refund, forfeit, 0, traspaso, stock, proceeds, reason=reason,
+                staff=team, severance=severances,
+            )  # fmt: skip
+
+            def settle_staff(connection: sqlite3.Connection, unpaid: int) -> None:
+                fogasa.append(unpaid)
+
             move = BusinessMove(
                 user_id=user_id,
                 refund=refund,
@@ -1976,6 +2614,8 @@ class BusinessService:
                 sold_cost=offer.stock,
                 proceeds=proceeds,
                 gain=gain,
+                bills=finiquitos,
+                settle=settle_staff,
             )
             return closing, move
 
@@ -1999,6 +2639,9 @@ class BusinessService:
             closing.corporate_tax,
             bank_paid,
             bank_moved,
+            closing.staff,
+            closing.severance,
+            fogasa[0] if fogasa else 0,
         )
 
     # -- Para `saldo` -------------------------------------------------------------------
@@ -2015,6 +2658,196 @@ class BusinessService:
         if business.is_company:
             return 0, 0, fee  # el local lo paga la caja de la sociedad, no tu monedero
         return nightly_bill(business).total, business.rent_debt, fee
+
+
+def _tell_ric(business: Business, week: dict[str, Any]) -> None:
+    """Los avisos de la RIC del domingo: lo que se dota y lo que venció sin invertir."""
+    if week.get("integrated"):
+        business.tell(
+            f"🌴 {week['integrated']} Y$ de la RIC no se invirtieron en 3 semanas: tributan en "
+            "el Sociedades de esta semana (art. 27.16 de la Ley 19/1994)."
+        )
+    if week.get("ric"):
+        business.tell(
+            f"🌴 {week['ric']} Y$ a la RIC: no pagan Sociedades si los inviertes en mejoras o en "
+            f"la obra de un local antes del {sl.ric_due(business.company) or 'plazo'}."
+        )
+
+
+def _zec_week(business: Business) -> tuple[int, str] | None:
+    """`(empleos, isla)` si la sociedad tributa esta semana en la ZEC, o `None`.
+
+    Inscrita, tiene que mantener el empleo mínimo (art. 31.2.e de la Ley 19/1994): una semana
+    sin él tributa al tipo de siempre y, con `ZEC_MISSES` seguidas, se la da de baja.
+    """
+    info = business.company
+    if not info.get("zec"):
+        return None
+    island = business.barrio_info.island
+    jobs = sum(1 for e in business.staff if e["contract"] != "b")
+    if jobs >= sl.zec_jobs(island):
+        info["zec_misses"] = 0
+        return jobs, island
+    info["zec_misses"] = info.get("zec_misses", 0) + 1
+    if info["zec_misses"] >= sl.ZEC_MISSES:
+        info["zec"] = False
+        business.tell(
+            "🏝️ Dos semanas sin el empleo mínimo: tu sociedad sale del registro de la ZEC y "
+            "vuelve al tipo de siempre."
+        )
+    else:
+        business.tell(
+            f"🏝️ Esta semana no llegaste a {sl.zec_jobs(island)} empleos con alta: Sociedades al "
+            "tipo de siempre. Una semana más así y sales de la ZEC."
+        )
+    return None
+
+
+def _works(employee: dict[str, Any], day: str, franja: int) -> bool:
+    """Si a `employee` le toca la franja `franja` del día `day` (ISO): es de su turno, ya había
+    empezado y, si entró ese día, la franja no había acabado al contratarle."""
+    if franja not in staff.franjas(employee) or employee["start"] > day:
+        return False
+    return employee["start"] != day or franja >= employee.get("from_franja", 0)
+
+
+def _apply_turn(business: Business, summary: TurnSummary, seed: str, day: date) -> list[Any]:
+    """Lo que deja un turno en el negocio (del dueño o de un empleado): el stock que sale, la
+    reputación, la fidelidad de los habituales, las ventas de la semana y las reseñas.
+
+    Las reseñas llevan un azar propio del turno (`seed`): no gastan el de las colas.
+    """
+    for key, units in summary.units.items():
+        business.stock[key] = max(0, business.stock.get(key, 0) - units)
+    change = turn_reputation(
+        business.sector_info, summary.reputation, summary.served, price_reputation(business)
+    )
+    business.reputation = max(0.0, min(REPUTATION_MAX, business.reputation + change))
+    business.regulars = apply_loyalty(business.regulars, summary.loyalty)
+    business.add("ventas", summary.sales)
+    rng = random.Random(f"{business.seed}:{seed}")
+    left = [r for o in summary.outcomes if (r := review_of(o, rng)) is not None]
+    add_reviews(business, day, left)
+    return left
+
+
+def _tail_missing(groups: list[tuple[str, BusinessCost]], unpaid: int) -> dict[str, int]:
+    """Lo que no llegó de cada grupo de recibos: los recibos se cobran por orden, así que lo
+    que falta es de los últimos."""
+    missing: dict[str, int] = {}
+    for group, cost in reversed(groups):
+        take = min(unpaid, max(0, cost.total))
+        if take:
+            missing[group] = missing.get(group, 0) + take
+            unpaid -= take
+    return missing
+
+
+def _settle_staff(
+    business: Business,
+    pay: Payroll,
+    missing: dict[str, int],
+    day: date,
+    caught: tuple[int, int] | None,
+) -> list[str]:
+    """Lo que pasa con la plantilla al cerrar la noche, ya cobrada. Devuelve lo que ha pasado.
+
+    - Lo pagado de los atrasos baja lo que se le debe a cada uno, del primero al último.
+    - Lo que no llegó de las nóminas es de los últimos de la plantilla: se les debe.
+    - El humor de cada uno (`business_staff.night_mood`), sus cursos y su período de prueba.
+    - Quien acaba el contrato temporal (12 días por año, art. 49.1.c ET) o se va: quemado, o
+      sin cobrar con la indemnización del improcedente (art. 50 ET). Lo que se les debe va a
+      los atrasos, que se pagan los primeros cada noche.
+    - Si pasó la Inspección, quien estaba en B pasa a fijo.
+    """
+    events: list[str] = []
+    today = day.isoformat()
+    company = business.is_company
+    back = business.wage_debt - missing.get("atrasos", 0)
+    business.wage_debt = missing.get("atrasos", 0)
+    for employee in business.staff:
+        take = min(employee["unpaid"], back)
+        employee["unpaid"] -= take
+        back -= take
+    short = {"nominas": missing.get("nominas", 0), "negro": missing.get("negro", 0)}
+    for employee, slip in reversed(pay.slips):
+        group = "negro" if employee["contract"] == "b" else "nominas"
+        take = min(short[group], slip.net)
+        short[group] -= take
+        if take:
+            employee["unpaid"] += take
+            employee["unpaid_days"] = [*employee["unpaid_days"][-6:], today]
+            business.wage_debt += take
+            events.append("sin_cobrar")
+        elif employee["contract"] == "b":
+            employee["b_paid"] = employee.get("b_paid", 0) + slip.gross
+        employee["nights"] += 1
+        grades = employee["grades"] if employee["grades_day"] == today else []
+        staff.night_mood(employee, paid=not take, grades=grades)
+    if caught is not None:
+        fine, arrears = caught
+        workers = staff.unregistered(business, day)
+        for employee in workers:
+            staff.regularize(employee)
+        business.tell(
+            f"🕵️ Anoche pasó la Inspección de Trabajo y pilló a {len(workers)} sin dar de alta: "
+            f"multa de {fine} Y$ y {arrears} Y$ de cuotas atrasadas con recargo. Ahora son "
+            "fijos."
+        )
+        events.append("inspeccion")
+    keep = []
+    for employee in business.staff:
+        name = employee["name"]
+        if employee["course"]:
+            key = employee["course"]
+            employee["skills"][key] = min(100.0, employee["skills"][key] + staff.COURSE_POINTS)
+            employee["course"] = ""
+            business.tell(
+                f"🎓 {name} acabó el curso: +{staff.COURSE_POINTS} de "
+                f"{staff.SKILL_NAMES[key].lower()}."
+            )
+            events.append("curso")
+        if employee["trial_until"] == today:
+            business.tell(f"✅ {name} ha superado el período de prueba.")
+            events.append("prueba_superada")
+        if employee["until"] == today:
+            amount = staff.severance(employee, "fin")
+            business.wage_debt += amount
+            if company:
+                business.add("despidos", -amount)
+            business.tell(
+                f"📄 Se acabó el contrato temporal de {name}: le tocan {amount} Y$ (12 días por "
+                "año, art. 49.1.c ET), que se pagan la noche que viene."
+            )
+            events.append("fin_contrato")
+            continue
+        if staff.quits(employee, business.seed, day):
+            if staff.unpaid_recent(employee, day) >= staff.UNPAID_NIGHTS_TO_LEAVE:
+                amount = (
+                    0 if employee["contract"] == "b" else staff.severance(employee, "improcedente")
+                )
+                business.wage_debt += amount
+                if company and amount:
+                    business.add("despidos", -amount)
+                business.tell(
+                    f"⚖️ {name} se va: no le pagas. Pide lo que se le debe"
+                    + (
+                        f" y la indemnización del despido improcedente, {amount} Y$ (art. 50 ET)."
+                        if amount
+                        else "."
+                    )
+                )
+                events.append("art50")
+            else:
+                business.tell(f"👋 {name} se ha despedido: estaba quemado.")
+                events.append("dimision")
+            if employee["contract"] == "b":
+                # Se va enfadado y sin contrato: lo cuenta. La Inspección es más probable.
+                business.tipoff = (day + timedelta(days=1)).isoformat()
+            continue
+        keep.append(employee)
+    business.staff = keep
+    return events
 
 
 def _opening_payments(quote: OpeningQuote) -> tuple[BusinessCost, ...]:

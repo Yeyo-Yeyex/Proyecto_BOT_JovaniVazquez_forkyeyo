@@ -1082,6 +1082,81 @@ async def press_business_company_money(client: BotClient, owner: MagicMock) -> C
     return click
 
 
+async def staffed_panel(client: BotClient, owner: MagicMock):  # noqa: ANN201
+    """Panel del negocio con una persona contratada y elegida en 👥 Plantilla."""
+    panel = await business_panel(client, owner)
+    service = client.get_cog("Negocio").service
+    business = await service.business(GUILD_ID, owner.id)
+    candidate = service.candidates(business)[0]
+    jornada = 2 if candidate["part_time"] else 4
+    _business, employee = await service.hire(
+        GUILD_ID, owner.id, candidate["key"], contract="indefinido", jornada=jornada,
+        shift="manana",
+    )  # fmt: skip
+    panel.employee = employee["id"]
+    return panel
+
+
+async def press_business_staff(client: BotClient, owner: MagicMock) -> Click:
+    panel = await business_panel(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._plantilla(interaction)
+
+    return click
+
+
+async def press_business_hire(client: BotClient, owner: MagicMock) -> Click:
+    panel = await business_panel(client, owner)
+    service = client.get_cog("Negocio").service
+    business = await service.business(GUILD_ID, owner.id)
+    candidate = service.candidates(business)[0]
+    panel.candidate = candidate["key"]
+    panel.offer.update(jornada=2 if candidate["part_time"] else 4)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._hire(interaction)
+
+    return click
+
+
+async def press_business_fire(client: BotClient, owner: MagicMock) -> Click:
+    panel = await staffed_panel(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._fire("prueba")(interaction)
+
+    return click
+
+
+async def press_business_course(client: BotClient, owner: MagicMock) -> Click:
+    panel = await staffed_panel(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._course(interaction, "acierto")
+
+    return click
+
+
+async def press_business_raise(client: BotClient, owner: MagicMock) -> Click:
+    panel = await staffed_panel(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._raise(interaction, "0.05")
+
+    return click
+
+
+async def press_business_ric(client: BotClient, owner: MagicMock) -> Click:
+    panel = await business_panel(client, owner)
+    await client.get_cog("Negocio").service.constitute(GUILD_ID, owner.id, 100)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._ric(interaction, "0.5")
+
+    return click
+
+
 async def press_pala_hire(client: BotClient, owner: MagicMock) -> Click:
     panel = module_of(client, "Trabajo").PalaPanel(
         client.get_cog("Trabajo"), guild_id=GUILD_ID, owner=owner
@@ -2641,6 +2716,12 @@ CASES: dict[str, Press] = {
     "negocio: trasladarse": press_business_move,
     "negocio: constituir la sociedad": press_business_constitute,
     "negocio: aportar a la sociedad": press_business_company_money,
+    "negocio: abrir la plantilla": press_business_staff,
+    "negocio: contratar": press_business_hire,
+    "negocio: despedir": press_business_fire,
+    "negocio: pagar un curso": press_business_course,
+    "negocio: subir el sueldo": press_business_raise,
+    "negocio: dotar la RIC": press_business_ric,
     "tienda: comprar": press_checkout,
     "tienda: ver la ficha": press_shop_sheet,
     "tienda: pagar en la ficha": press_shop_sheet_pay,

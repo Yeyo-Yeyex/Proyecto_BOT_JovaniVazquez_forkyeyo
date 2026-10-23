@@ -7,7 +7,9 @@ prueba con los cogs cargados como en producción, no montados a mano.
 
 from __future__ import annotations
 
+import asyncio
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -19,7 +21,7 @@ from discord.ext import commands
 from interaction_fakes import fake_interaction
 
 from bot.app import BotClient
-from bot.cogs.deploy import DEPLOYERS
+from bot.cogs.deploy import DEPLOYERS, IDLE_SECONDS, SEEN_ATTRIBUTE, live_views
 from bot.cogs.errors import (
     BLOCKED_ERROR,
     CLOSING_CLICK,
@@ -27,6 +29,7 @@ from bot.cogs.errors import (
     RESTART_ERROR,
     describe_command_error,
 )
+from bot.services.telemetry import LISTENER_ITEM
 
 GUILD_ID = 10
 #: Solo Yeyo y Dani bloquean, como con `reinicio`.
@@ -273,5 +276,89 @@ async def test_apagandose_los_botones_no_responden(tmp_path: Path) -> None:
         button.callback.assert_not_awaited()
         pressed.response.send_message.assert_awaited_once_with(CLOSING_CLICK, ephemeral=True)
         view.stop()
+    finally:
+        await client.close()
+
+
+class ListenerView(ui.View):
+    """Como el panel de `pala`: rechaza los botones del minijuego y los contesta su listener."""
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return False
+
+
+def listener_button(view: ui.View) -> ui.Button:
+    button: ui.Button = ui.Button(label="✅ Memorizado", custom_id="pala:1:0:0")
+    setattr(button, LISTENER_ITEM, True)
+    view.add_item(button)
+    return button
+
+
+async def answer_later(interaction: discord.Interaction) -> None:
+    """El listener del minijuego, que contesta un poco después que la vista."""
+    await asyncio.sleep(0.2)
+    await interaction.response.edit_message(content="siguiente ronda")
+
+
+@pytest.mark.parametrize("closing", [False, True])
+async def test_el_aviso_del_reinicio_no_le_quita_la_respuesta_al_minijuego(
+    tmp_path: Path, closing: bool
+) -> None:
+    client = await load_bot(tmp_path)
+    deploy = await load_deploy(client)
+    try:
+        deploy.restarting = True  # type: ignore[union-attr]
+        deploy.closing = closing  # type: ignore[union-attr]
+        view = ListenerView()
+        button = listener_button(view)
+        pressed = click(client)
+        listener = asyncio.create_task(answer_later(pressed))
+        task = view._dispatch_item(button, pressed)
+        assert task is not None
+        await task
+        await listener
+        pressed.response.edit_message.assert_awaited_once()
+        pressed.response.send_message.assert_not_awaited()
+        aviso = CLOSING_CLICK if closing else RESTART_CLICK
+        pressed.followup.send.assert_awaited_once_with(aviso, ephemeral=True)
+        view.stop()
+    finally:
+        await client.close()
+
+
+async def test_el_reinicio_espera_a_las_vistas_que_se_usan_y_no_a_las_abandonadas(
+    tmp_path: Path,
+) -> None:
+    client = await load_bot(tmp_path)
+    deploy = await load_deploy(client)
+    try:
+        assert deploy.in_progress() == 0  # type: ignore[union-attr]
+        # Al mandarla (o editar su mensaje) discord.py la guarda: está activa.
+        view = ui.View(timeout=300)
+        button: ui.Button = ui.Button(label="pedir carta", custom_id="bj:pedir")
+        button.callback = AsyncMock()  # type: ignore[method-assign]
+        view.add_item(button)
+        client._connection.store_view(view, 1234)
+        assert view in live_views(client)
+        assert deploy.in_progress() == 1  # type: ignore[union-attr]
+
+        # Nadie la toca en un rato: ya no hace esperar.
+        setattr(view, SEEN_ATTRIBUTE, time.monotonic() - IDLE_SECONDS - 1)
+        assert deploy.in_progress() == 0  # type: ignore[union-attr]
+
+        # Un clic la vuelve a contar, también una mesa sin caducidad.
+        task = view._dispatch_item(button, click(client))
+        assert task is not None
+        await task
+        assert deploy.in_progress() == 1  # type: ignore[union-attr]
+        table = ui.View(timeout=None)
+        table.add_item(ui.Button(label="apostar", custom_id="mesa:apostar"))
+        client._connection.store_view(table, 5678)
+        assert deploy.in_progress() == 2  # type: ignore[union-attr]
+
+        # La que termina deja de contar.
+        view.stop()
+        table.stop()
+        assert deploy.in_progress() == 0  # type: ignore[union-attr]
     finally:
         await client.close()
