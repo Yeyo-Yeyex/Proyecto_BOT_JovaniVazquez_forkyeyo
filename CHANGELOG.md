@@ -8,6 +8,12 @@ criterio.
 
 ## 9.x
 
+### 9.10.0 · 2026-10-23
+
+- Patrimonio: vuelve `patrimonio` (también `.patrimonio @miembro`) y cada piso sale con la parte que tienes según tus participaciones
+- Saldo: `saldo @miembro` enseña todo lo pendiente de ese miembro, igual que si lo pidiera él
+- Pala: en los minijuegos de memoria (como los plenos de Bruselas), el reloj se para hasta 5 segundos mientras memorizas cada secuencia
+
 ### 9.9.0 · 2026-10-23
 
 - Reinicios: antes de reiniciarse, el bot espera a que acabe lo que hay a medias (turnos de `pala` y del negocio, partidas y paneles en uso), como mucho 15 minutos; también en la actualización de las 5:00
