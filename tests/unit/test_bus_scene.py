@@ -123,6 +123,23 @@ def gif_frames(data: bytes | None) -> list[Image.Image]:
     return [frame.convert("RGB").copy() for frame in ImageSequence.Iterator(gif)]
 
 
+def common_frames(data: bytes | None, common_ms: int) -> int:
+    """Cuántos fotogramas del GIF ocupan sus primeros `common_ms` milisegundos.
+
+    No tiene por qué ser uno por estado: el GIF junta con el anterior un fotograma que
+    no cambia nada (la carta ya posada) y suma su tiempo.
+    """
+    assert data is not None
+    elapsed = count = 0
+    for frame in ImageSequence.Iterator(Image.open(io.BytesIO(data))):
+        if elapsed >= common_ms:
+            break
+        elapsed += frame.info["duration"]
+        count += 1
+    assert elapsed == common_ms
+    return count
+
+
 def difference(a: Image.Image, b: Image.Image) -> float:
     return sum(ImageStat.Stat(ImageChops.difference(a, b)).mean) / 3
 
@@ -189,9 +206,12 @@ async def test_con_navegador_reveal_da_dos_gif_cuyo_final_es_su_png(
         assert difference(frames[-1], last) < 12
         finals.append(last)
     assert ImageChops.difference(*finals).getbbox() is not None
-    # El tramo común es el mismo gane o pierda.
+    # El tramo común es el mismo gane o pierda: dura lo mismo y se ve igual.
+    common_ms = sum(int(state["ms"]) for state in common)
+    shared = common_frames(reveal.win.gif, common_ms)
+    assert shared == common_frames(reveal.lose.gif, common_ms) > 1
     win_frames, lose_frames = gif_frames(reveal.win.gif), gif_frames(reveal.lose.gif)
-    for first, second in zip(win_frames[: len(common)], lose_frames[: len(common)], strict=True):
+    for first, second in zip(win_frames[:shared], lose_frames[:shared], strict=True):
         assert ImageChops.difference(first, second).getbbox() is None
 
 
