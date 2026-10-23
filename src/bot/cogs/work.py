@@ -218,8 +218,9 @@ HOW_TO = {
     Mechanic.DIG: "Pulsa la casilla con una marca segura del plano. La roca no suma y "
     "romper algo resta. Ojo: los mirones no siempre aciertan.",
     Mechanic.SPOT: "Lee la lista y pulsa el que no encaja.",
-    Mechanic.MEMORY: "Memoriza la secuencia, pulsa ✅ Memorizado y repítela en el mismo "
-    "orden. Puedes pulsar seguido: no hace falta esperar a que se actualice el panel.",
+    Mechanic.MEMORY: "Memoriza la secuencia (el reloj se para hasta 5 segundos), pulsa ✅ "
+    "Memorizado y repítela en el mismo orden. Puedes pulsar seguido: no hace falta esperar "
+    "a que se actualice el panel.",
     Mechanic.DIALOGUE: "Lee la situación y elige la mejor respuesta.",
     Mechanic.SORT: "Lee el papel y mándalo a su sitio con el botón que toque.",
     Mechanic.CALC: "Haz la cuenta y elige la mejor oferta. La buena gana por goleada.",
@@ -2088,8 +2089,10 @@ class PalaPanel(ui.LayoutView):
 
     async def _deadline(self, shift: Shift) -> None:
         """Cierra el turno al acabarse el tiempo aunque nadie pulse nada."""
-        delay = shift.game.deadline + GRACE_SECONDS - self.service.now()
-        await asyncio.sleep(max(0.0, delay))
+        # En memoria el plazo se mueve (el reloj se para al memorizar): se vuelve a mirar
+        # cada segundo como mucho.
+        while (delay := shift.game.deadline + GRACE_SECONDS - self.service.now()) > 0:
+            await asyncio.sleep(min(delay, 1.0))
         if self.shift is shift:
             await self._finish(None)
 

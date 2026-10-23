@@ -860,8 +860,6 @@ async def test_saldo_ensena_la_renta_a_pagar_el_segundo_plazo_y_la_deuda(tmp_pat
     kinds = {i.kind: i for i in await cog.pending_for(GUILD, USER)}
     assert kinds["renta_due"].amount == 500 and kinds["renta_due"].when == 7e8
     assert kinds["renta_debt"].amount == 300
-    # En el saldo de otro, solo la deuda (lo que ya enseña `perfil`).
-    assert [i.kind for i in await cog.pending_for(GUILD, USER, own=False)] == ["renta_debt"]
 
     with service.repository._transaction() as connection:  # noqa: SLF001
         connection.execute("DELETE FROM economy_irpf_returns")

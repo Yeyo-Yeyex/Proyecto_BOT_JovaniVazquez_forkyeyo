@@ -268,9 +268,7 @@ async def remind(bot: commands.Bot, interaction: discord.Interaction) -> None:
         await cog.remind(interaction)
 
 
-async def pending(
-    bot: commands.Bot, guild_id: int, user_id: int, *, own: bool = True
-) -> list[Pending]:
+async def pending(bot: commands.Bot, guild_id: int, user_id: int) -> list[Pending]:
     """Lo pendiente con Hacienda (para `saldo`, ver `Renta.pending_for`), o `[]`.
 
     Nunca lanza: si algo falla se registra y `saldo` sale sin estas líneas.
@@ -278,7 +276,7 @@ async def pending(
     if (cog := find_cog(bot, Renta)) is None:
         return []
     try:
-        return await cog.pending_for(guild_id, user_id, own=own)
+        return await cog.pending_for(guild_id, user_id)
     except Exception:
         logger.exception("No se pudo consultar lo pendiente de la renta")
         return []
@@ -533,15 +531,12 @@ class Renta(commands.Cog):
             lines.append(second_installment_hint(paid, unpaid))
         return lines
 
-    async def pending_for(self, guild_id: int, user_id: int, *, own: bool = True) -> list[Pending]:
+    async def pending_for(self, guild_id: int, user_id: int) -> list[Pending]:
         """Lo pendiente con Hacienda, para `saldo`: deuda, plazos de la Renta y devoluciones.
 
         Si la última declaración está sin abrir, sale sin cifra y sin las devoluciones:
         el sobre se abre en `renta`. El plazo que se dice vale para cualquier resultado
         («si sale a pagar»), así que tampoco adelanta nada.
-
-        Args:
-            own: `False` en el saldo de otro: solo la deuda, que ya enseña `perfil`.
         """
         items = []
         if debt := await self.economy.tax_debt(guild_id, user_id):
@@ -553,8 +548,6 @@ class Renta(commands.Cog):
                     debt,
                 )
             )  # fmt: skip
-        if not own:
-            return items
         now = self.economy.now()
         statement = await self.economy.irpf_statement(guild_id, user_id)
         if statement is not None and not statement.opened:
