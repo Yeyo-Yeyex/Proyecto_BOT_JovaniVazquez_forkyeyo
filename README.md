@@ -1067,9 +1067,10 @@ un token inválido el contenedor se reiniciará en bucle: revisa el log.
 tenga que reconstruir la imagen. Programado a las 5:00, cada noche:
 
 - Si no hay commits nuevos, no hace nada y el bot no se reinicia.
-- Si los hay, construye la imagen nueva con el bot viejo aún en marcha y
-  después lo reinicia (unos segundos sin bot; las partidas a medias se cierran
-  como en cualquier reinicio).
+- Si los hay, construye la imagen nueva con el bot viejo aún en marcha (el bot
+  avisa a quien use un comando de que se va a reiniciar), espera a que acabe lo
+  que haya a medias (como mucho 15 minutos, `ESPERA_PARTIDAS`) y lo reinicia
+  (unos segundos sin bot). Ver «Esperar a las partidas» más abajo.
 - Si la imagen no compila, el bot viejo sigue funcionando.
 - Si el bot nuevo se cae o entra en bucle en los primeros 90 s (un PR roto),
   vuelve solo a la versión anterior y no reintenta ese commit hasta que llegue
@@ -1117,11 +1118,28 @@ cron de `actualizar.sh --solicitud` hace el trabajo. Al acabar, el bot publica
 en el mismo canal si ha ido bien o qué ha fallado. Si en un par de minutos no
 pasa nada, falta la línea de `--solicitud` en el crontab.
 
-Mientras espera, el bot está en modo reinicio: no corre ningún comando salvo
-`reinicio` y `bloquear`, y los paneles abiertos siguen funcionando con un aviso para
-terminarlos. Si el script contesta sin reiniciar o la petición caduca (30 min), vuelve
-a abrir. Al apagarse (por `reinicio`, de noche o a mano) tampoco atiende botones
-mientras los juegos cierran sus partidas.
+#### Esperar a las partidas
+
+Un reinicio (por `reinicio` o el de las 5:00) no corta lo que hay a medias:
+
+1. Mientras el NAS construye la imagen, todo funciona y el bot avisa una vez a cada
+   uno que use un comando de que en unos minutos se reinicia (`aviso.json`).
+2. Con la imagen lista, el script deja `preparar.json` y espera. El bot entra en modo
+   reinicio: no corre ningún comando salvo `reinicio` y `bloquear`, y los paneles
+   abiertos siguen funcionando con un aviso para terminarlos. Espera a los turnos en
+   marcha (`pala`, el negocio, `banco`, `pisos`, el Rastro) y a cualquier panel, mesa
+   o partida que alguien haya tocado en los últimos 2 minutos. Cuando no queda nada,
+   contesta `listo.json` y el script reinicia. Si en 15 minutos (`ESPERA_PARTIDAS`,
+   en segundos) no ha acabado, reinicia igual.
+3. Al apagarse (también a mano en el NAS) tampoco atiende botones mientras los juegos
+   cierran sus partidas.
+
+El script solo espera si el bot dejó `sabe_esperar` en el buzón al arrancar y el
+contenedor está en marcha: un bot de antes de la 9.9.0 no contestaría nunca. Si el
+script contesta sin reiniciar (no pudo compilar) o las notas caducan, el bot vuelve a
+abrir. Lo que sigue a medias al reiniciar (lo que llevaba más de 2 minutos parado o lo
+que no acabó en 15) se cierra como hasta ahora, cada juego a su manera (los turnos de
+`pala` y del negocio se cobran).
 
 `bloquear <comando>` (o `/bloquear`) es su freno de emergencia, con los mismos dos IDs y
 tampoco sale en `ayuda`: mientras se arregla un fallo o un exploit, nadie puede usar ese
