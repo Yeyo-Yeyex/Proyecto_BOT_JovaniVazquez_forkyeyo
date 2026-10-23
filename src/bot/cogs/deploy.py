@@ -7,14 +7,28 @@ lanzado cada minuto por cron, descarga `main`, reconstruye y reinicia. Cuando
 el script termina, este cog publica el resultado en el canal donde se pidió,
 lo haga el bot viejo (si no hubo reinicio) o el nuevo.
 
-Modo reinicio: desde que se pide `reinicio` hasta que el bot se apaga
-(`restarting`), no corre ningún comando nuevo salvo `reinicio` y `bloquear`, y la
-primera vez que alguien pulsa un botón de un panel abierto se le avisa de que
-termine lo que tenga. Si el NAS contesta sin reiniciar (no pudo compilar) o la
-petición caduca, se vuelve a abrir. Al apagarse por lo que sea, también de noche
-o a mano (`closing`, lo pone `BotClient.close`), tampoco se atienden botones:
-las partidas se están cerrando. Los controles están en `bot.cogs.admin`, junto a
-los de `bloquear`.
+Un reinicio espera a que acabe lo que hay a medias (protocolo en
+`bot.services.deploy`), tanto el de `reinicio` como el despliegue de noche:
+
+1. Anunciado (`announced`): el NAS está construyendo la imagen nueva. Todo sigue
+   abierto y a quien use un comando se le avisa una vez de que en unos minutos
+   habrá reinicio (`RESTART_SOON`).
+2. Esperando (`restarting`): la imagen está lista y el NAS pide permiso. No corre
+   ningún comando nuevo salvo `reinicio` y `bloquear`, los paneles abiertos siguen
+   y la primera vez que alguien pulsa uno se le avisa de que termine. En cuanto no
+   queda nada a medias (`in_progress`) se contesta `listo` y el NAS reinicia.
+3. Apagándose (`closing`, lo pone `BotClient.close`, también en un reinicio a mano
+   o por falta de memoria): tampoco se atienden botones, las partidas se cierran.
+
+Si el NAS contesta sin reiniciar (no pudo compilar) o las notas caducan, se vuelve
+a abrir. Los controles de los comandos y los botones están en `bot.cogs.admin`,
+junto a los de `bloquear`.
+
+A medias cuenta: un turno en marcha de los cogs que lo apuntan en `working`
+(`pala`, el negocio, `banco`, `pisos`, el Rastro) y cualquier vista (panel, mesa,
+partida) que alguien haya tocado o el bot haya cambiado en los últimos
+`IDLE_SECONDS`. Una vista abandonada no hace esperar: caduca o se cierra al
+apagar, como siempre.
 
 Novedades: cada vez que el NAS despliega commits nuevos (de noche o por
 `reinicio`), deja en el buzón la lista de lo que entró en `main`: PR y
@@ -33,17 +47,23 @@ de la Biblia, sección "Logros"). No sale en `ayuda`.
 
 from __future__ import annotations
 
+import contextlib
+import functools
 import logging
 import re
-from collections.abc import Callable
+import time
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from typing import Any
 
 import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
+from discord.ui.view import BaseView, ViewStore
 
 from bot import __version__
+from bot.cogs.errors import RESTART_SOON
 from bot.repositories.news import NewsSettings
 from bot.services.changelog import (
     Fetch,
@@ -61,8 +81,84 @@ logger = logging.getLogger(__name__)
 #: Quién puede pedir el reinicio: Yeyo y Dani (el que hostea el bot en su NAS).
 DEPLOYERS: frozenset[int] = frozenset({403646452414545921, 498473711687434241})
 
-#: Cada cuánto se mira si el NAS ha dejado el resultado o novedades.
+#: Cada cuánto se mira si el NAS ha dejado el resultado, novedades o una petición.
 POLL_SECONDS = 15
+#: Una vista que nadie toca ni cambia en este tiempo ya no hace esperar al reinicio.
+IDLE_SECONDS = 120
+#: Comandos que no avisan del reinicio (son los que lo manejan).
+QUIET_COMMANDS = frozenset({"reinicio", "bloquear"})
+#: Atributo con el último momento (`time.monotonic`) en que se tocó o cambió una vista.
+SEEN_ATTRIBUTE = "_restart_seen"
+#: Marca de los métodos de discord.py ya envueltos por `install_activity`.
+_ACTIVITY_WRAPPED = "_restart_activity_wrapped"
+
+
+def _seen(original: Callable[..., Any]) -> Callable[..., Any]:
+    """Apunta en la vista que acaba de estar activa (`SEEN_ATTRIBUTE`)."""
+
+    @functools.wraps(original)
+    def add_view(self: ViewStore, view: BaseView, *args: Any, **kwargs: Any) -> Any:
+        setattr(view, SEEN_ATTRIBUTE, time.monotonic())
+        return original(self, view, *args, **kwargs)
+
+    return add_view
+
+
+def _clicked(original: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
+    @functools.wraps(original)
+    async def run(self: BaseView, *args: Any) -> Any:
+        setattr(self, SEEN_ATTRIBUTE, time.monotonic())
+        return await original(self, *args)
+
+    return run
+
+
+def install_activity() -> None:
+    """Apunta cuándo se usó por última vez cada vista, una sola vez por proceso.
+
+    Una vista está activa al guardarla discord.py (al enviarla o editar su mensaje:
+    `ViewStore.add_view`) y al pulsarla (`BaseView._scheduled_task`, también los
+    botones del minijuego de `pala` y del negocio, que la vista rechaza y atiende
+    su listener). Son internos de discord.py: si cambian, falla
+    `tests/integration/test_bloquear.py`.
+    """
+    for owner, name, wrapper in (
+        (ViewStore, "add_view", _seen),
+        (BaseView, "_scheduled_task", _clicked),
+    ):
+        original = owner.__dict__[name]
+        if not getattr(original, _ACTIVITY_WRAPPED, False):
+            wrapped = wrapper(original)
+            setattr(wrapped, _ACTIVITY_WRAPPED, True)
+            setattr(owner, name, wrapped)
+
+
+def live_views(bot: object) -> list[BaseView]:
+    """Las vistas que atiende ahora discord.py (sin las terminadas)."""
+    store = getattr(getattr(bot, "_connection", None), "_view_store", None)
+    if not isinstance(store, ViewStore):
+        return []
+    views: dict[int, BaseView] = {id(v): v for v in store._synced_message_views.values()}
+    for items in store._views.values():
+        for item in items.values():
+            if item.view is not None:
+                views[id(item.view)] = item.view
+    return [view for view in views.values() if not view.is_finished()]
+
+
+def in_progress(bot: object, *, idle: float = IDLE_SECONDS) -> int:
+    """Cuántas cosas hay a medias que un reinicio debe esperar (ver el módulo)."""
+    now = time.monotonic()
+    busy = 0
+    for cog in getattr(bot, "cogs", {}).values():
+        working = getattr(cog, "working", None)
+        if isinstance(working, set):
+            busy += len(working)
+    for view in live_views(bot):
+        if now - getattr(view, SEEN_ATTRIBUTE, float("-inf")) < idle:
+            busy += 1
+    return busy
+
 
 NEWS_CHANNEL_NAME = "chat-general"
 NEWS_COLOR = discord.Color.from_rgb(200, 160, 60)
@@ -270,15 +366,21 @@ class Deploy(commands.Cog, name="Despliegue"):
         self._clock = clock or (lambda: datetime.now(UTC))
         #: Cómo se piden los PR; sin él, a la API de GitHub (las pruebas lo cambian).
         self._fetch = fetch
-        #: Reinicio pedido y aún sin hacer: no se abren comandos nuevos.
+        #: El NAS va a desplegar: se avisa a quien use un comando, pero todo sigue.
+        self.announced = False
+        #: El NAS espera a que acabe lo que hay a medias: no se abren comandos nuevos.
         self.restarting = False
         #: El bot ya se está apagando: tampoco se atienden botones.
         self.closing = False
         #: Quién ha visto ya el aviso del reinicio al pulsar un botón.
         self.warned: set[int] = set()
+        #: Quién ha visto ya el aviso del reinicio al usar un comando.
+        self.told: set[int] = set()
 
     async def cog_load(self) -> None:
         self.bot.add_dynamic_items(OldNewsButton)
+        install_activity()
+        self.mailbox.mark_can_wait()
         self._poll.start()
 
     async def cog_unload(self) -> None:
@@ -316,13 +418,12 @@ class Deploy(commands.Cog, name="Despliegue"):
             )
             return
         logger.info("Reinicio pedido por %s", member.id)
-        self.restarting = True
-        self.warned.clear()
+        self.announced = True
         await responder.send(
-            "🔁 Pedido. En menos de un minuto el NAS baja lo último de GitHub, "
-            "reconstruye y me reinicia (unos minutos). Aviso aquí cuando acabe. "
-            "Hasta entonces no se abren partidas ni paneles nuevos; lo que ya esté "
-            "abierto se puede terminar.",
+            "🔁 Pedido. En menos de un minuto el NAS baja lo último de GitHub y construye "
+            "la versión nueva; mientras, todo sigue abierto y aviso a quien use un comando. "
+            "Cuando esté lista no se abren partidas nuevas, espero a que acaben las que "
+            "haya a medias (como mucho 15 minutos) y me reinicio. Aviso aquí cuando acabe.",
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
@@ -416,13 +517,79 @@ class Deploy(commands.Cog, name="Despliegue"):
         if repository is not None:
             await repository.delete_guild_data(guild.id)
 
+    def in_progress(self) -> int:
+        """Cuántas cosas hay a medias que el reinicio debe esperar."""
+        return in_progress(self.bot)
+
+    def _phase(self) -> None:
+        """Pone `announced` y `restarting` según las notas del NAS."""
+        now = self._clock()
+        preparing = self.mailbox.preparing(now) is not None
+        announced = (
+            preparing
+            or self.mailbox.pending(now) is not None
+            or self.mailbox.notice(now) is not None
+        )
+        if preparing and not self.restarting:
+            logger.info("El NAS pide reiniciar: espero a %d cosas a medias", self.in_progress())
+        if not announced:
+            # El NAS contestó sin reiniciarme (no pudo compilar) o las notas caducaron.
+            self.told.clear()
+            self.warned.clear()
+        self.announced, self.restarting = announced, preparing
+
+    async def _answer_nas(self) -> None:
+        """Con el NAS esperando y nada a medias, le contesta que ya puede reiniciar."""
+        if not self.restarting or self.mailbox.is_ready():
+            return
+        busy = self.in_progress()
+        if busy:
+            logger.debug("Reinicio en espera: %d cosas a medias", busy)
+            return
+        try:
+            self.mailbox.ready(self._clock())
+        except OSError:
+            logger.exception("No pude contestar al NAS que ya puede reiniciar")
+            return
+        logger.info("Nada a medias: el NAS ya puede reiniciar")
+
+    @commands.Cog.listener()
+    async def on_app_command_completion(
+        self, interaction: discord.Interaction, command: app_commands.Command[Any, ..., Any]
+    ) -> None:
+        """Tras un `/`, avisa una vez a cada uno de que viene un reinicio."""
+        if not self._should_tell(interaction.user.id, command.qualified_name):
+            return
+        if not interaction.response.is_done():
+            return
+        self.told.add(interaction.user.id)
+        with contextlib.suppress(discord.HTTPException):
+            await interaction.followup.send(RESTART_SOON, ephemeral=True)
+
+    @commands.Cog.listener()
+    async def on_command_completion(self, ctx: commands.Context) -> None:
+        """Tras un comando `.`, avisa una vez a cada uno de que viene un reinicio."""
+        if ctx.command is None or not self._should_tell(ctx.author.id, ctx.command.qualified_name):
+            return
+        self.told.add(ctx.author.id)
+        with contextlib.suppress(discord.HTTPException):
+            await ctx.send(RESTART_SOON, delete_after=120)
+
+    def _should_tell(self, user_id: int, command: str) -> bool:
+        return (
+            self.announced
+            and not self.restarting
+            and not self.closing
+            and command not in QUIET_COMMANDS
+            and user_id not in self.told
+        )
+
     @tasks.loop(seconds=POLL_SECONDS)
     async def _poll(self) -> None:
         await self.announce()
         await self.announce_news()
-        if self.restarting and self.mailbox.pending(self._clock()) is None:
-            # El NAS contestó sin reiniciarme (no pudo compilar) o la petición caducó.
-            self.restarting = False
+        self._phase()
+        await self._answer_nas()
 
     @_poll.before_loop
     async def _before_poll(self) -> None:

@@ -13,6 +13,21 @@ quien actualiza y reinicia:
 4. El bot (el mismo o el recién arrancado) ve el resultado, lo publica en el
    canal de la petición y borra la nota y el resultado.
 
+Antes de reiniciar, el NAS espera a que el bot cierre lo que hay a medias:
+
+- Al decidir que despliega (por `reinicio` o de noche), deja `aviso.json`: el bot
+  avisa de que se va a reiniciar a quien use un comando, pero todo sigue abierto
+  mientras se construye la imagen.
+- Con la imagen lista, deja `preparar.json` y espera `listo.json` (como mucho
+  `ESPERA_PARTIDAS` segundos, 15 minutos de serie). El bot deja de abrir partidas,
+  espera a que acaben las que hay y contesta `listo.json`.
+- Solo espera si el bot dejó `sabe_esperar` al arrancar y el contenedor está en
+  marcha: un bot de antes de esto no contestaría nunca.
+
+Las tres notas llevan la hora (epoch) en que se dejaron y el script las borra al
+acabar. Si se quedan ahí (el script se cortó), el bot las descarta cuando caducan
+para no quedarse sin abrir partidas para siempre.
+
 Aparte, cada vez que despliega commits nuevos (de noche o por `reinicio`), el
 script deja `novedades.txt`: una línea por PR fusionado o commit subido a
 `main` desde el despliegue anterior. El bot lo recoge y lo borra
@@ -40,10 +55,19 @@ REQUEST_FILE = "solicitud.json"
 RUNNING_FILE = "en_curso.json"
 RESULT_FILE = "resultado.txt"
 NEWS_FILE = "novedades.txt"
+NOTICE_FILE = "aviso.json"
+PREPARE_FILE = "preparar.json"
+READY_FILE = "listo.json"
+CAN_WAIT_FILE = "sabe_esperar"
 
 #: Una petición sin resultado tras este tiempo se da por perdida (el script se
 #: cortó o el cron no está puesto) y deja pedir otra.
 STALE_AFTER = timedelta(minutes=30)
+#: Un aviso de despliegue dura lo que tarda la imagen en construirse; más que esto,
+#: el script se cortó.
+NOTICE_STALE_AFTER = timedelta(hours=2)
+#: El NAS espera como mucho 15 minutos (`ESPERA_PARTIDAS`); con margen.
+PREPARE_STALE_AFTER = timedelta(minutes=30)
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,6 +182,61 @@ class Mailbox:
             return None
         items = [line.strip() for line in text.splitlines() if line.strip()]
         return items or None
+
+    def notice(self, now: datetime) -> datetime | None:
+        """Cuándo avisó el NAS de que va a desplegar, si hay aviso y no está caducado."""
+        return self._stamp(NOTICE_FILE, now, NOTICE_STALE_AFTER)
+
+    def preparing(self, now: datetime) -> datetime | None:
+        """Cuándo pidió el NAS que se cierren las partidas, si lo pidió y no caducó."""
+        return self._stamp(PREPARE_FILE, now, PREPARE_STALE_AFTER)
+
+    def ready(self, now: datetime) -> None:
+        """Contesta al NAS que ya no queda nada a medias: puede reiniciar.
+
+        Raises:
+            OSError: Si no se puede escribir.
+        """
+        self._write(READY_FILE, str(int(now.timestamp())))
+
+    def is_ready(self) -> bool:
+        """Si el bot ya contestó `listo` a la petición de ahora."""
+        return (self.path / READY_FILE).exists()
+
+    def mark_can_wait(self) -> None:
+        """Dice al NAS que este bot sabe cerrar sus partidas antes de un reinicio."""
+        try:
+            self._write(CAN_WAIT_FILE, "1")
+        except OSError:
+            # Sin buzón montado (fuera de Docker) no hay NAS que lo lea.
+            logger.debug("No se pudo dejar %s en el buzón", CAN_WAIT_FILE, exc_info=True)
+
+    def _write(self, name: str, text: str) -> None:
+        self.path.mkdir(parents=True, exist_ok=True)
+        tmp = self.path / f"{name}.tmp"
+        tmp.write_text(text, encoding="utf-8")
+        tmp.replace(self.path / name)
+
+    def _stamp(self, name: str, now: datetime, stale: timedelta) -> datetime | None:
+        """La hora que lleva la nota `name`; borra la caducada y no hace caso a la rota."""
+        file = self.path / name
+        try:
+            text = file.read_text(encoding="utf-8").strip()
+        except FileNotFoundError:
+            return None
+        except OSError:
+            logger.warning("No se pudo leer %s del buzón", name)
+            return None
+        try:
+            stamp = datetime.fromtimestamp(int(text), tz=now.tzinfo)
+        except (ValueError, OverflowError, OSError):
+            logger.warning("Nota %s ilegible: %r", name, text[:40])
+            return None
+        if now - stamp > stale:
+            logger.warning("Nota %s caducada; la descarto", name)
+            file.unlink(missing_ok=True)
+            return None
+        return stamp
 
 
 def _read_request(file: Path) -> DeployRequest | None:

@@ -915,16 +915,22 @@ anterior. No se puede pedir otro mientras uno está en marcha; una petición sin
 respuesta en 30 minutos se da por perdida. Detalle en el README («Reiniciar
 desde Discord»).
 
-Modo reinicio: desde que se pide `reinicio` hasta que el bot se apaga, ningún comando
-funciona salvo `reinicio` y `bloquear` (con `/` y con `.`); quien lo intenta ve «🔁 Me voy
-a reiniciar en breve, así que no se abren partidas ni paneles nuevos». Los paneles y las
-partidas ya abiertos siguen funcionando para poder terminarlos, y la primera vez que
-alguien pulsa uno de sus botones recibe un aviso privado para que acabe lo que tenga. Si
-el NAS contesta sin reiniciar (no pudo construir la imagen) o la petición caduca, todo
-vuelve a abrir. Al apagarse por cualquier motivo (también la actualización de la noche o
-un reinicio a mano en el NAS), en los segundos en que los juegos cierran sus partidas
-tampoco responden los botones. El 🔁 de otra partida es un botón y sigue abriendo una;
-se cierra al apagar como las demás.
+Un reinicio espera a lo que hay a medias, tanto el de `reinicio` como la actualización
+de las 5:00. Mientras el NAS construye la versión nueva todo funciona, y quien usa un
+comando recibe una vez el aviso «🔁 Aviso: en unos minutos me reinicio para
+actualizarme» (en privado con `/`; con `.`, en el canal, y se borra a los 2 minutos).
+Con la imagen lista empieza el modo reinicio: ningún comando funciona salvo `reinicio` y
+`bloquear` (con `/` y con `.`), y quien lo intenta ve «🔁 Estoy a punto de reiniciarme:
+espero a que acaben las partidas que hay a medias». Los paneles y las partidas ya
+abiertos siguen funcionando, y la primera vez que alguien pulsa uno de sus botones
+recibe un aviso privado para que acabe (también en los minijuegos de `pala` y del
+negocio, que ya no se quedan sin respuesta por el aviso). El bot se reinicia cuando no
+queda ningún turno en marcha (`pala`, negocio, `banco`, `pisos`, Rastro) ni ningún panel
+o partida que alguien haya tocado en los últimos 2 minutos, o a los 15 minutos como
+mucho. Si el NAS contesta sin reiniciar (no pudo construir la imagen) o la petición
+caduca, todo vuelve a abrir. Al apagarse por cualquier motivo, en los segundos en que
+los juegos cierran sus partidas tampoco responden los botones. El 🔁 de otra partida es
+un botón y sigue abriendo una; el reinicio la espera como a las demás.
 
 **Novedades.** Tras cada despliegue con commits nuevos (el de las 5:00 o
 `reinicio`) que arranque bien, el bot publica «📜 Novedades del bot»: la lista

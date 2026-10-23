@@ -8,6 +8,12 @@ criterio.
 
 ## 9.x
 
+### 9.9.0 · 2026-10-23
+
+- Reinicios: antes de reiniciarse, el bot espera a que acabe lo que hay a medias (turnos de `pala` y del negocio, partidas y paneles en uso), como mucho 15 minutos; también en la actualización de las 5:00
+- Reinicios: mientras se prepara la versión nueva todo sigue funcionando, y quien usa un comando recibe una vez el aviso de que en unos minutos habrá reinicio
+- Reinicios: el aviso al pulsar un botón del minijuego de `pala` o del negocio ya no le quita la respuesta al juego
+
 ### 9.8.1 · 2026-10-23
 
 - Tienda: la 🎒 Mochila vuelve a abrirse a quien tiene a la vez un título y una skin (daba «Algo ha fallado con ese botón»)

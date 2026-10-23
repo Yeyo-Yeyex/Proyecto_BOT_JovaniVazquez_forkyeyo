@@ -24,10 +24,17 @@ from bot.cogs.deploy import (
     news_messages,
     result_message,
 )
+from bot.cogs.errors import RESTART_SOON
 from bot.repositories.news import NewsSettings
 from bot.services.changelog import NewsEntry, NewsItem, PullRequest
 from bot.services.deploy import (
+    CAN_WAIT_FILE,
     NEWS_FILE,
+    NOTICE_FILE,
+    NOTICE_STALE_AFTER,
+    PREPARE_FILE,
+    PREPARE_STALE_AFTER,
+    READY_FILE,
     REQUEST_FILE,
     RESULT_FILE,
     RUNNING_FILE,
@@ -152,6 +159,46 @@ def test_un_resultado_de_error(tmp_path: Path) -> None:
     assert result.summary == "La imagen no se ha podido construir."
 
 
+def stamp(buzon: Path, name: str, when: datetime) -> None:
+    """Deja una nota del NAS como la deja `actualizar.sh` (la hora en epoch)."""
+    buzon.mkdir(exist_ok=True)
+    (buzon / name).write_text(f"{int(when.timestamp())}\n", encoding="utf-8")
+
+
+def test_las_notas_de_espera_dicen_cuando_se_dejaron_y_caducan(tmp_path: Path) -> None:
+    buzon = tmp_path / "buzon"
+    mailbox = Mailbox(buzon)
+    assert mailbox.notice(NOW) is None and mailbox.preparing(NOW) is None
+    stamp(buzon, NOTICE_FILE, NOW)
+    stamp(buzon, PREPARE_FILE, NOW)
+    assert mailbox.notice(NOW) == NOW and mailbox.preparing(NOW) == NOW
+
+    assert mailbox.preparing(NOW + PREPARE_STALE_AFTER + timedelta(seconds=1)) is None
+    assert not (buzon / PREPARE_FILE).exists(), "la caducada se borra"
+    assert mailbox.notice(NOW + NOTICE_STALE_AFTER + timedelta(seconds=1)) is None
+    assert not (buzon / NOTICE_FILE).exists()
+
+    (buzon / NOTICE_FILE).write_text("mañana", encoding="utf-8")
+    assert mailbox.notice(NOW) is None, "una nota rota no deja el bot sin abrir partidas"
+
+
+def test_listo_y_sabe_esperar_quedan_escritos_para_el_nas(tmp_path: Path) -> None:
+    buzon = tmp_path / "buzon"
+    mailbox = Mailbox(buzon)
+    mailbox.mark_can_wait()
+    assert (buzon / CAN_WAIT_FILE).exists()
+    assert not mailbox.is_ready()
+    mailbox.ready(NOW)
+    assert mailbox.is_ready()
+    assert int((buzon / READY_FILE).read_text(encoding="utf-8")) == int(NOW.timestamp())
+    assert not (buzon / f"{READY_FILE}.tmp").exists()
+
+
+def test_sin_buzon_sabe_esperar_no_rompe_nada(tmp_path: Path) -> None:
+    (tmp_path / "buzon").write_text("un archivo donde debería haber una carpeta", encoding="utf-8")
+    Mailbox(tmp_path / "buzon").mark_can_wait()
+
+
 # -- Cog -------------------------------------------------------------------------------
 
 
@@ -175,9 +222,10 @@ async def test_pedirlo_deja_la_nota_y_confirma(tmp_path: Path, user_id: int) -> 
     await cog.request_impl(responder)
 
     assert not responder.errors
-    assert "Pedido" in responder.sent[0] and "no se abren partidas" in responder.sent[0]
+    assert "Pedido" in responder.sent[0] and "espero a que acaben" in responder.sent[0]
     assert Mailbox(tmp_path / "buzon").pending(NOW) == DeployRequest(555, user_id, NOW)
-    assert cog.restarting
+    # Mientras el NAS construye la imagen todo sigue abierto; solo se avisa.
+    assert cog.announced and not cog.restarting
 
 
 @pytest.mark.asyncio
@@ -186,14 +234,14 @@ async def test_sin_reinicio_del_nas_se_vuelve_a_abrir(tmp_path: Path) -> None:
     cog = make_cog(tmp_path)
     await cog.request_impl(FakeResponder(user_id=YEYO))
     await cog._poll()
-    assert cog.restarting
+    assert cog.announced
 
     buzon = tmp_path / "buzon"
     (buzon / REQUEST_FILE).replace(buzon / RUNNING_FILE)
     (buzon / RESULT_FILE).write_text("error\nLa imagen no se ha podido construir.\n", "utf-8")
     await cog._poll()
 
-    assert not cog.restarting
+    assert not cog.announced and not cog.restarting
 
 
 @pytest.mark.asyncio
@@ -205,8 +253,98 @@ async def test_no_se_pide_dos_veces(tmp_path: Path) -> None:
     await cog.request_impl(second)
 
     assert "Ya hay un reinicio pedido" in second.errors[0]
-    assert cog.restarting
+    assert cog.announced
     assert Mailbox(tmp_path / "buzon").pending(NOW).user_id == YEYO
+
+
+class Cog(SimpleNamespace):
+    """Un cog cualquiera con su conjunto `working` (como `pala` o el negocio)."""
+
+
+@pytest.mark.asyncio
+async def test_el_despliegue_de_noche_avisa_y_espera_a_lo_que_hay_a_medias(
+    tmp_path: Path,
+) -> None:
+    bot = MagicMock()
+    pala = Cog(working={(1, 10)})
+    bot.cogs = {"Trabajo": pala, "Otro": Cog(working="no es un conjunto")}
+    cog = make_cog(tmp_path, bot)
+    buzon = tmp_path / "buzon"
+
+    # El NAS construye la imagen: se avisa, pero todo sigue abierto.
+    stamp(buzon, NOTICE_FILE, NOW)
+    await cog._poll()
+    assert cog.announced and not cog.restarting
+
+    # Con la imagen lista pide permiso: no se abren partidas y se espera el turno.
+    stamp(buzon, PREPARE_FILE, NOW)
+    await cog._poll()
+    assert cog.restarting and cog.in_progress() == 1
+    assert not (buzon / READY_FILE).exists()
+
+    pala.working.clear()
+    await cog._poll()
+    assert (buzon / READY_FILE).exists()
+
+    # El script borra las notas al acabar: si no reinició (falló), todo vuelve a abrir.
+    for name in (NOTICE_FILE, PREPARE_FILE, READY_FILE):
+        (buzon / name).unlink()
+    await cog._poll()
+    assert not cog.announced and not cog.restarting
+
+
+@pytest.mark.asyncio
+async def test_al_arrancar_dice_al_nas_que_sabe_esperar(tmp_path: Path) -> None:
+    cog = make_cog(tmp_path)
+    cog._poll.start = MagicMock()  # type: ignore[method-assign]
+    await cog.cog_load()
+    assert (tmp_path / "buzon" / CAN_WAIT_FILE).exists()
+
+
+def slash_click(user_id: int = 77) -> MagicMock:
+    return fake_interaction(MagicMock(id=user_id))
+
+
+@pytest.mark.asyncio
+async def test_con_el_reinicio_anunciado_cada_uno_se_entera_una_vez_al_usar_un_comando(
+    tmp_path: Path,
+) -> None:
+    cog = make_cog(tmp_path)
+    command = SimpleNamespace(qualified_name="saldo")
+
+    # Sin reinicio, nada.
+    first = slash_click()
+    await first.response.defer()
+    await cog.on_app_command_completion(first, command)  # type: ignore[arg-type]
+    first.followup.send.assert_not_awaited()
+
+    cog.announced = True
+    second = slash_click()
+    await second.response.defer()
+    await cog.on_app_command_completion(second, command)  # type: ignore[arg-type]
+    second.followup.send.assert_awaited_once_with(RESTART_SOON, ephemeral=True)
+    third = slash_click()
+    await third.response.defer()
+    await cog.on_app_command_completion(third, command)  # type: ignore[arg-type]
+    third.followup.send.assert_not_awaited()
+
+    # Con `.`, en el canal y se borra solo; quien pide el reinicio no se avisa a sí mismo.
+    ctx = MagicMock(author=SimpleNamespace(id=88), command=command, send=AsyncMock())
+    await cog.on_command_completion(ctx)
+    ctx.send.assert_awaited_once_with(RESTART_SOON, delete_after=120)
+    ctx = MagicMock(
+        author=SimpleNamespace(id=99),
+        command=SimpleNamespace(qualified_name="reinicio"),
+        send=AsyncMock(),
+    )
+    await cog.on_command_completion(ctx)
+    ctx.send.assert_not_awaited()
+
+    # Esperando ya no corre ningún comando nuevo: el aviso es otro (`RESTART_ERROR`).
+    cog.restarting = True
+    ctx = MagicMock(author=SimpleNamespace(id=100), command=command, send=AsyncMock())
+    await cog.on_command_completion(ctx)
+    ctx.send.assert_not_awaited()
 
 
 @pytest.mark.asyncio
