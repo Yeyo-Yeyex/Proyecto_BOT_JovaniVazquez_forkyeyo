@@ -11,6 +11,8 @@ criterio.
 ### 9.10.0 · 2026-10-23
 
 - Patrimonio: vuelve `patrimonio` (también `.patrimonio @miembro`) y cada piso sale con la parte que tienes según tus participaciones
+- Saldo: `saldo @miembro` enseña todo lo pendiente de ese miembro, igual que si lo pidiera él
+- Pala: en los minijuegos de memoria (como los plenos de Bruselas), el reloj se para hasta 5 segundos mientras memorizas cada secuencia
 
 ### 9.9.0 · 2026-10-23
 

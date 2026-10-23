@@ -91,6 +91,8 @@ from bot.services.work_tools import NO_PERKS, Perks
 
 #: Puntos extra (sobre 100) por acabar antes de tiempo, proporcionales a lo que sobra.
 TIME_BONUS = 10
+#: En memoria: el reloj se para hasta estos segundos mientras se enseña cada secuencia.
+MEMORIZE_SECONDS = 5.0
 #: Segundos de margen tras el reloj para pulsaciones que ya iban de camino.
 GRACE_SECONDS = 1.5
 #: En calcular, la mejor oferta vale al menos esto más que la segunda.
@@ -171,14 +173,20 @@ class MiniGame:
     first_miss: bool = False
     #: Pulsaciones que llegaron tarde, a una ronda ya pasada (las cuenta el cog).
     stale: int = 0
+    #: En memoria: segundos que el reloj ha estado parado mientras se memorizaba.
+    frozen: float = 0.0
+    #: En memoria: cuándo empezó a enseñarse la secuencia de la ronda en juego.
+    shown_at: float = 0.0
 
     def __post_init__(self) -> None:
         self.showing = self.mechanic is Mechanic.MEMORY
+        if self.showing:
+            self._freeze(self.started_at)
 
     @property
     def deadline(self) -> float:
-        """Momento en que se acaba el tiempo."""
-        return self.started_at + self.seconds
+        """Momento en que se acaba el tiempo (se mueve en memoria, ver `hide`)."""
+        return self.started_at + self.seconds + self.frozen
 
     @property
     def max_points(self) -> int:
@@ -211,10 +219,20 @@ class MiniGame:
         if self.finished_at is None:
             self.finished_at = min(now, self.deadline)
 
+    def _freeze(self, now: float) -> None:
+        """Memoria: empieza a enseñar la secuencia con el reloj parado (como mucho 5 s)."""
+        self.shown_at = now
+        self.frozen += MEMORIZE_SECONDS
+
     def hide(self, now: float) -> None:
-        """Memoria: oculta la secuencia y empieza a repetir."""
-        if not self.finished(now):
+        """Memoria: oculta la secuencia y empieza a repetir.
+
+        El reloj solo se para lo que se tardó en memorizar, hasta `MEMORIZE_SECONDS`: lo
+        que no se usó se devuelve y el reloj sigue corriendo desde ahora.
+        """
+        if self.showing and not self.finished(now):
             self.showing = False
+            self.frozen -= max(0.0, MEMORIZE_SECONDS - (now - self.shown_at))
 
     def _next_round(self, now: float) -> None:
         self.index += 1
@@ -222,6 +240,8 @@ class MiniGame:
         self.showing = self.mechanic is Mechanic.MEMORY
         if self.current is None:
             self.finish(now)
+        elif self.showing:
+            self._freeze(now)
 
     def _count(self, hit: bool) -> None:
         if not hit:

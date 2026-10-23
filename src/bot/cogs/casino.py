@@ -37,8 +37,8 @@ botones ya llenan las cinco filas de Discord; el tapete se cambia en la mochila.
 **Saldo.** `saldo` junta lo pendiente de cada cog (por pagar, por cobrar y retenido,
 `bot.services.pending`) con sus funciones puente: `renta.pending`, `pisos.pending`,
 `work.pending`, `lottery.pending`, `sports.pending`, `rastro.pending` y
-`patrimonio.wealth_due`. En el
-saldo de otro solo salen su Patrimonio y su deuda con Hacienda.
+`patrimonio.wealth_due`. El
+saldo de otro enseña lo mismo que si lo pidiera él (sin su mascota).
 
 Si `CASINO_CHANNEL_IDS` está configurado, la ruleta solo se abre en esos
 canales. Permisos que necesita el bot en el canal: enviar mensajes,
@@ -1293,17 +1293,13 @@ class Casino(commands.Cog):
                 f"\n-# 🏦 Saldo medio de hoy: {format_amount(preview.average)}. Si no lo toca, "
                 f"mañana cobra {format_amount(preview.net)} netos.{top}"
             )
-        items = await self._pending(guild_id, who.id, balance, own=own)
+        # De otro se ve igual que si lo pidiera él: todo lo pendiente.
+        items = await self._pending(guild_id, who.id, balance)
         if own and (pet := await mascotas.cameo(self.bot, guild_id, who.id, Moment(Event.MONEY))):
             description += f"\n{pet}"
         embed = discord.Embed(description=description, color=COLOR_WIN)
         for name, value in pending_fields(items):
             embed.add_field(name=name, value=value, inline=False)
-        if not own:
-            embed.set_footer(
-                text="De lo pendiente, solo se ve el Patrimonio y la deuda con Hacienda: "
-                "lo demás lo ve cada uno en su saldo."
-            )
         await responder.send(embed=embed)
         if own:
             delta = saldo_stats(balance=balance, items=items, when=self.economy.now())
@@ -1312,10 +1308,8 @@ class Casino(commands.Cog):
             delta = saldo_peek_stats(own_balance=mine, their_balance=balance)
         logros.note_for(self.bot, responder, delta)
 
-    async def _pending(
-        self, guild_id: int, user_id: int, balance: int, *, own: bool
-    ) -> list[Pending]:
-        """Lo pendiente que sale en `saldo` (de otro, solo el Patrimonio y la deuda).
+    async def _pending(self, guild_id: int, user_id: int, balance: int) -> list[Pending]:
+        """Lo pendiente que sale en `saldo`, el propio o el de otro.
 
         Cada cog da lo suyo con su función puente; se leen a la vez para que `saldo`
         tarde lo que la lectura más lenta y no la suma de todas.
@@ -1326,21 +1320,16 @@ class Casino(commands.Cog):
 
         reads = [
             self._wealth_pending(guild_id, user_id, balance),
-            renta.pending(self.bot, guild_id, user_id, own=own),
+            renta.pending(self.bot, guild_id, user_id),
+            self._imv_pending(guild_id, user_id),
+            pisos.pending(self.bot, guild_id, user_id),
+            curro.pending(self.bot, guild_id, user_id),
+            negocio.pending(self.bot, guild_id, user_id),
+            loterias.pending(self.bot, guild_id, user_id),
+            deportes.pending(self.bot, guild_id, user_id),
         ]
-        if own:
-            reads += [
-                self._imv_pending(guild_id, user_id),
-                pisos.pending(self.bot, guild_id, user_id),
-                curro.pending(self.bot, guild_id, user_id),
-                negocio.pending(self.bot, guild_id, user_id),
-                loterias.pending(self.bot, guild_id, user_id),
-                deportes.pending(self.bot, guild_id, user_id),
-            ]
         items = [item for found in await asyncio.gather(*reads) for item in found]
-        if own:
-            items += rastro.pending(self.bot, guild_id, user_id)
-        return items
+        return items + rastro.pending(self.bot, guild_id, user_id)
 
     async def _wealth_pending(self, guild_id: int, user_id: int, balance: int) -> list[Pending]:
         """El Patrimonio que se cobraría el lunes, la misma cuenta que en `perfil`."""
@@ -1381,8 +1370,7 @@ class Casino(commands.Cog):
     ) -> None:
         """Muestra el saldo de yapdollars y lo pendiente; abre el monedero si es la primera vez.
 
-        Con `miembro`, su saldo con su Patrimonio y su deuda con Hacienda (lo que ya
-        enseña `perfil`); el resto de lo pendiente solo lo ve cada uno en el suyo.
+        Con `miembro`, su saldo entero, igual que si lo pidiera él.
         """
         await self._saldo_impl(InteractionResponder(interaction), interaction.user, miembro)
 

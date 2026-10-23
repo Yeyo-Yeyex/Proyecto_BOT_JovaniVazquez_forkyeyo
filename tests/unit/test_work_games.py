@@ -9,7 +9,13 @@ import pytest
 
 from bot.services.work import Mechanic
 from bot.services.work_catalog import JOB_BY_KEY, JOBS, SORT_PACKS
-from bot.services.work_games import GRACE_SECONDS, MiniGame, _best_index, new_game
+from bot.services.work_games import (
+    GRACE_SECONDS,
+    MEMORIZE_SECONDS,
+    MiniGame,
+    _best_index,
+    new_game,
+)
 from bot.services.work_tools import NO_PERKS, TOOLS, perks_for
 
 NOW = 1_000.0
@@ -78,6 +84,37 @@ def test_en_memoria_un_fallo_acaba_la_ronda() -> None:
     assert not game.press(wrong, NOW)
     assert game.index == 1 and game.showing  # siguiente ronda, enseñando la secuencia
     assert game.perfect_rounds == 0
+
+
+def test_en_memoria_el_reloj_se_para_hasta_5_segundos_al_memorizar() -> None:
+    eurodiputado = JOB_BY_KEY["politica"].position(6, "bruselas")
+    game = new_game(eurodiputado, random.Random(3), now=NOW)
+    end = NOW + game.seconds
+    # Mientras se enseña, el plazo lleva los 5 s de memorizar.
+    assert game.showing and game.deadline == end + MEMORIZE_SECONDS
+    # Memorizado a los 2 s: solo se paró 2 s; pulsar otra vez no cambia nada.
+    game.hide(NOW + 2)
+    game.hide(NOW + 3)
+    assert not game.showing and game.deadline == end + 2
+    # Falla y pasa de ronda: la secuencia nueva vuelve a parar el reloj.
+    current = game.current
+    assert current is not None
+    game.press((current.answer[0] + 1) % len(current.options), NOW + 4)
+    assert game.showing and game.deadline == end + 2 + MEMORIZE_SECONDS
+    # Si tarda más de 5 s en memorizar, el reloj corre desde el quinto.
+    game.hide(NOW + 4 + 9)
+    assert game.deadline == end + 2 + MEMORIZE_SECONDS
+    # Al enseñar la última ronda con el tiempo ya justo, aún quedan los 5 s.
+    late = new_game(eurodiputado, random.Random(3), now=NOW)
+    late.hide(NOW)
+    while late.index < len(late.rounds) - 1:
+        late.hide(end - 1)
+        current = late.current
+        assert current is not None
+        late.press((current.answer[0] + 1) % len(current.options), end - 1)
+    assert not late.finished(end + 3)
+    late.hide(end + 3)
+    assert not late.showing and late.deadline == end + 4
 
 
 def test_mientras_se_ensena_la_secuencia_no_se_puede_pulsar() -> None:

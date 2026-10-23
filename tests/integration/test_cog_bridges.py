@@ -893,7 +893,7 @@ async def test_un_turno_del_negocio_llega_a_logros_saldo_y_perfil_con_el_bot_rea
         assert profile.stats["biz_turns"] == 1
         assert "biz_turns_1" in profile.unlocked
         # `saldo` ve el local de esta noche y `perfil`, el negocio.
-        items = await casino._pending(GUILD, OWNER_ID, 0, own=True)
+        items = await casino._pending(GUILD, OWNER_ID, 0)
         assert any(item.kind == "business_rent" for item in items)
         embed = await work.work_embed(GUILD, owner)
         assert any(field.name == "🏪 Negocio" for field in embed.fields)
@@ -2183,11 +2183,26 @@ async def test_saldo_junta_lo_pendiente_de_cada_cog_con_el_bot_real(tmp_path: Pa
             status="abierto",
         )  # fmt: skip
 
-        mine = await casino._pending(GUILD, OWNER_ID, 0, own=True)
+        mine = await casino._pending(GUILD, OWNER_ID, 0)
         kinds = {item.kind for item in mine}
         assert {"renta_debt", "imv", "mom_debt", "lottery", "deposit", "rastro_bid"} <= kinds
-        others = await casino._pending(GUILD, OWNER_ID, 0, own=False)
-        assert [item.kind for item in others] == ["renta_debt"]
+
+        # `saldo @miembro` enseña lo mismo que si lo pidiera él: todo lo pendiente.
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = GUILD
+        owner, other = MagicMock(spec=discord.Member), MagicMock(spec=discord.Member)
+        owner.id, owner.bot, owner.display_name = OWNER_ID, False, "Diego"
+        other.id, other.bot, other.display_name = OTHER_ID, False, "Cotilla"
+        shown = []
+        for user, target in ((owner, None), (other, owner)):
+            responder = MagicMock()
+            responder.guild, responder.member, responder.channel = guild, user, MagicMock()
+            responder.send = AsyncMock()
+            await casino._saldo_impl(responder, user, target)
+            embed = responder.send.await_args.kwargs["embed"]
+            shown.append([(f.name, f.value) for f in embed.fields])
+            assert embed.footer.text is None
+        assert shown[0] == shown[1] and len(shown[0]) == 3  # por pagar, por cobrar y retenido
     finally:
         await client.close()
 
@@ -2264,7 +2279,7 @@ async def test_vender_lleva_a_los_cuatro_sitios_y_avisa_en_saldo_con_el_bot_real
         assert stats["monte_pawned"] == 1 and stats["monte_sold"] == 1
         assert stats["market_listings"] == 1 and stats["market_offers"] == 1
         assert "vender_four_ways" in profile.unlocked
-        kinds = {item.kind for item in await casino._pending(GUILD, OWNER_ID, 0, own=True)}
+        kinds = {item.kind for item in await casino._pending(GUILD, OWNER_ID, 0)}
         assert "monte_ticket" in kinds
     finally:
         await client.close()
@@ -2417,7 +2432,7 @@ async def test_pisos_abre_las_garantias_y_se_rehipoteca_con_el_bot_real(tmp_path
         profile = await client.achievements.profile(GUILD, OWNER_ID)
         assert profile.stats["remortgages_signed"] == 1 and "remortgage_1" in profile.unlocked
         casino = client.get_cog("Casino")
-        kinds = {item.kind for item in await casino._pending(GUILD, OWNER_ID, 0, own=True)}  # noqa: SLF001
+        kinds = {item.kind for item in await casino._pending(GUILD, OWNER_ID, 0)}  # noqa: SLF001
         assert "mortgage" in kinds
     finally:
         await client.close()
@@ -2484,7 +2499,7 @@ async def test_el_negocio_abre_el_banco_y_pide_un_prestamo_con_el_bot_real(
         profile = await client.achievements.profile(GUILD, OWNER_ID)
         assert profile.stats["biz_loans_signed"] == 1 and "biz_loan_1" in profile.unlocked
         casino = client.get_cog("Casino")
-        items = await casino._pending(GUILD, OWNER_ID, 0, own=True)  # noqa: SLF001
+        items = await casino._pending(GUILD, OWNER_ID, 0)  # noqa: SLF001
         assert any(item.kind == "loan" and "de tu negocio" in item.text for item in items)
     finally:
         await client.close()
@@ -2542,7 +2557,7 @@ async def test_un_miembro_avala_un_prestamo_con_el_bot_real(tmp_path: Path) -> N
         assert profiles[0].stats["guarantees_received"] == 1
         assert profiles[1].stats["guarantees_given"] == 1
         casino = client.get_cog("Casino")
-        kinds = {item.kind for item in await casino._pending(GUILD, 77, 0, own=True)}  # noqa: SLF001
+        kinds = {item.kind for item in await casino._pending(GUILD, 77, 0)}  # noqa: SLF001
         assert "guarantee" in kinds
     finally:
         await client.close()
@@ -2606,7 +2621,7 @@ async def test_pisos_abre_los_anticipos_y_se_adelantan_las_rentas_con_el_bot_rea
         assert profile.stats["advances_signed"] == 1 and "advance_1" in profile.unlocked
         assert "advance_12" in profile.unlocked
         casino = client.get_cog("Casino")
-        pending = await casino._pending(GUILD, OWNER_ID, 0, own=True)  # noqa: SLF001
+        pending = await casino._pending(GUILD, OWNER_ID, 0)  # noqa: SLF001
         assert any("Anticipo de rentas de" in item.text for item in pending)
     finally:
         await client.close()
@@ -2861,13 +2876,11 @@ async def test_saldo_incluye_las_apuestas_deportivas_abiertas_con_el_bot_real(
         bet = await bet_on_match(client)
         casino = client.get_cog("Casino")
 
-        mine = await casino._pending(GUILD, OWNER_ID, 0, own=True)
-        others = await casino._pending(GUILD, OWNER_ID, 0, own=False)
+        mine = await casino._pending(GUILD, OWNER_ID, 0)
 
         [line] = [item for item in mine if item.kind == "sports_bet"]
         assert (line.amount, line.when) == (100, bet.commence)
         assert "Real Madrid – Barcelona" in line.text
-        assert not any(item.kind == "sports_bet" for item in others)
     finally:
         await client.close()
 

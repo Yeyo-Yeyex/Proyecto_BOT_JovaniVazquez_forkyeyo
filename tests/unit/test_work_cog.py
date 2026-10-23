@@ -39,6 +39,7 @@ from bot.services.work import (
     rested_at,
 )
 from bot.services.work_catalog import JOB_BY_KEY
+from bot.services.work_games import GRACE_SECONDS
 
 GUILD = 1
 OWNER = 10
@@ -176,6 +177,32 @@ async def test_la_memoria_ensena_y_luego_oculta(tmp_path: Path) -> None:
     assert len(buttons(panel)) >= 5
     check_limits(panel)
     await panel._finish(None)
+
+
+async def test_el_temporizador_espera_si_la_memoria_alarga_el_plazo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cog = await make_cog(tmp_path)
+    panel, _ = await open_panel(cog)
+    assert panel is not None
+    await panel._hire(make_interaction(), "hosteleria")
+    await panel._clock_in(make_interaction())
+    shift = panel.shift
+    assert shift is not None and panel._timer is not None
+    panel._timer.cancel()
+    game = shift.game
+    clock = [game.started_at]
+    monkeypatch.setattr(cog.service, "now", lambda: clock[0])
+
+    async def sleep(seconds: float) -> None:
+        clock[0] += seconds
+        if clock[0] == game.started_at + 1:
+            game.frozen += 30  # mientras dormía, otra secuencia paró el reloj
+
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    await panel._deadline(shift)
+    assert panel.shift is None
+    assert clock[0] >= game.started_at + game.seconds + 30 + GRACE_SECONDS
 
 
 async def test_si_se_acaba_el_tiempo_el_turno_se_cobra_solo(tmp_path: Path) -> None:
