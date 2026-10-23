@@ -18,9 +18,10 @@ público hace de recordatorio. Logros: `wealth_tax_paid`, `wealth_tax_weeks`,
 
 Consultas (no mueven dinero; ver `bot.services.net_worth`):
 
-- Sección 🏰 Patrimonio de `perfil` (`patrimonio_embed`): todos los activos
-  de alguien (efectivo, pisos, bienes de la tienda, boletos de lotería pendientes
-  y la renta por cobrar), con su valor, su puesto y el Patrimonio que le
+- `patrimonio` y la sección 🏰 Patrimonio de `perfil` (`patrimonio_embed`): todos
+  los activos de alguien (efectivo, pisos, bienes de la tienda, boletos de lotería
+  pendientes y la renta por cobrar), cada inmueble con la parte que tiene según sus
+  participaciones (`home_lines`), con su valor, su puesto y el Patrimonio que le
   tocaría pagar el lunes (`quote`, la misma cuenta que usa `saldo` con
   `wealth_due`).
 - `fortunas`: la lista de todos los miembros por patrimonio, con el reparto
@@ -51,6 +52,7 @@ from bot.cogs import shop as tienda
 from bot.repositories.business import companies_in
 from bot.repositories.housing import assets_in as housing_assets_in
 from bot.repositories.shop import wealth_goods_in
+from bot.services import housing as rules
 from bot.services.achievements import StatDelta, patrimonio_stats
 from bot.services.economy import (
     EconomyService,
@@ -59,8 +61,17 @@ from bot.services.economy import (
     week_label,
     week_start,
 )
+from bot.services.housing_catalog import BARRIO_BY_KEY, VPO_BY_KEY
 from bot.services.levels import local_day
-from bot.services.net_worth import NetWorth, build, gini, holding_line, top_share, verdict
+from bot.services.net_worth import (
+    NetWorth,
+    build,
+    gini,
+    holding_line,
+    home_line,
+    top_share,
+    verdict,
+)
 from bot.services.shop import Kind
 from bot.services.taxes import (
     SOLIDARITY_WEALTH_THRESHOLD,
@@ -295,6 +306,32 @@ class Patrimonio(commands.Cog):
         rank = next((i for i, w in enumerate(ranked, 1) if w.user_id == user_id), len(ranked))
         return worth, rank, len(ranked)
 
+    async def home_lines(self, guild_id: int, user_id: int) -> list[str]:
+        """Cada inmueble de alguien con su parte según sus participaciones, del que más vale.
+
+        Su parte vale lo que el inmueble entero a precio de hoy por sus participaciones: es lo
+        que suma 🏠 Pisos (`HousingRepository.member_values`).
+        """
+        if self.housing is None:
+            return []
+        market = await self.housing.market(guild_id)
+        rows: list[tuple[int, str]] = []
+        for holding in market.of_member(user_id):
+            listing = market.listing(holding.listing)
+            if listing is None:
+                continue
+            value = market.value(holding)
+            whole = rules.price(listing, market.index(listing.barrio))
+            percent = holding.shares * 100 // rules.SHARES
+            place = BARRIO_BY_KEY[listing.barrio].name
+            rows.append((value, home_line(listing.title, place, percent, value, whole)))
+        for key, owner in market.vpo.items():
+            if owner.owner_id == user_id:
+                unit = VPO_BY_KEY[key]
+                line = home_line(f"VPO {unit.name}", unit.town, 100, unit.price, unit.price)
+                rows.append((unit.price, line))
+        return [line for _value, line in sorted(rows, key=lambda row: -row[0])]
+
     async def quote(
         self, guild_id: int, user_id: int, *, cash: int, homes_fiscal: int, objects: int
     ) -> WealthQuote:
@@ -365,6 +402,20 @@ class Patrimonio(commands.Cog):
             value="\n".join(lines),
             inline=False,
         )
+        if homes := await self.home_lines(guild.id, target.id):
+            # Los que quepan enteros en el campo (1.024 caracteres), dejando sitio al «Y N más».
+            shown: list[str] = []
+            for i, line in enumerate(homes):
+                more = f"-# Y {len(homes) - i} inmuebles más."
+                if len("\n".join([*shown, line, more])) > 1_024:
+                    shown.append(more)
+                    break
+                shown.append(line)
+            embed.add_field(
+                name="🏠 Pisos, según sus participaciones",
+                value="\n".join(shown),
+                inline=False,
+            )
         if worth.goods:
             shown = [holding_line(item) for item in worth.goods[:15]]
             if len(worth.goods) > 15:
@@ -408,7 +459,8 @@ class Patrimonio(commands.Cog):
             )
         embed.add_field(name=f"🐶 {TAX_COLLECTOR}", value=text, inline=False)
         embed.set_footer(
-            text="Bienes al precio pagado sin IGIC; lo que caduca vale la vida que le queda."
+            text="Pisos a precio de mercado de hoy por las participaciones de cada uno. Bienes al "
+            "precio pagado sin IGIC; lo que caduca vale la vida que le queda."
         )
         if not author.bot:
             own = target.id == author.id
@@ -427,6 +479,39 @@ class Patrimonio(commands.Cog):
                 ),
             )
         return embed
+
+    async def _patrimonio_impl(
+        self, responder: CommandResponder, member: discord.Member | None
+    ) -> None:
+        guild = responder.guild
+        author = responder.member
+        if guild is None or author is None:
+            await responder.send_error("El patrimonio solo se mira dentro de un servidor.")
+            return
+        # Lee el dinero, los pisos, la tienda y los negocios: «pensando…» mientras tanto.
+        await responder.start_progress("🏰 Contando el patrimonio…")
+        embed = await self.patrimonio_embed(guild, author, member or author, responder.channel)
+        await responder.finish(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+
+    @app_commands.command(
+        name="patrimonio",
+        description="Lo que tiene un miembro, valorado: dinero, su parte de cada piso y más.",
+    )
+    @app_commands.describe(miembro="De quién ver el patrimonio (por defecto, el tuyo)")
+    @app_commands.guild_only()
+    async def patrimonio(
+        self, interaction: discord.Interaction, miembro: discord.Member | None = None
+    ) -> None:
+        """La sección 🏰 Patrimonio de `perfil`, sin abrir el perfil."""
+        await self._patrimonio_impl(InteractionResponder(interaction), miembro)
+
+    @commands.command(name="patrimonio")
+    @commands.guild_only()
+    async def patrimonio_text(
+        self, ctx: commands.Context, miembro: discord.Member | None = None
+    ) -> None:
+        """Versión de texto: `.patrimonio` o `.patrimonio @alguien`."""
+        await self._patrimonio_impl(ContextResponder(ctx), miembro)
 
     async def _fortunas_impl(self, responder: CommandResponder) -> None:
         guild = responder.guild

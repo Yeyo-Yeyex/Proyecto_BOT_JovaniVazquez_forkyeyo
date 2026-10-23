@@ -181,6 +181,19 @@ def holding_line(item: Holding) -> str:
     return f"{item.emoji} {item.name} · {format_amount(item.value)} ({kind.lower()}{when})"
 
 
+def home_line(title: str, place: str, percent: int, value: int, whole: int) -> str:
+    """`Ático, Triana · 30 % · 600.000 Y$ de 2.000.000 Y$`: su parte de un inmueble.
+
+    Args:
+        percent: Parte del inmueble que tiene (sus participaciones sobre el total).
+        value: Lo que vale su parte.
+        whole: Lo que vale el inmueble entero.
+    """
+    if percent >= 100:
+        return f"{title}, {place} · entero · **{format_amount(value)}**"
+    return f"{title}, {place} · {percent} % · **{format_amount(value)}** de {format_amount(whole)}"
+
+
 def verdict(worth: NetWorth, rank: int, total_people: int) -> str:
     """Frase con guasa según lo que tiene alguien."""
     if worth.total <= 0:
