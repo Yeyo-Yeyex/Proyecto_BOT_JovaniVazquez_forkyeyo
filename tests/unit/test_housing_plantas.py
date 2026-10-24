@@ -274,3 +274,17 @@ async def test_con_varios_duenos_dividir_lo_vota_la_junta_por_unanimidad(tmp_pat
     assert sum(spent.values()) == quote.total and spent[ANA] > spent[BEA]
     for unit in (f"{DUPLEX.key}~1", f"{DUPLEX.key}~2"):
         assert market.shares_of(unit) == {ANA: 60, BEA: 40}
+
+
+def test_una_habitacion_vacia_no_se_okupa_y_un_piso_vacio_si() -> None:
+    from datetime import date
+
+    day = date(2026, 10, 20)
+    empty = rules.Lease(since=day - timedelta(days=rules.SQUAT_AFTER_DAYS + 1))
+    (room, *_rest) = rules.split_units(PISO, rules.ROOMS, 3, 0)
+    # Tres imprevistos que no pasan, nadie que alquile y los okupas, que sí.
+    stays = rules.advance_day(room, empty, day, 1.0, Scripted([0.99] * 4 + [0.0]))
+    assert stays.lease.status == rules.VACANT
+    # El piso entero tiene seis imprevistos posibles (está en un bloque).
+    taken = rules.advance_day(PISO, empty, day, 1.0, Scripted([0.99] * 7 + [0.0]))
+    assert taken.lease.status == rules.SQUATTED

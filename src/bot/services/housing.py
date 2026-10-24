@@ -1028,8 +1028,11 @@ def advance_day(
             else:
                 lease = sign(listing, lease, tenant, day, index)
                 events.append(Event("firma"))
-        elif vacant_for >= SQUAT_AFTER_DAYS and rng.random() < SQUAT * (
-            news.squat if news else 1.0
+        # Una habitación vacía no se okupa: en el piso vive gente.
+        elif (
+            listing.kind != ROOM_KIND
+            and vacant_for >= SQUAT_AFTER_DAYS
+            and rng.random() < SQUAT * (news.squat if news else 1.0)
         ):
             lease = replace(lease, status=SQUATTED, tenant=None, rent=0, since=day)
             events.append(Event("okupa"))
