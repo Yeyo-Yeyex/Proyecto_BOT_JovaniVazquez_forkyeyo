@@ -5,7 +5,7 @@ Comandos (todos con `/` y con `.`, mismo nombre; `tajo` elige dónde se usa `pal
 `slow`, `say`, `nick`, `role`, `bienv`, `niveles`, `cambios`, `catalogo`, `tajo`,
 `informe` (descarga la telemetría interna, ver `bot.cogs.telemetry`), `robuso` (si
 Robuso está en Hong Kong o en Madrid, para sus logros: ver `bot.cogs.robuso`),
-`bloquear`, `crear` y `enchufe`.
+`bloquear`, `crear`, `enchufe` y `amanece`.
 
 `bloquear` es el freno de emergencia para un fallo o un exploit. Como `reinicio`, solo
 lo usan los IDs de `DEPLOYERS` (Yeyo y Dani), sean o no administradores, y no sale en
@@ -24,9 +24,10 @@ un rol no se daría en Discord, un potenciador no caducaría y una mascota se ad
 No cobra nada ni gasta existencias, y lo que da llega sin número de serie.
 
 `enchufe` sube de puesto en `pala` a un miembro sin pedirle barra, días, tareas ni
-formación. Solo para Yeyo (`ENCHUFE_OWNER`), solo con `.` y en secreto: no sale en
-`ayuda` ni en la telemetría, con cualquier otro el bot calla como ante un comando que
-no existe, borra el mensaje y contesta por privado.
+formación. `amanece` le vacía las franjas de hoy (curro y negocio) y las horas extra
+de la semana, y le llena la batería. Los dos son solo para Yeyo (`SECRET_OWNER`), solo
+con `.` y en secreto: no salen en `ayuda` ni en la telemetría, con cualquier otro el
+bot calla como ante un comando que no existe, borran el mensaje y contestan por privado.
 
 Autorización: solo miembros con el permiso **Administrador** del servidor.
 Se comprueba en el servidor en cada invocación (`cog_check` para `.` e
@@ -118,9 +119,10 @@ GIF_RESET_WORDS = {"quitar", "video", "vídeo", "ninguno"}
 UNBLOCKABLE = {"bloquear", "reinicio"}
 # Comandos del cog que filtran por `DEPLOYERS` en vez de por Administrador.
 DEPLOYER_COMMANDS = {"bloquear", "crear"}
-# Único que puede usar `enchufe`: Yeyo (Dani no).
-ENCHUFE_OWNER = 403646452414545921
+# Único que puede usar los comandos secretos (`enchufe`, `amanece`): Yeyo (Dani no).
+SECRET_OWNER = 403646452414545921
 ENCHUFE_USAGE = "Uso: `.enchufe @miembro [puestos] [rama]`."
+AMANECE_USAGE = "Uso: `.amanece` (a ti) o `.amanece @miembro`."
 # Marca de los métodos de discord.py ya envueltos por `install_click_block`.
 _BLOCK_GUARD = "_blocked_command_guard"
 
@@ -375,7 +377,7 @@ class Admin(commands.Cog):
     async def cog_check(self, ctx: commands.Context) -> bool:  # type: ignore[override]
         """Solo administradores y solo dentro de un servidor (comandos `.`)."""
         if ctx.command is not None and ctx.command.extras.get("secret"):
-            return True  # `enchufe` calla por su cuenta con todos menos Yeyo, también por privado.
+            return True  # Los secretos callan por su cuenta con todos menos Yeyo (`_secret_start`).
         if ctx.guild is None:
             raise commands.NoPrivateMessage()
         if ctx.command is not None and ctx.command.name in DEPLOYER_COMMANDS:
@@ -1508,13 +1510,11 @@ class Admin(commands.Cog):
     async def enchufe(self, ctx: commands.Context, *, texto: str = "") -> None:
         """`.enchufe @miembro [puestos] [rama]`: sube de puesto en `pala` sin pedir nada.
 
-        Solo para Yeyo (`ENCHUFE_OWNER`). El texto llega entero y se lee aquí: un
+        Solo para Yeyo (`SECRET_OWNER`). El texto llega entero y se lee aquí: un
         argumento que falta o no se entiende no da error a la vista de nadie.
         """
-        if ctx.guild is None or ctx.author.id != ENCHUFE_OWNER:
+        if not await self._secret_start(ctx):
             return
-        with contextlib.suppress(discord.HTTPException):
-            await ctx.message.delete()
         words = texto.split()
         member = None
         if words:
@@ -1553,12 +1553,57 @@ class Admin(commands.Cog):
             lines.append(f"{member.display_name} ya está en lo más alto ({status.position.title}).")
         await self._whisper(ctx, "\n".join(lines))
 
+    # --- amanece ----------------------------------------------------------
+
+    @commands.command(name="amanece", hidden=True, extras={"secret": True})
+    async def amanece(self, ctx: commands.Context, *, texto: str = "") -> None:
+        """`.amanece [@miembro]`: empieza su día de `pala` de nuevo (sin miembro, el tuyo).
+
+        Franjas de hoy del curro y del negocio a cero, horas extra de la semana libres y
+        batería llena (`WorkService.reset_day`). Solo para Yeyo, como `enchufe`.
+        """
+        if not await self._secret_start(ctx):
+            return
+        member = ctx.author
+        if words := texto.split():
+            member = None
+            with contextlib.suppress(commands.BadArgument):
+                member = await commands.MemberConverter().convert(ctx, words[0])
+            if member is None:
+                await self._whisper(ctx, AMANECE_USAGE)
+                return
+        try:
+            hired = await self.bot.work.reset_day(ctx.guild.id, member.id)  # type: ignore[attr-defined]
+        except sqlite3.Error:
+            logger.exception("No se pudo reiniciar el día de %s en %s", member.id, ctx.guild.id)
+            await self._whisper(ctx, "No se ha podido guardar ahora mismo. Prueba en un rato.")
+            return
+        logger.info("%s reinicia el día de %s en %s", ctx.author.id, member.id, ctx.guild.id)
+        await self._whisper(
+            ctx,
+            f"🌅 {member.display_name}: franjas de hoy a cero, horas extra de la semana libres "
+            "y batería al 100 %."
+            if hired
+            else f"🌅 {member.display_name} no tiene curro: batería al 100 % y turnos de hoy "
+            "del negocio a cero.",
+        )
+
+    # --- secretos -----------------------------------------------------------
+
+    async def _secret_start(self, ctx: commands.Context) -> bool:
+        """Si lo escribe Yeyo en un servidor, y entonces borra su mensaje; si no, nada."""
+        if ctx.guild is None or ctx.author.id != SECRET_OWNER:
+            return False
+        with contextlib.suppress(discord.HTTPException):
+            await ctx.message.delete()
+        return True
+
     async def _whisper(self, ctx: commands.Context, text: str) -> None:
-        """Contesta a `enchufe` por privado; si no admite privados, solo queda en el log."""
+        """Contesta a un secreto por privado; si no admite privados, solo queda en el log."""
         try:
             await ctx.author.send(text, allowed_mentions=discord.AllowedMentions.none())
         except discord.HTTPException:
-            logger.warning("No se pudo mandar por privado la respuesta de enchufe")
+            logger.warning("No se pudo mandar por privado la respuesta de %s", ctx.command)
 
     # --- catalogo ---------------------------------------------------------
 

@@ -1192,6 +1192,34 @@ async def test_el_enchufe_sube_sin_requisitos_y_para_en_la_rama_y_en_lo_mas_alto
     assert (await service.history(GUILD, USER))["politica"].max_level == POLITICA.top
 
 
+async def test_amanece_vacia_las_franjas_de_hoy_y_llena_la_bateria(
+    tmp_path: Path, dice: Dice
+) -> None:
+    clock = Clock()
+    service = await make(tmp_path, clock)
+    await service.spend_battery(GUILD, USER, 40)  # sin curro: la batería de la persona
+    assert await service.reset_day(GUILD, USER) is False
+    assert await service.battery(GUILD, USER) == BATTERY_MAX
+    await service.hire(GUILD, USER, "politica")
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    contract = status.contract
+    contract.shifts_today, contract.franjas, contract.extras_week = 4, {"extra": 3, "guardia": 1}, 5
+    contract.battery, contract.battery_at = 5.0, clock.now
+    contract.off_duty_until = clock.now + 3600
+    await service.repository.save_contract(GUILD, USER, contract)
+    status = await service.status(GUILD, USER)
+    assert status is not None and status.agenda.free == 0
+
+    assert await service.reset_day(GUILD, USER) is True
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    assert status.agenda.free == 8 - contract.jornada  # la jornada sigue reservada
+    assert (status.contract.shifts_today, status.contract.extras_week) == (0, 0)
+    assert status.battery == BATTERY_MAX
+    assert status.contract.off_duty_until == clock.now + 3600, "el saliente sigue"
+
+
 async def test_en_una_rama_no_se_elige_otra_al_ascender(
     tmp_path: Path, dice: Dice, monkeypatch: pytest.MonkeyPatch
 ) -> None:
