@@ -1659,8 +1659,9 @@ def building_state(
                 "price": format_amount(rules.price(unit, index)),
                 "rent": format_amount(rules.reference_rent(unit, index)) + "/mes",
                 "featured": unit.key == building.featured,
-                # Un ático caro (sobreático o con vistas, 9.16.0): la escena le pinta su terraza.
-                "premium": is_penthouse(unit.key),
+                # Un ático caro (sobreático o con vistas, 9.16.0), o una de sus mitades: la escena
+                # le pinta su terraza.
+                "premium": is_penthouse(rules.parent_key(unit.key) or unit.key),
                 # Para que el dibujo diga la verdad: el ancho de cada hueco, por sus metros; si es
                 # la mitad de algo dividido en dos («izda.»/«dcha.»), y si se podría dividir.
                 "area": unit.m2,
