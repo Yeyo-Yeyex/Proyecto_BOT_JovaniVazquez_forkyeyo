@@ -148,6 +148,13 @@ def _money_line(total: int, balance: int) -> str:
     )
 
 
+def _stock_note(item: ShopItem) -> str:
+    """Lo que queda de una edición limitada, para el desplegable; vacío si no lo es."""
+    if item.remaining is None:
+        return ""
+    return " · agotado" if item.sold_out else f" · quedan {item.remaining} de {item.stock}"
+
+
 def _tax_note(lines: Sequence[TicketLine]) -> str:
     """La mordida del impuesto: la de siempre con una unidad; si no, el total."""
     if len(lines) == 1 and lines[0].qty == 1:
@@ -372,9 +379,8 @@ class Storefront(ui.LayoutView):
                 emoji=_select_emoji(item.emoji),
                 # En un desplegable no hay formato: las comillas de `pala` saldrían tal cual.
                 description=(
-                    f"{format_amount(quote(item, now).base)} · {short_detail(item)}".replace(
-                        "`", ""
-                    )[:100]
+                    f"{format_amount(quote(item, now).base)}{_stock_note(item)} · "
+                    f"{short_detail(item)}".replace("`", "")[:100]
                 ),
             )
             for item in items

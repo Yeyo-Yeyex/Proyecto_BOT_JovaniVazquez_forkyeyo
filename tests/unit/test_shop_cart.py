@@ -35,6 +35,7 @@ from bot.cogs.shop_front import (
     CartPanel,
     ItemSheet,
     Storefront,
+    _stock_note,
     add_to_cart,
     open_sheet,
 )
@@ -401,9 +402,15 @@ async def test_la_linea_compacta_lleva_sus_etiquetas() -> None:
         best_seller=True,
     )
     assert "~~1.000 Y$~~ **800 Y$** 🏷️ -20 %" in text
-    for tag in ("✅×2", "🛒×3", "⭐", "📦 3", "🔒 nv. 5", "🔥", "🆕"):
+    for tag in ("✅×2", "🛒×3", "⭐", "📦 quedan 3 de 10", "🔒 nv. 5", "🔥", "🆕"):
         assert tag in text, tag
     assert "✅ máx." in compact_line(item(per_user=1), NOW, owned=0, maxed=True)
+
+
+def test_el_desplegable_dice_lo_que_queda_de_una_edicion_limitada() -> None:
+    assert _stock_note(item(stock=10, sold=7)) == " · quedan 3 de 10"
+    assert _stock_note(item(stock=10, sold=10)) == " · agotado"
+    assert _stock_note(item()) == ""
 
 
 # -- Ficha y carrito en Discord ---------------------------------------------------------
