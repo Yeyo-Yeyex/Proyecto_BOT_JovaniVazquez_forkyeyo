@@ -8,6 +8,16 @@ criterio.
 
 ## 9.x
 
+### 9.11.0 · 2026-10-24
+
+- Negocios: hasta 4 locales por persona, una cadena con sus franjas, su batería y su cuota de autónomo de siempre; 🗺️ Cadena en la portada para ir de uno a otro y montar otro con el mismo rótulo
+- Negocios: si eres sociedad, la sociedad lleva todos los locales: una caja, una gestoría por noche y un solo Impuesto sobre Sociedades con lo de todos; cerrar uno de ellos no la liquida
+- Negocios: 🏭 una nave alquilada o tuya de `pisos` para importar contenedores de la Península, más baratos que el mayorista, con su flete, el AIEM y el IGIC de importación; reparte a tus locales de su isla
+- Negocios: 🧑‍💼 gerentes que cada noche reponen el almacén (de la nave primero) y cubren las bajas de la plantilla
+- Negocios: 💼 vender la sociedad con toda la cadena por el valor del art. 37.1.b LIRPF; la ganancia paga el 19 %
+- Banco: cada local de una cadena pide sus préstamos, y el mostrador del negocio pasa de uno a otro
+- Hacienda: el AIEM de las importaciones sale aparte
+
 ### 9.10.2 · 2026-10-24
 
 - Tienda: las ediciones limitadas dicen cuántas quedan en la lista y en el desplegable, sin tener que abrir la ficha

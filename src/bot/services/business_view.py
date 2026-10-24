@@ -12,18 +12,23 @@ Pantallas: `dia` (el inicio de `pala`), `montar`, `negocio` (portada y vista pre
 fase 2, también `mejoras` (las mejoras del local y las campañas) y `resenas`; el traslado
 se enseña con la vista previa de `negocio` (`traslado_state`). Desde la fase 3, `sociedad`
 (constituirla o su balance, `sociedad_state`). Desde la fase 4, `plantilla` (los empleados,
-`plantilla_state`) y `candidatos` (los de hoy y la oferta, `candidatos_state`).
+`plantilla_state`) y `candidatos` (los de hoy y la oferta, `candidatos_state`). Desde la
+fase 5, `cadena` (todos los locales y la nave, `cadena_state`), `nave` (alquilarla, o lo que
+hay dentro, lo que viene y lo que cuesta importar, `nave_state`) y `venta` (lo que paga el
+comprador por la sociedad, `venta_state`).
 """
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
+from bot.services import business_chain as chain
 from bot.services import business_sl as sl
 from bot.services import business_staff as staff
 from bot.services.agenda import JORNADA_NAMES, Agenda
 from bot.services.business import (
+    MAX_LOCALES,
     RECOMMENDED_RATING,
     RECOMMENDED_REVIEWS,
     Business,
@@ -53,9 +58,9 @@ from bot.services.business_catalog import (
 )
 from bot.services.business_games import TurnGame
 from bot.services.economy import format_amount
-from bot.services.housing_catalog import BARRIO_BY_KEY, BARRIOS
+from bot.services.housing_catalog import BARRIO_BY_KEY, BARRIOS, ISLANDS
 from bot.services.levels import TIMEZONE
-from bot.services.taxes import format_rate, igic
+from bot.services.taxes import capital_gain_tax, format_rate, igic
 
 State = dict[str, Any]
 
@@ -162,6 +167,7 @@ def dia_state(
     work: Any | None,
     business: Business | None,
     battery_left: float | None = None,
+    locales: list[Business] | None = None,
 ) -> State:
     """El inicio de `pala`: las franjas del día y las tarjetas del curro y del negocio.
 
@@ -172,6 +178,8 @@ def dia_state(
         business: Su negocio (con los contadores de hoy al día), o `None`.
         battery_left: Su batería sin curro (la que gasta en el negocio); con curro sale
             de `work`. Sin curro no hay familia que enseñar.
+        locales: Todos sus locales (fase 5): la tarjeta del negocio enseña el primero, la caja
+            de hoy de todos y cuántos más tiene (`more`, 0 con uno solo).
     """
     job: State | None = None
     jornada = "Sin curro"
@@ -201,15 +209,18 @@ def dia_state(
         }
     card: State | None = None
     if business is not None:
-        turns = business.turns_today
+        chain_ = locales or [business]
+        turns = sum(b.turns_today for b in chain_)
+        alerts = [a for b in chain_ if (a := _alert(b))]
         card = {
             **_style(business),
             "sector_name": business.sector_info.name,
             "barrio": business.barrio_info.name,
             "stars": business.stars,
-            "today": f"{signed(business.sales_today)} hoy",
+            "today": f"{signed(sum(b.sales_today for b in chain_))} hoy",
             "status": plural(turns, "turno hoy", "turnos hoy") if turns else "Hoy aún cerrado",
-            "alert": _alert(business),
+            "alert": alerts[0] if alerts else None,
+            "more": len(chain_) - 1,
         }
     free = agenda.free
     if work is None and business is None:
@@ -305,8 +316,11 @@ def hash_seed(text: str) -> int:
 # -- El negocio -----------------------------------------------------------------------
 
 
-def negocio_state(business: Business, *, foot: str, rivals: int = 0) -> State:
+def negocio_state(business: Business, *, foot: str, rivals: int = 0, chain_count: int = 1) -> State:
     """La portada del negocio con las cifras de hoy.
+
+    Fase 5: `locales` (`None` con un solo local, o `{"count", "text"}`: cuántos lleva la cadena)
+    y `manager` (el nombre del gerente, o `None`).
 
     Fase 2: `rating` (media de las reseñas, cuántas y si sale recomendado), `campaign` (la
     campaña de hoy y lo que le queda), `equipment` (las claves de las mejoras instaladas) y
@@ -366,6 +380,12 @@ def negocio_state(business: Business, *, foot: str, rivals: int = 0) -> State:
         "equipment": list(business.equipment),
         "size": size_text(business),
         "staff": team,
+        "locales": (
+            {"count": chain_count, "text": f"Cadena de {chain_count} locales"}
+            if chain_count > 1
+            else None
+        ),
+        "manager": boss["name"] if (boss := staff.manager(business)) else None,
         "foot": foot,
     }
 
@@ -835,7 +855,8 @@ def staff_card(employee: dict[str, Any], today: date, *, selected: bool = False)
 
     `seed` dibuja su cara. `contract` es la clave (`indefinido`, `temporal` o `b`) y
     `contract_name` lo que pone, con el período de prueba o el día en que se acaba. `today`
-    dice lo de hoy en una línea. `alerts`, lo que hay que mirar (dos como mucho).
+    dice lo de hoy en una línea. `alerts`, lo que hay que mirar (dos como mucho). Fase 5:
+    `role` es `gerente` o `""`; el gerente no tiene turno (`shift` dice «Gerente»).
     """
     iso = today.isoformat()
     contract = CONTRACT_NAMES[employee["contract"]]
@@ -844,8 +865,11 @@ def staff_card(employee: dict[str, Any], today: date, *, selected: bool = False)
     if employee["until"]:
         end = date.fromisoformat(employee["until"])
         contract += f" · hasta el {DAYS[end.weekday()].lower()}"
+    manager = staff.is_manager(employee)
     if employee["absent_day"] == iso:
         line = "Hoy no ha venido"
+    elif manager:
+        line = "Repone y cubre bajas"
     elif employee["grades_day"] == iso and employee["grades"]:
         turns = plural(len(employee["grades"]), "turno", "turnos")
         line = f"Hoy: {turns} · nota " + " ".join(employee["grades"])
@@ -868,7 +892,10 @@ def staff_card(employee: dict[str, Any], today: date, *, selected: bool = False)
         "seed": employee["key"],
         "contract": employee["contract"],
         "contract_name": contract,
-        "shift": shift_text(employee["shift"], employee["jornada"]),
+        "shift": (
+            "Gerente · completa" if manager else shift_text(employee["shift"], employee["jornada"])
+        ),
+        "role": employee.get("role", ""),
         "skills": _skills(employee["skills"], employee["traits"]),
         "humor": round(employee["humor"]),
         "mood": mood_name(employee["humor"]),
@@ -892,11 +919,15 @@ def plantilla_state(
     done = business.staff_today
     turns = plural(done.get("turns", 0), "turno", "turnos")
     clients = plural(done.get("clients", 0), "cliente", "clientes")
+    counter = len(staff.counter_staff(business))
+    cap = f"{counter} de {staff.cap(business.size)} puestos"
+    if staff.manager(business) is not None:
+        cap += " · con gerente"
     return {
         "screen": "plantilla",
         **_style(business),
         "staff": [staff_card(e, today, selected=e["id"] == selected) for e in business.staff],
-        "cap": f"{len(business.staff)} de {staff.cap(business.size)} puestos",
+        "cap": cap,
         "payroll": f"Nóminas de esta noche: {format_amount(pay.cost + pay.black)}",
         "debt": (
             f"Se debe a la plantilla: {format_amount(business.wage_debt)}"
@@ -914,12 +945,17 @@ def offer_slip(
     candidate: dict[str, Any], offer: dict[str, Any], sector: str, today: date
 ) -> tuple[dict[str, Any], Any]:
     """`(el empleado que saldría, su nómina de una noche)` con la oferta (`contract`,
-    `jornada`, `shift`) y lo que pide."""
-    jornada = offer["jornada"]
+    `jornada`, `shift` y, desde la fase 5, `role`) y lo que pide."""
+    role = offer.get("role", "")
+    jornada = staff.FULL_DAY if role else offer["jornada"]
+    wage = (
+        staff.manager_ask(candidate["skills"], candidate["traits"])
+        if role
+        else staff.ask(candidate["skills"], candidate["traits"], jornada)
+    )
     probe = staff.new_employee(
         candidate, seq=0, contract=offer["contract"], jornada=jornada, shift=offer["shift"],
-        wage=staff.ask(candidate["skills"], candidate["traits"], jornada), start=today,
-        bonified=offer.get("bonified", True),
+        wage=wage, start=today, bonified=offer.get("bonified", True), role=role,
     )  # fmt: skip
     return probe, staff.payslip(probe, sector, today)
 
@@ -940,6 +976,7 @@ def candidatos_state(
     jornada completa y a media), `part_time` y `selected`. `offer` es la oferta al elegido
     (`None` si no hay): el contrato (`kind`, la clave, y `contract`, su nombre), el turno, el
     bruto, lo que le llega, lo que cuesta a la empresa, la bonificación y si es en B (`black`).
+    Fase 5: `role` (`gerente` o `""`) en la oferta; el gerente no tiene turno.
     """
     cards = []
     for c in candidates:
@@ -975,10 +1012,14 @@ def candidatos_state(
     chosen = next((c for c in candidates if c["key"] == selected), None)
     if chosen is not None and offer is not None:
         probe, slip = offer_slip(chosen, offer, business.sector, today)
+        role = offer.get("role", "")
         deal = {
             "kind": offer["contract"],
             "contract": CONTRACT_NAMES[offer["contract"]],
-            "shift": shift_text(offer["shift"], offer["jornada"]),
+            "role": role,
+            "shift": (
+                "Gerente · completa" if role else shift_text(offer["shift"], offer["jornada"])
+            ),
             "gross": f"Bruto: {format_amount(slip.gross)} la noche",
             "net": f"Le llega: {format_amount(slip.net)}",
             "cost": f"Te cuesta: {format_amount(slip.cost)}",
@@ -987,7 +1028,7 @@ def candidatos_state(
             ),
             "black": offer["contract"] == "b",
         }
-    room = staff.cap(business.size) - len(business.staff)
+    room = staff.cap(business.size) - len(staff.counter_staff(business))
     return {
         "screen": "candidatos",
         **_style(business),
@@ -995,4 +1036,242 @@ def candidatos_state(
         "offer": deal,
         "room": plural(room, "puesto libre", "puestos libres") if room > 0 else "No queda sitio",
         "foot": foot or "Cada día llegan candidatos nuevos. El período de prueba es de dos noches.",
+    }
+
+
+# -- Fase 5: la cadena, la nave y vender la sociedad -----------------------------------
+
+
+def _island(key: str) -> str:
+    return ISLANDS.get(key, key)
+
+
+def nave_name(nave: chain.Nave) -> str:
+    """`Nave mediana` o `Nave pequeña · propia`."""
+    name = f"Nave {nave.size_info.name.lower()}"
+    return f"{name} · propia" if nave.own_listing else name
+
+
+def cadena_state(
+    locales: list[Business], nave: chain.Nave | None, *, selected: int | None = None, foot: str = ""
+) -> State:
+    """La pantalla 🗺️ Cadena: una tarjeta por local y la de la nave.
+
+    Cada local: su rótulo (`_style`), `id`, `sector_name`, `barrio`, `island`, `stars`, `today`
+    (la caja de hoy), `turns`, `staff` (cuántos atienden), `manager` (si tiene gerente),
+    `alert` y `selected`. `nave` es `None` o `{"barrio", "island", "size", "used", "fill"
+    (0-1), "coming", "tonight"}`. `form` dice si es de autónomo o de la sociedad, `week` lo que
+    lleva la semana toda la cadena y `slots` cuántos locales de cuántos.
+    """
+    cards = []
+    week = 0
+    for business in locales:
+        week += sum(business.week_totals.values())
+        cards.append(
+            {
+                **_style(business),
+                "id": business.id,
+                "sector_name": business.sector_info.name,
+                "barrio": business.barrio_info.name,
+                "island": _island(business.barrio_info.island),
+                "stars": business.stars,
+                "today": f"{signed(business.sales_today)} hoy",
+                "turns": plural(
+                    business.turns_today + business.staff_today.get("turns", 0), "turno", "turnos"
+                ),
+                "staff": len(staff.counter_staff(business)),
+                "manager": staff.manager(business) is not None,
+                "alert": _alert(business),
+                "selected": business.id == selected,
+            }
+        )
+    store = None
+    if nave is not None:
+        week += sum(nave.week_totals.values())
+        used = chain.used_lots(nave)
+        store = {
+            "barrio": nave.barrio_info.name,
+            "island": _island(nave.island),
+            "size": nave_name(nave),
+            "used": f"{used} de {nave.size_info.lots} lotes",
+            "fill": round(min(1.0, used / nave.size_info.lots), 3),
+            "coming": (
+                plural(len(nave.orders), "contenedor en camino", "contenedores en camino")
+                if nave.orders
+                else "Nada en camino"
+            ),
+            "tonight": f"Esta noche: {signed(-chain.nave_bill(nave).total)}",
+        }
+    company = bool(locales) and locales[0].is_company
+    return {
+        "screen": "cadena",
+        **(_style(locales[0]) if locales else {}),
+        "locales": cards,
+        "nave": store,
+        "form": f"{locales[0].name}, S.L." if company else "Autónomo",
+        "week": f"Esta semana: {signed(week)}",
+        "slots": f"{len(locales)} de {MAX_LOCALES} locales",
+        "foot": foot
+        or "Cada local tiene su plantilla y su caja de hoy; las franjas y la cuota son tuyas.",
+    }
+
+
+def _arrival(iso: str, today: date) -> str:
+    """`llega mañana` o `llega el jueves` (la mañana siguiente a la noche en que llega)."""
+    day = date.fromisoformat(iso) + timedelta(days=1)
+    if day <= today:
+        return "llega esta noche"
+    if day == today + timedelta(days=1):
+        return "llega mañana"
+    return f"llega el {DAYS[day.weekday()].lower()}"
+
+
+def nave_state(
+    nave: chain.Nave | None,
+    today: date,
+    *,
+    products: list[str],
+    selected: str = "",
+    barrio: str = "",
+    size: int = 0,
+    foot: str = "",
+) -> State:
+    """La pantalla 🏭 Nave.
+
+    Dos modos. `alquilar` (sin nave): el barrio que se mira (`barrio`), los tamaños (`sizes`:
+    `name`, `m2`, `lots`, `rent` y `selected`) y lo que cuesta abrirla (`cost`). `nave`: el
+    stock (`stock`: `key`, `name`, `units`, `lots`), lo que viene (`coming`: `key`, `name`,
+    `units`, `when`), lo lleno que está (`used`, `fill`), lo de esta noche (`tonight`), la deuda
+    (`debt`, o `None`) y el contenedor del producto elegido (`quote`, o `None`): `key`, `name`,
+    `units`, cada parte (`goods`, `freight`, `aiem` con `aiem_rate`, `igic`, `customs`), el
+    total, lo que costaría al mayorista (`wholesale`), lo que se ahorra (`saving`, `good`) y
+    por qué no se puede (`blocked`, o `None`).
+
+    Args:
+        products: Las claves de lo que venden sus locales de la isla de la nave (lo que se
+            puede importar).
+    """
+    if nave is None:
+        place = BARRIO_BY_KEY.get(barrio) or BARRIOS[0]
+        quote = chain.nave_quote(place, size)
+        return {
+            "screen": "nave",
+            "mode": "alquilar",
+            "barrio": place.name,
+            "island": _island(place.island),
+            "sizes": [
+                {
+                    "name": f"Nave {option.name.lower()}",
+                    "m2": f"{option.m2} m²",
+                    "lots": f"{option.lots} lotes",
+                    "rent": f"{format_amount(chain.nave_rent(place, option))} la noche + IGIC",
+                    "selected": i == size,
+                }
+                for i, option in enumerate(chain.NAVE_SIZES)
+            ],
+            "cost": f"Abrirla: {format_amount(quote.total)} (tasa y fianza)",
+            "foot": foot
+            or "La nave reparte a tus locales de su isla. Los contenedores llegan en dos noches.",
+        }
+    stock = []
+    for key, units in sorted(nave.stock.items()):
+        item = chain.product_by_key(key)
+        if item is None or units <= 0:
+            continue
+        stock.append(
+            {
+                "key": key,
+                "name": item.name,
+                "units": str(units),
+                "lots": plural(-(-units // item.pack), "lote", "lotes"),
+            }
+        )
+    coming = []
+    for order in nave.orders:
+        item = chain.product_by_key(order["product"])
+        coming.append(
+            {
+                "key": order["product"],
+                "name": item.name if item else order["product"],
+                "units": str(order["units"]),
+                "when": _arrival(order["arrives"], today),
+            }
+        )
+    deal = None
+    item = chain.product_by_key(selected) if selected else None
+    if item is not None:
+        quote = chain.import_quote(item)
+        rate = chain.AIEM.get(item.key, 0.0)
+        room = nave.size_info.lots - chain.used_lots(nave)
+        blocked = None
+        if not chain.can_import(item):
+            blocked = "Caduca: no aguanta lo que dura un contenedor"
+        elif item.key not in products:
+            blocked = "Ninguno de tus locales de la isla lo vende"
+        elif room < chain.CONTAINER_LOTS:
+            blocked = f"No cabe: quedan {max(0, room)} lotes libres"
+        deal = {
+            "key": item.key,
+            "name": item.name,
+            "units": f"{quote.units} unidades ({chain.CONTAINER_LOTS} lotes)",
+            "goods": format_amount(quote.goods),
+            "freight": format_amount(quote.freight),
+            "aiem": format_amount(quote.aiem),
+            "aiem_rate": format_rate(rate).replace(",00", "") if rate else "no lleva",
+            "igic": format_amount(quote.igic),
+            "customs": format_amount(quote.customs + quote.customs_igic),
+            "total": format_amount(quote.total),
+            "wholesale": format_amount(quote.wholesale),
+            "saving": signed(quote.saving),
+            "good": quote.saving > 0,
+            "blocked": blocked,
+        }
+    used = chain.used_lots(nave)
+    return {
+        "screen": "nave",
+        "mode": "nave",
+        "barrio": nave.barrio_info.name,
+        "island": _island(nave.island),
+        "size": nave_name(nave),
+        "used": f"{used} de {nave.size_info.lots} lotes",
+        "fill": round(min(1.0, used / nave.size_info.lots), 3),
+        "stock": stock,
+        "coming": coming,
+        "tonight": f"Esta noche: {signed(-chain.nave_bill(nave).total)}",
+        "debt": f"Debes {format_amount(nave.rent_debt)} de la nave" if nave.rent_debt else None,
+        "quote": deal,
+        "foot": foot
+        or "Un contenedor llega en dos noches. Lo de la nave se lleva a cada local desde su "
+        "almacén, o lo trae su gerente.",
+    }
+
+
+def venta_state(view: Any, offer: chain.SaleOffer, *, foot: str = "") -> State:
+    """La pantalla 💼 Vender la sociedad (`negocio.CompanyView` y `business_chain.SaleOffer`).
+
+    `results` son los resultados de las últimas semanas; `capitalized`, su media por cinco;
+    `equity`, el patrimonio neto; `price`, lo que paga (el mayor, art. 37.1.b LIRPF); `loan`, lo
+    que te devuelve de tu préstamo; `gain` y `tax`, la ganancia y su IRPF; `net`, lo que te
+    llevas; `locales` y `staff`, lo que se va con la sociedad; `blocker`, por qué no hay
+    comprador (o `None`).
+    """
+    business = view.business
+    tax = capital_gain_tax(offer.gain)
+    return {
+        "screen": "venta",
+        **_style(business),
+        "results": [signed(r) for r in offer.results],
+        "capitalized": format_amount(offer.capitalized),
+        "equity": signed(offer.equity),
+        "price": format_amount(offer.price),
+        "loan": format_amount(offer.loan),
+        "basis": format_amount(offer.basis),
+        "gain": signed(offer.gain),
+        "tax": format_amount(tax),
+        "net": format_amount(offer.price + offer.loan - tax),
+        "locales": plural(len(view.locales), "local", "locales"),
+        "staff": plural(sum(len(b.staff) for b in view.locales), "empleado", "empleados"),
+        "blocker": offer.blocker,
+        "foot": foot
+        or "Se van la caja, los locales, la nave y la plantilla. La ganancia paga el 19 %.",
     }

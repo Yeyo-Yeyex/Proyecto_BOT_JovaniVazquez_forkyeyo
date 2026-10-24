@@ -16,6 +16,9 @@ indefinido (o en B, sin alta), a jornada completa o media, de mañana o de tarde
   y no cobrar. Con poco humor falla más, falta (`absent`) y acaba yéndose (`quits`).
 - **Despidos** (`dismissals`): período de prueba, fin del temporal, disciplinario, objetivo e
   improcedente, con su indemnización (`severance`).
+- **Gerente** (fase 5, `MANAGER`): un empleado con ese puesto (`employee["role"]`) no atiende
+  franjas; cada noche repone el stock y cubre las bajas (`business_chain.restock`). Pide más
+  (`manager_ask`) y no ocupa sitio en el mostrador (`cap` cuenta solo a los demás).
 
 Escalas, las de los sueldos de la `pala` (`WAGE_YAPDOLLARS_PER_EURO`, 100 Y$ el euro):
 
@@ -105,8 +108,12 @@ UNPAID_NIGHTS_TO_LEAVE = 2
 #: retenciones llevan el mismo (simplificación: los de la LGT van del 1 al 20 %).
 LATE_SURCHARGE = 0.20
 
-#: Empleados como mucho por tamaño de local (pequeño, mediano, grande).
+#: Empleados como mucho por tamaño de local (pequeño, mediano, grande), sin contar al gerente.
 STAFF_CAP = (2, 4, 6)
+#: Fase 5: el puesto de gerente (`employee["role"]`; los demás, `""`), uno por local y a jornada
+#: completa, y lo que pide de más frente a un dependiente que sepa lo mismo (un encargado).
+MANAGER = "gerente"
+MANAGER_PREMIUM = 1.2
 #: Candidatos que llegan cada día.
 CANDIDATES_PER_DAY = 3
 
@@ -370,6 +377,7 @@ def new_employee(
     wage: int,
     start: date,
     bonified: bool = True,
+    role: str = "",
 ) -> dict[str, Any]:
     """Un empleado recién contratado (`Business.staff`), que empieza a trabajar `start`.
 
@@ -381,6 +389,7 @@ def new_employee(
         bonified: Si puede tener bonificación (al corriente con Hacienda y la Seguridad
             Social, art. 8 del RDL 1/2023, y sin despidos improcedentes de bonificados, art.
             11.4).
+        role: `MANAGER` para el gerente (fase 5); `""` para quien atiende.
     """
     profile = PROFILE_BY_KEY[candidate["profile"]]
     bonus = 0
@@ -427,14 +436,28 @@ def new_employee(
         "grades_day": "",
         "roll_day": "",
         "b_paid": 0,
+        "role": role,
     }
 
 
 # -- Trabajar -------------------------------------------------------------------------
 
 
+def is_manager(employee: dict[str, Any]) -> bool:
+    """Si es el gerente del local (fase 5)."""
+    return employee.get("role", "") == MANAGER
+
+
+def manager_ask(skills: dict[str, float], traits: list[str] | tuple[str, ...]) -> int:
+    """Lo que pide cada noche de gerente: lo de un dependiente a jornada completa, con lo que
+    pide de más un encargado (`MANAGER_PREMIUM`), a decenas hacia arriba."""
+    return -(-round(ask(skills, traits, FULL_DAY) * MANAGER_PREMIUM) // 10) * 10
+
+
 def franjas(employee: dict[str, Any]) -> tuple[int, ...]:
-    """Las franjas del día en las que trabaja."""
+    """Las franjas del día en las que atiende (el gerente, ninguna: no está en el mostrador)."""
+    if is_manager(employee):
+        return ()
     table = SHIFTS if employee["jornada"] >= FULL_DAY else HALF_SHIFTS
     return table[employee["shift"]]
 
@@ -579,7 +602,9 @@ WORTH_SLACK = 0.95
 
 
 def worth(employee: dict[str, Any]) -> int:
-    """Lo que pediría hoy por lo que sabe (a su jornada)."""
+    """Lo que pediría hoy por lo que sabe (a su jornada; de gerente, lo de un gerente)."""
+    if is_manager(employee):
+        return manager_ask(employee["skills"], employee["traits"])
     return ask(employee["skills"], employee["traits"], employee["jornada"])
 
 
@@ -811,8 +836,18 @@ def fine(workers: int) -> int:
 
 
 def cap(size: int) -> int:
-    """Empleados como mucho en un local de tamaño `size`."""
+    """Empleados como mucho en un local de tamaño `size` (sin contar al gerente)."""
     return STAFF_CAP[max(0, min(len(STAFF_CAP) - 1, size))]
+
+
+def counter_staff(business: Any) -> list[dict[str, Any]]:
+    """Los que atienden (todos menos el gerente)."""
+    return [e for e in business.staff if not is_manager(e)]
+
+
+def manager(business: Any) -> dict[str, Any] | None:
+    """El gerente del local, o `None`."""
+    return next((e for e in business.staff if is_manager(e)), None)
 
 
 # -- La noche: la nómina de todos y la Inspección -------------------------------------

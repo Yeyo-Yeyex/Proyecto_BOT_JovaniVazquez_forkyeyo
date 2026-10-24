@@ -19,16 +19,19 @@ from discord import ui
 from interaction_fakes import fake_interaction
 
 from bot.cogs.business import (
+    CADENA,
     CANDIDATOS,
     CIERRE,
     CONFIRMAR,
     DESPIDO,
     MONTAR,
+    NAVE,
     PLANTILLA,
     PORTADA,
     PREVIA,
     SOCIEDAD,
     TURNO,
+    VENTA,
     Negocio,
     NegocioPanel,
     parse_game_id,
@@ -37,6 +40,7 @@ from bot.cogs.work import PalaPanel, Work
 from bot.repositories.business import BusinessRepository
 from bot.repositories.economy import EconomyRepository, LedgerEntry
 from bot.repositories.work import WorkRepository
+from bot.services import business_staff as staff
 from bot.services import pala
 from bot.services.business_catalog import SECTOR_BY_KEY
 from bot.services.business_games import COINS
@@ -533,3 +537,81 @@ async def test_la_plantilla_sale_en_texto_sin_pintor(tmp_path: Path) -> None:
     assert candidate["name"] in panel.text() and "En B" in panel.text()
     await button(panel, "👥 Candidatos").callback(click())
     assert "Candidatos de hoy" in panel.text()
+
+
+# -- Fase 5: la cadena, la nave, el gerente y vender ------------------------------------
+
+
+async def test_la_cadena_la_nave_y_el_gerente_desde_el_panel(tmp_path: Path) -> None:
+    _work_cog, business_cog, panel = await opened_business(tmp_path)
+    service = business_cog.service
+    await service.economy.repository.apply(GUILD, OWNER, [LedgerEntry(5_000_000, "prueba")])
+    first = panel.biz
+    await button(panel, "🗺️ Cadena").callback(click())
+    assert panel.screen == CADENA
+    check_limits(panel)
+    # Otro local, con el rótulo del de ahora.
+    await button(panel, "➕ Otro local").callback(click())
+    assert panel.screen == MONTAR and panel.draft["name"] == "Bar Pepe"
+    await panel._pick_sector(click(), "tienda")
+    await panel._pick_barrio(click(), "vegueta")
+    await button(panel, "➡️ Seguir").callback(click())
+    await button(panel, "✅ Montarlo").callback(click())
+    owned = await service.owned(GUILD, OWNER)
+    assert len(owned) == 2 and panel.biz == owned[1].id and panel.screen == PORTADA
+    assert owned[1].name == "Bar Pepe"
+    # Ir al otro local desde la cadena.
+    await button(panel, "🗺️ Cadena").callback(click())
+    check_limits(panel)
+    await panel._pick_local(click(), str(first))
+    assert panel.biz == first and panel.screen == PORTADA
+    assert panel.status is not None and panel.status.business.sector == "cafeteria"
+    # La nave: alquilarla, importar y traer al almacén.
+    await button(panel, "🗺️ Cadena").callback(click())
+    await button(panel, "🏭 Nave").callback(click())
+    assert panel.screen == NAVE
+    check_limits(panel)
+    await panel._pick_nave_barrio(click(), "telde")
+    await button(panel, "🏭 Abrir la nave").callback(click())
+    assert await service.nave(GUILD, OWNER) is not None
+    check_limits(panel)
+    await panel._pick_import(click(), "cafe")
+    check_limits(panel)
+    await button(panel, "🚢 Importar").callback(click())
+    nave = await service.nave(GUILD, OWNER)
+    assert nave is not None and len(nave.orders) == 1
+    assert button(panel, "🚪 Dejar la nave").disabled  # con un contenedor en camino, no
+    # Un gerente para el local.
+    await button(panel, "⬅️ Cadena").callback(click())
+    await button(panel, "⬅️ Volver").callback(click())
+    await button(panel, "👥 Plantilla").callback(click())
+    await button(panel, "👥 Candidatos").callback(click())
+    business = await service.business(GUILD, OWNER, first)
+    assert business is not None
+    pick = next(c for c in service.candidates(business) if not c["part_time"])
+    await panel._pick_candidate(click(), str(pick["key"]))
+    await panel._pick_contract(click(), staff.MANAGER)
+    check_limits(panel)
+    await button(panel, "✍️ Contratar").callback(click())
+    business = await service.business(GUILD, OWNER, first)
+    assert business is not None and staff.manager(business) is not None
+    assert "gerente" in panel.text()
+
+
+async def test_vender_la_sociedad_desde_el_panel(tmp_path: Path) -> None:
+    _work_cog, business_cog, panel = await opened_business(tmp_path)
+    service = business_cog.service
+    await service.economy.repository.apply(GUILD, OWNER, [LedgerEntry(1_000_000, "prueba")])
+    await service.constitute(GUILD, OWNER, 300_000)
+    business = await service.business(GUILD, OWNER)
+    assert business is not None
+    business.company["results"] = [150_000, 150_000, 150_000]
+    await service.repository.save(GUILD, business)
+    await button(panel, "🏢 Sociedad").callback(click())
+    await button(panel, "💼 Vender la sociedad").callback(click())
+    assert panel.screen == VENTA
+    check_limits(panel)
+    assert "El comprador paga" in panel.text()
+    await button(panel, "💼 Vender ·").callback(click())
+    assert await service.owned(GUILD, OWNER) == []
+    assert panel.screen == MONTAR
