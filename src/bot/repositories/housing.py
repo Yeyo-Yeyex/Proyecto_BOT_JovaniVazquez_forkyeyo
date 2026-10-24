@@ -28,7 +28,7 @@ Tablas del mercado (en el mismo archivo SQLite que el resto del bot):
   cerraduras y el vecino) y lo que eligió; si no elige en dos días, los arregla la gestora.
 - `housing_reviews`: las últimas reseñas de cada vivienda vacacional (`REVIEW_WINDOW`); la
   media va en `housing_leases.rating`. Se borran si el inmueble vuelve al mercado.
-- `housing_splits`: los inmuebles divididos (9.11.0). Por plantas es para siempre: cada
+- `housing_splits`: los inmuebles divididos (9.12.0). Por plantas es para siempre: cada
   planta (`clave~1`) tiene sus dueños, su contrato y su hipoteca, y el inmueble entero deja
   de existir. Por habitaciones (`clave~h1`) el piso sigue teniendo los dueños y su contrato
   queda en `housing.BY_ROOMS`; cada habitación tiene el suyo, y todo se deshace al juntarlas
@@ -2764,6 +2764,23 @@ class HousingRepository:
                 (finance.LOAN_PERSONAL, rest, months, payment, take, loan.id),
             )
         return cancelled, moved
+
+    @staticmethod
+    def move_business_loans_in(
+        connection: sqlite3.Connection, guild_id: int, business_id: int, to_id: int
+    ) -> int:
+        """Pasa los préstamos vivos de un local de una sociedad que cierra a otro de sus locales
+        (fase 5 de los negocios): la deudora es la sociedad, que sigue, así que no cambian.
+
+        Returns:
+            Cuántos préstamos ha pasado.
+        """
+        cursor = connection.execute(
+            "UPDATE housing_loans SET listing = ? WHERE guild_id = ? AND status = 'activo' "
+            "AND kind = ? AND listing = ?",
+            (str(to_id), guild_id, finance.LOAN_COMPANY, str(business_id)),
+        )
+        return cursor.rowcount
 
     # -- Rehipotecar (`banco`, 🔐 Garantías) --------------------------------------------
 

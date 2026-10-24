@@ -82,6 +82,8 @@ TAX_KINDS: tuple[TaxKind, ...] = (
             "DA 33ª LIRPF"),
     TaxKind("igic", "🛒", "IGIC de las compras (y primas de seguros)", "IGIC", Group.INDIRECT,
             "Ley 4/2012 y art. 12 Ley 13/1996"),
+    TaxKind("aiem", "🚢", "AIEM de lo que importa tu negocio", "AIEM", Group.INDIRECT,
+            "art. 92 DLeg 1/2025 de Canarias"),
     TaxKind("ss_empresa", "🏢", "Seguridad Social que paga la empresa", "SS empresa",
             Group.INDIRECT, "LGSS"),
     TaxKind("itp", "🧺", "Transmisiones Patrimoniales (Rastro)", "ITP", Group.INDIRECT,

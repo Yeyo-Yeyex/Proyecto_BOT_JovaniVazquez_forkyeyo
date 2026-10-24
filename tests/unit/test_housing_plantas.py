@@ -1,4 +1,4 @@
-"""Pruebas de dividir inmuebles por plantas y de alquilarlos por habitaciones (9.11.0).
+"""Pruebas de dividir inmuebles por plantas y de alquilarlos por habitaciones (9.12.0).
 
 Por plantas cada planta pasa a ser un inmueble (dueños, hipoteca, contrato y venta propios)
 y el entero deja de existir; por habitaciones el piso conserva sus dueños y cada habitación

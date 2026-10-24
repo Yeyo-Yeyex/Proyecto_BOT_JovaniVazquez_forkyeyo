@@ -247,7 +247,7 @@ THEME_BARRIO = {
     "lujo": "mogan",
     "rural": "tafira",
 }
-#: Los 20 tipos (con la habitación de 9.11.0) de inmueble y el solar de la obra nueva.
+#: Los 20 tipos (con la habitación de 9.12.0) de inmueble y el solar de la obra nueva.
 FACADE_KINDS = (*KINDS, "solar")
 #: Dónde pinta la ficha la fachada (columna A): (izquierda, arriba, derecha, abajo).
 FACADE_BOX = (16, 100, 16 + 296, 100 + 168)
@@ -667,7 +667,7 @@ def phase6_samples() -> dict[str, dict[str, Any]]:
     }
 
 
-#: Los inmuebles divididos de las muestras de 9.11.0: un edificio por plantas y dos pisos que se
+#: Los inmuebles divididos de las muestras de 9.12.0: un edificio por plantas y dos pisos que se
 #: alquilan por habitaciones (uno con seis, las que más caben).
 EDIFICIO, PISO3, CASONA = "triana_edificio", "isleta_piso3", "vegueta_casona"
 
@@ -1017,7 +1017,7 @@ def test_las_muestras_cubren_las_quince_pantallas_y_las_claves_de_las_fases_2_a_
 
 
 def test_las_muestras_de_dividir_traen_lo_que_pinta_la_escena() -> None:
-    """Plantas y habitaciones (9.11.0): una tarjeta por botón, y dividir con 0, 1 y 2 opciones."""
+    """Plantas y habitaciones (9.12.0): una tarjeta por botón, y dividir con 0, 1 y 2 opciones."""
     states = samples()
     floors, rooms = states["plantas_edificio"], states["plantas_seis_habitaciones"]
     assert floors["mode"] == rules.FLOORS and len(floors["cards"]) == 4

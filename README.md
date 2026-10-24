@@ -423,8 +423,10 @@ python -m bot
   colores y emblema propios. Eres autónomo y respondes con lo tuyo: el local, los
   suministros y la cuota corren aunque no abras. Cada turno gasta una franja y es un
   minijuego activo, con clientes que se cansan de esperar y habituales que piden «lo
-  de siempre». El panel entero son escenas de Node. Diseño y fases en
-  `docs/negocios.md`; equilibrio en `docs/negocio_sim.py`.
+  de siempre». El panel entero son escenas de Node. Desde la 9.11.0, una cadena de
+  hasta 4 locales (una sola sociedad para todos), una nave para importar de la
+  Península con su AIEM, gerentes que reponen y vender la sociedad. Diseño y fases
+  en `docs/negocios.md`; equilibrio en `docs/negocio_sim.py`.
 - **Bizum** (`bizum`): manda yapdollars a otro miembro al momento. Llega
   entero: exento de Donaciones y sin IRPF (en la vida real, entre amigos se
   pagaría; el bot trata a todo el servidor como familia directa). Mínimo 5 Y$

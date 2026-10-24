@@ -26,7 +26,7 @@ tienen derecho preferente unos minutos) o se saca a subasta un día. La pantalla
 enseña las abiertas y se puja con un formulario. Las ejecuciones hipotecarias salen antes a
 subasta judicial. La tarea de cada 10 minutos cierra las que acaban y lo anuncia.
 
-Plantas y habitaciones (9.11.0): desde 🧰 Gestionar, la pantalla 🏢 Dividir enseña lo que
+Plantas y habitaciones (9.12.0): desde 🧰 Gestionar, la pantalla 🏢 Dividir enseña lo que
 cuesta y da dividir el inmueble por plantas (cada planta pasa a ser un inmueble, que se
 vende por separado) o alquilarlo por habitaciones (cada una con su inquilino; el piso se
 vende entero y se puede volver a juntar). La pantalla de plantas o habitaciones tiene un

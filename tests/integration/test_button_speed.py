@@ -1764,6 +1764,74 @@ async def press_business_bank(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def press_business_chain(client: BotClient, owner: MagicMock) -> Click:
+    panel = await business_panel(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._cadena(interaction)
+
+    return click
+
+
+async def press_business_pick_local(client: BotClient, owner: MagicMock) -> Click:
+    panel = await business_panel(client, owner)
+    service = client.get_cog("Negocio").service
+    other, _fee = await service.open(
+        GUILD_ID, owner.id, sector="tienda", barrio="ofra", name="Súper", palette=0, emblem=0
+    )
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._pick_local(interaction, str(other.id))
+
+    return click
+
+
+async def press_business_nave(client: BotClient, owner: MagicMock) -> Click:
+    panel = await business_panel(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._nave(interaction)
+
+    return click
+
+
+async def press_business_open_nave(client: BotClient, owner: MagicMock) -> Click:
+    panel = await business_panel(client, owner)
+    panel.nave_pick.update(barrio="telde", size=0)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._open_nave(interaction)
+
+    return click
+
+
+async def press_business_import(client: BotClient, owner: MagicMock) -> Click:
+    panel = await business_panel(client, owner)
+    await client.get_cog("Negocio").service.open_nave(GUILD_ID, owner.id, barrio="telde", size=0)
+    panel.nave_pick["product"] = "cafe"
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._import(interaction)
+
+    return click
+
+
+async def press_business_sell(client: BotClient, owner: MagicMock) -> Click:
+    panel = await business_panel(client, owner)
+    service = client.get_cog("Negocio").service
+    await service.constitute(GUILD_ID, owner.id, 100)
+    business = await service.business(GUILD_ID, owner.id)
+    business.company["results"] = [100_000, 100_000, 100_000]
+    await service.repository.save(GUILD_ID, business)
+    panel.screen = "venta"
+    await panel.refresh()
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._sell(interaction)
+
+    return click
+
+
 async def garantias_panel(client: BotClient, owner: MagicMock):  # noqa: ANN201
     """El panel de `banco` en 🔐 Garantías con un inmueble pagado al contado y nómina."""
     banco_payroll(client)
@@ -2773,6 +2841,12 @@ CASES: dict[str, Press] = {
     "banco: firmar el préstamo al negocio": press_banco_business_sign,
     "banco: amortizar el préstamo del negocio": press_banco_business_repay,
     "negocio: abrir el banco": press_business_bank,
+    "negocio: abrir la cadena": press_business_chain,
+    "negocio: cambiar de local": press_business_pick_local,
+    "negocio: abrir la nave": press_business_nave,
+    "negocio: alquilar la nave": press_business_open_nave,
+    "negocio: importar un contenedor": press_business_import,
+    "negocio: vender la sociedad": press_business_sell,
     "banco: elegir inmueble para rehipotecar": press_garantia_pick,
     "banco: plazo de la rehipoteca": press_garantia_term,
     "banco: importe de la rehipoteca": press_garantia_amount,

@@ -1451,7 +1451,8 @@ class PalaPanel(ui.LayoutView):
         """El estado de la escena del inicio con lo de ahora."""
         status = await self.service.status(self.guild_id, self.owner.id)
         self.pension = await self.service.pension(self.guild_id, self.owner.id)
-        business = await negocio.business_of(self.cog.bot, self.guild_id, self.owner.id)
+        locales = await negocio.chain_of(self.cog.bot, self.guild_id, self.owner.id)
+        business = locales[0] if locales else None
         agenda = (
             status.agenda
             if status is not None
@@ -1462,7 +1463,7 @@ class PalaPanel(ui.LayoutView):
             if status is None and business is not None
             else None
         )
-        return dia_state(self._name, self.service.now(), agenda, status, business, battery)
+        return dia_state(self._name, self.service.now(), agenda, status, business, battery, locales)
 
     async def show_home_screen(self, interaction: discord.Interaction | None) -> None:
         """Pinta el inicio y lo pone en el mensaje."""

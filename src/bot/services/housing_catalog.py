@@ -97,7 +97,7 @@ KINDS: dict[str, Kind] = {
         Kind("bungalow", "Bungalow", 0.9, 1.2, None, 60),
         Kind("duplex", "Dúplex", 1.1, 1.0, None, 90),
         Kind("loft", "Loft", 1.05, 1.2, None, 50),
-        # Una habitación de un piso alquilado por habitaciones (9.11.0). Su «comunidad» lleva
+        # Una habitación de un piso alquilado por habitaciones (9.12.0). Su «comunidad» lleva
         # la parte de la comunidad y los suministros que paga el casero (luz, agua e internet).
         Kind("habitacion", "Habitación", 1.0, 1.0, None, 60),
     )
@@ -2670,7 +2670,7 @@ TENANTS: tuple[Tenant, ...] = (
         unpaid="La editorial no ha pagado el adelanto.",
         complaint="El vecino del tercero ensaya con la batería y no me deja escribir.",
     ),
-    # -- Personas: una habitación (9.11.0) ----------------------------------------------
+    # -- Personas: una habitación (9.12.0) ----------------------------------------------
     Tenant(
         "universitaria", "Estudiante de la universidad", "🎒", _LOW_MID,
         "Vengo de La Gomera para la carrera. ¿El escritorio entra en el precio?",

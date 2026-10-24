@@ -2102,7 +2102,7 @@ def division_minimum(values: list[int]) -> int:
     return max(1, sum(values))
 
 
-# -- Dividir por plantas y alquilar por habitaciones (9.11.0) ---------------------------
+# -- Dividir por plantas y alquilar por habitaciones (9.12.0) ---------------------------
 
 #: Las dos formas de dividir un inmueble (`housing_splits.mode`). Por plantas sale una
 #: división horizontal: cada planta es un inmueble con sus dueños, que se vende por separado.

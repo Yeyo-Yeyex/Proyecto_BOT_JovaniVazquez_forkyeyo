@@ -1099,7 +1099,7 @@ async def test_proponer_y_votar_en_la_junta_desde_el_panel(tmp_path: Path) -> No
     assert "pisos:proponer" not in ids(panel)
 
 
-# -- Plantas y habitaciones (9.11.0) ----------------------------------------------------
+# -- Plantas y habitaciones (9.12.0) ----------------------------------------------------
 
 
 async def test_dividir_por_plantas_desde_el_panel_y_abrir_cada_planta(tmp_path: Path) -> None:

@@ -62,6 +62,12 @@ TAX_ITEMS: tuple[str, ...] = (
 #: los intereses son justo lo que va a pagar con ello (el resultado antes de ellos, EBITDA).
 NOT_EBITDA: frozenset[str] = frozenset({"amortizacion", "intereses"})
 
+#: Fase 5, vender la sociedad: los ejercicios cerrados (semanas de Sociedades) cuyos resultados
+#: mira el comprador. Al transmitir participaciones que no cotizan, el valor no puede bajar del
+#: mayor entre el patrimonio neto y lo que sale de capitalizar al 20 % la media de los
+#: resultados de los tres últimos ejercicios cerrados (art. 37.1.b LIRPF).
+SALE_WEEKS = 3
+
 #: Retención del sueldo de administrador (art. 101.2 LIRPF): el 35 %, o el 19 % si la
 #: sociedad factura menos de 100.000 € al año.
 ADMIN_RETENTION = 0.35

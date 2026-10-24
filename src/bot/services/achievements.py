@@ -673,7 +673,7 @@ PISOS_TENANT_PREFIX = "pisos_tenant_"
 PISOS_NEWS_PREFIX = "pisos_news_"
 ROOM_TENANTS = tuple(t.key for t in HOUSING_TENANTS if ROOM_KIND in t.kinds)
 PISOS_TENANTS_STAT = "pisos_tenants"
-#: 9.11.0: los inquilinos distintos que solo alquilan habitaciones (`with_derived`).
+#: 9.12.0: los inquilinos distintos que solo alquilan habitaciones (`with_derived`).
 PISOS_ROOM_TENANTS_STAT = "pisos_room_tenants"
 #: Fase 4: un contador por reforma hecha; las distintas, en `with_derived`.
 PISOS_REFORM_PREFIX = "pisos_reform_"
@@ -1064,6 +1064,31 @@ BIZ_EXCEDENCIA_STORY = (
     "(art. 46.2 ET); al volver, el puesto no está garantizado, solo el derecho preferente "
     "a una vacante igual o similar (art. 46.5 ET). En el bot vuelves a tu puesto, con la "
     "barra a la mitad."
+)
+#: Historias de la fase 5 de los negocios (las cadenas): la primera nave, la primera
+#: importación y la primera venta de una sociedad.
+BIZ_NAVE_STORY = (
+    "📦 **Una nave no es una vivienda.** Su alquiler es de uso distinto de vivienda, así que "
+    "la fianza es de dos mensualidades (art. 36.1 LAU), y el ayuntamiento cobra su tasa por "
+    "la declaración responsable del almacén (art. 20.4.i TRLRHL). Lo que llega de la "
+    "Península espera aquí hasta que lo lleves a un local de la misma isla."
+)
+BIZ_IMPORT_STORY = (
+    "🚢 **Lo que entra por el puerto paga.** El AIEM (Arbitrio sobre Importaciones y "
+    "Entregas de Mercancías en las Islas Canarias) grava la entrada de lo que también se "
+    "produce en las islas, con un tipo por producto (anexo 2.º del Decreto Legislativo "
+    "1/2025 de Canarias): el café y los helados, al 15 %; los refrescos y los detergentes, "
+    "al 5 %; la tornillería, nada. Va sobre el valor en aduana, la mercancía con su flete "
+    "(art. 94). Encima va el IGIC de la importación, al tipo del producto, sobre el valor en "
+    "aduana más el AIEM (art. 32.4); como pequeño empresario no lo deduces, así que es coste."
+)
+BIZ_SALE_STORY = (
+    "🤝 **Vender participaciones.** Si la sociedad no cotiza, Hacienda no se cree cualquier "
+    "precio: vale como mínimo el mayor entre el patrimonio neto del último balance y la "
+    "media de los resultados de los tres últimos ejercicios cerrados capitalizada al 20 % "
+    "(art. 37.1.b LIRPF). Lo que pasa de lo que te costó es ganancia patrimonial de la base "
+    "del ahorro (art. 46 LIRPF), que en la vida real sube por tramos del 19 % al 30 %; en el "
+    "bot paga el 19 %."
 )
 
 NONRESIDENT_STORY = (
@@ -8450,7 +8475,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "pisos_division_1", "Divorcio inmobiliario", "Pide una acción de división.", R,
          True),
     ])  # fmt: skip
-    # 9.11.0: dividir por plantas, alquilar por habitaciones y el atajo de candidatos
+    # 9.12.0: dividir por plantas, alquilar por habitaciones y el atajo de candidatos
     a += _tiers("pisos", "pisos_floor_splits", [
         (1, "pisos_floors_1", "Propiedad horizontal, ambición vertical",
          "Divide un inmueble por plantas.", R),
@@ -20478,6 +20503,206 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("negocio", "staff_bonus_refund", [
         (1, "staff_bonus_refund", "Bonificación con bumerán",
          "Devuelve la bonificación de un contrato por un despido improcedente.", R, True),
+    ])  # fmt: skip
+    # Fase 5: las cadenas (varios locales, la nave, importar, gerentes y vender la sociedad).
+    # Un local cuesta 130.000-200.000 Y$, así que tener 4 a la vez es Legendario; vender la
+    # sociedad pide 3 semanas en Sociedades, y por eso no baja de Épico.
+    a += _tiers("negocio", "biz_locales_max", [
+        (2, "biz_locales_2", "Dos son compañía, tres son franquicia",
+         "Ten 2 locales abiertos a la vez.", R),
+        (3, "biz_locales_3", "Uno para todos y tres persianas",
+         "Ten 3 locales abiertos a la vez.", E),
+        (4, "biz_locales_4", "Los cuatro jinetes del ultramarinos",
+         "Ten 4 locales abiertos a la vez, lo más que se puede.", L),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_chain_sectors_max", [
+        (2, "biz_chain_sectors_2", "Café para llevar y tornillos para traer",
+         "Ten locales abiertos a la vez en 2 sectores distintos.", R),
+        (3, "biz_chain_sectors_3", "Navaja suiza con persiana",
+         "Ten locales abiertos a la vez en 3 sectores distintos.", E),
+        (4, "biz_chain_sectors_4", "Hombre orquesta de la calle Mayor",
+         "Ten 4 locales abiertos a la vez, cada uno de un sector distinto.", L),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_chain_islands_max", [
+        (2, "biz_chain_islands_2", "Pleito insular resuelto en caja",
+         "Ten locales abiertos a la vez en Gran Canaria y en Tenerife.", R),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_chain_brand_max", [
+        (2, "biz_brand_2", "Copia y pega del rótulo",
+         "Ten 2 locales abiertos a la vez con el mismo nombre.", R),
+        (4, "biz_brand_4", "Los clones de Kamino abren a las nueve",
+         "Ten 4 locales abiertos a la vez con el mismo nombre.", L),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_chain_opened", [
+        (1, "biz_chain_1", "Segundas partes sí fueron buenas",
+         "Abre un local teniendo ya otro abierto.", R),
+        (3, "biz_chain_3", "Sucursalitis aguda", "Abre 3 locales teniendo ya otro abierto.", E),
+        (10, "biz_chain_10", "Gambito de persiana",
+         "Abre 10 locales teniendo ya otro abierto.", L),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_branch_closed", [
+        (1, "biz_branch_closed_1", "Poda de primavera",
+         "Cierra un local de tu sociedad sin liquidarla.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_sl_chain_max", [
+        (2, "biz_sl_chain_2", "Mudanza de locales al CIF",
+         "Constituye una sociedad que se lleva 2 locales a la vez.", R),
+        (4, "biz_sl_chain_4", "Arca de Noé con escritura",
+         "Constituye una sociedad que se lleva 4 locales a la vez.", L),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="biz_nave_1", name="Nave nodriza",
+        description="Abre una nave para tus importaciones.", category="negocio", rarity=C,
+        conditions=(("biz_nave_opened", 1),), story=BIZ_NAVE_STORY,
+    ))  # fmt: skip
+    a += _tiers("negocio", "biz_nave_opened", [
+        (3, "biz_nave_3", "La Pinta, la Niña y la Santa María", "Abre 3 naves en total.", R),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_nave_own", [
+        (1, "biz_nave_own_1", "Okupa con escrituras",
+         "Abre tu nave en una nave entera que tengas en `pisos`.", E),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_nave_size_max", [
+        (2, "biz_nave_mediana", "Ikea sin albóndigas", "Ten una nave mediana o grande.", R),
+        (3, "biz_nave_grande", "El almacén del Arca Perdida", "Ten una nave grande.", E),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_nave_fill_max", [
+        (100, "biz_nave_full", "Tetris de palés, línea completa",
+         "Llena tu nave al 100 %.", R),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_nave_closed", [
+        (1, "biz_nave_closed_1", "Hasta luego, Lucas, y los palés también",
+         "Cierra tu nave.", C),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_nave_lost", [
+        (1, "biz_nave_lost_1", "Houston, hemos perdido la nave",
+         "Que el casero rescinda el alquiler de tu nave o que la pierdas.", R, True),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="biz_import_1", name="Hecho en la Península, pagado en Canarias",
+        description="Pide tu primer contenedor de la Península.", category="negocio",
+        rarity=C, conditions=(("biz_imports", 1),), story=BIZ_IMPORT_STORY,
+    ))  # fmt: skip
+    a += _tiers("negocio", "biz_imports", [
+        (10, "biz_import_10", "Cliente VIP de la naviera", "Pide 10 contenedores.", R),
+        (50, "biz_import_50", "El galeón de Manila con IGIC", "Pide 50 contenedores.", E),
+        (250, "biz_import_250", "Atasco en el canal de Suez", "Pide 250 contenedores.", L),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_import_spent", [
+        (100_000, "biz_import_100k", "Con flete y sin miedo",
+         "Paga 100.000 Y$ en importaciones.", R),
+        (1_000_000, "biz_import_1m", "El capitán Haddock te tutea",
+         "Paga 1.000.000 Y$ en importaciones.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_aiem_paid", [
+        (10_000, "biz_aiem_10k", "Arbitrio arbitrario", "Paga 10.000 Y$ de AIEM.", R),
+        (100_000, "biz_aiem_100k", "¡AIEM, qué dolor!", "Paga 100.000 Y$ de AIEM.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_import_saved", [
+        (10_000, "biz_saved_10k", "El chollo viene en barco",
+         "Ahórrate 10.000 Y$ importando en vez de comprar al mayorista.", R),
+        (100_000, "biz_saved_100k", "Rebajas de enero todo el año",
+         "Ahórrate 100.000 Y$ importando en vez de comprar al mayorista.", E),
+        (1_000_000, "biz_saved_1m", "El mayorista llora en el muelle",
+         "Ahórrate 1.000.000 Y$ importando en vez de comprar al mayorista.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_import_aiem_free", [
+        (1, "biz_aiem_free_1", "Libre de arbitrios y de pecados",
+         "Importa un contenedor de algo que no paga AIEM.", C),
+        (20, "biz_aiem_free_20", "Pasaporte diplomático de tornillo",
+         "Importa 20 contenedores de cosas que no pagan AIEM.", R),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_containers", [
+        (1, "biz_container_1", "Barco a Venus con escala en tu nave",
+         "Recibe tu primer contenedor en la nave.", C),
+        (100, "biz_container_100", "El Puerto de la Luz es tu patio",
+         "Recibe 100 contenedores en la nave.", E),
+        (500, "biz_container_500", "Long John Silver con albarán",
+         "Recibe 500 contenedores en la nave.", L),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_from_nave", [
+        (1, "biz_from_nave_1", "De la nave a la mesa",
+         "Lleva a mano un lote de la nave a un local.", C),
+        (50, "biz_from_nave_50", "Mozo de almacén a jornada completa",
+         "Lleva a mano 50 lotes de la nave a tus locales.", R),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_managers_hired", [
+        (1, "biz_manager_1", "Ascendido a su nivel de incompetencia",
+         "Contrata a un gerente para un local.", C),
+        (10, "biz_manager_10", "Cazatalentos de persiana", "Contrata a 10 gerentes en total.",
+         R),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_managers_max", [
+        (2, "biz_managers_2", "Mandos intermedios, problemas enteros",
+         "Ten 2 locales con gerente a la vez.", R),
+        (4, "biz_managers_4", "Cuatro capos y un Padrino",
+         "Ten 4 locales con gerente a la vez.", L),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_manager_restocks", [
+        (1, "biz_restock_1", "Duerme tranquilo, que repone otro",
+         "Que un gerente reponga el stock de su local por la noche.", C),
+        (30, "biz_restock_30", "Elfo de Papá Noel con nómina",
+         "Que tus gerentes repongan el stock 30 noches.", R),
+        (100, "biz_restock_100", "Los zapateros y el duende",
+         "Que tus gerentes repongan el stock 100 noches.", E),
+        (365, "biz_restock_365", "El Sísifo del almacén",
+         "Que tus gerentes repongan el stock 365 noches.", L),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_manager_nave", [
+        (1, "biz_mgr_nave_1", "Viaje a la nave del misterio",
+         "Que un gerente reponga trayendo de la nave.", C),
+        (100, "biz_mgr_nave_100", "Historia de una ida y una vuelta",
+         "Que tus gerentes traigan de la nave 100 noches.", E),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_manager_hires", [
+        (1, "biz_mgr_cover_1", "Soy el Señor Lobo, soluciono bajas",
+         "Que un gerente cubra la baja de un empleado.", C),
+        (25, "biz_mgr_cover_25", "El comodín de la llamada",
+         "Que tus gerentes cubran 25 bajas.", E),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_manager_absent", [
+        (1, "biz_mgr_absent_1", "El gerente está reunido",
+         "Que un gerente no venga una noche.", C, True),
+        (10, "biz_mgr_absent_10", "¿Dónde está Wally, el gerente?",
+         "Que tus gerentes falten 10 noches.", R, True),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="biz_sold_1", name="Exit con mayúsculas",
+        description="Vende tu sociedad entera.", category="negocio", rarity=E,
+        conditions=(("biz_company_sold", 1),), story=BIZ_SALE_STORY,
+    ))  # fmt: skip
+    a += _tiers("negocio", "biz_company_sold", [
+        (3, "biz_sold_3", "Tiburón de Shark Tank", "Vende 3 sociedades.", L),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_sale_price_max", [
+        (500_000, "biz_sale_500k", "Medio kilo por las participaciones",
+         "Vende una sociedad por 500.000 Y$ o más.", E),
+        (1_500_000, "biz_sale_1500k", "La Bolsa o la vida",
+         "Vende una sociedad por 1.500.000 Y$ o más.", L),
+        (3_000_000, "biz_sale_3m", "Unicornio de polígono",
+         "Vende una sociedad por 3.000.000 Y$ o más.", M),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_sale_locales_max", [
+        (2, "biz_sale_locales_2", "Dos por uno en participaciones",
+         "Vende una sociedad con 2 locales o más.", E),
+        (4, "biz_sale_locales_4", "El Imperio se vende al contado",
+         "Vende una sociedad con 4 locales.", L),
+    ])  # fmt: skip
+    a += _tiers("negocio", "biz_sale_gain", [
+        (100_000, "biz_sale_gain_100k", "A río revuelto, plusvalía de pescadores",
+         "Gana 100.000 Y$ en total vendiendo sociedades.", E),
+        (1_000_000, "biz_sale_gain_1m", "El Monopoly salió bien",
+         "Gana 1.000.000 Y$ en total vendiendo sociedades.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_sale_tax", [
+        (50_000, "biz_sale_tax_50k", "Peaje a la salida",
+         "Paga 50.000 Y$ de IRPF vendiendo sociedades.", E),
+        (250_000, "biz_sale_tax_250k", "El Tío Gilito declara",
+         "Paga 250.000 Y$ de IRPF vendiendo sociedades.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("negocio", "biz_sale_loss", [
+        (1, "biz_sale_loss_1", "Compra alto, vende bajo",
+         "Vende una sociedad por menos de lo que te costó.", E, True),
     ])  # fmt: skip
     # Reducción de jornada y excedencia (art. 37.6 y 46.2 ET), en 🪏 General.
     a.append(Achievement(

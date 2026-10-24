@@ -1119,6 +1119,15 @@ class BusinessMove:
     Attributes:
         bank_loan: Lo que presta el banco: entra en la caja antes que los pagos (la comisión
             va en `payments`). No es renta: se devuelve. El banco no existe: se crea.
+
+    Vender la sociedad (fase 5, 9.11.0):
+
+    Attributes:
+        sale: Lo que paga el comprador por las participaciones: se crea y le llega al dueño,
+            con el 19 % de lo que pase de `liquidation_basis` (ganancia patrimonial del
+            ahorro, en el momento). La caja de la sociedad se va con el comprador (sale del
+            juego) y el préstamo del socio (`liquidation_loan`) se lo paga el comprador por su
+            valor, sin impuestos.
     """
 
     user_id: int
@@ -1145,6 +1154,7 @@ class BusinessMove:
     liquidation_loan: int = 0
     cover_limit: int = 0
     bank_loan: int = 0
+    sale: int = 0
 
 
 #: Los pagos de un negocio a su banco (`BusinessCost.concept`): `negocio:prestamo:intereses`,
@@ -3976,6 +3986,7 @@ class EconomyRepository:
                    CASE kind WHEN 'tasa' THEN 'tasas' WHEN 'retencion' THEN 'irpf_otros'
                         WHEN 'retencion_plantilla' THEN 'irpf_otros'
                         WHEN 'cotizacion' THEN 'ss_empresa' WHEN 'multa' THEN 'multas'
+                        WHEN 'aiem' THEN 'aiem'
                         WHEN 'plusvalia' THEN 'irpf_ahorro' WHEN 'dividendo' THEN 'irpf_ahorro'
                         WHEN 'sociedades' THEN 'sociedades' ELSE 'igic' END,
                    tax, created_at
@@ -6221,6 +6232,26 @@ class EconomyRepository:
                         (LedgerEntry(-paid, "sociedad:responsabilidad"),),
                     )  # fmt: skip
                     covered += paid
+            if company and move.sale > 0:
+                # La sociedad se va con el comprador, con su caja: sale del juego.
+                cash = max(0, self._ensure_wallet(connection, guild_id, wallet))
+                if cash:
+                    self._apply_in_transaction(
+                        connection, guild_id, wallet, (LedgerEntry(-cash, "sociedad:venta:caja"),)
+                    )
+                gain_tax = min(move.sale, capital_gain_tax(move.sale - move.liquidation_basis))
+                entries = [LedgerEntry(move.sale, "sociedad:venta")]
+                if move.liquidation_loan > 0:
+                    entries.append(LedgerEntry(move.liquidation_loan, "sociedad:venta:prestamo"))
+                if gain_tax:
+                    entries.append(LedgerEntry(-gain_tax, "irpf:sociedad:venta"))
+                    self._business_tax_in(connection, guild_id, owner, "plusvalia", gain_tax, now)
+                    self._credit_state_in(connection, guild_id, gain_tax, "irpf:sociedad:venta")
+                self._apply_in_transaction(connection, guild_id, owner, entries)
+                net = move.sale + max(0, move.liquidation_loan) - gain_tax
+                got = self._garnish_in(connection, guild_id, owner, net, now)
+                garnished += got
+                bank += self._bank_garnish_in(connection, guild_id, owner, net - got, now)
             if move.settle is not None:
                 move.settle(connection, unpaid)
             balance = self._ensure_wallet(connection, guild_id, owner)
