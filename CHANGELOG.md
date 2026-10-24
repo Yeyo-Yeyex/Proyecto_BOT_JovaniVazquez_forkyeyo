@@ -11,6 +11,7 @@ criterio.
 ### 9.16.0 · 2026-10-24
 
 - Pisos: sobreáticos y áticos con vistas en la mitad de los bloques de los barrios con vistas: más grandes, con terraza y bastante más caros (54 nuevos)
+- Pisos: los pisos grandes, los áticos, los lofts, los locales y los bajos amplios se pueden dividir en dos (izquierda y derecha), y en el edificio por dentro cada hueco ocupa lo que mide
 - Pisos: los edificios por dentro ya no son todos iguales: cada barrio tiene su estilo y cada vivienda, local, plaza y trastero se ve distinto según lo que pasa en él
 
 ### 9.15.2 · 2026-10-24
