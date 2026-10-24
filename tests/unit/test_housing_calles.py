@@ -154,3 +154,35 @@ async def test_del_barrio_a_las_calles_al_edificio_y_a_la_ficha(tmp_path: Path) 
         (select,) = [i for i in panel.children if getattr(i, "custom_id", "") == "pisos:unidad"]
         assert len(select.options) <= MAX_OPTIONS
         assert all(len(o.label) <= 100 and len(o.description or "") <= 100 for o in select.options)
+
+
+async def test_las_calles_y_lo_comprado_en_ellas_cuentan_para_los_logros(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from bot.cogs import pisos as pisos_cog
+    from tests.unit.test_pisos_cog import clicked, guild_with, member, open_panel
+    from tests.unit.test_pisos_cog import make as make_cog
+
+    noted: list[dict[str, int]] = []
+    tracked: list[dict[str, int]] = []
+
+    def note(_bot: object, _guild: int, _user: int, delta: object, *_rest: object) -> None:
+        noted.append(delta.add)  # type: ignore[attr-defined]
+
+    async def track(_bot: object, _guild: int, _user: object, _ch: object, delta: object) -> None:
+        tracked.append(delta.peak)  # type: ignore[attr-defined]
+
+    monkeypatch.setattr(pisos_cog.logros, "note", note)
+    monkeypatch.setattr(pisos_cog.logros, "track", track)
+    cog, _scene, _clock = await make_cog(tmp_path)
+    ana = member(10, "Ana")
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(10_000_000, "prueba")])
+    panel = await open_panel(cog, ana, guild_with(ana))
+    panel.barrio = "triana"
+    await panel._go_streets(clicked(ana, []))
+    await panel._open_building(clicked(ana, [], custom_id="pisos:edificio:2"))
+    assert {"pisos_streets_opened": 1} in noted and {"pisos_bldg_triana_e2": 1} in noted
+    trade = await cog.service.buy(GUILD, ana.id, "triana_e2_g1", 100)
+    await cog.track_trade(GUILD, ana, None, trade.deal, trade.balance)
+    assert tracked[-1]["pisos_street_units_max"] == 1
+    assert tracked[-1]["pisos_buildings_max"] == 1

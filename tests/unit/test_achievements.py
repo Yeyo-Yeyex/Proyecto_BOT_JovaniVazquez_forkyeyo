@@ -68,6 +68,8 @@ from bot.services.achievements import (
     PET_SPECIES_STAT,
     PISOS_BARRIO_PREFIX,
     PISOS_BARRIOS_STAT,
+    PISOS_BUILDING_PREFIX,
+    PISOS_BUILDINGS_SEEN_STAT,
     PISOS_EVENT_PREFIX,
     PISOS_KIND_PREFIX,
     PISOS_KINDS_STAT,
@@ -128,6 +130,7 @@ from bot.services.achievements import (
     housing_panel_stats,
     housing_purchase_stats,
     housing_sale_stats,
+    housing_streets_stats,
     is_laugh,
     menu_entries,
     message_stats,
@@ -161,9 +164,13 @@ from bot.services.housing import EVENTS as _HOUSING_EVENTS
 from bot.services.housing_catalog import BARRIO_BY_KEY as HOUSING_BARRIOS
 from bot.services.housing_catalog import BARRIO_NEWS as HOUSING_NEWS_LIST
 from bot.services.housing_catalog import KINDS as HOUSING_KINDS
+from bot.services.housing_catalog import LISTING_BY_KEY as HOUSING_LISTING_BY_KEY
 from bot.services.housing_catalog import REFORMS as HOUSING_REFORM_LIST
 from bot.services.housing_catalog import RENT_LEVELS as HOUSING_LEVELS
 from bot.services.housing_catalog import TENANTS as HOUSING_TENANT_LIST
+from bot.services.housing_streets import BUILDINGS as STREET_BUILDINGS
+from bot.services.housing_streets import STREET_UNIT_BY_KEY, STREET_UNITS
+from bot.services.housing_streets import Building as StreetBuilding
 from bot.services.levels import TIMEZONE
 from bot.services.lootboxes import BOXES as LOOTBOXES
 from bot.services.lootboxes import COLLECTIONS as LOOTBOX_COLLECTIONS
@@ -417,6 +424,12 @@ PRODUCED_STATS = {
     *(f"{PISOS_BARRIO_PREFIX}{barrio}" for barrio in HOUSING_BARRIOS),
     *(f"{PISOS_LEVEL_PREFIX}{level}" for level in HOUSING_LEVELS),
     *(f"{PISOS_EVENT_PREFIX}{event}" for event in HOUSING_EVENT_KEYS),
+    # 9.14.0 (las calles: housing_panel_stats y housing_streets_stats tras cada compra)
+    "pisos_streets_opened", PISOS_BUILDINGS_SEEN_STAT, "pisos_street_units_max",
+    "pisos_buildings_max", "pisos_streets_barrio_max", "pisos_pack", "pisos_whole_bloque",
+    "pisos_whole_guardamuebles", "pisos_whole_aparcamiento", "pisos_whole_pantalan",
+    "pisos_attic_basement", "pisos_above_shop",
+    *(f"{PISOS_BUILDING_PREFIX}{b.key}" for b in STREET_BUILDINGS),
     # Bizum (cogs/bizum.py: bizum_stats y bizum_received_stats)
     "bizum_sent_count", "bizum_sent", "bizum_max", "bizum_day_max", "bizum_full", "bizum_min",
     "bizum_broke", "bizum_received_count", "bizum_received",
@@ -1968,6 +1981,85 @@ def test_pisos_cuenta_plantas_habitaciones_y_el_atajo() -> None:
     }  # fmt: skip
     assert new <= set(newly_unlocked(stats, ()))
     assert {a.category for a in CATALOG if a.id in new} == {"pisos"}
+
+
+def test_pisos_cuenta_las_calles_y_lo_que_se_tiene_en_sus_edificios() -> None:
+    assert housing_panel_stats(screen="calles").add == {"pisos_streets_opened": 1}
+    seen = housing_panel_stats(screen="edificio", building="triana_e3").add
+    assert seen == {f"{PISOS_BUILDING_PREFIX}triana_e3": 1}
+    assert housing_panel_stats(screen="barrio", building="triana_e3").add == {}
+    every = {f"{PISOS_BUILDING_PREFIX}{b.key}": 1 for b in STREET_BUILDINGS}
+    assert with_derived(every)[PISOS_BUILDINGS_SEEN_STAT] == len(STREET_BUILDINGS) == 180
+
+    def kind(key: str) -> str:
+        item = STREET_UNIT_BY_KEY.get(key) or HOUSING_LISTING_BY_KEY.get(key)
+        return item.kind if item else ""
+
+    def first(of: str) -> StreetBuilding:
+        return next(b for b in STREET_BUILDINGS if b.kind == of)
+
+    bloque = next(
+        b for b in STREET_BUILDINGS
+        if b.kind == "bloque" and {"garaje", "trastero", "local", "atico"}
+        <= {kind(u.key) for u in b.units}
+    )  # fmt: skip
+    keys = [u.key for u in bloque.units]
+    # Una participación de cada: el pack y nada entero
+    one = housing_streets_stats(dict.fromkeys(keys, 1)).peak
+    assert one["pisos_pack"] == 1 and one["pisos_buildings_max"] == 1
+    assert one["pisos_streets_barrio_max"] == 1
+    assert one["pisos_street_units_max"] == sum(k in STREET_UNIT_BY_KEY for k in keys)
+    assert "pisos_whole_bloque" not in one and "pisos_above_shop" not in one
+    # El ático y el sótano enteros, sin lo de en medio
+    ends = {u.key: 100 for u in bloque.units if u.level == -1 or kind(u.key) == "atico"}
+    assert housing_streets_stats(ends).peak.get("pisos_attic_basement") == 1
+    assert (
+        "pisos_attic_basement"
+        not in housing_streets_stats({k: 99 if kind(k) == "atico" else 100 for k in ends}).peak
+    )
+    # La vivienda y el local de abajo, enteros
+    home = next(u.key for u in bloque.units if u.level > 0)
+    local = next(u.key for u in bloque.units if kind(u.key) == "local")
+    assert housing_streets_stats({home: 100, local: 100}).peak.get("pisos_above_shop") == 1
+    # Todo el bloque (una planta de un inmueble dividido cuenta como suyo)
+    whole = housing_streets_stats({**dict.fromkeys(keys, 100), f"{home}~1": 100}).peak
+    assert whole["pisos_whole_bloque"] == whole["pisos_attic_basement"] == 1
+    for of, stat in (
+        ("aparcamiento", "pisos_whole_aparcamiento"),
+        ("guardamuebles", "pisos_whole_guardamuebles"),
+        ("pantalan", "pisos_whole_pantalan"),
+    ):
+        units = [u.key for u in first(of).units]
+        assert housing_streets_stats(dict.fromkeys(units, 100)).peak[stat] == 1
+        assert stat not in housing_streets_stats({**dict.fromkeys(units, 100), units[0]: 50}).peak
+    # Las tres calles de un barrio y muchas unidades nuevas
+    barrio = bloque.barrio
+    spread = {b.units[0].key: 1 for b in STREET_BUILDINGS if b.barrio == barrio}
+    assert housing_streets_stats(spread).peak["pisos_streets_barrio_max"] == 3
+    many = housing_streets_stats({u.key: 1 for u in STREET_UNITS[:100]}).peak
+    assert many["pisos_street_units_max"] == 100
+    portals = {b.units[0].key: 1 for b in STREET_BUILDINGS[:25]}
+    assert housing_streets_stats(portals).peak["pisos_buildings_max"] == 25
+    assert housing_streets_stats({}).peak == {
+        "pisos_street_units_max": 0, "pisos_buildings_max": 0, "pisos_streets_barrio_max": 0,
+    }  # fmt: skip
+    stats = with_derived({
+        **every, "pisos_streets_opened": 1, "pisos_street_units_max": 100,
+        "pisos_buildings_max": 25, "pisos_streets_barrio_max": 3, "pisos_pack": 1,
+        "pisos_whole_bloque": 1, "pisos_whole_guardamuebles": 1, "pisos_whole_aparcamiento": 1,
+        "pisos_whole_pantalan": 1, "pisos_attic_basement": 1, "pisos_above_shop": 1,
+    })  # fmt: skip
+    new = {
+        "pisos_streets_1", "pisos_bldg_seen_10", "pisos_bldg_seen_50", "pisos_bldg_seen_all",
+        "pisos_street_units_1", "pisos_street_units_5", "pisos_street_units_25",
+        "pisos_street_units_100", "pisos_buildings_5", "pisos_buildings_25",
+        "pisos_streets_barrio_3", "pisos_pack_1", "pisos_whole_bloque_1",
+        "pisos_whole_guardamuebles_1", "pisos_whole_aparcamiento_1", "pisos_whole_pantalan_1",
+        "pisos_attic_basement_1", "pisos_above_shop_1",
+    }  # fmt: skip
+    assert new <= set(newly_unlocked(stats, ()))
+    assert {a.category for a in CATALOG if a.id in new} == {"pisos"}
+    assert sum(a.secret for a in CATALOG if a.id in new) == 5
 
 
 def test_cualquier_jugada_del_casino_cuenta_el_juego_y_la_fecha() -> None:
