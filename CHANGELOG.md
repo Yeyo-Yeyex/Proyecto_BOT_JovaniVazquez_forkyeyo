@@ -8,6 +8,10 @@ criterio.
 
 ## 9.x
 
+### 9.17.2 · 2026-10-24
+
+- Hotfix: arreglo menor de la 9.17.1
+
 ### 9.17.1 · 2026-10-24
 
 - Hotfix: arreglo menor de la 9.17.0
