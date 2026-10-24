@@ -26,6 +26,7 @@ from bot.cogs.casino import (
     result_text,
     table_embed,
 )
+from bot.cogs.hacienda_panel import HaciendaPanel
 from bot.repositories.economy import EconomyRepository
 from bot.services.economy import STARTING_BALANCE, EconomyService
 from bot.services.roulette import (
@@ -572,37 +573,45 @@ async def test_imv_avisa_de_que_esta_exento(tmp_path: Path) -> None:
     assert "exento" in responder.sent[0]["embed"].description
 
 
+def view_text(view: discord.ui.LayoutView) -> str:
+    return "\n".join(
+        child.content for child in view.walk_children() if isinstance(child, discord.ui.TextDisplay)
+    )
+
+
 async def test_hacienda_muestra_la_cuenta_del_estado(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path)
     await cog.economy.pay_income(1, 10, gross=30_000, concept="nivel:20")
-    responder = RecordingResponder()
-    responder.guild = SimpleNamespace(id=1, get_member=lambda _id: None)
+    guild = SimpleNamespace(id=1, get_member=lambda _id: None)
+    author = SimpleNamespace(id=99, bot=False)
 
-    await cog._hacienda_impl(responder)  # type: ignore[arg-type]
+    panel, bills = await cog._hacienda_view(guild, author, None)  # type: ignore[arg-type]
 
-    embed = responder.sent[0]["embed"]
-    assert embed.title == "🏛️ Hacienda"
-    names = [field.name for field in embed.fields]
-    assert names[0] == "Por impuesto"
-    assert "IRPF de premios" in embed.fields[0].value
-    paid = embed.fields[names.index("Lo que paga cada uno (directo e indirecto)")]
-    assert "<@10>" in paid.value and "IRPF otros" in paid.value
+    assert isinstance(panel, HaciendaPanel) and bills[0].user_id == 10
+    text = view_text(panel)
+    assert "# 🏛️ Hacienda" in text and "De dónde sale" in text and "IRPF otros" in text
+    panel.page = "impuestos"
+    panel.rebuild()
+    assert "IRPF de premios y otros ingresos" in view_text(panel)
+    panel.page = "gente"
+    panel.rebuild()
+    assert "<@10>" in view_text(panel) and "IRPF otros" in view_text(panel)
 
 
 async def test_hacienda_con_miembro_enseña_su_factura_completa(tmp_path: Path) -> None:
     cog = await make_cog(tmp_path)
     await cog.economy.pay_salary(1, 10, gross=200_000, concept="pala:celador")
-    responder = RecordingResponder()
-    responder.guild = SimpleNamespace(id=1, get_member=lambda _id: None)
+    guild = SimpleNamespace(id=1, get_member=lambda _id: None)
     target = SimpleNamespace(id=10, display_name="Ana", bot=False)
 
-    await cog._hacienda_impl(responder, target)  # type: ignore[arg-type]
+    card, _bills = await cog._hacienda_view(guild, target, target)  # type: ignore[arg-type]
 
-    embed = responder.sent[0]["embed"]
-    assert embed.title == "🧾 Factura fiscal de Ana"
-    fields = {field.name.split(" · ")[0]: field.value for field in embed.fields}
-    assert "Seguridad Social que paga la empresa" in fields["Indirectos (sin verlos)"]
-    assert "IRPF de las nóminas" in fields["Directos"]
+    text = view_text(card)
+    assert text.startswith("# 🧾 Factura fiscal de Ana")
+    direct, indirect = text.split("### Directos")[1].split("### Indirectos (sin verlos)")
+    assert "IRPF de las nóminas" in direct
+    assert "Seguridad Social que paga la empresa" in indirect
+    assert not [c for c in card.walk_children() if isinstance(c, discord.ui.Button)]
 
 
 async def test_caliente_juega_a_pleno_el_numero_que_mas_sale(tmp_path: Path) -> None:

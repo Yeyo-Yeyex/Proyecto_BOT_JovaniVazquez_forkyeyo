@@ -15230,6 +15230,24 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "hacienda_hidden", "Te sangran sin que lo notes",
          "Mira `hacienda` pagando más en impuestos indirectos que directos.", C, True),
     ])  # fmt: skip
+    a += _tiers("economy", "hacienda_business", [
+        (1, "hacienda_business_1", "La CEOE de andar por casa",
+         "Mira la pestaña 🏪 Empresarios de `hacienda`.", C),
+    ])  # fmt: skip
+    a += _tiers("economy", "hacienda_business_top", [
+        (1, "hacienda_business_top", "Mecenas a la fuerza",
+         "Mira 🏪 Empresarios en `hacienda` siendo el empresario que más paga (con al menos "
+         "dos).", R, True),
+    ])  # fmt: skip
+    a += _tiers("economy", "hacienda_landlord_top", [
+        (1, "hacienda_landlord_top", "El Monopoly sale caro",
+         "Mira 🏠 Caseros en `hacienda` siendo el casero que más paga (con al menos dos).",
+         R, True),
+    ])  # fmt: skip
+    a += _tiers("economy", "hacienda_all_tabs", [
+        (1, "hacienda_all_tabs", "Inspector por cuenta propia",
+         "Mira las cinco pestañas de un mismo panel de `hacienda`.", C),
+    ])  # fmt: skip
 
     # 🏇 Caballos ------------------------------------------------------------------------
     a += _tiers("horses", "horse_bets", [
@@ -23153,6 +23171,26 @@ def hacienda_stats(
         add["hacienda_pillar"] = 1
     if indirect_over_direct:
         add["hacienda_hidden"] = 1
+    return StatDelta(add=add)
+
+
+def hacienda_page_stats(*, page: str, top: bool, seen_all: bool) -> StatDelta:
+    """Contadores de cambiar de pestaña en `hacienda`.
+
+    Args:
+        page: Pestaña elegida (`tax_report.PAGES`).
+        top: Si quien mira encabeza la lista de esa pestaña (con al menos dos en ella).
+        seen_all: Si con esta ha visto todas las pestañas del mismo panel.
+    """
+    add = {}
+    if page == "empresas":
+        add["hacienda_business"] = 1
+        if top:
+            add["hacienda_business_top"] = 1
+    if page == "caseros" and top:
+        add["hacienda_landlord_top"] = 1
+    if seen_all:
+        add["hacienda_all_tabs"] = 1
     return StatDelta(add=add)
 
 

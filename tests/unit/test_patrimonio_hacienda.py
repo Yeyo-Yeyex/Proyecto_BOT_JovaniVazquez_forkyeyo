@@ -16,26 +16,33 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
+from bot.cogs import hacienda_panel as hacienda_panel_module
 from bot.cogs import patrimonio as patrimonio_cog
+from bot.cogs.hacienda_panel import HaciendaPanel, bill_card
 from bot.cogs.patrimonio import Patrimonio
-from bot.repositories.economy import EconomyRepository
+from bot.repositories.economy import EconomyRepository, Treasury
 from bot.repositories.lottery import LotteryRepository
 from bot.repositories.shop import ShopRepository, wealth_goods_in
-from bot.services.achievements import hacienda_stats, patrimonio_stats
+from bot.services.achievements import hacienda_page_stats, hacienda_stats, patrimonio_stats
 from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService
 from bot.services.levels import TIMEZONE
 from bot.services.net_worth import NetWorth, build, gini, top_share
 from bot.services.shop import Kind, quote
 from bot.services.tax_report import (
+    BUSINESS_TAXES,
+    HOUSING_TAXES,
+    PAGE_LIMIT,
+    PAGES,
     TAX_KINDS,
     Group,
+    Snapshot,
     TaxBill,
-    add_bill_fields,
-    add_housing_fields,
+    bar,
     bills,
-    member_bill_embed,
-    server_bill,
+    leader,
+    member_page,
     solidarity_line,
+    summary_page,
 )
 from bot.services.taxes import wealth_quote
 
@@ -246,30 +253,111 @@ def test_hong_kong_se_ve_pero_no_suma_al_total() -> None:
     assert {kind.group for kind in TAX_KINDS} == set(Group)
 
 
-def test_los_embeds_de_hacienda_caben_con_muchos_miembros() -> None:
+def snapshot_of(
+    all_bills: list[TaxBill],
+    *,
+    housing: dict[int, dict[str, int]] | None = None,
+    business: dict[int, dict[str, int]] | None = None,
+    names: dict[int, str] | None = None,
+) -> Snapshot:
+    return Snapshot(
+        guild_id=GUILD,
+        year=2026,
+        treasury=Treasury(123_456_789, 987_654_321, 123_456_789, (), debt=5_000),
+        bills=all_bills,
+        housing=housing or {},
+        business=business or {},
+        solidarity=(3, 1, 0),
+        names=names or {},
+    )
+
+
+def texts(view: discord.ui.LayoutView) -> list[str]:
+    return [c.content for c in view.walk_children() if isinstance(c, discord.ui.TextDisplay)]
+
+
+def test_las_pestañas_de_hacienda_caben_con_muchos_miembros() -> None:
     every = {kind.key: 123_456_789 for kind in TAX_KINDS}
     all_bills = bills({1_000 + i: dict(every) for i in range(40)})
-    server = server_bill(all_bills)
     names = {b.user_id: "Nombre_larguísimo_de_alguien_" + str(b.user_id) for b in all_bills}
-    embed = discord.Embed(title="🏛️ Hacienda", description="x" * 300)
-    embed.add_field(name="Qué se cobra", value="y" * 900)
-    add_bill_fields(embed, all_bills, server, names)
-    every_home = {"itp": 9_876_543, "ibi": 9_876_543, "alquiler": 9_876_543, "ganancia": 9_876_543}
-    add_housing_fields(embed, {b.user_id: dict(every_home) for b in all_bills}, names)
-    check(embed)
-    personal = member_bill_embed(
-        member_name="Ana",
-        all_bills=all_bills,
-        year_bills=all_bills,
-        server=server,
-        user_id=1_000,
-        year=2026,
+    homes = {line.key: 9_876_543 for line in HOUSING_TAXES}
+    shops = {line.key: 9_876_543 for line in BUSINESS_TAXES}
+    snapshot = snapshot_of(
+        all_bills,
+        housing={b.user_id: dict(homes) for b in all_bills},
+        business={b.user_id: dict(shops) for b in all_bills},
+        names=names,
     )
-    check(personal)
-    empty = member_bill_embed(
-        member_name="Nadie", all_bills=[], year_bills=[], server=TaxBill(0), user_id=5, year=2026
+    owner = MagicMock(spec=discord.Member, id=1_000, bot=False)
+    for key, _emoji, _label in PAGES:
+        panel = HaciendaPanel(MagicMock(), snapshot, owner, page=key)
+        shown = texts(panel)
+        assert len(shown[1]) <= PAGE_LIMIT, key
+        # Discord no admite más de 4.000 caracteres entre todos los textos ni 40 componentes.
+        assert sum(map(len, shown)) <= 4_000, key
+        assert len(list(panel.walk_children())) <= 40
+        ids = [c.custom_id for c in panel.walk_children() if isinstance(c, discord.ui.Button)]
+        assert len(ids) == len(set(ids)) == len(PAGES)
+    # Las listas que no caben dicen cuántos faltan.
+    panel = HaciendaPanel(MagicMock(), snapshot, owner, page="empresas")
+    assert "empresarios más." in texts(panel)[1]
+    personal = member_page(
+        member_name="Ana", all_bills=all_bills, year_bills=all_bills, user_id=1_000, year=2026,
+        homes=homes, business=shops,
+    )  # fmt: skip
+    assert len(personal) <= 4_000
+    assert "### 🏪 Por sus negocios" in personal and "### 🏠 Por sus pisos" in personal
+    empty = member_page(
+        member_name="Nadie", all_bills=[], year_bills=[], user_id=5, year=2026, homes={},
+        business={},
+    )  # fmt: skip
+    assert "Nada que declarar" in texts(bill_card(empty))[0]
+
+
+def test_el_resumen_reparte_lo_recaudado_en_barras() -> None:
+    all_bills = bills({ANA: {"irpf_trabajo": 750, "igic": 250, "devuelto": 100}, BEA: {}})
+    page = summary_page(snapshot_of(all_bills, names={ANA: "Ana"}))
+    assert f"{bar(0.75)} **75,0 %** 🪏 IRPF nóm." in page
+    assert f"{bar(0.25)} **25,0 %** 🛒 IGIC" in page
+    assert "devuelto −100 Y$" in page and "🥇 Ana · **900 Y$**" in page
+    assert bar(0.75) == "`▰▰▰▰▰▰▰▰▱▱`" and bar(2) == "`▰▰▰▰▰▰▰▰▰▰`"
+    assert bar(0.01) == "`▰▱▱▱▱▱▱▱▱▱`" and bar(0) == "`▱▱▱▱▱▱▱▱▱▱`"
+    assert "Nadie ha pagado" in summary_page(snapshot_of([]))
+
+
+async def test_otro_miembro_que_pulsa_una_pestaña_recibe_su_copia() -> None:
+    from interaction_fakes import fake_interaction
+
+    all_bills = bills({ANA: {"igic": 300}, BEA: {"igic": 100}})
+    snapshot = snapshot_of(
+        all_bills,
+        business={ANA: {"igic": 300}, BEA: {"igic": 100}},
+        names={ANA: "Ana", BEA: "Bea"},
     )
-    check(empty)
+    owner = MagicMock(spec=discord.Member, id=BEA, bot=False)
+    panel = HaciendaPanel(MagicMock(), snapshot, owner)
+    track = AsyncMock()
+    stranger = fake_interaction()
+    stranger.user = MagicMock(spec=discord.Member, id=ANA, bot=False)
+    tab = next(
+        c for c in panel.walk_children()
+        if isinstance(c, discord.ui.Button) and c.custom_id == "hacienda:pagina:empresas"
+    )  # fmt: skip
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(hacienda_panel_module.logros, "track", track)
+        await tab.callback(stranger)
+        assert panel.page == "resumen"  # el de Bea no se mueve
+        sent = stranger.response.send_message.await_args.kwargs
+        assert sent["ephemeral"] is True and sent["view"].page == "empresas"
+        assert "Ana" in texts(sent["view"])[1]
+        stats = track.await_args.args[-1]
+        assert stats.add == {"hacienda_business": 1, "hacienda_business_top": 1}
+        mine = fake_interaction()
+        mine.user = owner
+        await tab.callback(mine)
+        assert panel.page == "empresas"
+        assert mine.response.edit_message.await_args.kwargs["view"] is panel
+        assert track.await_args.args[-1].add == {"hacienda_business": 1}
 
 
 def check(embed: discord.Embed) -> None:
@@ -277,6 +365,15 @@ def check(embed: discord.Embed) -> None:
     assert len(embed.fields) <= 25
     for field in embed.fields:
         assert 0 < len(field.value) <= 1_024
+
+
+def test_quien_encabeza_cada_pestaña() -> None:
+    all_bills = bills({ANA: {"igic": 300}, BEA: {"igic": 100}})
+    alone = snapshot_of(all_bills, housing={ANA: {"ibi": 5}}, business={BEA: {"igic": 1}})
+    assert leader(alone, "gente") == ANA
+    assert leader(alone, "caseros") is None and leader(alone, "empresas") is None
+    both = snapshot_of(all_bills, housing={ANA: {"ibi": 5}, BEA: {"ibi": 9}})
+    assert leader(both, "caseros") == BEA
 
 
 # -- Logros -------------------------------------------------------------------------------
@@ -299,6 +396,9 @@ def test_logros_de_patrimonio_fortunas_y_hacienda() -> None:
         "hacienda_pillar": 1,
         "hacienda_hidden": 1,
     }
+    tab = hacienda_page_stats(page="caseros", top=True, seen_all=True)
+    assert tab.add == {"hacienda_landlord_top": 1, "hacienda_all_tabs": 1}
+    assert hacienda_page_stats(page="gente", top=True, seen_all=False).add == {}
 
 
 # -- Cog ----------------------------------------------------------------------------------

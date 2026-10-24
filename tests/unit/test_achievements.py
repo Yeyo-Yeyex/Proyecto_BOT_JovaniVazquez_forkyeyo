@@ -847,6 +847,8 @@ PRODUCED_STATS = {
     "patrimonio_views", "patrimonio_snoop", "fortunas_views", "net_worth_max",
     "fortunas_first", "fortunas_last", "patrimonio_illiquid", "hacienda_views",
     "hacienda_self", "hacienda_snoop", "hacienda_pillar", "hacienda_hidden",
+    # Las pestañas de `hacienda` (`hacienda_page_stats`).
+    "hacienda_business", "hacienda_business_top", "hacienda_landlord_top", "hacienda_all_tabs",
     # Estadísticas del casino (cogs/apuestas.py: apuestas_stats)
     "apuestas_views", "apuestas_snoop", "apuestas_insomnia", "apuestas_virgin",
     "apuestas_denial", "apuestas_even", "apuestas_ruin", "apuestas_rich",

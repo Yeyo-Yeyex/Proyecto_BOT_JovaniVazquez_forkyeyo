@@ -8,6 +8,13 @@ criterio.
 
 ## 9.x
 
+### 9.17.0 · 2026-10-24
+
+- Hacienda: `hacienda` es un panel con pestañas (Resumen, Impuestos, Contribuyentes, Caseros y Empresarios): el saldo del Estado en grande, barras con lo que aporta cada impuesto y el podio de quien más paga
+- Hacienda: nueva pestaña 🏪 Empresarios con lo que pagan los negocios de `pala` y los empresarios que más pagan (IGIC, Seguridad Social e IRPF de su plantilla, su propio IRPF, Sociedades, AIEM, tasas y multas)
+- Hacienda: la factura de `hacienda @miembro` se ve en un solo bloque y enseña también lo que paga por sus negocios
+- Logros: cuatro nuevos de `hacienda` (mirar 🏪 Empresarios, las cinco pestañas y, secretos, encabezar a los caseros o a los empresarios)
+
 ### 9.16.1 · 2026-10-24
 
 - Hotfix: arreglo menor de la 9.16.0

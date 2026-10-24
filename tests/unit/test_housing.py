@@ -641,10 +641,9 @@ def test_todas_las_cifras_son_enteras() -> None:
 
 
 async def test_hacienda_separa_todo_lo_que_pagan_los_pisos(tmp_path: Path) -> None:
-    import discord
-
+    from bot.repositories.economy import Treasury
     from bot.services.achievements import housing_tax_stats
-    from bot.services.tax_report import add_housing_fields, housing_lines
+    from bot.services.tax_report import Snapshot, housing_lines, landlords_page
 
     clock = Clock(at(14))
     economy, service = await make(tmp_path, clock)
@@ -671,10 +670,13 @@ async def test_hacienda_separa_todo_lo_que_pagan_los_pisos(tmp_path: Path) -> No
     assert taxes["igic_gastos"] == buy.deal.quote.notary_igic + sale.deal.quote.fee_igic
     assert taxes["ips"] == round(rules.monthly_costs(BAJO).insurance * rules.IPS_RATE)
     assert len(housing_lines(taxes)) == 6
-    embed = discord.Embed()
-    add_housing_fields(embed, {ANA: taxes}, {ANA: "Ana"})
-    assert format_total(sum(taxes.values())) in embed.fields[0].name
-    assert "Ana" in embed.fields[1].value
+    snapshot = Snapshot(
+        guild_id=GUILD, year=2026, treasury=Treasury(0, 0, 0, ()), bills=[], housing={ANA: taxes},
+        business={}, solidarity=(0, 0, 0), names={ANA: "Ana"},
+    )  # fmt: skip
+    head, ranking = landlords_page(snapshot).split("### 🔑 Los caseros que más pagan")
+    assert format_total(sum(taxes.values())) in head.splitlines()[0]
+    assert "Ana" in ranking and "ITP" in ranking
     rent = (await economy.housing_rent_totals(GUILD))[ANA]
     delta = housing_tax_stats(taxes=taxes, rent=rent)
     assert delta.peak["pisos_tax_total"] == sum(taxes.values())

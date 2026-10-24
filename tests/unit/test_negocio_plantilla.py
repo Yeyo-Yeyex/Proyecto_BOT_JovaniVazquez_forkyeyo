@@ -335,6 +335,45 @@ async def test_la_nomina_de_la_noche_cuadra_con_lo_que_recibe_el_estado(tmp_path
     assert business.staff[0]["nights"] == 1 and business.wage_debt == 0
 
 
+async def test_hacienda_enseña_lo_que_paga_el_empresario_por_su_plantilla(tmp_path: Path) -> None:
+    from bot.repositories.economy import Treasury
+    from bot.services.tax_report import Snapshot, bills, owners_page
+
+    clock = Clock()
+    service = await make(tmp_path, clock)
+    await open_cafe(service)
+    await hire_first(service)
+    business = await service.business(GUILD, USER)
+    assert business is not None
+    pay = service.payroll_tonight(business)
+    clock.now = START + DAY
+    await service.close_nights(GUILD)
+
+    mine = (await service.economy.business_tax_breakdown(GUILD))[USER]
+
+    raw = business_taxes(tmp_path)
+    assert mine["cotizacion"] == raw["cotizacion"] == pay.ss
+    assert mine.get("retencion_plantilla", 0) == pay.irpf
+    assert mine["igic"] == raw["igic"] and mine["tasa"] == raw["tasa"]
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        (own,) = connection.execute(
+            "SELECT COALESCE(SUM(withheld), 0) FROM economy_tax_records "
+            "WHERE concept LIKE 'negocio:%'"
+        ).fetchone()
+    assert mine.get("irpf", 0) == own
+    # Todo lo del negocio está también en la factura del dueño.
+    everything = await service.economy.tax_breakdown(GUILD)
+    (bill,) = bills(everything)
+    assert sum(mine.values()) <= bill.total
+    snapshot = Snapshot(
+        guild_id=GUILD, year=2026, treasury=Treasury(0, 0, 0, ()), bills=[bill],
+        housing={}, business={USER: mine}, solidarity=(0, 0, 0), names={USER: "Ana"},
+    )  # fmt: skip
+    page = owners_page(snapshot)
+    assert "🏢 Seguridad Social de la plantilla" in page and "Ana · **" in page
+    assert "🏢 SS plantilla" in page and "🛒 IGIC" in page
+
+
 async def test_si_no_llega_se_le_debe_y_los_seguros_sociales_van_a_deuda_con_recargo(
     tmp_path: Path,
 ) -> None:

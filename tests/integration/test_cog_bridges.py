@@ -2130,12 +2130,14 @@ async def test_saldo_patrimonio_y_hacienda_ven_los_pisos_con_el_bot_real(tmp_pat
         quote = await patrimonio.quote(GUILD, OWNER_ID, cash=cash, homes_fiscal=fiscal, objects=0)
         due = next(f.value for f in embed.fields if f.name == "⏳ Por pagar")
         assert quote.due and f"Patrimonio del lunes: {format_amount(quote.due)}" in due
-        responder.send.reset_mock()
-        await client.get_cog("Casino")._hacienda_impl(responder)
-        embed = responder.send.await_args.kwargs["embed"]
-        housing = [f for f in embed.fields if f.name.startswith("🏠 Lo que pagan los pisos")]
-        assert housing and "ITP" in housing[0].value
-        assert len(embed) <= 6_000
+        panel, _bills = await client.get_cog("Casino")._hacienda_view(guild, member, None)
+        panel.page = "caseros"
+        panel.rebuild()
+        (_header, page) = [
+            c.content for c in panel.walk_children() if isinstance(c, discord.ui.TextDisplay)
+        ]
+        assert page.startswith("### 🏠 Lo que pagan los pisos") and "ITP al comprar" in page
+        assert "Diego" in page
     finally:
         await client.close()
 

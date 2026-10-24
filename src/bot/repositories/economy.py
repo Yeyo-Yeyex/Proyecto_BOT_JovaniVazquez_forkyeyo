@@ -4068,6 +4068,49 @@ class EconomyRepository:
                 out.setdefault(int(user_id), {})[str(kind)] = int(total)
         return out
 
+    async def business_tax_breakdown(self, guild_id: int) -> dict[int, dict[str, int]]:
+        """Todo lo que cada dueño ha pagado por sus negocios de `pala`, desde siempre.
+
+        Solo lee. Claves de `tax_report.BUSINESS_TAXES`: `igic`, `aiem`, `cotizacion` y
+        `retencion_plantilla` (la Seguridad Social y el IRPF de las nóminas de la plantilla),
+        `irpf` (el suyo: a cuenta de las ventas, sueldo de administrador, dividendos y
+        ganancias de un traspaso o de vender la sociedad), `sociedades`, `retencion` (la del
+        casero del local), `tasa` y `multa`. Es lo mismo que cuenta `tax_breakdown`, separado
+        para la pestaña 🏪 de `hacienda`.
+        """
+        return await self._run(self._business_tax_breakdown_sync, guild_id)
+
+    def _business_tax_breakdown_sync(self, guild_id: int) -> dict[int, dict[str, int]]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                SELECT user_id,
+                       CASE WHEN kind IN ('dividendo', 'plusvalia') THEN 'irpf'
+                            WHEN kind IN ('aiem', 'cotizacion', 'retencion_plantilla',
+                                          'sociedades', 'retencion', 'tasa', 'multa') THEN kind
+                            ELSE 'igic' END,
+                       SUM(tax)
+                FROM economy_business_tax WHERE guild_id = :guild AND user_id > 0
+                GROUP BY 1, 2
+                UNION ALL
+                SELECT user_id, 'irpf', SUM(withheld)
+                FROM economy_tax_records
+                WHERE guild_id = :guild AND user_id > 0
+                  AND (concept LIKE 'negocio:%' OR concept LIKE 'sociedad:%')
+                GROUP BY user_id
+                """,
+                {"guild": guild_id},
+            ).fetchall()
+        finally:
+            connection.close()
+        out: dict[int, dict[str, int]] = {}
+        for user_id, kind, total in rows:
+            if total:
+                amounts = out.setdefault(int(user_id), {})
+                amounts[str(kind)] = amounts.get(str(kind), 0) + int(total)
+        return out
+
     async def solidarity_summary(self, guild_id: int) -> tuple[int, int, int]:
         """`(declaraciones, contribuyentes, lo pagado)` de las Grandes Fortunas del servidor."""
         return await self._run(self._solidarity_summary_sync, guild_id)
