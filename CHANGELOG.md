@@ -8,6 +8,10 @@ criterio.
 
 ## 9.x
 
+### 9.10.1 · 2026-10-24
+
+- Logros: los de 🎸 Robuso ya no dicen «Solo Robuso:», así no se sabe cuáles son solo suyos
+
 ### 9.10.0 · 2026-10-23
 
 - Patrimonio: vuelve `patrimonio` (también `.patrimonio @miembro`) y cada piso sale con la parte que tienes según tus participaciones

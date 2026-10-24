@@ -202,8 +202,8 @@ def test_la_categoria_es_grande_y_con_secretos() -> None:
     assert len(APART) >= 100
     secrets = sum(a.secret for a in APART)
     assert len(APART) / 10 <= secrets <= len(APART) / 4
-    assert any(a.description.startswith("Solo Robuso:") for a in APART)
-    assert any(not a.description.startswith("Solo Robuso:") for a in APART)
+    # Ambiguo: ninguna descripción dice que es solo de Robuso.
+    assert not any("solo robuso" in a.description.lower() for a in APART)
 
 
 def test_solo_lo_de_robuso_suma_su_eco() -> None:
