@@ -110,6 +110,7 @@ from bot.services.achievements import (
     housing_panel_stats,
     housing_purchase_stats,
     housing_sale_stats,
+    housing_streets_stats,
     housing_tax_stats,
     loan_night_stats,
     remortgage_executed_stats,
@@ -1511,7 +1512,7 @@ class Panel(ui.View):
             self.cog.bot,
             self.guild.id,
             self.owner.id,
-            housing_panel_stats(screen=screen),
+            housing_panel_stats(screen=screen, building=self.building),
             getattr(interaction.channel, "id", None),
         )
 
@@ -3479,6 +3480,7 @@ class Pisos(commands.Cog):
                     for item in listings_of(listing.barrio)
                 ),
             )
+            delta.merge(housing_streets_stats({h.listing: h.shares for h in mine}))
         else:
             delta = housing_sale_stats(
                 shares=deal.quote.shares,

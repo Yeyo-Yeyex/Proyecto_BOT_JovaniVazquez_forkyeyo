@@ -93,7 +93,8 @@ BUNGALOWS = 4
 AMARRES = 4
 NAVES = 2
 
-_HOMES = frozenset({"estudio", "bajo", "piso2", "piso3", "atico", "loft", "duplex"})
+#: Los tipos que son vivienda (para los logros de las calles).
+HOMES = frozenset({"estudio", "bajo", "piso2", "piso3", "atico", "loft", "duplex"})
 #: Lo que piden de menos las plazas y los trasteros nuevos frente a los sueltos del catálogo:
 #: los alquilan sobre todo los vecinos, que pagan menos. Sin esto, cientos de ellos a un 9-12 %
 #: adelantaban el Falcon de la simulación por debajo del día 350.
