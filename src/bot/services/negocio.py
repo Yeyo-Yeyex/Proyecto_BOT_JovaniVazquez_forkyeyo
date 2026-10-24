@@ -60,7 +60,8 @@ from typing import TYPE_CHECKING, Any
 from bot.repositories.business import BusinessRepository
 from bot.repositories.economy import BANK_LOAN_CONCEPT, company_account
 from bot.repositories.housing import BusinessLoanDesk, HousingError
-from bot.repositories.housing_finance import Loan, business_loans_in
+from bot.repositories.housing_finance import Loan, business_loans_in, close_loan_in
+from bot.services import business_chain as chain
 from bot.services import business_sl as sl
 from bot.services import business_staff as staff
 from bot.services import loans as lending
@@ -107,6 +108,7 @@ from bot.services.business_catalog import (
     SECTOR_BY_KEY,
     SIZES,
 )
+from bot.services.business_chain import ImportQuote, Nave, NaveQuote, SaleOffer
 from bot.services.business_games import (
     Client,
     TurnGame,
@@ -332,6 +334,10 @@ class NightRun:
             `curso`, `prueba_superada`, `fin_contrato`, `art50` y `dimision`.
         fine: La multa y las cuotas de la Inspección de Trabajo (0 si no pasó).
         turns: Los turnos de la plantilla de ese día que se jugaron antes de cerrarlo.
+        nave: Lo que pasó esa noche en la nave del dueño (fase 5): `contenedor` por cada uno
+            que llegó y `desahucio` si el casero la rescindió. Va en el primer local de la noche.
+        manager: Lo que hizo el gerente del local (fase 5): `repuso`, `nave` (trajo de la
+            nave), `contrato` (cubrió una baja) o `falta`.
     """
 
     user_id: int
@@ -349,6 +355,29 @@ class NightRun:
     staff: tuple[str, ...] = ()
     fine: int = 0
     turns: tuple[StaffTurn, ...] = ()
+    nave: tuple[str, ...] = ()
+    manager: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class Sale:
+    """Cómo fue la venta de la sociedad (fase 5).
+
+    Attributes:
+        offer: Lo que se ofreció.
+        name: El nombre de la sociedad (el de su local más antiguo).
+        locales: Los locales que se fueron con ella.
+        staff: Su plantilla, que sigue con el comprador.
+        gain_tax: El IRPF de la ganancia (19 %, base del ahorro).
+        balance: Saldo final del socio.
+    """
+
+    offer: SaleOffer
+    name: str
+    locales: int
+    staff: int
+    gain_tax: int
+    balance: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -1096,7 +1125,7 @@ class BusinessService:
             )
         cash = await self.economy.account_balance(guild_id, _account(business) or 0)
         bank = await self._group_bank(guild_id, group)
-        net = _equity(group, cash, bank)
+        net = _equity(group, cash, bank, await self.repository.nave(guild_id, user_id))
         return CompanyView(
             business,
             cash,
@@ -1188,6 +1217,12 @@ class BusinessService:
                 raise BusinessError(
                     f"No puedes administrar una sociedad: {blocked.text} ({blocked.law})."
                 )
+            nave = await self.repository.nave(guild_id, user_id)
+            if nave is not None and nave.own_listing:
+                raise BusinessError(
+                    "Tu nave es tuya: la sociedad tendría que alquilártela (operación vinculada, "
+                    "art. 18 LIS). Déjala antes o cámbiala por una alquilada."
+                )
             now = self._clock()
             today, week = self._today(now)
             total = capital + fees + fees_igic
@@ -1209,6 +1244,12 @@ class BusinessService:
                 for local in locales:
                     local.roll_over(today, week)
                     for key, value in local.week_totals.items():
+                        offset[key] = offset.get(key, 0) + value
+                stored = self.repository.nave_in(connection, guild_id, user_id)
+                if stored is not None:
+                    # La nave es de la rama de actividad: pasa a la sociedad con lo demás.
+                    stored.roll_over(week)
+                    for key, value in stored.week_totals.items():
                         offset[key] = offset.get(key, 0) + value
                 company["offset"] = offset
                 business.add("constitucion", -(fees + fees_igic))
@@ -1636,8 +1677,13 @@ class BusinessService:
         shift: str,
         wage: int | None = None,
         biz: int | None = None,
+        role: str = "",
     ) -> tuple[Business, dict[str, Any]]:
         """Contrata a un candidato de hoy. No mueve dinero: la nómina se paga cada noche.
+
+        Con `role` = `business_staff.MANAGER` (fase 5) entra de gerente: uno por local, con
+        alta y a jornada completa; no atiende, pero cada noche repone y cubre las bajas
+        (`_manage`), y pide lo de un encargado (`business_staff.manager_ask`).
 
         Empieza ya, en las franjas de su turno que aún no han acabado (el alta va antes de
         empezar, art. 139 LGSS). Con contrato `indefinido` o `temporal` (art. 15.2 ET, 6
@@ -1653,6 +1699,15 @@ class BusinessService:
         """
         if contract not in ("indefinido", "temporal", "b"):
             raise BusinessError("Ese contrato no existe.")
+        if role not in ("", staff.MANAGER):
+            raise BusinessError("Ese puesto no existe.")
+        manager = role == staff.MANAGER
+        if manager:
+            if contract == "b":
+                raise BusinessError(
+                    "El gerente compra en nombre del negocio: tiene que estar dado de alta."
+                )
+            jornada = staff.FULL_DAY
         if jornada not in (staff.FULL_DAY, staff.HALF_DAY):
             raise BusinessError("La jornada es completa o media.")
         if shift not in staff.SHIFTS:
@@ -1665,7 +1720,9 @@ class BusinessService:
                 raise BusinessError("No tienes negocio.")
             business.roll_over(today, week)
             room = staff.cap(business.size)
-            if len(business.staff) >= room:
+            if manager and staff.manager(business) is not None:
+                raise BusinessError("Este local ya tiene gerente.")
+            if not manager and len(staff.counter_staff(business)) >= room:
                 raise BusinessError(
                     f"En un local {business.size_info.name.lower()} caben {room} empleados. "
                     "Trasládate a uno mayor para contratar a más."
@@ -1677,8 +1734,15 @@ class BusinessService:
                 raise BusinessError("Ese candidato ya no está: mira los de hoy.")
             name = candidate["name"].split()[0]
             if candidate["part_time"] and jornada != staff.HALF_DAY:
-                raise BusinessError(f"{name} solo quiere media jornada.")
-            asked = staff.ask(candidate["skills"], candidate["traits"], jornada)
+                raise BusinessError(
+                    f"{name} solo quiere media jornada"
+                    + (": de gerente no le cuadra." if manager else ".")
+                )
+            asked = (
+                staff.manager_ask(candidate["skills"], candidate["traits"])
+                if manager
+                else staff.ask(candidate["skills"], candidate["traits"], jornada)
+            )
             pay = asked if wage is None else wage
             if pay < asked:
                 raise BusinessError(f"{name} pide al menos {asked} Y$ brutos cada noche.")
@@ -1688,7 +1752,7 @@ class BusinessService:
             business.staff_seq += 1
             employee = staff.new_employee(
                 candidate, seq=business.staff_seq, contract=contract, jornada=jornada,
-                shift=shift, wage=pay, start=today, bonified=bonified,
+                shift=shift, wage=pay, start=today, bonified=bonified, role=role,
             )  # fmt: skip
             # Las franjas de hoy que ya han acabado no las trabaja.
             employee["from_franja"] = staff.franjas_done(datetime.fromtimestamp(now, TIMEZONE).hour)
@@ -2283,6 +2347,8 @@ class BusinessService:
             day = max(first + timedelta(days=1), today - timedelta(days=CATCH_UP_NIGHTS))
             while day < today:
                 tonight: list[NightRun] = []
+                # La nave antes que los locales: el domingo, Sociedades ya ve lo suyo.
+                nave_events = await self._close_nave_night(guild_id, user_id, day, now)
                 for business in await self.repository.owned(guild_id, user_id):
                     if business.billed_day >= day.isoformat():
                         continue
@@ -2290,8 +2356,12 @@ class BusinessService:
                         guild_id, user_id, day, FRANJAS_DIA, business.id
                     )
                     run = await self._close_night(guild_id, user_id, business.id, day, now)
-                    if run is not None:
-                        tonight.append(replace(run, turns=tuple(turns)))
+                    if run is None:
+                        continue
+                    done = await self._manage(guild_id, user_id, business.id, day, now)
+                    tonight.append(replace(run, turns=tuple(turns), manager=tuple(done)))
+                if tonight and nave_events:
+                    tonight[0] = replace(tonight[0], nave=tuple(nave_events))
                 if (
                     tonight
                     and day.weekday() == 6
@@ -2362,6 +2432,7 @@ class BusinessService:
             business = self.repository.business_in(connection, guild_id, user_id, business_id)
             if business is None or business.billed_day >= day.isoformat():
                 return None, BusinessMove(user_id=user_id)
+            _manager_absence(business, day)
             bill = nightly_bill(business)
             debt = business.rent_debt
             company = business.is_company
@@ -2496,10 +2567,13 @@ class BusinessService:
                 info = business.company
                 offset = info["offset"] if info["offset_week"] == week else None
                 totals = dict(business.week_totals)
-                for other in siblings:
-                    if other.week == week:
-                        for key, value in other.week_totals.items():
-                            totals[key] = totals.get(key, 0) + value
+                stored = self.repository.nave_in(connection, guild_id, user_id)
+                others = [o.week_totals for o in siblings if o.week == week]
+                if stored is not None and stored.week == week:
+                    others.append(stored.week_totals)
+                for other_totals in others:
+                    for key, value in other_totals.items():
+                        totals[key] = totals.get(key, 0) + value
                 carry = info.pop("carry", None) or {}
                 if carry.get("week") != week:
                     carry = {}
@@ -2701,7 +2775,8 @@ class BusinessService:
         business = next((b for b in group if b.id == business.id), business)
         info = business.company
         bank = await self._group_bank(guild_id, group)
-        cause = sl.in_dissolution(info, _equity(group, cash, bank))
+        nave = await self.repository.nave(guild_id, business.user_id)
+        cause = sl.in_dissolution(info, _equity(group, cash, bank, nave))
         since = info.get("cause_since", "")
         if cause == bool(since):
             return
@@ -2803,6 +2878,15 @@ class BusinessService:
                     connection, guild_id, user_id, business.own_listing, today, now
                 )
             self.repository.close_in(connection, guild_id, business, now, reason)
+            last = not self.repository.owned_in(connection, guild_id, user_id)
+            nave = self.repository.nave_in(connection, guild_id, user_id) if last else None
+            shut = _shut_nave(nave, today) if nave is not None else None
+            if nave is not None:
+                if housing is not None and nave.own_listing:
+                    housing.free_business_local_in(
+                        connection, guild_id, user_id, nave.own_listing, today, now
+                    )
+                self.repository.delete_nave_in(connection, guild_id, user_id)
             heir = (
                 next(
                     (
@@ -2817,14 +2901,12 @@ class BusinessService:
             )
             if heir is not None:
                 # La sociedad sigue con sus otros locales: este cierra y no se liquida.
-                info = heir.company
-                week = week_of(today)
-                carry = info.get("carry") or {}
-                if carry.get("week") != week:
-                    carry = {"week": week, "base": 0, "sales": 0}
-                carry["base"] += sl.tax_base(business.week_totals) + stock + proceeds - offer.book
-                carry["sales"] += business.week_totals.get("ventas", 0) + stock
-                info["carry"] = carry
+                _carry(
+                    heir.company,
+                    week_of(today),
+                    sl.tax_base(business.week_totals) + stock + proceeds - offer.book,
+                    business.week_totals.get("ventas", 0) + stock,
+                )
                 if housing is not None:
                     housing.move_business_loans_in(connection, guild_id, business.id, heir.id)
                 heir.tell(
@@ -2865,6 +2947,14 @@ class BusinessService:
                 # La RIC que queda (sin invertir o sin mantener lo invertido) se integra.
                 base += sl.ric_close(info)
                 sales = business.week_totals.get("ventas", 0) + stock
+                carry = info.get("carry") or {}
+                if carry.get("week") == week_of(today):
+                    # Lo de los locales que cerraron esta semana.
+                    base += carry.get("base", 0)
+                    sales += carry.get("sales", 0)
+                if shut is not None:
+                    base += shut.base
+                    sales += shut.sales
                 result = sl.settle_week(info, base, weekly_sales=sales)
                 hacienda = info["tax_debt"] + result["tax"]
                 owed = business.rent_debt - forfeit
@@ -2879,6 +2969,8 @@ class BusinessService:
                     )
                 if owed:
                     bills.append(BusinessCost("negocio:deuda_local", gone=owed, expense=False))
+                if shut is not None and shut.owed:
+                    bills.append(BusinessCost("negocio:nave:deuda", gone=shut.owed, expense=False))
                 # Luego el banco (sus préstamos vencen al disolverla): lo que la caja no llegue
                 # a pagar lo asume su socio, que lo avalaba (`business_loans_to_owner_in`).
                 loans = business_loans_in(connection, guild_id, business.id) if housing else []
@@ -2914,9 +3006,9 @@ class BusinessService:
                 move = BusinessMove(
                     user_id=user_id,
                     account=_account(business),
-                    refund=refund,
-                    forfeit=forfeit,
-                    sales=stock,
+                    refund=refund + (shut.refund if shut else 0),
+                    forfeit=forfeit + (shut.forfeit if shut else 0),
+                    sales=stock + (shut.liquidation if shut else 0),
                     sold_cost=offer.stock,
                     proceeds=proceeds,
                     bills=tuple(bills),
@@ -2940,15 +3032,18 @@ class BusinessService:
             def settle_staff(connection: sqlite3.Connection, unpaid: int) -> None:
                 fogasa.append(unpaid)
 
+            bills = list(finiquitos)
+            if shut is not None and shut.owed:
+                bills.append(BusinessCost("negocio:nave:deuda", gone=shut.owed))
             move = BusinessMove(
                 user_id=user_id,
-                refund=refund,
-                forfeit=forfeit,
-                sales=stock,
-                sold_cost=offer.stock,
+                refund=refund + (shut.refund if shut else 0),
+                forfeit=forfeit + (shut.forfeit if shut else 0),
+                sales=stock + (shut.liquidation if shut else 0),
+                sold_cost=offer.stock + (shut.cost if shut else 0),
                 proceeds=proceeds,
                 gain=gain,
-                bills=finiquitos,
+                bills=tuple(bills),
                 settle=settle_staff,
             )
             return closing, move
@@ -2978,6 +3073,669 @@ class BusinessService:
             fogasa[0] if fogasa else 0,
         )
 
+    # -- Fase 5: la nave, importar, el gerente y vender la sociedad -----------------------
+
+    async def nave(self, guild_id: int, user_id: int) -> Nave | None:
+        """La nave de un miembro con sus cuentas de esta semana, o `None`."""
+        nave = await self.repository.nave(guild_id, user_id)
+        if nave is not None:
+            nave.roll_over(week_of(local_day(self._clock())))
+        return nave
+
+    @staticmethod
+    def nave_quote(barrio: str, size: int) -> NaveQuote:
+        """Lo que cuesta alquilar una nave de tamaño `size` en `barrio`.
+
+        Raises:
+            BusinessError: Si el barrio o el tamaño no existen.
+        """
+        if barrio not in BARRIO_BY_KEY or not 0 <= size < len(chain.NAVE_SIZES):
+            raise BusinessError("Esa nave no existe.")
+        return chain.nave_quote(BARRIO_BY_KEY[barrio], size)
+
+    async def own_naves(self, guild_id: int, user_id: int) -> list[OwnLocal]:
+        """Las naves enteras suyas de `pisos`, con su tamaño y si están libres para la cadena."""
+        if self.housing is None:
+            return []
+        housing = self.housing
+
+        def read(connection: sqlite3.Connection) -> list[tuple[Listing, str]]:
+            return housing.business_locals_in(connection, guild_id, user_id)
+
+        current = await self.repository.nave(guild_id, user_id)
+        out = []
+        for listing, status in await self.repository.read(read):
+            if listing.kind != "nave":
+                continue
+            size = chain.nave_size_for(listing.m2)
+            free = status == "vacio" or (current is not None and current.own_listing == listing.key)
+            out.append(OwnLocal(listing, status, size, size is not None and free))
+        return out
+
+    async def open_nave(
+        self, guild_id: int, user_id: int, *, barrio: str, size: int, own: str = ""
+    ) -> tuple[Nave, NaveQuote, int]:
+        """Abre la nave de la cadena: alquilada en `barrio` o una nave entera suya (`own`).
+
+        Tratamiento fiscal: la tasa municipal de la declaración responsable del almacén (art.
+        20.4.i TRLRHL) va al Estado y es gasto de la actividad (un almacén sin mercancía
+        peligrosa es actividad inocua: la Ley 7/2011 de Canarias no le pide comunicación previa,
+        art. 2.3.c, pero las ordenanzas suelen pedir la declaración). La fianza, dos
+        mensualidades (art. 36.1 LAU), al depósito de fianzas. Si la cadena es de su sociedad,
+        lo paga su caja, y la sociedad no puede usar una nave de su socio (operación vinculada,
+        art. 18 LIS). Una nave propia queda afecta a la actividad, como un local propio
+        (`housing.OWN_BUSINESS`).
+
+        Returns:
+            `(la nave, lo que costó, saldo final de quien paga)`.
+
+        Raises:
+            BusinessError: Sin locales, con nave ya, si la nave propia no sirve o si no llega.
+        """
+        async with self._lock(guild_id, user_id):
+            now = self._clock()
+            today, week = self._today(now)
+            owned = await self.repository.owned(guild_id, user_id)
+            if not owned:
+                raise BusinessError("Monta antes un local: la nave reparte a tus locales.")
+            head = owned[0]
+            if own:
+                if head.is_company:
+                    raise BusinessError(
+                        "Tu sociedad no puede usar una nave tuya sin pagarte un alquiler "
+                        "(operación vinculada, art. 18 LIS): de momento, solo alquiladas."
+                    )
+                found = next(
+                    (o for o in await self.own_naves(guild_id, user_id) if o.listing.key == own),
+                    None,
+                )
+                if found is None or found.size is None or not found.fits:
+                    raise BusinessError("Esa nave no es entera tuya, está ocupada o es pequeña.")
+                barrio, size = found.listing.barrio, found.size
+            quote = (
+                chain.nave_quote(BARRIO_BY_KEY[barrio], size, own=True)
+                if own
+                else self.nave_quote(barrio, size)
+            )
+            housing = self.housing
+
+            def prepare(connection: sqlite3.Connection) -> tuple[Nave, BusinessMove]:
+                if self.repository.nave_in(connection, guild_id, user_id) is not None:
+                    raise BusinessError("Ya tienes una nave.")
+                nave = Nave(
+                    user_id=user_id,
+                    barrio=barrio,
+                    size=size,
+                    own_listing=own,
+                    opened_at=now,
+                    deposit=quote.deposit,
+                    billed_day=(today - timedelta(days=1)).isoformat(),
+                )
+                nave.roll_over(week)
+                nave.add("apertura", -quote.license)
+                if own:
+                    assert housing is not None
+                    try:
+                        housing.occupy_business_local_in(
+                            connection, guild_id, user_id, own, today, now
+                        )
+                    except HousingError as error:
+                        raise BusinessError(str(error)) from error
+                self.repository.save_nave_in(connection, guild_id, nave)
+                cost = BusinessCost("negocio:nave:apertura", taxes=(("tasa", quote.license),))
+                return nave, BusinessMove(
+                    user_id=user_id,
+                    payments=(cost,),
+                    deposit=quote.deposit,
+                    account=_account(head),
+                )
+
+            try:
+                nave, paid = await self.economy.business(guild_id, prepare)
+            except InsufficientFundsError as error:
+                raise BusinessError(_broke(head, quote.total)) from error
+            return nave, quote, paid.company if head.is_company else paid.balance
+
+    async def import_container(
+        self, guild_id: int, user_id: int, product: str
+    ) -> tuple[Nave, ImportQuote, int]:
+        """Pide a la Península un contenedor de `product` para la nave: llega en
+        `business_chain.IMPORT_NIGHTS` noches.
+
+        Tratamiento fiscal: es una importación (art. 8.1 de la Ley 20/1991: la Península es
+        territorio tercero para el IGIC). El IGIC de la importación, al tipo de la entrega del
+        mismo bien (art. 32.4 del DL 1/2025 de Canarias), y el AIEM de lo que está en su anexo
+        (art. 92 y anexo 2.º) van al Estado. El pequeño empresario los paga y no los deduce (art.
+        91.b): son coste. El fabricante y la naviera no existen: su parte desaparece. El agente
+        de aduanas lleva IGIC general. Todo es gasto de la actividad el día que se paga
+        (compras), como lo del mayorista; de una sociedad, de su Sociedades.
+
+        Returns:
+            `(la nave, el contenedor, saldo final de quien paga)`.
+
+        Raises:
+            BusinessError: Sin nave, si no lo vende ningún local de su isla, si se estropea en
+                el barco, si no cabe o si no llega.
+        """
+        item = chain.product_by_key(product)
+        if item is None:
+            raise BusinessError("Ese producto no existe.")
+        if not chain.can_import(item):
+            raise BusinessError(
+                f"{item.name}: se estropea antes de llegar. Eso se compra al mayorista."
+            )
+        quote = chain.import_quote(item)
+        async with self._lock(guild_id, user_id):
+            now = self._clock()
+            today, week = self._today(now)
+            owned = await self.repository.owned(guild_id, user_id)
+            if not owned:
+                raise BusinessError("No tienes negocio.")
+
+            def prepare(connection: sqlite3.Connection) -> tuple[Nave, BusinessMove]:
+                nave = self.repository.nave_in(connection, guild_id, user_id)
+                if nave is None:
+                    raise BusinessError("Primero necesitas una nave donde descargarlo.")
+                sold = {
+                    p.key
+                    for b in owned
+                    if b.barrio_info.island == nave.island
+                    for p in b.sector_info.products
+                }
+                if product not in sold:
+                    raise BusinessError("Ninguno de tus locales de la isla de tu nave vende eso.")
+                room = nave.size_info.lots - chain.used_lots(nave)
+                if room < chain.CONTAINER_LOTS:
+                    raise BusinessError(
+                        f"No cabe: un contenedor son {chain.CONTAINER_LOTS} lotes y en tu nave "
+                        f"quedan {max(0, room)} libres (con lo que viene en camino)."
+                    )
+                nave.roll_over(week)
+                nave.seq += 1
+                arrives = today + timedelta(days=chain.IMPORT_NIGHTS - 1)
+                nave.orders = [
+                    *nave.orders,
+                    {
+                        "id": nave.seq,
+                        "product": product,
+                        "units": quote.units,
+                        "arrives": arrives.isoformat(),
+                    },
+                ]
+                nave.add("compras", -quote.total)
+                self.repository.save_nave_in(connection, guild_id, nave)
+                taxes = tuple((k, v) for k, v in (("igic", quote.igic), ("aiem", quote.aiem)) if v)
+                payments = (
+                    BusinessCost("negocio:importacion", gone=chain.import_base(quote), taxes=taxes),
+                    BusinessCost(
+                        "negocio:aduanas", gone=quote.customs, taxes=(("igic", quote.customs_igic),)
+                    ),
+                )
+                return nave, BusinessMove(
+                    user_id=user_id, payments=payments, account=_account(owned[0])
+                )
+
+            try:
+                nave, paid = await self.economy.business(guild_id, prepare)
+            except InsufficientFundsError as error:
+                raise BusinessError(_broke(owned[0], quote.total)) from error
+            return nave, quote, paid.company if owned[0].is_company else paid.balance
+
+    async def from_nave(
+        self, guild_id: int, user_id: int, product: str, lots: int, *, biz: int | None = None
+    ) -> tuple[Business, int]:
+        """Trae `lots` lotes de `product` de la nave al almacén del local. No mueve dinero: lo
+        importado ya se pagó (simplificación: el reparto en la isla no cuesta).
+
+        Returns:
+            `(el negocio, unidades traídas)`.
+
+        Raises:
+            BusinessError: Sin nave, si es de otra isla, si el local no lo vende o si no queda.
+        """
+        if lots < 1:
+            raise BusinessError("Al menos un lote.")
+        async with self._lock(guild_id, user_id):
+            today, week = self._today(self._clock())
+            moved: list[int] = []
+
+            def prepare(connection: sqlite3.Connection) -> tuple[Business, BusinessMove]:
+                business = self.repository.business_in(connection, guild_id, user_id, biz)
+                nave = self.repository.nave_in(connection, guild_id, user_id)
+                if business is None:
+                    raise BusinessError("No tienes negocio.")
+                if nave is None:
+                    raise BusinessError("No tienes nave.")
+                if nave.island != business.barrio_info.island:
+                    raise BusinessError("Tu nave está en otra isla: solo reparte en la suya.")
+                item = business.sector_info.product(product)
+                if item is None:
+                    raise BusinessError("Eso no se vende en este local.")
+                units = min(lots * item.pack, nave.stock.get(product, 0))
+                if units <= 0:
+                    raise BusinessError(f"En la nave no queda {item.name.lower()}.")
+                business.roll_over(today, week)
+                nave.stock[product] = nave.stock.get(product, 0) - units
+                nave.stock = {k: v for k, v in nave.stock.items() if v > 0}
+                business.stock[product] = business.stock.get(product, 0) + units
+                self.repository.save_nave_in(connection, guild_id, nave)
+                self.repository.save_in(connection, guild_id, business)
+                moved.append(units)
+                return business, BusinessMove(user_id=user_id)
+
+            business, _paid = await self.economy.business(guild_id, prepare)
+            return business, moved[0]
+
+    async def close_nave(self, guild_id: int, user_id: int) -> tuple[int, int, int]:
+        """Deja la nave: el mayorista recompra lo que hay dentro a la mitad y la fianza vuelve
+        menos lo que se deba.
+
+        Tratamiento fiscal: lo que paga el mayorista es venta de la actividad (art. 27 LIRPF), o
+        ingreso de la sociedad; la fianza es dinero propio. Lo que se debía al casero se paga
+        antes de irse (gasto). Una nave propia vuelve a estar vacía en `pisos`.
+
+        Returns:
+            `(lo cobrado por el stock, la fianza que vuelve, saldo final de quien cobra)`.
+
+        Raises:
+            BusinessError: Sin nave o con contenedores en camino.
+        """
+        async with self._lock(guild_id, user_id):
+            now = self._clock()
+            today, week = self._today(now)
+            owned = await self.repository.owned(guild_id, user_id)
+            housing = self.housing
+            parts: list[_NaveShut] = []
+
+            def prepare(connection: sqlite3.Connection) -> tuple[Nave, BusinessMove]:
+                nave = self.repository.nave_in(connection, guild_id, user_id)
+                if nave is None:
+                    raise BusinessError("No tienes nave.")
+                if nave.orders:
+                    raise BusinessError("Tienes contenedores en camino: espera a que lleguen.")
+                shut = _shut_nave(nave, today)
+                parts.append(shut)
+                company = bool(owned) and owned[0].is_company
+                if company:
+                    # La sociedad sigue: lo de la nave esta semana va a su Sociedades.
+                    first = self.repository.owned_in(connection, guild_id, user_id)[0]
+                    _carry(first.company, week, shut.base, shut.sales)
+                    self.repository.save_in(connection, guild_id, first)
+                if housing is not None and nave.own_listing:
+                    housing.free_business_local_in(
+                        connection, guild_id, user_id, nave.own_listing, today, now
+                    )
+                self.repository.delete_nave_in(connection, guild_id, user_id)
+                bills = (
+                    (BusinessCost("negocio:nave:deuda", gone=shut.owed, expense=not company),)
+                    if shut.owed
+                    else ()
+                )
+                return nave, BusinessMove(
+                    user_id=user_id,
+                    refund=shut.refund,
+                    forfeit=shut.forfeit,
+                    sales=shut.liquidation,
+                    sold_cost=shut.cost,
+                    bills=bills,
+                    account=_account(owned[0]) if owned else None,
+                )
+
+            _nave, paid = await self.economy.business(guild_id, prepare)
+            shut = parts[0]
+            company = bool(owned) and owned[0].is_company
+            return shut.liquidation, shut.refund, paid.company if company else paid.balance
+
+    async def _close_nave_night(
+        self, guild_id: int, user_id: int, day: date, now: float
+    ) -> list[str]:
+        """La noche de la nave: llegan los contenedores, se estropea lo perecedero y se paga el
+        alquiler y los suministros, hasta donde llegue (como un local: el alquiler lleva IGIC y
+        la retención del casero). A las `NAVE_EVICTION_NIGHTS` noches sin pagar, o si una nave
+        propia deja de ser entera suya, se cierra. El candado lo tiene quien llama.
+
+        Returns:
+            Lo que pasó: `contenedor` por cada uno que llegó y `desahucio` si se cerró.
+        """
+        events: list[str] = []
+        lost_nave: list[bool] = []
+        housing = self.housing
+
+        def prepare(connection: sqlite3.Connection) -> tuple[Nave | None, BusinessMove]:
+            nave = self.repository.nave_in(connection, guild_id, user_id)
+            owned = self.repository.owned_in(connection, guild_id, user_id)
+            if nave is None or not owned or nave.billed_day >= day.isoformat():
+                return None, BusinessMove(user_id=user_id)
+            company = owned[0].is_company
+            iso = day.isoformat()
+            keep = []
+            for order in nave.orders:
+                if order["arrives"] <= iso:
+                    nave.stock[order["product"]] = (
+                        nave.stock.get(order["product"], 0) + order["units"]
+                    )
+                    nave.containers += 1
+                    item = chain.product_by_key(order["product"])
+                    nave.tell(
+                        f"🚢 Ha llegado a la nave el contenedor de "
+                        f"{item.name.lower() if item else order['product']}."
+                    )
+                    events.append("contenedor")
+                else:
+                    keep.append(order)
+            nave.orders = keep
+            spoiled = chain.spoil_nave(nave)
+            if spoiled:
+                nave.tell(f"🗑️ En la nave se estropearon {spoiled} unidades.")
+            bill = chain.nave_bill(nave)
+            debt = nave.rent_debt
+            bills = []
+            if debt:
+                bills.append(BusinessCost("negocio:nave:deuda", gone=debt))
+            bills.append(
+                BusinessCost(
+                    "negocio:nave:alquiler",
+                    gone=bill.rent - bill.withholding,
+                    taxes=(("igic", bill.rent_igic), ("retencion", bill.withholding)),
+                )
+            )
+            bills.append(
+                BusinessCost(
+                    "negocio:nave:suministros",
+                    gone=bill.utilities,
+                    taxes=(("igic", bill.utilities_igic),),
+                )
+            )
+            nave.billed_day = iso
+            lost_nave.append(
+                bool(nave.own_listing)
+                and housing is not None
+                and not housing.business_local_ok_in(
+                    connection, guild_id, user_id, nave.own_listing
+                )
+            )
+
+            def settle(connection: sqlite3.Connection, unpaid: int) -> None:
+                nave.roll_over(week_of(day))
+                owed = min(unpaid, debt + bill.total)
+                # La sociedad lo apunta al devengo; el autónomo, lo pagado.
+                nave.add("local", -(bill.total if company else debt + bill.total - owed))
+                nave.rent_debt = owed
+                nave.unpaid_nights = nave.unpaid_nights + 1 if owed else 0
+                if owed:
+                    nave.tell(
+                        f"🧾 Anoche no llegó para la nave: debes {owed} Y$ al casero "
+                        f"({nave.unpaid_nights} de {chain.NAVE_EVICTION_NIGHTS} noches)."
+                    )
+                self.repository.save_nave_in(connection, guild_id, nave)
+
+            return nave, BusinessMove(
+                user_id=user_id, bills=tuple(bills), settle=settle, account=_account(owned[0])
+            )
+
+        nave, _paid = await self.economy.business(guild_id, prepare)
+        if nave is None:
+            return events
+        if nave.unpaid_nights >= chain.NAVE_EVICTION_NIGHTS or (lost_nave and lost_nave[0]):
+            await self._evict_nave(guild_id, user_id, now)
+            events.append("desahucio")
+        return events
+
+    async def _evict_nave(self, guild_id: int, user_id: int, now: float) -> None:
+        """Cierra la nave sin preguntar (el casero la rescinde o ya no es suya): lo que viene
+        en camino lo descarga el puerto y se pierde. El candado lo tiene quien llama."""
+        nave = await self.repository.nave(guild_id, user_id)
+        if nave is None:
+            return
+        if nave.orders:
+            nave.orders = []
+            await self.repository.save_nave(guild_id, nave)
+        owned = await self.repository.owned(guild_id, user_id)
+        today, week = self._today(now)
+        housing = self.housing
+
+        def prepare(connection: sqlite3.Connection) -> tuple[None, BusinessMove]:
+            stored = self.repository.nave_in(connection, guild_id, user_id)
+            if stored is None:
+                return None, BusinessMove(user_id=user_id)
+            shut = _shut_nave(stored, today)
+            locales = self.repository.owned_in(connection, guild_id, user_id)
+            company = bool(locales) and locales[0].is_company
+            if locales:
+                first = locales[0]
+                if company:
+                    _carry(first.company, week, shut.base, shut.sales)
+                first.tell("🏭 Has perdido la nave: lo que había dentro se liquidó a la mitad.")
+                self.repository.save_in(connection, guild_id, first)
+            if housing is not None and stored.own_listing:
+                housing.free_business_local_in(
+                    connection, guild_id, user_id, stored.own_listing, today, now
+                )
+            self.repository.delete_nave_in(connection, guild_id, user_id)
+            bills = (
+                (BusinessCost("negocio:nave:deuda", gone=shut.owed, expense=not company),)
+                if shut.owed
+                else ()
+            )
+            return None, BusinessMove(
+                user_id=user_id,
+                refund=shut.refund,
+                forfeit=shut.forfeit,
+                sales=shut.liquidation,
+                sold_cost=shut.cost,
+                bills=bills,
+                account=_account(owned[0]) if owned else None,
+            )
+
+        await self.economy.business(guild_id, prepare)
+
+    async def _manage(
+        self, guild_id: int, user_id: int, biz: int, day: date, now: float
+    ) -> list[str]:
+        """La noche del gerente de un local, después de cerrarla: repone el stock y cubre las
+        bajas. El candado lo tiene quien llama.
+
+        - **Reponer** (`business_chain.restock`): hasta día y medio de lo que se vendió, de la
+          nave de su isla primero y luego del mayorista, con lo que haya en la caja (como una
+          compra del dueño: IGIC al Estado y gasto de la actividad).
+        - **Cubrir las bajas** (`Business.vacancies`): a quien se fue o acabó su contrato le
+          sustituye el mejor candidato del día siguiente, indefinido y con lo que pide.
+
+        Returns:
+            Lo que hizo: `repuso`, `nave`, `contrato` o `falta`.
+        """
+        events: list[str] = []
+        next_day = day + timedelta(days=1)
+        owner_debt = await self.economy.tax_debt(guild_id, user_id)
+        hour = datetime.fromtimestamp(now, TIMEZONE).hour
+        today = local_day(now)
+
+        def prepare(connection: sqlite3.Connection) -> tuple[Business | None, BusinessMove]:
+            business = self.repository.business_in(connection, guild_id, user_id, biz)
+            boss = staff.manager(business) if business is not None else None
+            if business is None or boss is None or boss["start"] > day.isoformat():
+                return None, BusinessMove(user_id=user_id)
+            if boss["absent_day"] == day.isoformat():
+                events.append("falta")
+                return None, BusinessMove(user_id=user_id)
+            name = boss["name"].split()[0]
+            account = _account(business)
+            row = connection.execute(
+                "SELECT balance FROM economy_wallets WHERE guild_id = ? AND user_id = ?",
+                (guild_id, account if account is not None else user_id),
+            ).fetchone()
+            budget = int(row[0]) if row else 0
+            nave = self.repository.nave_in(connection, guild_id, user_id)
+            near = nave if nave is not None and nave.island == business.barrio_info.island else None
+            plan = chain.restock(
+                business.stock, business.sector_info.products, business.sold_on(day),
+                near.stock if near is not None else None, budget,
+                price=lambda p, units: sum(wholesale(p, units)),
+            )  # fmt: skip
+            payments: list[BusinessCost] = []
+            brought = bought = 0
+            for item in plan:
+                key = item.product.key
+                if item.from_nave and near is not None:
+                    near.stock[key] -= item.from_nave
+                    business.stock[key] = business.stock.get(key, 0) + item.from_nave
+                    brought += item.from_nave
+                if item.lots:
+                    units = item.lots * item.product.pack
+                    base, tax = wholesale(item.product, units)
+                    business.stock[key] = business.stock.get(key, 0) + units
+                    business.roll_over(today, week_of(today))
+                    business.add("compras", -(base + tax))
+                    payments.append(
+                        BusinessCost(
+                            "negocio:compras", gone=base, taxes=(("igic", tax),) if tax else ()
+                        )
+                    )
+                    bought += units
+            if near is not None and brought:
+                near.stock = {k: v for k, v in near.stock.items() if v > 0}
+                self.repository.save_nave_in(connection, guild_id, near)
+                events.append("nave")
+            if payments:
+                events.append("repuso")
+            if brought or bought:
+                business.tell(
+                    f"🧑‍💼 {name} ha repuesto el almacén: "
+                    + ", ".join(
+                        part
+                        for part in (
+                            f"{brought} unidades de la nave" if brought else "",
+                            f"{bought} del mayorista" if bought else "",
+                        )
+                        if part
+                    )
+                    + "."
+                )
+            # Las bajas: el mejor candidato de mañana para cada una, mientras quepa.
+            bonified = business.bonus_ban < next_day.isoformat() and (
+                not business.company.get("tax_debt", 0) if business.is_company else owner_debt <= 0
+            )
+            for vacancy in list(business.vacancies):
+                business.vacancies = business.vacancies[1:]
+                if len(staff.counter_staff(business)) >= staff.cap(business.size):
+                    continue
+                pool = [
+                    c
+                    for c in staff.candidates(business, next_day)
+                    if not (c["part_time"] and vacancy["jornada"] != staff.HALF_DAY)
+                ]
+                if not pool:
+                    continue
+                pick = max(pool, key=lambda c: sum(c["skills"].values()))
+                business.staff_seq += 1
+                hired = staff.new_employee(
+                    pick, seq=business.staff_seq, contract="indefinido",
+                    jornada=vacancy["jornada"], shift=vacancy["shift"],
+                    wage=staff.ask(pick["skills"], pick["traits"], vacancy["jornada"]),
+                    start=next_day, bonified=bonified,
+                )  # fmt: skip
+                hired["from_franja"] = staff.franjas_done(hour) if next_day == today else 0
+                business.staff = [*business.staff, hired]
+                business.seen = [*business.seen, pick["key"]][-30:]
+                business.tell(
+                    f"🧑‍💼 {name} ha contratado a {pick['name']} para el turno de "
+                    f"{staff.SHIFT_NAMES[vacancy['shift']]}: cubre una baja."
+                )
+                events.append("contrato")
+            self.repository.save_in(connection, guild_id, business)
+            return business, BusinessMove(
+                user_id=user_id, payments=tuple(payments), account=account
+            )
+
+        try:
+            await self.economy.business(guild_id, prepare)
+        except InsufficientFundsError:
+            # Entre que miró la caja y que pagó, alguien la vació: lo intenta la noche que viene.
+            logger.info("El gerente del negocio %s no pudo pagar la reposición", biz)
+            return [e for e in events if e not in ("repuso", "nave", "contrato")]
+        return events
+
+    async def sale_offer(
+        self, guild_id: int, user_id: int, biz: int | None = None
+    ) -> SaleOffer | None:
+        """Lo que pagaría un comprador por las participaciones de su sociedad (`None` si no es
+        una sociedad). Ver `business_chain.sale_offer`."""
+        view = await self.company_view(guild_id, user_id, biz)
+        if view is None or not view.business.is_company:
+            return None
+        nave = await self.repository.nave(guild_id, user_id)
+        debts = (
+            view.business.company.get("tax_debt", 0)
+            + sum(b.rent_debt + b.wage_debt for b in view.locales)
+            + (nave.rent_debt if nave is not None else 0)
+        )
+        return chain.sale_offer(
+            view.business.company, view.equity, weeks=sl.SALE_WEEKS, debts=debts
+        )
+
+    async def sell_company(
+        self, guild_id: int, user_id: int, *, price: int, biz: int | None = None
+    ) -> Sale:
+        """Vende todas las participaciones de su sociedad (con toda la cadena) al comprador.
+
+        Tratamiento fiscal: vender participaciones está exento de IVA y de ITP (art. 338 de la
+        Ley 6/2023). Para el socio es una ganancia patrimonial (art. 33 LIRPF) de la base del
+        ahorro (art. 46.b): el precio menos lo que metió, capital y aportaciones (que integran
+        su valor de adquisición: art. 35.1 LIRPF y la consulta V1583-24 de la DGT), al 19 % en
+        el momento, como los dividendos (simplificación: sin la escala del ahorro). Una pérdida
+        no se compensa. El préstamo del socio se lo paga el comprador por su valor: no es renta.
+        El precio es el del art. 37.1.b LIRPF (`business_chain.sale_offer`). El comprador no
+        existe: lo que paga se crea, y la sociedad se va con él con su caja, sus locales, su
+        nave y su plantilla, que sigue con sus contratos (no cambia el empleador: no es una
+        sucesión del art. 44 ET). Sus préstamos del banco los cancela el comprador para que
+        el banco libere tu aval (si no, seguirías avalando: arts. 1205 y 1847 CC).
+
+        Args:
+            price: El precio que vio (si la oferta ha cambiado, no se vende).
+
+        Raises:
+            BusinessError: Si no es una sociedad, no hay comprador o la oferta ha cambiado.
+        """
+        async with self._lock(guild_id, user_id):
+            offer = await self.sale_offer(guild_id, user_id, biz)
+            if offer is None:
+                raise BusinessError("Solo se venden sociedades: tu negocio no lo es.")
+            if offer.blocker is not None:
+                raise BusinessError(offer.blocker)
+            if offer.price != price:
+                raise BusinessError("El comprador ha cambiado su oferta: mírala otra vez.")
+            now = self._clock()
+            held: list[tuple[str, int, int]] = []
+            housing = self.housing
+
+            def prepare(connection: sqlite3.Connection) -> tuple[None, BusinessMove]:
+                locales = [
+                    b
+                    for b in self.repository.owned_in(connection, guild_id, user_id)
+                    if b.is_company
+                ]
+                if not locales:
+                    raise BusinessError("Tu sociedad ya no existe.")
+                company_id = locales[0].company_id
+                for business in locales:
+                    if housing is not None:
+                        for loan in business_loans_in(connection, guild_id, business.id):
+                            close_loan_in(connection, loan.id, "pagado", now, paid=loan.owed)
+                    self.repository.close_in(connection, guild_id, business, now, "venta")
+                self.repository.delete_nave_in(connection, guild_id, user_id)
+                held.append((locales[0].name, len(locales), sum(len(b.staff) for b in locales)))
+                return None, BusinessMove(
+                    user_id=user_id,
+                    account=company_account(company_id),
+                    sale=offer.price,
+                    liquidation_basis=offer.basis,
+                    liquidation_loan=offer.loan,
+                )
+
+            _none, paid = await self.economy.business(guild_id, prepare)
+            name, count, team = held[0]
+            return Sale(offer, name, count, team, paid.gain_tax, paid.balance)
+
     # -- Para `saldo` -------------------------------------------------------------------
 
     async def dues(self, guild_id: int, user_id: int) -> tuple[int, int, int]:
@@ -2992,7 +3750,13 @@ class BusinessService:
             fee = FLAT_RATE_FEE if flat < FLAT_RATE_DAYS * 86_400 else SELF_EMPLOYED_FEE
         # Los locales de una sociedad los paga su caja, no tu monedero.
         mine = [b for b in owned if not b.is_company]
-        return sum(nightly_bill(b).total for b in mine), sum(b.rent_debt for b in mine), fee
+        tonight = sum(nightly_bill(b).total for b in mine)
+        debt = sum(b.rent_debt for b in mine)
+        nave = await self.repository.nave(guild_id, user_id)
+        if nave is not None and mine:
+            tonight += chain.nave_bill(nave).total
+            debt += nave.rent_debt
+        return tonight, debt, fee
 
 
 def _tell_ric(business: Business, week: dict[str, Any]) -> None:
@@ -3006,6 +3770,76 @@ def _tell_ric(business: Business, week: dict[str, Any]) -> None:
         business.tell(
             f"🌴 {week['ric']} Y$ a la RIC: no pagan Sociedades si los inviertes en mejoras o en "
             f"la obra de un local antes del {sl.ric_due(business.company) or 'plazo'}."
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _NaveShut:
+    """El dinero de cerrar una nave (`_shut_nave`)."""
+
+    refund: int
+    forfeit: int
+    owed: int
+    liquidation: int
+    cost: int
+    base: int
+    sales: int
+
+
+def _shut_nave(nave: Nave, today: date) -> _NaveShut:
+    """Lo que sale de cerrar una nave: la fianza que vuelve (menos lo que se debe), lo que se
+    debe por encima de ella, lo que paga el mayorista por lo de dentro (a la mitad) y lo que va
+    a Sociedades esa semana (sus cuentas y la venta)."""
+    forfeit = min(nave.deposit, nave.rent_debt)
+    cost = chain.stock_value(nave)
+    liquidation = int(cost * chain.NAVE_LIQUIDATION)
+    nave.roll_over(week_of(today))
+    return _NaveShut(
+        refund=nave.deposit - forfeit,
+        forfeit=forfeit,
+        owed=nave.rent_debt - forfeit,
+        liquidation=liquidation,
+        cost=cost,
+        base=sl.tax_base(nave.week_totals) + liquidation,
+        sales=liquidation,
+    )
+
+
+def _carry(company: dict[str, Any], week: str, base: int, sales: int) -> None:
+    """Apunta en la sociedad lo que entra en el Sociedades de la semana de algo que ya no
+    está (un local o la nave que se cerró)."""
+    carry = company.get("carry") or {}
+    if carry.get("week") != week:
+        carry = {"week": week, "base": 0, "sales": 0}
+    carry["base"] += base
+    carry["sales"] += sales
+    company["carry"] = carry
+
+
+def _vacancy(business: Business, employee: dict[str, Any]) -> None:
+    """Si hay gerente, apunta la baja de quien se va para que la cubra (no la suya)."""
+    if staff.is_manager(employee) or staff.manager(business) is None:
+        return
+    business.vacancies = [
+        *business.vacancies,
+        {"jornada": employee["jornada"], "shift": employee["shift"]},
+    ]
+
+
+def _manager_absence(business: Business, day: date) -> None:
+    """Si el gerente falta `day` (no atiende franjas, así que se decide la noche, antes de la
+    nómina): ese día no cobra y no repone."""
+    boss = staff.manager(business)
+    iso = day.isoformat()
+    if boss is None or boss["start"] > iso or boss["roll_day"] == iso:
+        return
+    boss["roll_day"] = iso
+    if staff.absent(boss, business.seed, day):
+        boss["absent_day"] = iso
+        boss["absences"] += 1
+        business.tell(
+            f"🚫 {boss['name']} no vino hoy y no avisó: es su falta número {boss['absences']}. "
+            "Esta noche nadie repone."
         )
 
 
@@ -3081,6 +3915,7 @@ def _apply_turn(business: Business, summary: TurnSummary, seed: str, day: date) 
     """
     for key, units in summary.units.items():
         business.stock[key] = max(0, business.stock.get(key, 0) - units)
+    business.note_sold(day, summary.units)
     change = turn_reputation(
         business.sector_info, summary.reputation, summary.served, price_reputation(business)
     )
@@ -3173,6 +4008,7 @@ def _settle_staff(
             business.tell(f"✅ {name} ha superado el período de prueba.")
             events.append("prueba_superada")
         if employee["until"] == today:
+            _vacancy(business, employee)
             amount = staff.severance(employee, "fin")
             business.wage_debt += amount
             if company:
@@ -3184,6 +4020,7 @@ def _settle_staff(
             events.append("fin_contrato")
             continue
         if staff.quits(employee, business.seed, day):
+            _vacancy(business, employee)
             if staff.unpaid_recent(employee, day) >= staff.UNPAID_NIGHTS_TO_LEAVE:
                 amount = (
                     0 if employee["contract"] == "b" else staff.severance(employee, "improcedente")
@@ -3225,9 +4062,12 @@ def _opening_payments(quote: OpeningQuote) -> tuple[BusinessCost, ...]:
     )
 
 
-def _equity(group: list[Business], cash: int, bank: int = 0) -> int:
-    """El patrimonio neto de una sociedad con estos locales, `cash` en caja y `bank` debido al
-    banco."""
+def _equity(group: list[Business], cash: int, bank: int = 0, nave: Nave | None = None) -> int:
+    """El patrimonio neto de una sociedad con estos locales (y su nave), `cash` en caja y `bank`
+    debido al banco."""
     assets = sum(stock_value(b) + book_value(b) for b in group)
     debts = sum(b.rent_debt for b in group) + bank
+    if nave is not None:
+        assets += chain.stock_value(nave)
+        debts += nave.rent_debt
     return sl.equity(group[0].company, cash, assets, debts)

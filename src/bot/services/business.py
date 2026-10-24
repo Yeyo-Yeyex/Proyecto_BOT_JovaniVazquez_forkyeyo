@@ -153,6 +153,8 @@ MOVE_KEEP = 0.5
 #: Fase 5, las cadenas: locales que puede llevar un miembro a la vez (cada uno es un
 #: `Business`). Si es una sociedad, la sociedad los lleva todos.
 MAX_LOCALES = 4
+#: Días de lo vendido por producto que se guardan (`Business.sold_days`).
+SOLD_DAYS = 3
 
 
 def stars(reputation: float) -> float:
@@ -238,6 +240,9 @@ class Business:
         company_id: La sociedad del local (fase 5: una sociedad lleva todos los locales de su
             dueño): el `id` del local con el que se constituyó, que da su caja
             (`economy.company_account`) aunque ese local cierre. 0 si es de autónomo.
+        sold_days: Unidades vendidas de cada producto por día (ISO), los últimos días: el
+            gerente repone según lo que se vendió (fase 5).
+        vacancies: Las bajas que tiene que cubrir el gerente: `{"jornada", "shift"}`.
     """
 
     user_id: int
@@ -291,6 +296,8 @@ class Business:
     fundae_week: str = ""
     fundae_used: int = 0
     company_id: int = 0
+    sold_days: dict[str, dict[str, int]] = field(default_factory=dict)
+    vacancies: list[dict[str, Any]] = field(default_factory=list)
     id: int = 0
 
     @property
@@ -361,6 +368,24 @@ class Business:
         """Suma `amount` a una partida de las cuentas de la semana (positivo o negativo)."""
         if amount:
             self.week_totals[item] = self.week_totals.get(item, 0) + amount
+
+    def note_sold(self, day: date, units: dict[str, int]) -> None:
+        """Apunta lo vendido `day` (se guardan los `SOLD_DAYS` últimos días)."""
+        iso = day.isoformat()
+        today = dict(self.sold_days.get(iso, {}))
+        for key, count in units.items():
+            if count:
+                today[key] = today.get(key, 0) + count
+        days = {**self.sold_days, iso: today}
+        self.sold_days = {k: days[k] for k in sorted(days)[-SOLD_DAYS:]}
+
+    def sold_on(self, day: date) -> dict[str, int]:
+        """Lo vendido `day`, o el día anterior si `day` no abrió (lo que mira el gerente)."""
+        iso = day.isoformat()
+        if self.sold_days.get(iso):
+            return dict(self.sold_days[iso])
+        earlier = [k for k in sorted(self.sold_days) if k < iso and self.sold_days[k]]
+        return dict(self.sold_days[earlier[-1]]) if earlier else {}
 
 
 def clean_name(text: str) -> str:

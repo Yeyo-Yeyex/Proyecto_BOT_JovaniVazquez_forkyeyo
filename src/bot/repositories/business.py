@@ -15,6 +15,8 @@ se guardan juntos o no se guarda nada. Tablas:
   `DEMAND_RETENTION_DAYS`.
 - `business_closed`: los negocios cerrados (sector, barrio, nombre, cuándo y por qué), para
   la vida laboral y los logros.
+- `business_nave`: la nave de cada miembro (fase 5, `bot.services.business_chain.Nave`), en
+  JSON: lo que hay dentro y los contenedores que vienen.
 """
 
 from __future__ import annotations
@@ -32,6 +34,8 @@ from bot.repositories import sqlite
 from bot.repositories.economy import company_account
 from bot.repositories.housing_finance import LOAN_COMPANY
 from bot.services.business import Business, book_value, stock_value
+from bot.services.business_chain import Nave
+from bot.services.business_chain import stock_value as nave_stock_value
 
 T = TypeVar("T")
 
@@ -39,6 +43,7 @@ T = TypeVar("T")
 DEMAND_RETENTION_DAYS = 3
 
 _FIELDS = frozenset(f.name for f in fields(Business))
+_NAVE_FIELDS = frozenset(f.name for f in fields(Nave))
 
 
 def _load(row: sqlite3.Row) -> Business:
@@ -110,6 +115,13 @@ class BusinessRepository:
                     day TEXT NOT NULL,
                     used REAL NOT NULL DEFAULT 0,
                     PRIMARY KEY (guild_id, barrio, sector, day)
+                );
+
+                CREATE TABLE IF NOT EXISTS business_nave (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    data TEXT NOT NULL,
+                    PRIMARY KEY (guild_id, user_id)
                 );
 
                 CREATE TABLE IF NOT EXISTS business_closed (
@@ -209,6 +221,37 @@ class BusinessRepository:
         )  # fmt: skip
 
     @staticmethod
+    def nave_in(connection: sqlite3.Connection, guild_id: int, user_id: int) -> Nave | None:
+        """La nave de un miembro (fase 5), o `None`."""
+        row = connection.execute(
+            "SELECT data FROM business_nave WHERE guild_id = ? AND user_id = ?",
+            (guild_id, user_id),
+        ).fetchone()
+        if row is None:
+            return None
+        data = json.loads(row["data"])
+        return Nave(**{k: v for k, v in data.items() if k in _NAVE_FIELDS})
+
+    @staticmethod
+    def save_nave_in(connection: sqlite3.Connection, guild_id: int, nave: Nave) -> Nave:
+        """Guarda la nave (la crea si no estaba)."""
+        connection.execute(
+            """
+            INSERT INTO business_nave (guild_id, user_id, data) VALUES (?, ?, ?)
+            ON CONFLICT (guild_id, user_id) DO UPDATE SET data = excluded.data
+            """,
+            (guild_id, nave.user_id, json.dumps(asdict(nave), ensure_ascii=False)),
+        )
+        return nave
+
+    @staticmethod
+    def delete_nave_in(connection: sqlite3.Connection, guild_id: int, user_id: int) -> None:
+        """Borra la nave de un miembro (al dejarla o al vender la sociedad)."""
+        connection.execute(
+            "DELETE FROM business_nave WHERE guild_id = ? AND user_id = ?", (guild_id, user_id)
+        )
+
+    @staticmethod
     def pool_used_in(
         connection: sqlite3.Connection, guild_id: int, barrio: str, sector: str, day: date
     ) -> float:
@@ -259,6 +302,18 @@ class BusinessRepository:
             return self.business_in(connection, guild_id, user_id, business_id)
         finally:
             connection.close()
+
+    async def nave(self, guild_id: int, user_id: int) -> Nave | None:
+        """La nave de un miembro, o `None`."""
+        return await self.read(lambda c: self.nave_in(c, guild_id, user_id))
+
+    async def save_nave(self, guild_id: int, nave: Nave) -> Nave:
+        """Guarda la nave sin mover dinero (sus avisos)."""
+
+        def write(connection: sqlite3.Connection) -> Nave:
+            return self.save_nave_in(connection, guild_id, nave)
+
+        return await self.read(write)
 
     async def owned(self, guild_id: int, user_id: int) -> list[Business]:
         """Los negocios abiertos de un miembro, del más antiguo al más nuevo."""
@@ -351,7 +406,7 @@ class BusinessRepository:
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
-            for table in ("business", "business_demand", "business_closed"):
+            for table in ("business", "business_demand", "business_closed", "business_nave"):
                 connection.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))  # noqa: S608
             connection.execute("COMMIT")
         except sqlite3.Error:
@@ -408,5 +463,23 @@ def companies_in(connection: sqlite3.Connection, guild_id: int) -> dict[int, int
             )
         )  # fmt: skip
         owner = locales[0].user_id
+        nave = (
+            connection.execute(
+                "SELECT data FROM business_nave WHERE guild_id = ? AND user_id = ?",
+                (guild_id, owner),
+            ).fetchone()
+            if "business_nave" in _tables(connection)
+            else None
+        )
+        if nave is not None:
+            data = json.loads(nave[0])
+            stored = Nave(**{k: v for k, v in data.items() if k in _NAVE_FIELDS})
+            value += nave_stock_value(stored) - stored.rent_debt
         out[owner] = out.get(owner, 0) + value
     return out
+
+
+def _tables(connection: sqlite3.Connection) -> set[str]:
+    return {
+        str(r[0]) for r in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    }
