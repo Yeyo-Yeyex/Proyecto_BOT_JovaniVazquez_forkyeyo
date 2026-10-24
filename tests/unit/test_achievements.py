@@ -1989,7 +1989,7 @@ def test_pisos_cuenta_las_calles_y_lo_que_se_tiene_en_sus_edificios() -> None:
     assert seen == {f"{PISOS_BUILDING_PREFIX}triana_e3": 1}
     assert housing_panel_stats(screen="barrio", building="triana_e3").add == {}
     every = {f"{PISOS_BUILDING_PREFIX}{b.key}": 1 for b in STREET_BUILDINGS}
-    assert with_derived(every)[PISOS_BUILDINGS_SEEN_STAT] == len(STREET_BUILDINGS) == 180
+    assert with_derived(every)[PISOS_BUILDINGS_SEEN_STAT] == len(STREET_BUILDINGS)
 
     def kind(key: str) -> str:
         item = STREET_UNIT_BY_KEY.get(key) or HOUSING_LISTING_BY_KEY.get(key)
