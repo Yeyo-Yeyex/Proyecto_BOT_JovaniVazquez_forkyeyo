@@ -50,6 +50,11 @@ from bot.services import housing as h  # noqa: E402
 from bot.services import loans as lending  # noqa: E402
 from bot.services import taxes  # noqa: E402
 from bot.services.housing_catalog import KINDS, LISTINGS  # noqa: E402
+from bot.services.housing_streets import STREET_UNITS  # noqa: E402
+
+#: Los inmuebles en que puede invertir: los 180 destacados y, con `--calles`, las unidades de
+#: las calles (9.14.0).
+MARKET: list = list(LISTINGS)
 from bot.services.shop_catalog import CATALOG  # noqa: E402
 from bot.services.taxes import (  # noqa: E402
     IGIC_GENERAL_RATE,
@@ -221,7 +226,7 @@ class Eco:
 
 def build_market(level: str) -> dict[str, Eco]:
     out = {}
-    for listing in LISTINGS:
+    for listing in MARKET:
         if h.is_promotion(listing.key):
             continue
         out[listing.key] = Eco(
@@ -609,7 +614,7 @@ class Simulation:
             return avail, current
         for key, hold in self.holdings.items():
             eco = self.market[key]
-            listing = next(x for x in LISTINGS if x.key == key)
+            listing = next(x for x in MARKET if x.key == key)
             value = eco.price * hold.shares / h.SHARES
             room = lending.remortgage_room(
                 round(value), round(hold.balance + hold.rebalance),
@@ -739,8 +744,11 @@ def main() -> None:
     parser.add_argument("--curva", action="store_true", help="rehace el catálogo con `Curve`")
     parser.add_argument("--veterania", type=float, default=VETERAN_PAY, help="plus por rama")
     parser.add_argument("--patrimonio", type=float, help="rebaja máxima del límite conjunto")
+    parser.add_argument("--calles", action="store_true", help="invierte también en las calles")
     args = parser.parse_args()
 
+    if args.calles:
+        MARKET.extend(STREET_UNITS)
     if args.patrimonio is not None:
         taxes.WEALTH_MAX_REDUCTION = args.patrimonio
     curve = Curve(veteran=args.veterania, veteran_cap=args.veterania * VETERAN_MAX / VETERAN_PAY)

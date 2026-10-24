@@ -19,7 +19,7 @@ from tests.unit.test_housing import ANA, GUILD, Clock, Scripted, at, give, ledge
 
 #: La huella del catálogo de calles. Si cambia, cambian unidades que pueden tener dueño:
 #: solo se toca a propósito y con una migración de lo que ya se haya comprado.
-FINGERPRINT = "ca5b87cf656c989b"
+FINGERPRINT = "59a7d55ed92b657c"
 
 
 def test_el_catalogo_de_calles_no_cambia_sin_querer() -> None:

@@ -94,6 +94,10 @@ AMARRES = 4
 NAVES = 2
 
 _HOMES = frozenset({"estudio", "bajo", "piso2", "piso3", "atico", "loft", "duplex"})
+#: Lo que piden de menos las plazas y los trasteros nuevos frente a los sueltos del catálogo:
+#: los alquilan sobre todo los vecinos, que pagan menos. Sin esto, cientos de ellos a un 9-12 %
+#: adelantaban el Falcon de la simulación por debajo del día 350.
+BASEMENT_RENT = -0.25
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,6 +207,7 @@ def _unit(
         blurb=blurbs[_seed(building, slot) % len(blurbs)],
         floor=label,
         energy=energy,
+        rent_bonus=BASEMENT_RENT if kind in ("garaje", "trastero") else 0.0,
     )
 
 
@@ -214,7 +219,10 @@ def _bloque(
     attic = theme.attic or floor == -2
     floors = max(theme.floors, floor + span + (1 if attic else 0), 2 if attic else 1)
     top = floors - 1 if attic else None  # la planta del ático
-    base_m2 = featured.m2 if featured.kind in _HOMES and featured.kind != "atico" else theme.m2
+    # Los vecinos se parecen al destacado si es un piso; si es un estudio, un bajo o un ático,
+    # son pisos del tamaño del barrio (un bloque entero de estudios adelantaba el Falcon).
+    alike = featured.kind in ("piso2", "piso3", "loft", "duplex")
+    base_m2 = featured.m2 if alike else theme.m2
     out: list[tuple[Unit, Listing | None]] = []
     barrio = featured.barrio
 
