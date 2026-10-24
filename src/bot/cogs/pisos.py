@@ -1127,7 +1127,10 @@ class Panel(ui.View):
             levels.callback = self._pick_level  # type: ignore[method-assign]
             self.add_item(levels)
         if rules.parent_key(key) is not None:
-            back = "◀ Habitaciones" if room else "◀ Plantas"
+            parent = self._at(rules.parent_key(key) or key)
+            back = "◀ Plantas"
+            if room or rules.halves(parent):
+                back = "◀ Habitaciones" if room else "◀ Las dos mitades"
             self._button(back, "volver", self._go_parent, row=3)
         elif building_of(key) is not None:
             self._button("◀ Su edificio", "volver", self._go_own_building, row=3)
@@ -1869,7 +1872,13 @@ class Panel(ui.View):
         if mode == rules.FLOORS:
             extra = f" (con un local en el bajo y {storage} trasteros)" if storage else ""
             text = (
-                f"🏢 Obras hasta el {done.until:%d/%m}: {quote.units - storage} plantas{extra} "
+                f"🏢 Obras hasta el {done.until:%d/%m}: "
+                + (
+                    "en dos mitades"
+                    if rules.halves(self._at(self.listing))
+                    else f"{quote.units - storage} plantas{extra}"
+                )
+                + " "
                 f"por {format_amount(quote.cost)} de obra, {format_amount(quote.igic)} de IGIC, "
                 f"{format_amount(quote.icio)} de ICIO, {format_amount(quote.license)} de "
                 f"licencia y {format_amount(quote.ajd)} de AJD de la escritura. Cada uno es ya "

@@ -465,9 +465,10 @@ def _floors_card(market: Market, listing: Listing, user_id: int, names: dict[int
             {"name": _name(names, m), "shares": s * rules.SHARES // total, "mine": m == user_id}
             for m, s in sorted(owned.items(), key=lambda kv: -kv[1])
         ],
-        "lease": f"{rules.floors_of(listing)} plantas",
-        "lease_kind": rules.FLOORS,
-        "split": rules.floors_of(listing),
+        "lease": "En dos" if rules.halves(listing) else f"{rules.floors_of(listing)} plantas",
+        # «dividido» (en dos) o «plantas» (por plantas): la escena pone su cinta.
+        "lease_kind": "dividido" if rules.halves(listing) else rules.FLOORS,
+        "split": 0 if rules.halves(listing) else rules.floors_of(listing),
     }
 
 
@@ -1257,7 +1258,13 @@ def units_state(
         "title": listing.title,
         "barrio": BARRIO_BY_KEY[listing.barrio].name,
         "mode": mode,
-        "mode_name": "Dividido por plantas" if mode == rules.FLOORS else "Por habitaciones",
+        "mode_name": (
+            "Por habitaciones"
+            if mode == rules.ROOMS
+            else "Dividido en dos"
+            if rules.halves(listing)
+            else "Dividido por plantas"
+        ),
         "summary": summary,
         "stats": [
             {"label": "Alquiladas", "value": f"{rented} de {len(units)}"},
@@ -1352,7 +1359,13 @@ def split_state(market: Market, key: str, user_id: int) -> State:
             {
                 "mode": mode,
                 "emoji": "🏢" if floors else "🛏️",
-                "name": "Dividir por plantas" if floors else "Alquilar por habitaciones",
+                "name": (
+                    "Alquilar por habitaciones"
+                    if not floors
+                    else "Dividir en dos"
+                    if rules.halves(base)
+                    else "Dividir por plantas"
+                ),
                 "blurb": (
                     f"{_parts(units).capitalize()} independientes: {_each(units)} con su "
                     "inquilino, sus dueños y su hipoteca, y se venden por separado."
@@ -1472,6 +1485,33 @@ def _owner(market: Market, key: str, user_id: int, names: dict[int, str]) -> str
     first = max(holders, key=lambda m: (m == user_id, holders[m]))
     who = "ti" if first == user_id else _name(names, first)
     return f"De {who}" + (f" y {len(holders) - 1} más" if len(holders) > 1 else "")
+
+
+def _unit_place(
+    market: Market, building: Building, unit: Listing, units: list[Listing]
+) -> tuple[int, str]:
+    """`(planta, mitad)` de una unidad en el corte.
+
+    La mitad de algo dividido en dos se queda en la planta de su padre (`izda.`/`dcha.`); una
+    planta de un edificio entero dividido va a su número de planta (y sus trasteros, al sótano).
+    """
+    levels = {u.key: u.level for u in building.units}
+    if unit.key in levels:
+        return levels[unit.key], ""
+    parent = rules.parent_key(unit.key)
+    if parent in levels and building.kind != "edificio":
+        return levels[parent], "izda." if unit.key.endswith("~1") else "dcha."
+    if unit.kind == "trastero":
+        return -1, ""
+    return [u for u in units if u.kind != "trastero"].index(unit), ""
+
+
+def _divisible(market: Market, unit: Listing) -> bool:
+    """Si una unidad se podría dividir (por plantas o en dos) y aún no lo está."""
+    if unit.key in market.splits:
+        return False
+    base = market.base(unit.key) or unit
+    return rules.split_problem(base, rules.FLOORS) is None
 
 
 def _level_name(level: int, building: Building) -> str:
@@ -1602,9 +1642,7 @@ def building_state(
     index = market.index(building.barrio)
     levels: dict[int, list[State]] = {}
     for slot, unit in enumerate(units, start=1):
-        level = next((u.level for u in building.units if u.key == unit.key), None)
-        if level is None:  # una planta de un edificio entero dividido: su número de planta
-            level = slot - 1
+        level, half = _unit_place(market, building, unit, units)
         use, use_kind = _use(market, unit.key)
         levels.setdefault(level, []).append(
             {
@@ -1623,11 +1661,22 @@ def building_state(
                 "featured": unit.key == building.featured,
                 # Un ático caro (sobreático o con vistas, 9.16.0): la escena le pinta su terraza.
                 "premium": is_penthouse(unit.key),
+                # Para que el dibujo diga la verdad: el ancho de cada hueco, por sus metros; si es
+                # la mitad de algo dividido en dos («izda.»/«dcha.»), y si se podría dividir.
+                "area": unit.m2,
+                "half": half,
+                "divisible": _divisible(market, unit),
                 "waiting": len(market.candidates_of(unit.key, today)) if today else 0,
             }
         )
     floors = [
-        {"level": level, "label": _level_name(level, building), "units": levels[level]}
+        {
+            "level": level,
+            "label": _level_name(level, building),
+            "units": levels[level],
+            # El bajo de un bloque tiene su portal y la escalera: lo que no es de ninguna unidad.
+            "portal": level == 0 and building.kind == "bloque",
+        }
         for level in sorted(levels, reverse=True)
     ]
     mine = sum(1 for u in units if user_id in market.shares_of(u.key))
