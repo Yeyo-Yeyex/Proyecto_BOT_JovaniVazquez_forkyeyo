@@ -305,8 +305,10 @@ HOUSING_TAXES: tuple[tuple[str, str, str, str], ...] = (
      "art. 32 DLeg 1/2025 de Canarias"),
     ("ips", "🛡️", "Impuesto sobre las primas de los seguros (también los de préstamos)",
      "art. 12 Ley 13/1996"),
-    ("icio", "🏗️", "ICIO de las reformas", "art. 102 RDL 2/2004"),
+    ("icio", "🏗️", "ICIO de las reformas y divisiones", "art. 102 RDL 2/2004"),
     ("licencia_obra", "📜", "Tasas de licencias de obra", "ordenanza fiscal (tasa)"),
+    ("ajd", "✒️", "AJD de las escrituras de división horizontal",
+     "art. 36 DLeg 1/2009 de Canarias"),
     ("licencia", "📜", "Tasas de licencias vacacionales", "Ley 6/2025 de Canarias"),
 )  # fmt: skip
 

@@ -873,7 +873,8 @@ class HousingTax:
         kind: `itp`, `ibi`, `plusvalia`, `socimi`, `licencia`, `igic` (estancias
             vacacionales), `igic_gastos` (IGIC de la notaría, la agencia, las reparaciones
             y el abogado del desahucio), `ips` (impuesto de primas de los seguros), `icio`
-            (impuesto de las obras de una reforma) o `licencia_obra` (su tasa).
+            (impuesto de las obras de una reforma o una división), `licencia_obra` (su tasa)
+            o `ajd` (actos jurídicos documentados de la escritura de división horizontal).
         base: Base imponible.
         tax: Cuota; positiva.
     """
@@ -3966,6 +3967,7 @@ class EconomyRepository:
                         WHEN 'igic' THEN 'igic' WHEN 'igic_gastos' THEN 'igic'
                         WHEN 'ips' THEN 'igic' WHEN 'licencia' THEN 'tasas'
                         WHEN 'licencia_obra' THEN 'tasas' WHEN 'icio' THEN 'icio'
+                        WHEN 'ajd' THEN 'itp_pisos'
                         ELSE 'irpf_ahorro' END,
                    tax, created_at
             FROM economy_housing_tax WHERE guild_id = :guild

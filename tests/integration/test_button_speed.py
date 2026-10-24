@@ -2268,6 +2268,33 @@ async def press_pisos_reform(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def press_pisos_split(client: BotClient, owner: MagicMock) -> Click:
+    await pisos_owned(client, "isleta_piso3")
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen = "isleta_piso3", "dividir"
+    panel.confirm = "dividir:habitaciones"
+
+    async def click(interaction: MagicMock) -> None:
+        interaction.data = {"custom_id": "pisos:dividir:habitaciones:si"}
+        await panel._split(interaction)
+
+    return click
+
+
+async def press_pisos_join_rooms(client: BotClient, owner: MagicMock) -> Click:
+    await pisos_owned(client, "isleta_piso3")
+    cog = client.get_cog("Pisos")
+    await cog.service.split(GUILD_ID, OWNER_ID, "isleta_piso3", "habitaciones")
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen, panel.confirm = "isleta_piso3", "plantas", "juntar"
+
+    async def click(interaction: MagicMock) -> None:
+        interaction.data = {"custom_id": "pisos:juntar:si"}
+        await panel._join_rooms(interaction)
+
+    return click
+
+
 async def press_pisos_decide(client: BotClient, owner: MagicMock) -> Click:
     await pisos_owned(client, "taco_bajo")
     with sqlite3.connect(client.database_path) as connection:
@@ -2781,6 +2808,8 @@ CASES: dict[str, Press] = {
     "pisos: desahuciar con abogado": press_pisos_evict,
     "pisos: pujar en una subasta": press_pisos_bid,
     "pisos: empezar una reforma": press_pisos_reform,
+    "pisos: alquilar por habitaciones": press_pisos_split,
+    "pisos: juntar las habitaciones": press_pisos_join_rooms,
     "pisos: decidir un imprevisto": press_pisos_decide,
     "pisos: votar en la junta": press_pisos_vote,
     "pisos: proponer a la junta": press_pisos_propose,
