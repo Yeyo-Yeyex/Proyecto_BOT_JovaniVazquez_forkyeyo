@@ -1165,6 +1165,33 @@ async def test_al_acabar_el_tronco_se_elige_rama_y_se_recuerda(
     assert history["politica"] == Career(POLITICA.trunk_top + 1, POLITICA.trunk_top + 1, "bruselas")
 
 
+async def test_el_enchufe_sube_sin_requisitos_y_para_en_la_rama_y_en_lo_mas_alto(
+    tmp_path: Path, dice: Dice
+) -> None:
+    service = await make(tmp_path)
+    with pytest.raises(WorkError, match="curro"):
+        await service.force_promotion(GUILD, USER)
+    await at_level(service, 1)
+    status = await service.status(GUILD, USER)
+    assert status is not None and status.blockers, "sin enchufe no le tocaría"
+    done, status = await service.force_promotion(GUILD, USER)
+    assert (done, status.contract.level) == (1, 2)
+    assert status.contract.performance == PERFORMANCE_START  # un ascenso normal
+    # Sin rama, para al final del tronco y enseña las que hay.
+    done, status = await service.force_promotion(GUILD, USER, 99)
+    assert (done, status.contract.level) == (POLITICA.trunk_top - 2, POLITICA.trunk_top)
+    assert [b.key for b in status.fork] == ["moncloa", "bruselas"]
+    done, _ = await service.force_promotion(GUILD, USER, 1, "Ninguna")
+    assert done == 0
+    # La rama vale por su nombre, y no pasa de lo más alto.
+    done, status = await service.force_promotion(GUILD, USER, 99, "BRUSELAS")
+    assert done == POLITICA.top - POLITICA.trunk_top
+    assert (status.contract.level, status.contract.branch) == (POLITICA.top, "bruselas")
+    assert status.position.title == "Comisario europeo"
+    assert (await service.force_promotion(GUILD, USER))[0] == 0
+    assert (await service.history(GUILD, USER))["politica"].max_level == POLITICA.top
+
+
 async def test_en_una_rama_no_se_elige_otra_al_ascender(
     tmp_path: Path, dice: Dice, monkeypatch: pytest.MonkeyPatch
 ) -> None:

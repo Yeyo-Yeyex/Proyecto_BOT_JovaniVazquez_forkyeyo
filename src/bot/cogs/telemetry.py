@@ -1136,8 +1136,8 @@ class Telemetry(commands.Cog):
 
     @commands.Cog.listener()
     async def on_command_completion(self, ctx: commands.Context) -> None:
-        """Cuenta un comando de texto (`.`) terminado."""
-        if ctx.command is None:
+        """Cuenta un comando de texto (`.`) terminado (salvo los secretos, como `enchufe`)."""
+        if ctx.command is None or ctx.command.extras.get("secret"):
             return
         self.telemetry.count(
             "text",
@@ -1148,8 +1148,12 @@ class Telemetry(commands.Cog):
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
-        """Cuenta un comando de texto fallido (no los que no existen)."""
-        if ctx.command is None or isinstance(error, commands.CommandNotFound):
+        """Cuenta un comando de texto fallido (no los que no existen ni los secretos)."""
+        if (
+            ctx.command is None
+            or isinstance(error, commands.CommandNotFound)
+            or ctx.command.extras.get("secret")
+        ):
             return
         if isinstance(error, commands.UserInputError):
             self.telemetry.count(

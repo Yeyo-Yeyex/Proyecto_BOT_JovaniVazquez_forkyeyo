@@ -5,7 +5,7 @@ Comandos (todos con `/` y con `.`, mismo nombre; `tajo` elige dónde se usa `pal
 `slow`, `say`, `nick`, `role`, `bienv`, `niveles`, `cambios`, `catalogo`, `tajo`,
 `informe` (descarga la telemetría interna, ver `bot.cogs.telemetry`), `robuso` (si
 Robuso está en Hong Kong o en Madrid, para sus logros: ver `bot.cogs.robuso`),
-`bloquear` y `crear`.
+`bloquear`, `crear` y `enchufe`.
 
 `bloquear` es el freno de emergencia para un fallo o un exploit. Como `reinicio`, solo
 lo usan los IDs de `DEPLOYERS` (Yeyo y Dani), sean o no administradores, y no sale en
@@ -22,6 +22,11 @@ Los mismos controles cierran la puerta durante un reinicio: ningún comando salv
 perdido por un fallo), con los mismos dos IDs y sin salir en `ayuda`. Solo objetos:
 un rol no se daría en Discord, un potenciador no caducaría y una mascota se adopta.
 No cobra nada ni gasta existencias, y lo que da llega sin número de serie.
+
+`enchufe` sube de puesto en `pala` a un miembro sin pedirle barra, días, tareas ni
+formación. Solo para Yeyo (`ENCHUFE_OWNER`), solo con `.` y en secreto: no sale en
+`ayuda` ni en la telemetría, con cualquier otro el bot calla como ante un comando que
+no existe, borra el mensaje y contesta por privado.
 
 Autorización: solo miembros con el permiso **Administrador** del servidor.
 Se comprueba en el servidor en cada invocación (`cog_check` para `.` e
@@ -79,6 +84,7 @@ from bot.services.moderation import (
     parse_duration,
     parse_user_id,
 )
+from bot.services.pala import WorkError
 from bot.services.shop import Kind, ShopItem
 from bot.services.telemetry import LISTENER_ITEM, TelemetryService
 from bot.services.welcome import GifError, classify_gif
@@ -112,6 +118,9 @@ GIF_RESET_WORDS = {"quitar", "video", "vídeo", "ninguno"}
 UNBLOCKABLE = {"bloquear", "reinicio"}
 # Comandos del cog que filtran por `DEPLOYERS` en vez de por Administrador.
 DEPLOYER_COMMANDS = {"bloquear", "crear"}
+# Único que puede usar `enchufe`: Yeyo (Dani no).
+ENCHUFE_OWNER = 403646452414545921
+ENCHUFE_USAGE = "Uso: `.enchufe @miembro [puestos] [rama]`."
 # Marca de los métodos de discord.py ya envueltos por `install_click_block`.
 _BLOCK_GUARD = "_blocked_command_guard"
 
@@ -365,6 +374,8 @@ class Admin(commands.Cog):
 
     async def cog_check(self, ctx: commands.Context) -> bool:  # type: ignore[override]
         """Solo administradores y solo dentro de un servidor (comandos `.`)."""
+        if ctx.command is not None and ctx.command.extras.get("secret"):
+            return True  # `enchufe` calla por su cuenta con todos menos Yeyo, también por privado.
         if ctx.guild is None:
             raise commands.NoPrivateMessage()
         if ctx.command is not None and ctx.command.name in DEPLOYER_COMMANDS:
@@ -1394,7 +1405,9 @@ class Admin(commands.Cog):
         blocked.add(name)
         # Los botones se paran por archivo: los de otros comandos del mismo también.
         siblings = sorted(
-            c.name for c in self.bot.commands if c.module == command.module and c.name != name
+            c.name
+            for c in self.bot.commands
+            if c.module == command.module and c.name != name and not c.hidden
         )
         also = (
             "\nOjo: los botones se paran por archivo, así que tampoco responden los de "
@@ -1488,6 +1501,64 @@ class Admin(commands.Cog):
             f"🎁 {item.emoji} **{item.name}** ya está en la mochila de {member.mention}.{also}",
             allowed_mentions=discord.AllowedMentions.none(),
         )
+
+    # --- enchufe ----------------------------------------------------------
+
+    @commands.command(name="enchufe", hidden=True, extras={"secret": True})
+    async def enchufe(self, ctx: commands.Context, *, texto: str = "") -> None:
+        """`.enchufe @miembro [puestos] [rama]`: sube de puesto en `pala` sin pedir nada.
+
+        Solo para Yeyo (`ENCHUFE_OWNER`). El texto llega entero y se lee aquí: un
+        argumento que falta o no se entiende no da error a la vista de nadie.
+        """
+        if ctx.guild is None or ctx.author.id != ENCHUFE_OWNER:
+            return
+        with contextlib.suppress(discord.HTTPException):
+            await ctx.message.delete()
+        words = texto.split()
+        member = None
+        if words:
+            with contextlib.suppress(commands.BadArgument):
+                member = await commands.MemberConverter().convert(ctx, words[0])
+        if member is None:
+            await self._whisper(ctx, ENCHUFE_USAGE)
+            return
+        rest = words[1:]
+        steps = max(1, int(rest.pop(0))) if rest and rest[0].isdigit() else 1
+        try:
+            done, status = await self.bot.work.force_promotion(  # type: ignore[attr-defined]
+                ctx.guild.id, member.id, steps, " ".join(rest)
+            )
+        except WorkError as error:
+            await self._whisper(ctx, f"{member.display_name}: {error}")
+            return
+        except sqlite3.Error:
+            logger.exception("No se pudo guardar el ascenso de %s en %s", member.id, ctx.guild.id)
+            await self._whisper(ctx, "No se ha podido guardar ahora mismo. Prueba en un rato.")
+            return
+        lines = []
+        if done:
+            logger.info(
+                "%s sube %s puestos a %s en %s", ctx.author.id, done, member.id, ctx.guild.id
+            )
+            plural = "s" if done > 1 else ""
+            lines.append(
+                f"📈 {member.display_name} sube {done} puesto{plural}: "
+                f"ahora es **{status.position.title}**."
+            )
+        if status.fork:
+            names = ", ".join(f"{b.emoji} {b.name}" for b in status.fork)
+            lines.append(f"Para seguir toca elegir rama ({names}): `.enchufe @miembro 1 <rama>`.")
+        elif done < steps:
+            lines.append(f"{member.display_name} ya está en lo más alto ({status.position.title}).")
+        await self._whisper(ctx, "\n".join(lines))
+
+    async def _whisper(self, ctx: commands.Context, text: str) -> None:
+        """Contesta a `enchufe` por privado; si no admite privados, solo queda en el log."""
+        try:
+            await ctx.author.send(text, allowed_mentions=discord.AllowedMentions.none())
+        except discord.HTTPException:
+            logger.warning("No se pudo mandar por privado la respuesta de enchufe")
 
     # --- catalogo ---------------------------------------------------------
 
