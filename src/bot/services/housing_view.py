@@ -1512,18 +1512,25 @@ def _building_summary(building: Building, units: int) -> str:
 def streets_state(
     market: Market, barrio_key: str, user_id: int, today: date | None = None
 ) -> State:
-    """🗺️ Calles: el plano del barrio con sus tres calles y los edificios de cada una.
+    """🗺️ Calles: el plano del barrio con sus tres calles y los edificios de cada una (de 3 a
+    5 por calle: el centro, más denso que el campo). Es lo que se ve al elegir un barrio.
 
-    Cada edificio lleva el número de la tarjeta de su destacado (el 3 es el edificio de la
-    tarjeta 3) y un botón con el mismo número.
+    Cada edificio lleva su número y un botón con el mismo: del 1 al 9, el de la tarjeta de su
+    destacado (el 3 es el edificio de la tarjeta 3); del 10 en adelante, los de más, que no
+    tienen. Arriba va lo del barrio: su índice, el precio medio y la noticia, si hay.
     """
     barrio = BARRIO_BY_KEY[barrio_key]
+    index = market.index(barrio_key)
     streets = []
     for street in streets_of(barrio_key):
         buildings = []
         for building in buildings_of(street.key):
             units = building_units(market, building)
-            featured = market.listing(building.featured)
+            # La fachada del plano: la del destacado o, si no tiene, la de su primera vivienda.
+            featured = market.listing(building.featured) if building.featured else None
+            face = featured or next(
+                (u for u in units if u.kind not in ("garaje", "trastero", "local")), units[0]
+            )
             buildings.append(
                 {
                     "key": building.key,
@@ -1532,7 +1539,8 @@ def streets_state(
                     "number": building.number,
                     "kind": building.kind,
                     "kind_name": building.name,
-                    "featured_kind": featured.kind if featured else "",
+                    "featured_kind": face.kind,
+                    "face": face.key,
                     "floors": building.floors,
                     "units": len(units),
                     "free": sum(1 for u in units if not market.shares_of(u.key)),
@@ -1557,9 +1565,17 @@ def streets_state(
             "island": ISLANDS[barrio.island],
             "theme": barrio.theme,
             "theme_name": THEMES[barrio.theme],
+            "blurb": barrio.blurb,
+            "index": f"{index:.3f}".replace(".", ","),
+            "change": _change(index),
+            "up": index > 1.0005,
+            "down": index < 0.9995,
+            "badge": market_badge(index),
+            "price_m2": format_amount(round(barrio.price_m2 * index * 10)) + "/m²",
         },
+        "news": news_box(market.news_of(barrio_key, today)) if today else None,
         "streets": streets,
-        "footer": "Toca un edificio para verlo por dentro",
+        "footer": "Toca un edificio para verlo por dentro · ⭐ Destacados, los nueve de siempre",
     }
     state["fallback"] = [
         f"{barrio.name}: sus calles",

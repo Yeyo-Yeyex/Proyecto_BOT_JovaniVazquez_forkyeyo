@@ -176,6 +176,24 @@ UNIT_BLURBS: dict[str, tuple[str, ...]] = {
         "Junto a la bocana: se sale rápido a navegar.",
         "El barco no está incluido. El olor a gasoil, sí.",
     ),
+    "terrera": (
+        "Casa terrera de una planta con azotea y patio.",
+        "Paredes gruesas, techos altos y una azotea que da para tender y para mirar.",
+        "Entre dos bloques, como quien no quiere la cosa: la casa de toda la vida.",
+        "Patio con buganvilla y la ventana de la cocina a la calle.",
+    ),
+    "casona": (
+        "Casa señorial con patio central y balcón de tea.",
+        "Dos plantas, carpintería de madera y un aljibe que nadie ha abierto en años.",
+        "De las que salen en las postales del barrio.",
+        "Techos de cinco metros: la calefacción, para otra vida.",
+    ),
+    "chalet": (
+        "Chalé con jardín, terraza y plaza de garaje.",
+        "Piscina pequeña y barbacoa: el verano, en casa.",
+        "Vistas despejadas y vecinos lejos.",
+        "El jardín viene con césped y con un aspersor que tiene vida propia.",
+    ),
     "nave": (
         "Nave diáfana con muelle de carga.",
         "Techos altos y puerta para camiones.",

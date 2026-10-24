@@ -85,6 +85,29 @@ THEMES: dict[str, Theme] = {
     "lujo": Theme(3, 1, 1, 2, 0, True, 120),
     "rural": Theme(2, 1, 0, 0, 1, False, 90),
 }
+#: Edificios de más, sin destacado, por tipo de barrio (9.15.0): `(bloques, casas)`. El centro
+#: y los barrios obreros son más densos que el campo: con los nueve de los destacados quedan 15
+#: edificios (5 por calle), 12 (4) o 9 (3), y las casas se mezclan con los bloques.
+EXTRA: dict[str, tuple[int, int]] = {
+    "centro": (5, 1),
+    "obrero": (4, 2),
+    "historico": (1, 2),
+    "playa": (2, 1),
+    "marinero": (1, 2),
+    "lujo": (1, 2),
+    "rural": (0, 0),
+}
+#: Las casas de más de cada tipo de barrio: `(tipo, metros)` por orden.
+EXTRA_HOUSES: dict[str, tuple[tuple[str, int], ...]] = {
+    "centro": (("terrera", 95),),
+    "obrero": (("terrera", 80), ("terrera", 70)),
+    "historico": (("casona", 250), ("terrera", 90)),
+    "playa": (("chalet", 190),),
+    "marinero": (("terrera", 75), ("terrera", 65)),
+    "lujo": (("chalet", 300), ("chalet", 240)),
+    "rural": (),
+}
+HOUSE_NAMES = {"terrera": "Casa terrera", "casona": "Casa señorial", "chalet": "Chalé"}
 #: Plazas por planta de un aparcamiento, trasteros de un guardamuebles, bungalows de un
 #: complejo, amarres de un pantalán y naves de un polígono (con el destacado).
 PLAZAS = 5
@@ -144,7 +167,8 @@ class Building:
         number: Número de portal.
         kind: `BLOQUE`, `APARCAMIENTO`, `GUARDAMUEBLES`, `CASA`, `COMPLEJO`, `PANTALAN`,
             `POLIGONO` o `EDIFICIO`.
-        featured: Clave del destacado (el inmueble del catálogo que vive aquí).
+        featured: Clave del destacado (el inmueble del catálogo que vive aquí); vacía en los
+            edificios de más (9.15.0), que no tienen.
         floors: Plantas sobre la calle, con el bajo (1 en una casa; 0 en lo que no tiene).
         units: Sus unidades, de abajo arriba y de izquierda a derecha.
     """
@@ -213,22 +237,26 @@ def _unit(
 
 
 def _bloque(
-    key: str, featured: Listing, street: Street, number: int, theme: Theme
+    key: str, featured: Listing | None, street: Street, number: int, theme: Theme, barrio: str
 ) -> tuple[int, list[tuple[Unit, Listing | None]]]:
-    """Las unidades de un bloque alrededor de su destacado (que conserva su sitio y su clave)."""
-    floor, span = _floor_of(featured) if featured.kind != "local" else (0, 1)
+    """Las unidades de un bloque alrededor de su destacado (que conserva su sitio y su clave),
+    o de un bloque de los de más, que no tiene destacado."""
+    if featured is None:
+        floor, span = -3, 0  # sin destacado: nada que colocar
+    else:
+        floor, span = _floor_of(featured) if featured.kind != "local" else (0, 1)
     attic = theme.attic or floor == -2
     floors = max(theme.floors, floor + span + (1 if attic else 0), 2 if attic else 1)
     top = floors - 1 if attic else None  # la planta del ático
     # Los vecinos se parecen al destacado si es un piso; si es un estudio, un bajo o un ático,
     # son pisos del tamaño del barrio (un bloque entero de estudios adelantaba el Falcon).
-    alike = featured.kind in ("piso2", "piso3", "loft", "duplex")
-    base_m2 = featured.m2 if alike else theme.m2
+    alike = featured is not None and featured.kind in ("piso2", "piso3", "loft", "duplex")
+    base_m2 = featured.m2 if featured is not None and alike else theme.m2
+    energy = featured.energy if featured is not None else "CDEFG"[_seed(key, "energia") % 5]
     out: list[tuple[Unit, Listing | None]] = []
-    barrio = featured.barrio
 
     def new(slot: str, level: int, kind: str, m2: int, label: str) -> None:
-        listing = _unit(key, barrio, slot, kind, m2, label, street, number, featured.energy)
+        listing = _unit(key, barrio, slot, kind, m2, label, street, number, energy)
         out.append((Unit(listing.key, level, label), listing))
 
     for n in range(1, theme.garajes + 1):
@@ -239,7 +267,7 @@ def _bloque(
     # vive ahí.
     ground = max(theme.locales, 1)
     for n in range(1, ground + 1):
-        if n == 1 and floor == 0:
+        if n == 1 and floor == 0 and featured is not None:
             label = "Local 1" if featured.kind == "local" else featured.floor
             out.append((Unit(featured.key, 0, label), None))
             continue
@@ -254,7 +282,7 @@ def _bloque(
             break
         for n in range(theme.per_floor):
             letter = "ABCD"[n]
-            if (level, n) in busy:
+            if (level, n) in busy and featured is not None:
                 if level == floor:
                     # Como sus vecinos («2.º A»), salvo un dúplex, que dice sus dos plantas.
                     label = featured.floor if span > 1 else f"{level}.º {letter}"
@@ -263,7 +291,7 @@ def _bloque(
             m2 = _vary(base_m2, key, level, n)
             new(f"{level}{letter.lower()}", level, _home_kind(m2), m2, f"{level}.º {letter}")
     if top is not None:
-        if floor == -2:
+        if floor == -2 and featured is not None:
             out.append((Unit(featured.key, top, featured.floor), None))
         else:
             new("at", top, "atico", _vary(round(base_m2 * 1.1), key, "at"), "Ático")
@@ -312,29 +340,49 @@ def _group(
 
 
 def _barrio(barrio: str) -> tuple[list[Street], list[Building], list[Listing]]:
-    """Las calles, los edificios y las unidades nuevas de un barrio."""
+    """Las calles, los edificios y las unidades nuevas de un barrio.
+
+    Los edificios 1 a 9 son los de los destacados (el N, el de la tarjeta N) y salen igual que
+    en la 9.14.0; los de más (10 en adelante) son bloques y casas sin destacado. Todos se
+    reparten por las calles mezclados (con una regla fija), salvo los del puerto y el polígono,
+    que van a la tercera.
+    """
     names = STREET_NAMES[barrio]
     streets = [
         Street(f"{barrio}_c{n}", barrio, name, blurb)
         for n, (name, blurb) in enumerate(names, start=1)
     ]
+    theme_key = BARRIO_BY_KEY[barrio].theme
+    theme = THEMES[theme_key]
     featured = list(listings_of(barrio))
-    kinds = [_BUILDING_OF_KIND.get(item.kind, BLOQUE) for item in featured]
-    # Los del puerto y el polígono, en la tercera calle; los demás, por orden del catálogo.
-    order = sorted(range(len(featured)), key=lambda i: (kinds[i] in _SPECIAL, i))
-    theme = THEMES[BARRIO_BY_KEY[barrio].theme]
+    plans: list[tuple[str, str, Listing | None, tuple[str, int] | None]] = [
+        (f"{barrio}_e{n}", _BUILDING_OF_KIND.get(item.kind, BLOQUE), item, None)
+        for n, item in enumerate(featured, start=1)
+    ]
+    blocks, houses = EXTRA[theme_key]
+    extra = [BLOQUE] * blocks + [CASA] * houses
+    for n, kind in enumerate(extra, start=len(featured) + 1):
+        house = EXTRA_HOUSES[theme_key][n - len(featured) - 1 - blocks] if kind == CASA else None
+        plans.append((f"{barrio}_e{n}", kind, None, house))
+    per_street = len(plans) // len(streets)
+    ordinary = sorted((p for p in plans if p[1] not in _SPECIAL), key=lambda p: _seed(p[0]))
+    order = ordinary + [p for p in plans if p[1] in _SPECIAL]
     buildings, units = [], []
-    for place, index in enumerate(order):
-        item, kind = featured[index], kinds[index]
-        key = f"{barrio}_e{index + 1}"
-        street = streets[place // 3]
-        number = 2 + (place % 3) * 12 + _seed(key) % 9
+    for place, (key, kind, item, house) in enumerate(order):
+        street = streets[min(place // per_street, len(streets) - 1)]
+        number = 2 + (place % per_street) * 10 + _seed(key) % 7
         if kind == BLOQUE:
-            floors, pairs = _bloque(key, item, street, number, theme)
-        elif kind in (CASA, EDIFICIO):
+            floors, pairs = _bloque(key, item, street, number, theme, barrio)
+        elif item is not None and kind in (CASA, EDIFICIO):
             floors, pairs = 1, [(Unit(item.key, 0, item.floor), None)]
-        else:
+        elif item is not None:
             floors, pairs = _group(key, item, street, number, kind)
+        else:
+            house_kind, m2 = house or ("terrera", 80)
+            label = HOUSE_NAMES[house_kind]
+            listing = _unit(key, barrio, "casa", house_kind, _vary(m2, key, "casa"), label,
+                            street, number, "CDEFG"[_seed(key, "energia") % 5])  # fmt: skip
+            floors, pairs = 1, [(Unit(listing.key, 0, label), listing)]
         buildings.append(
             Building(
                 key,
@@ -342,7 +390,7 @@ def _barrio(barrio: str) -> tuple[list[Street], list[Building], list[Listing]]:
                 street.key,
                 number,
                 kind,
-                item.key,
+                item.key if item is not None else "",
                 floors,
                 tuple(unit for unit, _listing in pairs),
             )  # fmt: skip
