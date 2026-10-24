@@ -124,6 +124,7 @@ from bot.services.horses import Going as HorseGoing
 from bot.services.horses import Pick as HorsePick
 from bot.services.horses import RaceCard as HorseCard
 from bot.services.horses import RaceResult as HorseResult
+from bot.services.housing import BONO_MAX as HOUSING_BONO_MAX
 from bot.services.housing import OVERBURDEN as HOUSING_OVERBURDEN
 from bot.services.housing import SHARES as HOUSING_SHARES
 from bot.services.housing_catalog import BARRIO_BY_KEY, LISTING_BY_KEY, ROOM_KIND
@@ -206,6 +207,7 @@ from bot.services.war import WarGame
 from bot.services.war import rank_value as war_rank
 from bot.services.work import (
     FAMILY_TIERS,
+    FLAT_RATE_FEE,
     FLOP_BELOW,
     MAX_COFFEES,
     MEGAVIRAL,
@@ -229,10 +231,15 @@ if TYPE_CHECKING:
     from bot.services.pala import ShiftOutcome
 
 from bot.services.taxes import (
+    BECKHAM_LIMIT_EUR,
+    INSURANCE_DEDUCTION_MAX_EUR,
+    INSURANCE_DEDUCTION_RENT_MAX,
     LOTTERY_EXEMPT,
+    SAVINGS_BRACKETS,
+    SOLIDARITY_WEALTH_THRESHOLD,
     STATE_PERSONAL_MINIMUM,
     TAX_COLLECTOR,
-    annual_eur,
+    vacant_rental_deduction,
     weekly_yd,
 )
 
@@ -800,7 +807,8 @@ LOTTERY_TAX_STORY = (
 #: Discurso del logro `bizum_espaldas`: el primer Bizum por encima del máximo.
 BIZUM_LIMIT_STORY = (
     f"🤫 **Eso no lo ha visto nadie, ¿verdad?** En España un Bizum no pasa de "
-    f"1.000 € por operación ({_thousands(BIZUM_MAX_OPERATION)} Y$) ni de 2.000 € al día; "
+    f"{_thousands(BIZUM_MAX_OPERATION)} Y$ por operación ni de {_thousands(BIZUM_MAX_DAILY)} Y$ "
+    "al día; "
     "el banco te lo para en seco. Aquí te ha colado porque Perro Sanxe estaba mirando "
     "despegar el Falcon. Si alguien pregunta, era para el cumple de tu prima."
 )
@@ -829,8 +837,10 @@ PISOS_INSURANCE_STORY = (
     "paga la renta desde el segundo mes (el primero es la franquicia) y hasta doce, y el "
     "abogado y el procurador del desahucio. Solo cubre a quien pasa su estudio de solvencia. "
     "La prima lleva el Impuesto sobre las Primas de Seguros, un 8 % (art. 12 de la Ley "
-    "13/1996), y en Canarias desgrava: el 75 % de la prima, hasta 150 € al año, si la renta "
-    "no pasa de 800 € al mes (art. 15 quater del Decreto Legislativo 1/2009)."
+    "13/1996), y en Canarias desgrava: el 75 % de la prima, hasta "
+    f"{_thousands(round(weekly_yd(INSURANCE_DEDUCTION_MAX_EUR)))} Y$ en cada Renta, si el "
+    f"alquiler no pasa de {_thousands(INSURANCE_DEDUCTION_RENT_MAX)} Y$ al mes (art. 15 quater "
+    "del Decreto Legislativo 1/2009)."
 )
 
 #: Discurso del primer contrato con el 70 % de reducción (`pisos_young70_1`).
@@ -844,7 +854,8 @@ PISOS_YOUNG_STORY = (
 #: Discurso de la primera deducción por alquilar una vivienda vacía (`pisos_bonus16_1`).
 PISOS_VACANT_STORY = (
     "🏚️ **Una vivienda vacía menos.** Canarias premia sacar al alquiler una vivienda que "
-    "estaba vacía: 1.000 € de deducción en la cuota autonómica, una sola vez por inmueble y "
+    f"estaba vacía: {_thousands(vacant_rental_deduction(100))} Y$ de deducción en la cuota "
+    "autonómica, una sola vez por inmueble y "
     "como mucho en cinco (art. 16 del Decreto Legislativo 1/2009). Tiene que llevar vacía "
     "el año anterior o alquilarse en los seis meses siguientes a comprarla. Aquí, una semana "
     "vacía o seis días desde la compra. Se aplica el lunes, en tu Renta."
@@ -908,7 +919,8 @@ PISOS_VPO_STORY = (
 
 #: Discurso del primer Bono Alquiler Joven (`pisos_bono_1`).
 PISOS_BONO_STORY = (
-    "💶 **Bono Alquiler Joven.** 250 € al mes, como mucho la mitad de la renta, para quien "
+    f"💶 **Bono Alquiler Joven.** {_thousands(HOUSING_BONO_MAX)} Y$ al mes, como mucho la "
+    "mitad de la renta, para quien "
     "gana menos de tres veces el IPREM (RD 42/2022). Lo paga la cuenta del Estado mientras "
     "le quede dinero y tributa en el IRPF, como una subvención. Cuando la partida se agota, "
     "se agota: como en la vida real."
@@ -925,8 +937,9 @@ PISOS_SOCIMI_STORY = (
 #: Discurso de la primera declaración de las Grandes Fortunas (`wealth_solidarity_1`).
 WEALTH_SOLIDARITY_STORY = (
     "💎 **Declaras las Grandes Fortunas.** El Impuesto Temporal de Solidaridad de las "
-    "Grandes Fortunas (art. 3 de la Ley 38/2022) grava lo que pasa de 3.000.000 € netos "
-    "tras el mínimo exento, pero descuenta lo pagado de Patrimonio. Se inventó para las "
+    "Grandes Fortunas (art. 3 de la Ley 38/2022) grava los patrimonios netos de más de "
+    f"{_thousands(SOLIDARITY_WEALTH_THRESHOLD)} Y$, pero descuenta lo pagado de Patrimonio. "
+    "Se inventó para las "
     "comunidades que lo bonifican; Canarias no, así que lo declaras, rellenas el modelo y "
     "pagas cero. Burocracia en estado puro."
 )
@@ -1045,8 +1058,9 @@ GUARD_STORY = (
 
 #: Discurso del logro `tarifa_plana`: la primera cuota de falso autónomo.
 FLAT_FEE_STORY = (
-    "🧾 **Tarifa plana.** Los nuevos autónomos pagan 80 € al mes de cuota durante el primer "
-    "año (art. 38 ter de la Ley 20/2007, del Trabajo Autónomo). Tú no eres autónomo de "
+    "🧾 **Tarifa plana.** Los nuevos autónomos pagan una cuota rebajada (aquí, "
+    f"{_thousands(FLAT_RATE_FEE)} Y$ a la semana) durante el primer año (art. 38 ter de la "
+    "Ley 20/2007, del Trabajo Autónomo). Tú no eres autónomo de "
     "verdad: no eliges precio, ni horario, ni cliente. Eso tiene nombre, falso autónomo, y "
     "desde la Ley 12/2021 (la «Ley Rider») a los repartidores se les presume contrato. Pero "
     "eso, para el puesto 3."
@@ -1120,7 +1134,8 @@ NONRESIDENT_STORY = (
 BECKHAM_STORY = (
     "⚽ **Ley Beckham.** El régimen de impatriados (art. 93 LIRPF) es para quien se muda a "
     "España tras 5 años sin residir aquí: durante el año de la llegada y los 5 siguientes, "
-    "su sueldo tributa al 24 % fijo hasta 600.000 € en vez de por la escala. Se llama así "
+    f"su sueldo tributa al 24 % fijo hasta {_thousands(round(weekly_yd(BECKHAM_LIMIT_EUR)))} Y$ "
+    "a la semana en vez de por la escala. Se llama así "
     "porque llegó con Beckham al Real Madrid en 2003. Tú no juegas al fútbol, pero "
     "tributas como si sí."
 )
@@ -1142,8 +1157,8 @@ SAVINGS_WEEK_MAX = 7 * INTEREST_DAILY_MAX
 SAVINGS_BRACKET_STORY = (
     "Has cobrado el máximo de la cuenta toda la semana y la liquidación del lunes sigue en el "
     "19 %. La semana es el año fiscal y, con la vara del IRPF, el tope de la cuenta "
-    f"({_thousands(SAVINGS_WEEK_MAX)} Y$ a la semana) son unos "
-    f"{_thousands(round(annual_eur(SAVINGS_WEEK_MAX)))} € al año: muy lejos de los 6.000 € donde "
+    f"({_thousands(SAVINGS_WEEK_MAX)} Y$ a la semana) queda muy lejos de los "
+    f"{_thousands(round(weekly_yd(SAVINGS_BRACKETS[1][0])))} Y$ donde "
     "empieza el tramo del 21 % de la base del ahorro (arts. 66.1 y 76 LIRPF). Para subir de "
     "tramo hacen falta rentas de verdad, y para eso están los pisos."
 )
@@ -5332,7 +5347,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (5_000, "monedal_5k", "Fábrica Nacional de Moneda y Timbre",
          "Lanza la moneda 5.000 veces.", E),
         (7_500, "coin_flips_7500", "Brazo de lanzador", "Lanza la moneda 7.500 veces.", E),
-        (20_000, "monedal_20k", "La máquina de hacer euros", "Lanza la moneda 20.000 veces.", L),
+        (20_000, "monedal_20k", "La máquina de hacer yapdollars",
+         "Lanza la moneda 20.000 veces.", L),
     ])  # fmt: skip
     a += _tiers("coin", "coin_wins", [
         (50, "monedaw_50", "Echador de cartas", "Acierta 50 lanzamientos.", C),
@@ -5395,8 +5411,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          f"Acierta {COIN_MAX_FLIPS} seguidas y cobra ×1.024.", M),
     ])  # fmt: skip
     a += _tiers("coin", "coin_win_max", [
-        (10_000, "moneda_rich", "Lluvia de euros", "Gana 10.000 Y$ en una partida a cara o cruz.",
-         E),
+        (10_000, "moneda_rich", "Lluvia de yapdollars",
+         "Gana 10.000 Y$ en una partida a cara o cruz.", E),
         (20_000, "coin_win_max_20000", "Moneda de oro",
          "Gana 20.000 Y$ en una partida a cara o cruz.", E),
         (50_000, "coin_win_max_50000", "Doblón español",
@@ -7409,7 +7425,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         name="Bizum de los gordos",
         description=(
             f"Manda un Bizum de más de {_thousands(BIZUM_MAX_OPERATION)} Y$, el máximo "
-            "por operación en España (1.000 €)."
+            "por operación en España."
         ),
         category="bizum",
         rarity=E,
@@ -7419,7 +7435,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ))  # fmt: skip
     a += _tiers("bizum", "bizum_day_max", [
         (BIZUM_MAX_DAILY + 1, "bizum_daily", "Hasta aquí llega mi tarjeta",
-         f"Manda más de {_thousands(BIZUM_MAX_DAILY)} Y$ en Bizums en un día (2.000 €).", R,
+         f"Manda más de {_thousands(BIZUM_MAX_DAILY)} Y$ en Bizums en un día.", R,
          True),
     ], unit="money")  # fmt: skip
     a += _tiers("bizum", "bizum_full", [
@@ -8372,7 +8388,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Alquila un piso a la abuela con su pensión.", R, True),
     ])  # fmt: skip
     a += _tiers("pisos", f"{PISOS_TENANT_PREFIX}cripto", [
-        (1, "pisos_tenant_cripto", "Cobro en criptos, pago en euros",
+        (1, "pisos_tenant_cripto", "Cobro en criptos, pago en yapdollars",
          "Alquila un piso al nómada cripto.", R, True),
     ])  # fmt: skip
     a += _tiers("pisos", f"{PISOS_TENANT_PREFIX}despedida", [
@@ -14797,7 +14813,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ], unit="money")  # fmt: skip
 
     a += _tiers("porras", "porra_bets", [
-        (1, "porra_bet_1", "Un euro a la porra", "Apuesta en una porra.", C),
+        (1, "porra_bet_1", "Un yapdollar a la porra", "Apuesta en una porra.", C),
         (10, "porra_bet_10", "Habitual del bar", "Apuesta 10 veces en porras.", C),
         (20, "porra_bets_20", "Peñista de base", "Apuesta 20 veces en porras.", C),
         (50, "porra_bets_50", "Apostador de peña", "Apuesta 50 veces en porras.", R),
@@ -17284,8 +17300,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Págale al cliente el pedido que llegó mojado.", C),
     ])  # fmt: skip
     a += _tiers("reparto", "work_tip_cents", [
-        (1, "rep_20_centimos", "Veinte céntimos y una sonrisa",
-         "Acepta una propina de 20 céntimos en monedas de uno.", C),
+        (1, "rep_20_centimos", "20 Y$ y una sonrisa",
+         "Acepta una propina de 20 Y$ en monedas de uno.", C),
     ])  # fmt: skip
     a += _tiers("reparto", "work_tip_back", [
         (1, "rep_propina_devuelta", "Para el próximo pedido",
@@ -17304,7 +17320,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Empuja un patinete sin batería hasta el cliente.", C),
     ])  # fmt: skip
     a += _tiers("reparto", "work_scooter_swap", [
-        (1, "rep_patinete_otro", "Desbloqueo de 4 € (y sin batería)",
+        (1, "rep_patinete_otro", "Desbloqueo de 400 Y$ (y sin batería)",
          "Cambia por la app a otro patinete que tampoco tiene batería.", R),
     ])  # fmt: skip
     a += _tiers("reparto", "work_algo_thread", [
@@ -17312,7 +17328,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Haz un hilo viral contra el algoritmo de la app.", R),
     ])  # fmt: skip
     a += _tiers("reparto", "work_shenzhen_open", [
-        (1, "rep_muneca_rusa", "Muñeca rusa de 1,99 €",
+        (1, "rep_muneca_rusa", "Muñeca rusa de 199 Y$",
          "Abre por curiosidad un paquete de Shenzhen.", R, True),
     ])  # fmt: skip
     a += _tiers("reparto", "work_black_friday_double", [
@@ -17396,8 +17412,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
 
     # Eventos de la rama Imperio logístico
     a += _tiers("reparto", "work_logi_strike_cents", [
-        (1, "rep_huelga_centimos", "Dos céntimos históricos",
-         "Sube dos céntimos por pedido a tus riders en huelga.", E),
+        (1, "rep_huelga_centimos", "2 Y$ históricos",
+         "Sube 2 Y$ por pedido a tus riders en huelga.", E),
     ])  # fmt: skip
     a += _tiers("reparto", "work_logi_scabs", [
         (1, "rep_esquiroles", "200 colaboradores de otra ciudad",
@@ -17421,7 +17437,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("reparto", "work_hot_warehouse_water", [
         (1, "rep_agua_premium", "Hidratación premium",
-         "Vende la botella de agua a 3 € en un almacén a 40 °C.", E, True),
+         "Vende la botella de agua a 300 Y$ en un almacén a 40 °C.", E, True),
     ])  # fmt: skip
     a += _tiers("reparto", "work_tariff_passed", [
         (1, "rep_arancel_cliente", "Recargo logístico",
@@ -17613,7 +17629,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Traza 15 rutas del dinero perfectas como ingeniero fiscal.", E),
         (30, "work_sandwich_30", "Ruta del dinero", "Traza 30 rutas del dinero perfectas.", E),
         (75, "work_sandwich_75", "Atlas de paraísos", "Traza 75 rutas del dinero perfectas.", L),
-        (150, "fun_sandwich_150", "Cuatro paraísos y ni un euro perdido",
+        (150, "fun_sandwich_150", "Cuatro paraísos y ni un yapdollar perdido",
          "Traza 150 rutas del dinero perfectas.", L),
     ])  # fmt: skip
     a += _tiers("funcionariado", "work_mariachis", [
@@ -17719,7 +17735,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Niégate a nombrar asesor al cuñado del ministro.", E),
     ])  # fmt: skip
     a += _tiers("funcionariado", "work_car_bread", [
-        (1, "fun_pan_coche", "Barra de pan a 40 euros",
+        (1, "fun_pan_coche", "Barra de pan a 4.000 Y$",
          "Ve a por el pan en el coche oficial.", E, True),
     ])  # fmt: skip
     a += _tiers("funcionariado", "work_walk_bread", [
@@ -18035,7 +18051,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("influencer", "work_haul_honest", [
         (1, "inf_haul_sincero", "Esto es un robo, en 4K",
-         "Haz un haul sincero de la ropa de 2 euros.", R),
+         "Haz un haul sincero de la ropa de 200 Y$.", R),
     ])  # fmt: skip
     a += _tiers("influencer", "work_haul_filters", [
         (1, "inf_haul_filtros", "La cremallera en la manga es tendencia",
@@ -18047,7 +18063,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("influencer", "work_paid_in_cash", [
         (1, "inf_euros_no_champu", "El champú no paga el alquiler",
-         "Exige que una marca te pague en euros.", C),
+         "Exige que una marca te pague en yapdollars.", C),
     ])  # fmt: skip
     a += _tiers("influencer", "work_politician_dance", [
         (1, "inf_baile_candidato", "Tres pasos y tres votos",
@@ -18417,7 +18433,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Pídele al exministro que espere los dos años de la ley.", R),
     ])  # fmt: skip
     a += _tiers("oficina", "work_report_on_report", [
-        (1, "ofi_informe_informe", "El informe del informe: 600.000 euros de Bruselas",
+        (1, "ofi_informe_informe", "El informe del informe: 60.000.000 Y$ de Bruselas",
          "Cobra a fondos europeos un informe sobre tu propio informe.", E, True),
     ])  # fmt: skip
     a += _tiers("oficina", "work_report_on_report_refused", [
@@ -19286,7 +19302,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Invita a cenar a una influencer a cambio de visibilidad.", C),
     ])  # fmt: skip
     a += _tiers("hosteleria", "work_cruise_menu", [
-        (1, "hos_crucero_menu", "Menú de 4,99 € para 4.000 cruceristas",
+        (1, "hos_crucero_menu", "Menú de 499 Y$ para 4.000 cruceristas",
          "Monta un menú para el crucero que atraca en tu puerto.", C),
     ])  # fmt: skip
     a += _tiers("hosteleria", "work_cruise_closed", [
@@ -19298,12 +19314,12 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Cocina con 48 °C dentro de la cocina.", R),
     ])  # fmt: skip
     a += _tiers("hosteleria", "work_waiters_paid", [
-        (1, "hos_camareros_pagados", "Aparecen camareros con 1.400 €",
+        (1, "hos_camareros_pagados", "Aparecen camareros con 140.000 Y$",
          "Sube el sueldo y los camareros aparecen como por arte de magia.", R),
     ])  # fmt: skip
     a += _tiers("hosteleria", "work_no_waiters", [
-        (1, "hos_no_camareros", "No encuentro camareros (pagando 900 €)",
-         "Mantén el cartel de los 900 € y sigue sin camareros.", R),
+        (1, "hos_no_camareros", "No encuentro camareros (pagando 90.000 Y$)",
+         "Mantén el cartel de los 90.000 Y$ y sigue sin camareros.", R),
     ])  # fmt: skip
 
     # Eventos de la rama Hotelera
@@ -20249,9 +20265,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("negocio", "biz_sl_capital_max", [
         (300_000, "biz_sl_capital_3k", "Tres mil del ala",
-         "Constituye una sociedad con 3.000 € (300.000 Y$) de capital.", R),
+         "Constituye una sociedad con 300.000 Y$ de capital.", R),
         (1_000_000, "biz_sl_capital_10k", "Das Kapital escriturado",
-         "Constituye una sociedad con 10.000 € (1.000.000 Y$) de capital.", E),
+         "Constituye una sociedad con 1.000.000 Y$ de capital.", E),
     ], unit="money")  # fmt: skip
     a += _tiers("negocio", "biz_sl_contributed", [
         (100_000, "biz_sl_contrib_100k", "Business angel de andar por casa",

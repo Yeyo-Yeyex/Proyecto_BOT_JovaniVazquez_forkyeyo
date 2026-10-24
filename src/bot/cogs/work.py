@@ -256,7 +256,7 @@ def parse_game_id(custom_id: str) -> tuple[int, int, int | str] | None:
 
 PHASE_TEXT = {
     "residente": "sigues siendo residente fiscal en España (art. 7.p LIRPF: exento hasta "
-    f"{format_amount(EXEMPT_7P_PER_DAY)} al día, los 60.100 € al año)",
+    f"{format_amount(EXEMPT_7P_PER_DAY)} al día)",
     "no_residente": "ya no eres residente fiscal en España: solo paga Hong Kong",
 }
 

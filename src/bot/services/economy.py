@@ -1482,9 +1482,7 @@ class EconomyService:
             BalanceLimitError: Si quien recibe superaría el saldo máximo.
         """
         if amount < BIZUM_MIN_AMOUNT:
-            raise ValueError(
-                f"Bizum no deja mandar menos de {format_amount(BIZUM_MIN_AMOUNT)} (0,50 €)."
-            )
+            raise ValueError(f"Bizum no deja mandar menos de {format_amount(BIZUM_MIN_AMOUNT)}.")
         if sender_id == receiver_id:
             raise ValueError("Un Bizum a ti mismo no es un Bizum, es mirar el saldo.")
         now = self._clock()

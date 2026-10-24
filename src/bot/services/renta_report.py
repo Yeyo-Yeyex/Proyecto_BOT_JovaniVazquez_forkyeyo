@@ -19,6 +19,7 @@ from __future__ import annotations
 from bot.repositories.economy import PAYMENT_PENDING, PAYMENT_SPLIT
 from bot.services.economy import IrpfStatement, format_amount, week_label
 from bot.services.taxes import (
+    BECKHAM_LIMIT_EUR,
     INCOME_BECKHAM,
     INCOME_BUSINESS,
     INCOME_FOREIGN,
@@ -27,12 +28,11 @@ from bot.services.taxes import (
     INCOME_PRIZE,
     INCOME_PROPERTY,
     INCOME_WORK,
-    IRPF_YAPDOLLARS_PER_EURO,
     TAX_COLLECTOR,
     WORK_REDUCTION_OTHER_INCOME_EUR,
-    annual_eur,
     format_rate,
     second_installment,
+    weekly_yd,
 )
 
 #: Cómo se llama cada fuente de lo retenido.
@@ -65,9 +65,9 @@ def _when(epoch: float) -> str:
     return f"<t:{int(epoch)}:R>"
 
 
-def _euros(weekly: int) -> str:
-    """Una cifra semanal en euros de un año con la vara del IRPF (`9.999 €`)."""
-    return f"{round(annual_eur(weekly)):,} €".replace(",", ".")
+def _law(annual: float) -> str:
+    """Una cifra anual en euros de la ley, en Y$ de una semana con la vara del IRPF."""
+    return format_amount(round(weekly_yd(annual)))
 
 
 def envelope_text(statement: IrpfStatement) -> str:
@@ -126,7 +126,7 @@ def summary_text(statement: IrpfStatement) -> str:
     filed = statement.filed
     lines = [
         f"📑 **Declaración de la semana {week_label(statement.week)}**",
-        f"Base liquidable: **{_money(filed.base)}** (≈ {_euros(filed.base)} al año)",
+        f"Base liquidable: **{_money(filed.base)}**",
         f"Cuota íntegra (Estado + Canarias): {_money(filed.quota)}",
     ]
     if filed.deductions:
@@ -153,14 +153,13 @@ def _work_lines(statement: IrpfStatement) -> list[str]:
     if income.social:
         lines.append(f"− Seguridad Social (art. 19.2.a): {_minus(income.social)}")
     if tax.expenses:
-        lines.append(f"− Otros gastos, 2.000 € al año (art. 19.2.f): {_minus(tax.expenses)}")
+        lines.append(f"− Otros gastos (art. 19.2.f): {_minus(tax.expenses)}")
     if tax.reduction:
         lines.append(f"− Reducción por rendimientos del trabajo (art. 20): {_minus(tax.reduction)}")
     elif tax.rest + max(0, tax.properties) + tax.gains > 0:
-        limit = f"{WORK_REDUCTION_OTHER_INCOME_EUR:,.0f} €".replace(",", ".")
         lines.append(
             f"-# Sin reducción del art. 20: o ganas demasiado o tus otras rentas pasan de "
-            f"{limit} al año."
+            f"{_law(WORK_REDUCTION_OTHER_INCOME_EUR)} en la semana."
         )
     lines.append(f"= Rendimiento neto reducido: **{_money(tax.work)}**")
     return lines
@@ -241,10 +240,7 @@ def _base_lines(statement: IrpfStatement) -> list[str]:
         lines.append(
             f"Bases negativas de semanas anteriores (art. 50): {_minus(tax.negative_used)}"
         )
-    lines.append(
-        f"Base liquidable general: **{_money(tax.base)}** (≈ {_euros(tax.base)} al año: "
-        f"{IRPF_YAPDOLLARS_PER_EURO} Y$ por euro y la semana como año)"
-    )
+    lines.append(f"Base liquidable general: **{_money(tax.base)}**")
     if tax.negative:
         lines.append(
             f"-# Te sale negativa: {_money(tax.negative)} pasan a las 4 semanas siguientes."
@@ -252,7 +248,7 @@ def _base_lines(statement: IrpfStatement) -> list[str]:
     lines.append(f"Escala estatal (art. 63): {_money(tax.state)}")
     lines.append(f"Escala de Canarias (Ley 9/2025): {_money(tax.regional)}")
     if tax.beckham:
-        lines.append(f"Ley Beckham (24 % hasta 600.000 €): {_money(tax.beckham)}")
+        lines.append(f"Ley Beckham (24 % hasta {_law(BECKHAM_LIMIT_EUR)}): {_money(tax.beckham)}")
     lines.append(f"= Cuota íntegra: **{_money(tax.quota)}**")
     lines.append("-# El mínimo personal ya va restado en cada escala (art. 56).")
     return lines

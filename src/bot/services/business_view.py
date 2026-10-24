@@ -727,9 +727,8 @@ def sociedad_state(view: Any, *, capital: int = sl.FULL_CAPITAL, foot: str = "")
             options.append(
                 {
                     "amount": format_amount(amount),
-                    "euros": f"{amount // 100:,} €".replace(",", "."),
                     "note": (
-                        "Reserva legal del 20 % y respondes hasta 3.000 €"
+                        f"Reserva legal del 20 % y respondes hasta {format_amount(sl.FULL_CAPITAL)}"
                         if low
                         else "Responsabilidad limitada al capital"
                     ),

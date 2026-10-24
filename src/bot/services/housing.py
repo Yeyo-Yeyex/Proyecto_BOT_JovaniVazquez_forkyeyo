@@ -230,6 +230,11 @@ class MonthlyCosts:
         return self.community + self.insurance + self.ibi
 
 
+def monthly_room_community() -> int:
+    """Comunidad y suministros de un mes de cada habitación de un piso por habitaciones."""
+    return _euros(KINDS[ROOM_KIND].community)
+
+
 def monthly_costs(listing: Listing) -> MonthlyCosts:
     """Gastos de un mes del inmueble entero."""
     return MonthlyCosts(

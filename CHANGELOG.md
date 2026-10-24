@@ -8,6 +8,12 @@ criterio.
 
 ## 9.x
 
+### 9.17.3 · 2026-10-24
+
+- Yapdollars: ningún panel enseña ya euros. La lotería (décimos, rascas y sus premios), `/renta`, el capital y el contrato en B de los negocios, las fichas de `pisos`, Hong Kong, el casino y el Bizum dan sus cifras en Y$, con el valor que aplica el juego
+- Yapdollars: los textos de ambiente (eventos de `pala`, logros, barrios, tienda, multas de broma) pasan sus euros a Y$ a 1 € = 100 Y$, y el minijuego de pedidos del rider paga en Y$
+- Logros: los textos que explican la ley (Bizum, seguro de impago, vivienda vacía, Bono Alquiler Joven, Grandes Fortunas, tarifa plana, Ley Beckham, tramos del ahorro) dan las cifras del juego en Y$
+
 ### 9.17.2 · 2026-10-24
 
 - Hotfix: arreglo menor de la 9.17.1

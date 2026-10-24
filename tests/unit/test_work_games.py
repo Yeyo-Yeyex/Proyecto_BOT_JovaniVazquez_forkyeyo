@@ -303,10 +303,8 @@ def test_en_los_pedidos_la_respuesta_es_la_que_mas_paga_por_kilometro() -> None:
     for seed in range(20):
         game = new_game(position, random.Random(seed), now=NOW)
         for round_ in game.rounds:
-            offers = re.findall(r"(\d+,\d) km · \*\*(\d+,\d+) €", round_.prompt)
-            ratios = [
-                float(pay.replace(",", ".")) / float(km.replace(",", ".")) for km, pay in offers
-            ]
+            offers = re.findall(r"(\d+,\d) km · \*\*([\d.]+) Y\$", round_.prompt)
+            ratios = [int(pay.replace(".", "")) / float(km.replace(",", ".")) for km, pay in offers]
             assert len(ratios) == len(round_.options) == 4
             assert round_.answer == [ratios.index(max(ratios))]
 

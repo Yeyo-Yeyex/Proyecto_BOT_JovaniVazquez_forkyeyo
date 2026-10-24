@@ -73,6 +73,7 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 
+from bot.services.economy import format_amount
 from bot.services.taxes import YAPDOLLARS_PER_EURO, lottery_tax
 
 #: Los sorteos se celebran en Madrid; Discord enseña la hora local de cada uno.
@@ -392,7 +393,7 @@ _NINO = NacionalProgram(
 #: Rasca X10 de la ONCE: 9.000.000 de boletos por emisión.
 _X10 = (
     tuple(
-        Prize(f"x10_{euros}", f"{euros:,} €".replace(",", "."), eur(euros), count)
+        Prize(f"x10_{euros}", format_amount(eur(euros)), eur(euros), count)
         for euros, count in (
             (150_000, 3), (10_000, 5), (2_000, 10), (1_000, 100), (200, 500), (100, 1_000),
             (40, 10_450), (20, 75_000), (10, 435_000), (4, 533_000), (2, 1_150_000),
@@ -403,7 +404,7 @@ _X10 = (
 #: Rasca 7 y Media de la ONCE: 6.000.000 de boletos por emisión.
 _SIETE_Y_MEDIA = (
     tuple(
-        Prize(f"7m_{int(euros * 100)}", f"{euros:g} €".replace(".", ","), eur(euros), count)
+        Prize(f"7m_{int(euros * 100)}", format_amount(eur(euros)), eur(euros), count)
         for euros, count in (
             (7_500, 12), (750, 200), (150, 1_000), (75, 2_000), (30, 4_000), (15, 14_969),
             (7.5, 66_000), (4, 171_000), (2, 370_800), (1, 735_000),
@@ -418,22 +419,34 @@ GAMES: tuple[Game, ...] = (
     Game(
         "jueves", "Lotería Nacional del jueves", "🎫", Kind.NACIONAL, eur(3), 0.70,
         weekly=((_THU, 21, 30),), program=_JUEVES,
-        blurb="Décimo de 3 €. 1er premio de 30.000 € al décimo.",
+        blurb=(
+            f"Décimo de {format_amount(eur(3))}. 1er premio de {format_amount(eur(30_000))} "
+            "al décimo."
+        ),
     ),
     Game(
         "sabado", "Lotería Nacional del sábado", "🎫", Kind.NACIONAL, eur(6), 0.70,
         weekly=((_SAT, 13, 0),), program=_SABADO,
-        blurb="Décimo de 6 €. 1er premio de 60.000 € al décimo.",
+        blurb=(
+            f"Décimo de {format_amount(eur(6))}. 1er premio de {format_amount(eur(60_000))} "
+            "al décimo."
+        ),
     ),
     Game(
         "navidad", "Lotería de Navidad", "🎄", Kind.NACIONAL, eur(20), 0.70,
         yearly=(12, 22, 9, 0), program=_NAVIDAD,
-        blurb="Décimo de 20 €. El Gordo: 400.000 € al décimo. Sorteo el 22 de diciembre.",
+        blurb=(
+            f"Décimo de {format_amount(eur(20))}. El Gordo: {format_amount(eur(400_000))} al "
+            "décimo. Sorteo el 22 de diciembre."
+        ),
     ),
     Game(
         "nino", "Lotería del Niño", "👶", Kind.NACIONAL, eur(20), 0.70,
         yearly=(1, 6, 12, 0), program=_NINO,
-        blurb="Décimo de 20 €. 1er premio de 200.000 € al décimo. Sorteo el 6 de enero.",
+        blurb=(
+            f"Décimo de {format_amount(eur(20))}. 1er premio de {format_amount(eur(200_000))} "
+            "al décimo. Sorteo el 6 de enero."
+        ),
     ),
     Game(
         "primitiva", "La Primitiva", "🔵", Kind.LOTTO, eur(1), 0.55,
@@ -465,11 +478,17 @@ GAMES: tuple[Game, ...] = (
     ),
     Game(
         "x10", "Rasca X10", "🟣", Kind.SCRATCH, eur(2), 0.64, scratch=_X10,
-        blurb="Rasca de la ONCE de 2 €. Premio máximo: 150.000 €.",
+        blurb=(
+            f"Rasca de la ONCE de {format_amount(eur(2))}. Premio máximo: "
+            f"{format_amount(eur(150_000))}."
+        ),
     ),
     Game(
         "7ymedia", "Rasca 7 y Media", "🃏", Kind.SCRATCH, eur(1), 0.59, scratch=_SIETE_Y_MEDIA,
-        blurb="Rasca de la ONCE de 1 €. Premio máximo: 7.500 €.",
+        blurb=(
+            f"Rasca de la ONCE de {format_amount(eur(1))}. Premio máximo: "
+            f"{format_amount(eur(7_500))}."
+        ),
     ),
 )  # fmt: skip
 GAME_BY_KEY: dict[str, Game] = {g.key: g for g in GAMES}

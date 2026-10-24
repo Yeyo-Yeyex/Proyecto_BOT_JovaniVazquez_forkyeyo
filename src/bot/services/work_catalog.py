@@ -515,7 +515,7 @@ HOSTELERIA = Job(
             "estrella",
             "Alta cocina",
             "⭐",
-            "Espumas, deconstrucciones y un menú degustación de 300 €: del restaurante propio "
+            "Espumas, deconstrucciones y un menú degustación de 30.000 Y$: del restaurante propio "
             "al gurú con franquicias en Dubái. Autónomo. Cobra más, se jubila peor.",
             (
                 Position(
@@ -1096,7 +1096,7 @@ OFICINA = Job(
             3, "Programador senior", _OFICINA.p3, Mechanic.SPOT, 40,
             (Task("caught", "Para 20 cambios que rompían producción", "caught", 20), _good(5)),
             days=4, content="revisiones",
-            perk=Perk("El teclado mecánico y la silla buena (la de 600 euros que te pagas tú): "
+            perk=Perk("El teclado mecánico y la silla buena (la de 60.000 Y$ que te pagas tú): "
                       "cada turno cansa un 10 % menos.", battery=0.10),
         ),
         Position(
@@ -1582,7 +1582,7 @@ FUNCIONARIADO = Job(
                 Position(
                     8, "Ingeniero fiscal de multinacionales", _FUNCIONARIADO.pay(8, _RISKY),
                     Mechanic.MEMORY, 60,
-                    (Task("perfect", "Traza 15 rutas del dinero sin perder un euro por el "
+                    (Task("perfect", "Traza 15 rutas del dinero sin perder un yapdollar por el "
                           "camino", "perfect_rounds", 15), _good(6), _events(3)),
                     days=BRANCH_DAYS[8], content="sandwich:4", self_employed=True,
                     perk=Perk("Un mapa del mundo con los paraísos fiscales marcados en "
@@ -2024,7 +2024,7 @@ DIALOGUE_PACKS: dict[str, DialoguePack] = {
             Dialogue(
                 "¿Cuánto ha costado el viaje oficial en el avión del Gobierno?",
                 "Lo relevante es la agenda internacional que hemos cerrado.",
-                ("Unos 40.000 euros.", "Fui al concierto, pero era una agenda de trabajo."),
+                ("Unos 4.000.000 Y$.", "Fui al concierto, pero era una agenda de trabajo."),
             ),
             Dialogue(
                 "¿Va a pactar con quien prometió no pactar nunca?",
@@ -2111,7 +2111,7 @@ DIALOGUE_PACKS: dict[str, DialoguePack] = {
                 ("Sí, aquí está mi firma.", "Lo firmé sin leer, como todo."),
             ),
             Dialogue(
-                "¿Cómo explica los 400.000 euros en efectivo?",
+                "¿Cómo explica los 40.000.000 Y$ en efectivo?",
                 "No lo recuerdo, señoría. Han pasado muchos meses.",
                 ("Ahorros del Bizum.", "Me tocó la lotería tres veces."),
             ),
@@ -2197,7 +2197,7 @@ DIALOGUE_PACKS: dict[str, DialoguePack] = {
                 ("Yo: ¿por qué hay una filial en las Caimán?", "¿Qué es un balance?"),
             ),
             Dialogue(
-                "Un periodista pregunta por qué cobra usted 300.000 euros por ir una vez al mes.",
+                "Un periodista pregunta por qué cobra usted 30.000.000 Y$ por ir una vez al mes.",
                 "Por mi dilatada experiencia en el sector, adquirida en el ministerio.",
                 ("Porque fui ministro, básicamente.", "Por no hacer preguntas."),
             ),
@@ -2836,12 +2836,12 @@ RIDER_SLACKING: tuple[str, ...] = (
 
 #: Inspector de Hacienda: declaraciones con fraude y declaraciones normales.
 TAX_FRAUD: tuple[str, ...] = (
-    "Declara 9.000 € al año y tiene tres deportivos a su nombre",
+    "Declara 900.000 Y$ al año y tiene tres deportivos a su nombre",
     "Dice vivir en Andorra, pero sube stories desde Maspalomas cada día",
     "Restaurante que solo cobra en efectivo y declara pérdidas desde 2009",
     "Desgrava como gasto de empresa un yate «para reuniones»",
     "Sociedad con sede en las Islas Caimán y oficina en Telde",
-    "Factura 40.000 € de «asesoramiento verbal» a la empresa del cuñado",
+    "Factura 4.000.000 Y$ de «asesoramiento verbal» a la empresa del cuñado",
     "Tiene a sus cinco gatos dados de alta como empleados",
 )
 TAX_CLEAN: tuple[str, ...] = (
@@ -2983,8 +2983,8 @@ DIALOGUE_PACKS.update(
                 ),
                 Dialogue(
                     "Un periodista pregunta cuánto gana un rider a la hora.",
-                    "Nuestros colaboradores pueden llegar a ganar hasta 20 € a la hora.",
-                    ("Unos 4 €, si no llueve.", "Ni idea, nunca lo he probado."),
+                    "Nuestros colaboradores pueden llegar a ganar hasta 2.000 Y$ a la hora.",
+                    ("Unos 400 Y$, si no llueve.", "Ni idea, nunca lo he probado."),
                 ),
                 Dialogue(
                     "Los inversores preguntan cuándo daréis beneficios.",
@@ -3004,7 +3004,7 @@ DIALOGUE_PACKS.update(
                 ),
                 Dialogue(
                     "Un cliente se queja de que la comida llegó fría.",
-                    "Le pedimos disculpas y le damos un cupón de 3 €.",
+                    "Le pedimos disculpas y le damos un cupón de 300 Y$.",
                     ("Que se la caliente.", "Le bajamos la valoración al rider y listo."),
                 ),
                 Dialogue(
@@ -3023,9 +3023,9 @@ DIALOGUE_PACKS.update(
                     ("Le contestas durante 40 minutos.", "Cierras el directo llorando."),
                 ),
                 Dialogue(
-                    "Te donan 50 € con un mensaje que no se puede leer en voz alta.",
+                    "Te donan 5.000 Y$ con un mensaje que no se puede leer en voz alta.",
                     "Das las gracias sin leerlo y avisas al moderador.",
-                    ("Lo lees entero.", "Devuelves los 50 €."),
+                    ("Lo lees entero.", "Devuelves los 5.000 Y$."),
                 ),
                 Dialogue(
                     "Se ve en pantalla una factura con tu dirección.",
@@ -3069,7 +3069,7 @@ DIALOGUE_PACKS.update(
                     ("Sí, desde el martes.", "No, es mi primo."),
                 ),
                 Dialogue(
-                    "Otra cadena te ofrece 20.000 € por una entrevista.",
+                    "Otra cadena te ofrece 2.000.000 Y$ por una entrevista.",
                     "Lo hablo con mi agencia, a ver si suben.",
                     ("Acepto sin leer el contrato.", "La hago gratis, por amor al arte."),
                 ),
@@ -3881,7 +3881,7 @@ DIALOGUE_PACKS.update(
                 ),
                 Dialogue(
                     "Erdoğan quiere ampliar su palacio de mil habitaciones.",
-                    "Mil cien, con helipuerto, y la factura en euros.",
+                    "Mil cien, con helipuerto, y la factura en yapdollars.",
                     ("¿No le bastan mil?", "Le recomendamos un piso en Vallecas."),
                 ),
                 Dialogue(
@@ -3919,7 +3919,7 @@ DIALOGUE_PACKS.update(
                 ),
                 Dialogue(
                     "Maduro quiere un metro nuevo en Caracas y paga en bolívares.",
-                    "Por adelantado, en euros y depositado en Suiza.",
+                    "Por adelantado, en yapdollars y depositado en Suiza.",
                     ("Aceptamos bolívares.", "Primero, que enseñe las actas."),
                 ),
             ),
@@ -4072,7 +4072,7 @@ DIALOGUE_PACKS.update(
                 ),
                 Dialogue(
                     "Una consultora te ofrece «optimizar» el hospital por 3 millones.",
-                    "Pides que expliquen qué van a hacer antes de pagar un euro.",
+                    "Pides que expliquen qué van a hacer antes de pagar un yapdollar.",
                     ("Firmas: el PowerPoint tenía unas gráficas preciosas.",
                      "Le encargas también la cafetería."),
                 ),
@@ -4119,7 +4119,7 @@ DIALOGUE_PACKS.update(
                      "Fichas médicos por TikTok."),
                 ),
                 Dialogue(
-                    "La cafetería sube el café a 2,50 €.",
+                    "La cafetería sube el café a 250 Y$.",
                     "Renegocias la concesión: el personal no puede pagar eso.",
                     ("«¡Quiero café!» y te lo pagas con las dietas.", "Prohíbes el café."),
                 ),
@@ -4224,7 +4224,7 @@ DIALOGUE_PACKS.update(
                      "Le cobras aparte la puerta de atrás."),
                 ),
                 Dialogue(
-                    "Un cliente pregunta por qué la resonancia cuesta 400 €.",
+                    "Un cliente pregunta por qué la resonancia cuesta 40.000 Y$.",
                     "Le das el presupuesto detallado y le explicas qué incluye.",
                     ("Porque la hacemos con más cariño.",
                      "Porque la máquina es alemana y tiene sentimientos."),
@@ -4382,13 +4382,13 @@ DIALOGUE_PACKS.update(
                      "«No me consta, no me consta, no me consta»."),
                 ),
                 Dialogue(
-                    "La competencia lanza pólizas a 9,99 €.",
+                    "La competencia lanza pólizas a 999 Y$.",
                     "Compites con servicio y con buen cuadro médico.",
-                    ("Lanzas una a 9,98 € que no cubre nada.",
+                    ("Lanzas una a 998 Y$ que no cubre nada.",
                      "Copias su anuncio con un perro más bonito."),
                 ),
                 Dialogue(
-                    "Los médicos del cuadro no quieren seguir cobrando 12 € por consulta.",
+                    "Los médicos del cuadro no quieren seguir cobrando 1.200 Y$ por consulta.",
                     "Subes las tarifas: sin médicos no hay seguro.",
                     ("Les pagas en vales de gasolina.",
                      "Les dices que «antes se trabajaba por vocación»."),
@@ -4655,7 +4655,7 @@ DIALOGUE_PACKS.update(
                     "Una tertulia te pregunta por qué no encontráis camareros.",
                     "«Es un problema de formación y de cultura del esfuerzo, no de "
                     "salarios».",
-                    ("«Porque pagamos 900 euros por diez horas».",
+                    ("«Porque pagamos 90.000 Y$ por diez horas».",
                      "«Porque los jóvenes prefieren ser influencers»."),
                 ),
                 Dialogue(
@@ -4676,7 +4676,7 @@ DIALOGUE_PACKS.update(
                     "Te piden explicar por qué la habitación ha subido un 40 %.",
                     "«La energía, la inflación y la crisis» (la crisis siempre va al final).",
                     ("«Porque la gente lo paga».",
-                     "Cobrar la vista al mar en euros por mirada."),
+                     "Cobrar la vista al mar en yapdollars por mirada."),
                 ),
                 Dialogue(
                     "Llegan los fondos Next Generation para modernizar hoteles.",
@@ -4776,7 +4776,7 @@ DIALOGUE_PACKS.update(
                 ),
                 Dialogue(
                     "Un emir pide papas arrugadas como las de tu abuela.",
-                    "Papas arrugadas con mojo de azafrán y lámina de oro, a 400 euros "
+                    "Papas arrugadas con mojo de azafrán y lámina de oro, a 40.000 Y$ "
                     "la papa.",
                     ("Unas papas arrugadas de verdad, con sal de Janubio.",
                      "Decirle que eso no se pide en Dubái."),
@@ -4796,7 +4796,7 @@ DIALOGUE_PACKS.update(
                      "Pedirle trabajo en Marte."),
                 ),
                 Dialogue(
-                    "Un influencer pide el menú de 1.500 € «para hacer un unboxing».",
+                    "Un influencer pide el menú de 150.000 Y$ «para hacer un unboxing».",
                     "Se lo cobras… y le regalas una hoja de oro para que la abra en "
                     "cámara.",
                     ("Dárselo gratis a cambio de una story.",
@@ -4812,7 +4812,7 @@ DIALOGUE_PACKS.update(
                 Dialogue(
                     "Un crítico escribe que tu espuma «sabe a jabón».",
                     "Le mandas una nueva «espuma de jabón con oro» y la pones en la carta "
-                    "a 90 €.",
+                    "a 9.000 Y$.",
                     ("Reconocer el error y cambiar la receta.",
                      "Pagarle para que la cambie."),
                 ),
@@ -4975,7 +4975,7 @@ LABOUR_INSPECTORS: tuple[str, ...] = (
     "Pide el registro horario a un rider que «es colaborador»",
     "Se sabe la Ley Rider de memoria y la recita entre pedido y pedido",
     "Reparte con un bocadillo de la cantina de la Administración",
-    "Su pedido es de 4 €, pero guarda las llaves de un coche oficial",
+    "Su pedido es de 400 Y$, pero guarda las llaves de un coche oficial",
     "Le pregunta a tu abogado «y esto, ¿cómo lo cotizáis?» con una sonrisa que da miedo",
 )
 RIDERS_NORMAL: tuple[str, ...] = (
@@ -4990,7 +4990,7 @@ RIDERS_NORMAL: tuple[str, ...] = (
     "Rider con dos apps abiertas y cara de pocos amigos",
     "Se ha comido una patata del pedido y lo niega con la boca llena",
     "Discute con otro rider por el último sitio del semáforo",
-    "Cuenta que hoy lleva 38 € en toda la tarde",
+    "Cuenta que hoy lleva 3.800 Y$ en toda la tarde",
     "Pregunta si hay propina «en esta app o en otro universo»",
 )
 
@@ -5032,7 +5032,7 @@ DIALOGUE_PACKS.update(
                     "Las grandes plataformas reparten con su propia flota y te quitan el negocio.",
                     "Les ofreces una «alianza estratégica»: ellos reparten y tú pones el "
                     "logo.",
-                    ("Denunciarlas por competencia desleal con un sello de 2 euros.",
+                    ("Denunciarlas por competencia desleal con un sello de 200 Y$.",
                      "Prohibir los paquetes de menos de dos kilos."),
                 ),
                 Dialogue(
@@ -5210,7 +5210,7 @@ DIALOGUE_PACKS.update(
                     "«Porque es mucho más motivador cobrar por lo que haces y no por lo que "
                     "tardas.»",
                     ("«Porque nos sale más barato.»",
-                     "Darle un abrazo y una bonificación de dos euros."),
+                     "Darle un abrazo y una bonificación de 200 Y$."),
                 ),
                 Dialogue(
                     "Un periodista pregunta cuántos riders figuran en nómina.",
@@ -5233,7 +5233,7 @@ DIALOGUE_PACKS.update(
             "futuro de la humanidad» (y se paga con dinero público).**",
             (
                 Dialogue(
-                    "Un periodista pregunta por qué cobras 400.000 € por un viaje de once "
+                    "Un periodista pregunta por qué cobras 40.000.000 Y$ por un viaje de once "
                     "minutos.",
                     "«No es turismo: es la democratización del espacio para quien ya tiene "
                     "todo lo demás.»",
@@ -5293,7 +5293,7 @@ DIALOGUE_PACKS.update(
                 ),
                 Dialogue(
                     "Tus antiguos riders se manifiestan bajo el hangar.",
-                    "Les ofreces un viaje al espacio, a 400.000 €, «con un descuento de "
+                    "Les ofreces un viaje al espacio, a 40.000.000 Y$, «con un descuento de "
                     "empleado del 2 %».",
                     ("Bajar a hablar con ellos con una pancarta.",
                      "Echarles el chorro de combustible del cohete."),
@@ -5447,7 +5447,7 @@ LEYES_LIMPIAS: tuple[str, ...] = (
     "en letra legible",
     "Norma de etiquetado de yogures, disposición adicional segunda: el Gobierno publicará una "
     "guía en seis meses",
-    "Decreto de ayudas al olivar, art. 3: cada hectárea tendrá derecho a una ayuda de 90 euros",
+    "Decreto de ayudas al olivar, art. 3: cada hectárea tendrá derecho a una ayuda de 9.000 Y$",
     "Decreto de ayudas al olivar, disposición final primera: entrará en vigor al día siguiente "
     "de su publicación",
     "Ley del deporte escolar, art. 9: todos los colegios ofrecerán dos horas de educación física",
@@ -5487,7 +5487,7 @@ SICAV_REAL: tuple[str, ...] = (
 SICAV_MARIACHIS: tuple[str, ...] = (
     "Jubilada de Albacete que cree que ha firmado para el viaje del Imserso",
     "El chófer del dueño, que firma donde le dicen sin preguntar",
-    "Estudiante que ha cobrado 50 euros por «hacer un favor a un amigo»",
+    "Estudiante que ha cobrado 5.000 Y$ por «hacer un favor a un amigo»",
     "Un señor cuyo único patrimonio conocido es una Vespa",
     "La cuñada del gestor, que está en cuarenta sociedades y ninguna le suena",
     "El portero del edificio del despacho, con el DNI en la mano",
@@ -5855,7 +5855,7 @@ MEMORY_PACKS.update(
             "Reacciona a cada alerta en el mismo orden (y que no se note que llevas veinte "
             "horas despierto).",
             (
-                ("💸", "La donación de 5 €"),
+                ("💸", "La donación de 500 Y$"),
                 ("💎", "Los bits"),
                 ("🎁", "La suscripción regalada"),
                 ("🚀", "El raid"),
@@ -5916,11 +5916,11 @@ SORT_PACKS.update(
                 ("Un sabor «Lunes por la mañana»: ácido y con 300 mg de cafeína", 0),
                 ("Una mezcla de sandía, wasabi y «ganas de vivir»", 0),
                 ("La versión sin azúcar con un nombre en inglés que nadie sabe pronunciar", 0),
-                ("Una sudadera con el logo de la lata, a 80 € y una sola talla", 1),
+                ("Una sudadera con el logo de la lata, a 8.000 Y$ y una sola talla", 1),
                 ("Una gorra con la lata bordada que no se puede lavar", 1),
                 ("Una lata de coleccionista que no se puede abrir", 1),
                 ("Unos calcetines con el logo (porque los fans los piden)", 1),
-                ("Un youtuber que cobra 50.000 € por beberse una lata en directo", 2),
+                ("Un youtuber que cobra 5.000.000 Y$ por beberse una lata en directo", 2),
                 ("Un futbolista que sale en el anuncio sosteniendo la lata al revés", 2),
                 ("Un cantante con su «edición firmada» (la ha firmado su manager)", 2),
                 ("Un festival que pone la lata en cada barra, junto a la cerveza", 2),
@@ -6181,7 +6181,7 @@ DIALOGUE_PACKS.update(
                     "Hay que llenar un recinto de doce mil personas.",
                     "Organizas un cara a cara con empujón en la rueda de prensa y dejas que el "
                     "vídeo haga el resto.",
-                    ("Bajas las entradas a tres euros.",
+                    ("Bajas las entradas a 300 Y$.",
                      "Haces un cartel con la técnica de los golpes.",
                      "Esperas a que la gente se anime sola."),
                 ),
@@ -6465,7 +6465,7 @@ RUNWAY_QUEMA: tuple[str, ...] = (
     "Una oficina en un ático de 400 m² para doce personas",
     "La fiesta de la empresa en Ibiza, con avión privado, por el «engagement»",
     "Un chef privado que cocina cada día para un equipo de dos personas",
-    "Una consultora de naming que cobra 80.000 € por quitarle una letra al logo",
+    "Una consultora de naming que cobra 8.000.000 Y$ por quitarle una letra al logo",
     "Un anuncio en la final de la liga americana para una app con 300 usuarios",
     "Una sala de reuniones con cascada interior y sonido de selva",
     "Un cartel de neón gigante en la fachada que gasta lo mismo que un bloque de pisos",
@@ -6486,7 +6486,7 @@ RUNWAY_RAZONABLE: tuple[str, ...] = (
     "Las licencias del programa que usa todo el equipo",
     "Una auditoría de seguridad antes de lanzar la nueva versión",
     "Un portátil nuevo para el ingeniero cuyo ordenador se apaga solo",
-    "Publicidad en buscadores con 500 € al mes y medición de resultados",
+    "Publicidad en buscadores con 50.000 Y$ al mes y medición de resultados",
     "Una persona de atención al cliente, porque los clientes escriben",
     "El dominio de la web y los correos corporativos",
     "Una hora de formación en seguridad para todo el equipo, una vez al año",
@@ -6519,7 +6519,7 @@ DIALOGUE_PACKS.update(
                     "Un becario lleva 80 horas esta semana y pide, tímidamente, que se las "
                     "paguen.",
                     "Le das las gracias por su «compromiso» y un certificado de horas… que "
-                    "facturas al cliente a 140 € la hora.",
+                    "facturas al cliente a 14.000 Y$ la hora.",
                     ("Le pagas las 80 horas de tu bolsillo, al precio de socio.",
                      "Le mandas a casa una semana, con gastos pagados, y le pides perdón en "
                      "persona ante todo el comité y delante de su madre."),
@@ -6565,8 +6565,8 @@ DIALOGUE_PACKS.update(
                      "dices tú mismo en la reunión de apertura."),
                 ),
                 Dialogue(
-                    "La cena de socios en un restaurante con estrella: la cuenta son 2.400 "
-                    "euros.",
+                    "La cena de socios en un restaurante con estrella: la cuenta son "
+                    "240.000 Y$.",
                     "La imputas al proyecto del Ministerio como «reunión de trabajo con "
                     "stakeholders».",
                     ("Cada uno paga lo suyo, con calculadora.",
@@ -6693,7 +6693,7 @@ DIALOGUE_PACKS.update(
                      "«Nuestro mayor competidor es la siesta.»"),
                 ),
                 Dialogue(
-                    "Preguntan por los ingresos: cero euros.",
+                    "Preguntan por los ingresos: cero yapdollars.",
                     "«Estamos en fase de pre-monetización, optimizando para el crecimiento.»",
                     ("«Cero. Pero el año que viene también.»",
                      "Les dices que el dinero es una construcción social."),
@@ -6717,7 +6717,7 @@ DIALOGUE_PACKS.update(
                     "Preguntan qué valoración pides.",
                     "Pides 20 millones y dejas caer que «hay otros dos fondos interesados» (los "
                     "dos son tu primo y el primo de tu primo).",
-                    ("Pides lo que vale de verdad: 200.000 euros.",
+                    ("Pides lo que vale de verdad: 20.000.000 Y$.",
                      "Dices que es información confidencial."),
                 ),
                 Dialogue(
@@ -6765,12 +6765,12 @@ DIALOGUE_PACKS.update(
                      "Confiesas que fue sin querer."),
                 ),
                 Dialogue(
-                    "Vendes la marca de verificación a 8 euros al mes.",
+                    "Vendes la marca de verificación a 800 Y$ al mes.",
                     "La cobras: ahora cualquier bulo con tarjeta de crédito tiene credibilidad, "
                     "¡y ingresos!",
                     ("La regalas a los periodistas y a los médicos que demuestren quiénes son, y "
                      "a los demás les das las gracias por esperar.",
-                     "La cobras a 8 euros y devuelves el dinero a quien no la use."),
+                     "La cobras a 800 Y$ y devuelves el dinero a quien no la use."),
                 ),
                 Dialogue(
                     "Trump vuelve a la red tras años de veto. ¿Qué haces?",
@@ -7017,7 +7017,8 @@ EVENTS: tuple[Event, ...] = (
             (
                 "Le mando un Bizum",
                 Outcome(
-                    "Le mandas un Bizum de 50 € con un emoji de cura. Tu hermana no lo olvidará.",
+                    "Le mandas un Bizum de 5.000 Y$ con un emoji de cura. Tu hermana no lo "
+                    "olvidará.",
                     family=-5,
                     stat="work_communion_bizum",
                 ),
@@ -7120,7 +7121,7 @@ EVENTS: tuple[Event, ...] = (
     # -- Hostelería ---------------------------------------------------------------------
     Event(
         "propina",
-        "🪙 Una pareja de alemanes te deja una propina de 20 € en efectivo.",
+        "🪙 Una pareja de alemanes te deja una propina de 2.000 Y$ en efectivo.",
         (
             (
                 "A la caja común",
@@ -7308,7 +7309,7 @@ EVENTS: tuple[Event, ...] = (
             (
                 "Menú para cruceristas",
                 Outcome(
-                    "Montas un menú a 4,99 €. Venden 4.000 cafés solos y el que paga la "
+                    "Montas un menú a 499 Y$. Venden 4.000 cafés solos y el que paga la "
                     "luz es tu bolsillo.",
                     pay=0.5,
                     battery=-15,
@@ -7361,12 +7362,12 @@ EVENTS: tuple[Event, ...] = (
     Event(
         "no_camareros",
         "🪧 Te llaman de una tertulia de radio para que cuentes que «no encuentras "
-        "camareros». En la puerta tienes un cartel: «Se busca camarero. 900 €, diez horas».",
+        "camareros». En la puerta tienes un cartel: «Se busca camarero. 90.000 Y$, diez horas».",
         (
             (
                 "Subo el sueldo",
                 Outcome(
-                    "Subes el sueldo a 1.400 € y aparecen veinte currículums en una tarde. "
+                    "Subes el sueldo a 140.000 Y$ y aparecen veinte currículums en una tarde. "
                     "Casualidades de la vida.",
                     performance=10,
                     family=5,
@@ -7376,7 +7377,7 @@ EVENTS: tuple[Event, ...] = (
             (
                 "Mantengo el cartel",
                 Outcome(
-                    "Mantienes los 900 € y el cartel. Sigues sin camareros y te quejas "
+                    "Mantienes los 90.000 Y$ y el cartel. Sigues sin camareros y te quejas "
                     "en la tele de la juventud.",
                     performance=-8,
                     stat="work_no_waiters",
@@ -8115,7 +8116,7 @@ EVENTS: tuple[Event, ...] = (
     ),
     Event(
         "tasa_turistica",
-        "💶 El Gobierno autonómico aprueba la tasa turística: dos euros por noche y persona.",
+        "💶 El Gobierno autonómico aprueba la tasa turística: 200 Y$ por noche y persona.",
         (
             (
                 "Se la cobro al cliente",
@@ -8798,7 +8799,7 @@ EVENTS: tuple[Event, ...] = (
     # -- Reparto ------------------------------------------------------------------------
     Event(
         "sexto_sin_ascensor",
-        "🏢 El cliente deja 0,50 € de propina y te pide que se lo subas a un 6.º sin ascensor.",
+        "🏢 El cliente deja 50 Y$ de propina y te pide que se lo subas a un 6.º sin ascensor.",
         (
             (
                 "Subo",
@@ -8821,7 +8822,7 @@ EVENTS: tuple[Event, ...] = (
     ),
     Event(
         "diluvio",
-        "🌧️ Diluvia en Las Palmas (tres gotas) y la app ofrece 2 € más por pedido. ¿Sales?",
+        "🌧️ Diluvia en Las Palmas (tres gotas) y la app ofrece 200 Y$ más por pedido. ¿Sales?",
         (
             (
                 "Salgo",
@@ -8886,7 +8887,7 @@ EVENTS: tuple[Event, ...] = (
     ),
     Event(
         "un_hielo",
-        "🧊 Un cliente pide a las 4 de la mañana un solo cubito de hielo. Gastos de envío: 3 €.",
+        "🧊 Un cliente pide a las 4 de la mañana un solo cubito de hielo. Gastos de envío: 300 Y$.",
         (
             (
                 "Lo llevo",
@@ -9001,7 +9002,7 @@ EVENTS: tuple[Event, ...] = (
             (
                 "Pedir otro por la app",
                 Outcome(
-                    "Pagas 4 € de desbloqueo por otro patinete (que tampoco tiene "
+                    "Pagas 400 Y$ de desbloqueo por otro patinete (que tampoco tiene "
                     "batería). Entregas tarde y con tres monedas menos.",
                     performance=-5,
                     rating=-2,
@@ -9013,13 +9014,13 @@ EVENTS: tuple[Event, ...] = (
     ),
     Event(
         "algoritmo_rechazo",
-        "🤖 El algoritmo te castiga por rechazar un pedido de 0,80 € a nueve kilómetros: te "
+        "🤖 El algoritmo te castiga por rechazar un pedido de 80 Y$ a nueve kilómetros: te "
         "baja la prioridad «por falta de compromiso con la comunidad».",
         (
             (
                 "Aceptar lo que me echen",
                 Outcome(
-                    "Aceptas los siguientes diez pedidos, todos a 1,10 € y con escaleras. "
+                    "Aceptas los siguientes diez pedidos, todos a 110 Y$ y con escaleras. "
                     "El algoritmo te manda un emoji de pulgar.",
                     pay=0.2,
                     battery=-10,
@@ -9041,8 +9042,8 @@ EVENTS: tuple[Event, ...] = (
     ),
     Event(
         "paquete_shenzhen",
-        "📦 Llevas un paquete de 1,99 € que viene de Shenzhen. Pesa 40 gramos y el envío te "
-        "lo pagan a 2,10 €. Se mueve sospechosamente.",
+        "📦 Llevas un paquete de 199 Y$ que viene de Shenzhen. Pesa 40 gramos y el envío te "
+        "lo pagan a 210 Y$. Se mueve sospechosamente.",
         (
             (
                 "Entregarlo",
@@ -9056,7 +9057,7 @@ EVENTS: tuple[Event, ...] = (
                 "Abrirlo por curiosidad",
                 Outcome(
                     "Dentro hay otro paquete. Dentro de ese, otro. Una muñeca rusa de "
-                    "1,99 € con un aviso de «sin devolución».",
+                    "199 Y$ con un aviso de «sin devolución».",
                     performance=-8,
                     rating=-3,
                     stat="work_shenzhen_open",
@@ -9068,7 +9069,7 @@ EVENTS: tuple[Event, ...] = (
     ),
     Event(
         "black_friday",
-        "🛍️ Black Friday: 4.000 pedidos de gente que compra por 5 € lo que ayer valía 5 €. "
+        "🛍️ Black Friday: 4.000 pedidos de gente que compra por 500 Y$ lo que ayer valía 500 Y$. "
         "La flota no da abasto. «Víctor le dijo a Joel: móntate en mi furgoneta.»",
         (
             (
@@ -9178,7 +9179,7 @@ EVENTS: tuple[Event, ...] = (
             (
                 "Mantenerla abierta",
                 Outcome(
-                    "La mantienes: pierdes 400 € al mes y ganas el cariño de tres vecinos, "
+                    "La mantienes: pierdes 40.000 Y$ al mes y ganas el cariño de tres vecinos, "
                     "un burro y la prensa local, que te hace una entrevista.",
                     performance=-8,
                     family=6,
@@ -9319,7 +9320,7 @@ EVENTS: tuple[Event, ...] = (
                 "Aceptar",
                 Outcome(
                     "Aceptas. Tu cara se pega en 50.000 sobres, con saliva. Los "
-                    "coleccionistas pagan 3 € por los que salen torcidos.",
+                    "coleccionistas pagan 300 Y$ por los que salen torcidos.",
                     pay=0.4,
                     performance=5,
                     stat="work_stamp_face",
@@ -9404,7 +9405,7 @@ EVENTS: tuple[Event, ...] = (
     ),
     Event(
         "dron_piscina",
-        "🛸 Tu dron de reparto, con una hamburguesa de 18 €, cae en la piscina del cliente. "
+        "🛸 Tu dron de reparto, con una hamburguesa de 1.800 Y$, cae en la piscina del cliente. "
         "Con el cliente dentro.",
         (
             (
@@ -9433,7 +9434,7 @@ EVENTS: tuple[Event, ...] = (
     Event(
         "almacen_40",
         "🌡️ El almacén está a 40 °C y los riders se desmayan entre palés. El aire "
-        "acondicionado cuesta 30.000 € y tu margen es de 0,03 € por pedido.",
+        "acondicionado cuesta 3.000.000 Y$ y tu margen es de 3 Y$ por pedido.",
         (
             (
                 "Comprar ventiladores",
@@ -9445,9 +9446,9 @@ EVENTS: tuple[Event, ...] = (
                 ),
             ),
             (
-                "Vender agua a 3 €",
+                "Vender agua a 300 Y$",
                 Outcome(
-                    "Vendes la botella de agua a 3 € en la máquina del almacén. Lo llamas "
+                    "Vendes la botella de agua a 300 Y$ en la máquina del almacén. Lo llamas "
                     "«hidratación premium» y lo cobras con tarjeta.",
                     pay=0.3,
                     performance=-10,
@@ -9526,7 +9527,7 @@ EVENTS: tuple[Event, ...] = (
             (
                 "Comprar la publicidad",
                 Outcome(
-                    "Pagas 200.000 € de publicidad y a la semana sales como «el "
+                    "Pagas 20.000.000 Y$ de publicidad y a la semana sales como «el "
                     "empresario que reinventó el reparto». Tu madre guarda el recorte.",
                     black=0.5,
                     risk=0.25,
@@ -10414,7 +10415,7 @@ EVENTS: tuple[Event, ...] = (
     ),
     Event(
         "haul_ropa",
-        "📦 Te llegan 40 prendas de una web de ropa a 2 euros. Hay que hacer el haul: se "
+        "📦 Te llegan 40 prendas de una web de ropa a 200 Y$. Hay que hacer el haul: se "
         "destiñen en la caja, huelen a plástico y la talla M le va bien a tu sobrino de seis.",
         (
             (
@@ -10457,10 +10458,10 @@ EVENTS: tuple[Event, ...] = (
                 ),
             ),
             (
-                "Quiero euros",
+                "Quiero yapdollars",
                 Outcome(
                     "«El champú no paga el alquiler.» La marca se lo piensa y te paga un "
-                    "tercio en euros, y de regalo, un bote.",
+                    "tercio en yapdollars, y de regalo, un bote.",
                     pay=0.3,
                     stat="work_paid_in_cash",
                 ),
@@ -10599,7 +10600,7 @@ EVENTS: tuple[Event, ...] = (
     ),
     Event(
         "exclusiva_famoso",
-        "📸 Un famoso te vende por 20.000 € la exclusiva de su separación. Esa misma tarde, "
+        "📸 Un famoso te vende por 2.000.000 Y$ la exclusiva de su separación. Esa misma tarde, "
         "su ex llama a la cadena con voz de abogado y el tono de quien ya ha redactado la "
         "demanda.",
         (
@@ -10799,7 +10800,7 @@ EVENTS: tuple[Event, ...] = (
     Event(
         "energetica_taquicardia",
         "⚡ Un cliente cuenta en redes que tu bebida energética le dio una taquicardia. "
-        "Lleva 800.000 visualizaciones y el vídeo se titula «Casi me muero por 1,99 €».",
+        "Lleva 800.000 visualizaciones y el vídeo se titula «Casi me muero por 199 Y$».",
         (
             (
                 "Letra pequeña en grande",
@@ -11603,7 +11604,7 @@ EVENTS: tuple[Event, ...] = (
     Event(
         "hackathon",
         "🏆 Hackathon «voluntario» el sábado, de 9:00 a 9:00. Hay pizza, una pegatina y un "
-        "premio de 200 euros para el mejor equipo (el del director, seguro).",
+        "premio de 20.000 Y$ para el mejor equipo (el del director, seguro).",
         (
             (
                 "Voy",
@@ -11846,7 +11847,7 @@ EVENTS: tuple[Event, ...] = (
                 "Lo hago",
                 Outcome(
                     "Copias el original, le añades un capítulo de «metodología» y tres gráficos "
-                    "de tarta. Bruselas paga 600.000 euros por un copiar y pegar.",
+                    "de tarta. Bruselas paga 60.000.000 Y$ por un copiar y pegar.",
                     black=0.7,
                     risk=0.2,
                     caught_by="olaf",
@@ -12101,7 +12102,7 @@ CAUGHT_TEXT: dict[str, str] = {
     ),
     "tribunal_cuentas": (
         "🧾 **El Tribunal de Cuentas te reclama el reintegro.** Un viaje a por pan que costó "
-        "cuarenta euros de gasolina, o mil doscientas horas facturadas de las que nadie "
+        "4.000 Y$ de gasolina, o mil doscientas horas facturadas de las que nadie "
         "trabajó cuatrocientas: las cuentas no cuadran, pagas el reintegro y el chófer cobra "
         "horas extra."
     ),
@@ -12138,7 +12139,7 @@ CAUGHT_TEXT: dict[str, str] = {
     ),
     "honor": (
         "⚖️ **Un juzgado condena a la cadena por intromisión en el derecho al honor.** La "
-        "exclusiva costó 20.000 euros y la sentencia, algunos más: pagas la indemnización y "
+        "exclusiva costó 2.000.000 Y$ y la sentencia, algunos más: pagas la indemnización y "
         "el famoso se compra un cuadro."
     ),
     "etiquetado": (

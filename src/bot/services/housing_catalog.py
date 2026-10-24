@@ -488,7 +488,7 @@ LISTINGS: tuple[Listing, ...] = (
         "local",
         45,
         "Local de antigua pescadería",
-        "Ideal para un brunch de aguacate a 14 €. El barrio todavía no lo sabe.",
+        "Ideal para un brunch de aguacate a 1.400 Y$. El barrio todavía no lo sabe.",
         "Bajo",
         "F",
     ),
@@ -661,7 +661,7 @@ LISTINGS: tuple[Listing, ...] = (
         "local",
         40,
         "Local de antiguo bazar",
-        "Lo vendía todo a un euro. Ahora el alquiler sube un euro al día.",
+        "Lo vendía todo a un yapdollar. Ahora el alquiler sube un yapdollar al día.",
         "Bajo",
         "G",
     ),
@@ -2629,7 +2629,7 @@ TENANTS: tuple[Tenant, ...] = (
         "cripto", "Nómada cripto", "🪙", ("nomadas",),
         "¿Aceptas el pago en mi moneda? Mañana vale el doble, seguro.",
         age=30, risk=1.9, stay=1.2, wear=1.0, traits=("Ingresos variables", "Teletrabaja"),
-        renew="Renuevo. Y te pago en euros, que la moneda ha bajado un poco.",
+        renew="Renuevo. Y te pago en yapdollars, que la moneda ha bajado un poco.",
         leave="Me voy a Dubái. Allí no se pagan impuestos, dicen.",
         unpaid="Mi moneda ha caído un 90 %. Pero va a volver a subir.",
         complaint="Se ha ido la luz y se me han apagado los ordenadores de minar.",
@@ -3071,7 +3071,7 @@ PROMOTION_BLURBS: tuple[str, ...] = (
     "Domótica: la persiana sube con el móvil y el precio con el Euríbor.",
     "Zonas verdes de césped artificial y certificado A de la propia promotora.",
     "Llave en mano en 2029, en 2031 como muy tarde, palabra de promotor.",
-    "Reserva con 6.000 € y el resto, a treinta años y un aval de tus padres.",
+    "Reserva con 600.000 Y$ y el resto, a treinta años y un aval de tus padres.",
     "Vistas al mar garantizadas hasta que construyan delante.",
     "Recalificado en un pleno de madrugada. Todo legal, de momento.",
     "Gimnasio, coworking y conserje. El conserje es un holograma.",
@@ -3283,7 +3283,7 @@ BARRIO_NEWS: tuple[BarrioNews, ...] = (
     ),
     BarrioNews(
         "cafeteria", "Abre la tercera cafetería de especialidad del barrio",
-        "El café cuesta cuatro euros y el wifi va muy rápido.",
+        "El café cuesta 400 Y$ y el wifi va muy rápido.",
         frozenset({"centro", "marinero", "historico"}), nomad=1.25, find=1.05, index=1.02,
     ),
     BarrioNews(
@@ -3293,7 +3293,7 @@ BARRIO_NEWS: tuple[BarrioNews, ...] = (
     ),
     BarrioNews(
         "triatlon", "Pasa el triatlón por el barrio",
-        "Calles cortadas, bicis de cinco mil euros y gente en mallas a las siete.",
+        "Calles cortadas, bicis de 500.000 Y$ y gente en mallas a las siete.",
         frozenset({"playa", "lujo"}), vacation=1.15, neighbour=1.2,
     ),
     BarrioNews(
@@ -3308,7 +3308,7 @@ BARRIO_NEWS: tuple[BarrioNews, ...] = (
     ),
     BarrioNews(
         "zona_azul", "Zona azul en todo el barrio",
-        "Aparcar cuesta dos euros la hora. Los vecinos, indignados.",
+        "Aparcar cuesta 200 Y$ la hora. Los vecinos, indignados.",
         frozenset({"centro", "playa"}), find=0.95,
     ),
     BarrioNews(
