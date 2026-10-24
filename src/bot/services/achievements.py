@@ -19263,8 +19263,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
 
     # 🎸 Robuso (categoría secreta, `bot.services.robuso` y `bot.cogs.robuso`) -------------
-    # «Solo Robuso:» en la descripción si solo lo puede conseguir él; el resto, para quien
-    # trata con él. Lo que dice «días distintos» se cuenta una vez al día (`robuso.DAILY`).
+    # Lo que solo puede conseguir él va tras «# Solo Robuso» y su descripción no lo dice, para
+    # que quede la duda; el resto, para quien trata con él. Lo que dice «días distintos» se
+    # cuenta una vez al día (`robuso.DAILY`).
     # Para quien trata con Robuso
     a += _tiers("robuso", "robuso_replies", [
         (1, "robuso_respuesta_1", "Contestador de Robuso", "Responde a un mensaje de Robuso.", C),
@@ -19369,7 +19370,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     # Solo Robuso
     a.append(Achievement(
         id="robuso_hola", name="Robuso en persona",
-        description="Solo Robuso: escribe un mensaje.",
+        description="Escribe un mensaje.",
         category="robuso", rarity=C, conditions=(("robuso_msgs", 1),),
         story=(
             "Esta categoría es secreta y existe por ti. Unos logros solo los puedes "
@@ -19378,271 +19379,271 @@ def _build_catalog() -> tuple[Achievement, ...]:
         ),
     ))  # fmt: skip
     a += _tiers("robuso", "robuso_msgs", [
-        (100, "robuso_msgs_100", "Robuso FM", "Solo Robuso: escribe 100 mensajes.", R),
+        (100, "robuso_msgs_100", "Robuso FM", "Escribe 100 mensajes.", R),
         (1_000, "robuso_msgs_1k", "Hilo musical del servidor",
-         "Solo Robuso: escribe 1.000 mensajes.", E),
+         "Escribe 1.000 mensajes.", E),
         (5_000, "robuso_msgs_5k", "Obras completas de Robuso",
-         "Solo Robuso: escribe 5.000 mensajes.", L),
+         "Escribe 5.000 mensajes.", L),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_coworkers", [
         (1, "robuso_curro_1", "Corrillo de la máquina de café",
-         "Solo Robuso: quéjate de tus compañeros de trabajo.", C),
+         "Quéjate de tus compañeros de trabajo.", C),
         (10, "robuso_curro_10", "Libro de reclamaciones",
-         "Solo Robuso: quéjate de tus compañeros de trabajo 10 días distintos.", R),
+         "Quéjate de tus compañeros de trabajo 10 días distintos.", R),
         (40, "robuso_curro_40", "Comité de empresa unipersonal",
-         "Solo Robuso: quéjate de tus compañeros de trabajo 40 días distintos.", E),
+         "Quéjate de tus compañeros de trabajo 40 días distintos.", E),
         (120, "robuso_curro_120", "Expediente en Recursos Humanos",
-         "Solo Robuso: quéjate de tus compañeros de trabajo 120 días distintos.", L, True),
+         "Quéjate de tus compañeros de trabajo 120 días distintos.", L, True),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_work_rant", [
         (1, "robuso_jefe_1", "Quejarse es gratis",
-         "Solo Robuso: quéjate del curro (el jefe, las reuniones, las horas extra).", C),
+         "Quéjate del curro (el jefe, las reuniones, las horas extra).", C),
         (15, "robuso_jefe_15", "Lunes perpetuo",
-         "Solo Robuso: quéjate del curro 15 días distintos.", R),
+         "Quéjate del curro 15 días distintos.", R),
         (60, "robuso_jefe_60", "Burnout con vistas",
-         "Solo Robuso: quéjate del curro 60 días distintos.", E),
+         "Quéjate del curro 60 días distintos.", E),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_altmusic", [
         (1, "robuso_musica_1", "Seguro que no los conoces",
-         "Solo Robuso: habla de música alternativa o comparte una canción.", C),
+         "Habla de música alternativa o comparte una canción.", C),
         (10, "robuso_musica_10", "Los escuchaba antes de que molaran",
-         "Solo Robuso: habla de música alternativa 10 días distintos.", R),
+         "Habla de música alternativa 10 días distintos.", R),
         (50, "robuso_musica_50", "Reseña de Pitchfork gratis",
-         "Solo Robuso: habla de música alternativa 50 días distintos.", E),
+         "Habla de música alternativa 50 días distintos.", E),
         (150, "robuso_musica_150", "Vinilo de edición limitada",
-         "Solo Robuso: habla de música alternativa 150 días distintos.", L),
+         "Habla de música alternativa 150 días distintos.", L),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_bass", [
         (1, "robuso_bajo_1", "Cuatro cuerdas y un sueño",
-         "Solo Robuso: habla del bajo o de tocar música.", C),
+         "Habla del bajo o de tocar música.", C),
         (10, "robuso_bajo_10", "Nadie oye el bajo, pero se comenta",
-         "Solo Robuso: habla del bajo o de tocar 10 días distintos.", R),
+         "Habla del bajo o de tocar 10 días distintos.", R),
         (40, "robuso_bajo_40", "Slap de madrugada",
-         "Solo Robuso: habla del bajo o de tocar 40 días distintos.", E),
+         "Habla del bajo o de tocar 40 días distintos.", E),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_indie_talk", [
         (1, "robuso_indie_1", "Juego tipo Robuso",
-         "Solo Robuso: habla de un juego indie, pixelado o poco conocido.", C),
+         "Habla de un juego indie, pixelado o poco conocido.", C),
         (10, "robuso_indie_10", "Curaduría de Steam para uno",
-         "Solo Robuso: habla de juegos indies 10 días distintos.", R),
+         "Habla de juegos indies 10 días distintos.", R),
         (40, "robuso_indie_40", "Biblioteca de itch.io",
-         "Solo Robuso: habla de juegos indies 40 días distintos.", E),
+         "Habla de juegos indies 40 días distintos.", E),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_solo_game", [
         (1, "robuso_solo_1", "Partida para uno",
-         "Solo Robuso: juega a algo que no es de los juegos famosos y al que no juega "
+         "Juega a algo que no es de los juegos famosos y al que no juega "
          "nadie más del servidor en ese momento (según tu actividad de Discord).", C),
         (10, "robuso_solo_10", "Single player por vocación",
-         "Solo Robuso: hazlo 10 días distintos.", R),
-        (40, "robuso_solo_40", "Ludoteca privada", "Solo Robuso: hazlo 40 días distintos.", E),
+         "Hazlo 10 días distintos.", R),
+        (40, "robuso_solo_40", "Ludoteca privada", "Hazlo 40 días distintos.", E),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_indie_play", [
         (1, "robuso_pixel_1", "Pixel a pixel",
-         "Solo Robuso: juega a un indie conocido (Hollow Knight, Balatro, Stardew…), "
+         "Juega a un indie conocido (Hollow Knight, Balatro, Stardew…), "
          "según tu actividad de Discord.", C),
         (20, "robuso_pixel_20", "Retro sin nostalgia",
-         "Solo Robuso: juega a indies conocidos 20 días distintos.", R),
+         "Juega a indies conocidos 20 días distintos.", R),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_flakes", [
         (1, "robuso_planton_1", "Ahora me conecto",
-         "Solo Robuso: di que vas a jugar y no entres en llamada en las 2 horas siguientes.",
+         "Di que vas a jugar y no entres en llamada en las 2 horas siguientes.",
          C),
         (5, "robuso_planton_5", "Ahorita voy",
-         "Solo Robuso: di que vas a jugar y no vengas 5 días distintos.", R),
+         "Di que vas a jugar y no vengas 5 días distintos.", R),
         (25, "robuso_planton_25", "Promesa electoral",
-         "Solo Robuso: di que vas a jugar y no vengas 25 días distintos.", E, True),
+         "Di que vas a jugar y no vengas 25 días distintos.", E, True),
         (75, "robuso_planton_75", "Lo de conectarse, otro día",
-         "Solo Robuso: di que vas a jugar y no vengas 75 días distintos.", L),
+         "Di que vas a jugar y no vengas 75 días distintos.", L),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_kept_word", [
         (1, "robuso_palabra_1", "Milagro en la llamada",
-         "Solo Robuso: di que vas a jugar y entra en llamada antes de 2 horas.", C, True),
+         "Di que vas a jugar y entra en llamada antes de 2 horas.", C, True),
         (10, "robuso_palabra_10", "Palabra de Robuso",
-         "Solo Robuso: cumple tu palabra 10 días distintos.", R),
+         "Cumple tu palabra 10 días distintos.", R),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_silence_max", [
         (7, "robuso_vuelve_7", "Se le daba por muerto",
-         "Solo Robuso: vuelve a escribir tras 7 días sin hacerlo.", R),
+         "Vuelve a escribir tras 7 días sin hacerlo.", R),
         (30, "robuso_vuelve_30", "El regreso del Jedi",
-         "Solo Robuso: vuelve a escribir tras 30 días sin hacerlo.", E),
+         "Vuelve a escribir tras 30 días sin hacerlo.", E),
         (90, "robuso_vuelve_90", "El Guadiana del servidor",
-         "Solo Robuso: vuelve a escribir tras 90 días sin hacerlo.", L),
+         "Vuelve a escribir tras 90 días sin hacerlo.", L),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_voice_gap_max", [
         (7, "robuso_llamada_7", "Ya ni juega con nosotros",
-         "Solo Robuso: entra en llamada tras 7 días sin hacerlo.", R),
+         "Entra en llamada tras 7 días sin hacerlo.", R),
         (30, "robuso_llamada_30", "Amigo de Discord en excedencia",
-         "Solo Robuso: entra en llamada tras 30 días sin hacerlo.", E),
+         "Entra en llamada tras 30 días sin hacerlo.", E),
         (180, "robuso_llamada_180", "El hijo pródigo",
-         "Solo Robuso: entra en llamada tras 180 días sin hacerlo.", L),
+         "Entra en llamada tras 180 días sin hacerlo.", L),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_vc_minutes", [
         (60, "robuso_voz_1h", "Amigos de Discord",
-         "Solo Robuso: pasa 1 h en llamada con gente.", C),
+         "Pasa 1 h en llamada con gente.", C),
         (600, "robuso_voz_10h", "Amigos de Discord de toda la vida",
-         "Solo Robuso: pasa 10 h en llamada con gente.", R),
+         "Pasa 10 h en llamada con gente.", R),
         (3_000, "robuso_voz_50h", "Más amigos de Discord que de la calle",
-         "Solo Robuso: pasa 50 h en llamada con gente.", E),
+         "Pasa 50 h en llamada con gente.", E),
         (12_000, "robuso_voz_200h", "Socio fundador de la llamada",
-         "Solo Robuso: pasa 200 h en llamada con gente.", L),
+         "Pasa 200 h en llamada con gente.", L),
     ], unit="min")  # fmt: skip
     a += [
         combo("robuso_pandilla_5", "Pandilla de Discord",
-              "Solo Robuso: comparte llamada con 5 personas distintas.",
+              "Comparte llamada con 5 personas distintas.",
               "robuso", R, ((VOICE_PEOPLE_STAT, 5), ("robuso_vc_minutes", 1))),
         combo("robuso_pandilla_12", "Agenda llena de amigos de Discord",
-              "Solo Robuso: comparte llamada con 12 personas distintas.",
+              "Comparte llamada con 12 personas distintas.",
               "robuso", E, ((VOICE_PEOPLE_STAT, 12), ("robuso_vc_minutes", 1))),
     ]  # fmt: skip
     # Mientras está en Hong Kong (lo de allí solo cuenta entonces, para no gastar la broma).
     a += _tiers("robuso", "robuso_hk_photos", [
         (1, "robuso_foto_1", "Postal desde Kowloon",
-         "Solo Robuso: manda una foto desde Hong Kong.", C),
+         "Manda una foto desde Hong Kong.", C),
         (10, "robuso_foto_10", "Instagram con jet lag",
-         "Solo Robuso: manda fotos desde Hong Kong 10 días distintos.", R),
+         "Manda fotos desde Hong Kong 10 días distintos.", R),
         (30, "robuso_foto_30", "Exposición en el Peak",
-         "Solo Robuso: manda fotos desde Hong Kong 30 días distintos.", E),
+         "Manda fotos desde Hong Kong 30 días distintos.", E),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_hk_night", [
         (1, "robuso_insomnio_1", "Insomnio en Kowloon",
-         "Solo Robuso: escribe desde Hong Kong entre las 2:00 y las 6:00 de allí.", C),
+         "Escribe desde Hong Kong entre las 2:00 y las 6:00 de allí.", C),
         (10, "robuso_insomnio_10", "Jet lag a propósito",
-         "Solo Robuso: hazlo 10 días distintos.", R),
+         "Hazlo 10 días distintos.", R),
         (40, "robuso_insomnio_40", "Reloj en hora peninsular",
-         "Solo Robuso: hazlo 40 días distintos.", E),
+         "Hazlo 40 días distintos.", E),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_hk_office", [
         (1, "robuso_oficina_1", "Teletrabajo emocional",
-         "Solo Robuso: escribe desde Hong Kong en horario de oficina de allí (laborables, "
+         "Escribe desde Hong Kong en horario de oficina de allí (laborables, "
          "de 10:00 a 18:00).", C),
         (15, "robuso_oficina_15", "El jefe no mira la pantalla",
-         "Solo Robuso: hazlo 15 días distintos.", R),
+         "Hazlo 15 días distintos.", R),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_hk_talk", [
         (1, "robuso_guia_1", "Guía de Lonely Planet",
-         "Solo Robuso: habla de Hong Kong (el dim sum, el MTR, Kowloon…) mientras estás allí.",
+         "Habla de Hong Kong (el dim sum, el MTR, Kowloon…) mientras estás allí.",
          C),
         (15, "robuso_guia_15", "Embajada oficiosa",
-         "Solo Robuso: habla de Hong Kong 15 días distintos mientras estás allí.", R),
+         "Habla de Hong Kong 15 días distintos mientras estás allí.", R),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_hk_vc_minutes", [
         (60, "robuso_roaming_1h", "Llamada internacional",
-         "Solo Robuso: pasa 1 h en llamada con gente desde Hong Kong.", C),
+         "Pasa 1 h en llamada con gente desde Hong Kong.", C),
         (600, "robuso_roaming_10h", "Roaming sentimental",
-         "Solo Robuso: pasa 10 h en llamada con gente desde Hong Kong.", R),
+         "Pasa 10 h en llamada con gente desde Hong Kong.", R),
         (3_000, "robuso_roaming_50h", "Fibra óptica submarina",
-         "Solo Robuso: pasa 50 h en llamada con gente desde Hong Kong.", E),
+         "Pasa 50 h en llamada con gente desde Hong Kong.", E),
     ], unit="min")  # fmt: skip
     a += _tiers("robuso", "robuso_hk_new_year", [
         (1, "robuso_uvas", "Las uvas, con siete horas de adelanto",
-         "Solo Robuso: escribe a las 0:00 del 1 de enero de Hong Kong estando allí.", R, True),
+         "Escribe a las 0:00 del 1 de enero de Hong Kong estando allí.", R, True),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_trips", [
         (1, "robuso_viaje_1", "Destino: Hong Kong",
-         "Solo Robuso: vete a Hong Kong (lo apunta un administrador con `robuso`).", R),
+         "Vete a Hong Kong (lo apunta un administrador con `robuso`).", R),
         (2, "robuso_viaje_2", "Billete de vuelta y de ida",
-         "Solo Robuso: vete a Hong Kong 2 veces.", E),
+         "Vete a Hong Kong 2 veces.", E),
         (3, "robuso_viaje_3", "Más millas que el Falcon",
-         "Solo Robuso: vete a Hong Kong 3 veces.", L),
+         "Vete a Hong Kong 3 veces.", L),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_returns", [
-        (1, "robuso_regreso_1", "Vuelta al foro", "Solo Robuso: vuelve de Hong Kong a Madrid.", R),
+        (1, "robuso_regreso_1", "Vuelta al foro", "Vuelve de Hong Kong a Madrid.", R),
         (3, "robuso_regreso_3", "Puente aéreo Madrid-Kowloon",
-         "Solo Robuso: vuelve de Hong Kong a Madrid 3 veces.", L),
+         "Vuelve de Hong Kong a Madrid 3 veces.", L),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_trip_days_max", [
         (21, "robuso_estancia_21", "Tres semanas en Kowloon",
-         "Solo Robuso: pasa 21 días seguidos en Hong Kong.", E),
+         "Pasa 21 días seguidos en Hong Kong.", E),
         (90, "robuso_estancia_90", "Expatriación de manual",
-         "Solo Robuso: pasa 90 días seguidos en Hong Kong.", L),
+         "Pasa 90 días seguidos en Hong Kong.", L),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_madrid_night", [
         (1, "robuso_buho_1", "Búho de Malasaña",
-         "Solo Robuso: escribe desde Madrid entre las 2:00 y las 6:00.", C),
-        (15, "robuso_buho_15", "Madrid no duerme", "Solo Robuso: hazlo 15 días distintos.", R),
+         "Escribe desde Madrid entre las 2:00 y las 6:00.", C),
+        (15, "robuso_buho_15", "Madrid no duerme", "Hazlo 15 días distintos.", R),
     ])  # fmt: skip
     # Lo performativo
     a += _tiers("robuso", "robuso_fake_goodbye", [
         (1, "robuso_adios_1", "Me voy (no se va)",
-         "Solo Robuso: despídete y vuelve a escribir antes de 15 minutos.", C, True),
+         "Despídete y vuelve a escribir antes de 15 minutos.", C, True),
         (10, "robuso_adios_10", "Gira de despedida eterna",
-         "Solo Robuso: hazlo 10 días distintos.", R),
+         "Hazlo 10 días distintos.", R),
         (40, "robuso_adios_40", "Más despedidas que Cher",
-         "Solo Robuso: hazlo 40 días distintos.", E, True),
+         "Hazlo 40 días distintos.", E, True),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_roleplay", [
         (1, "robuso_teatro_1", "*Suspira dramáticamente*",
-         "Solo Robuso: escribe una acotación en cursiva («*suspira*»).", C, True),
+         "Escribe una acotación en cursiva («*suspira*»).", C, True),
         (15, "robuso_teatro_15", "Método Stanislavski",
-         "Solo Robuso: escribe acotaciones 15 días distintos.", R),
+         "Escribe acotaciones 15 días distintos.", R),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_status", [
         (1, "robuso_estado_1", "Frase del día",
-         "Solo Robuso: cambia tu estado personalizado de Discord.", C),
+         "Cambia tu estado personalizado de Discord.", C),
         (10, "robuso_estado_10", "Biografía en revisión",
-         "Solo Robuso: cambia tu estado 10 días distintos.", R),
+         "Cambia tu estado 10 días distintos.", R),
         (40, "robuso_estado_40", "Community manager de sí mismo",
-         "Solo Robuso: cambia tu estado 40 días distintos.", E),
+         "Cambia tu estado 40 días distintos.", E),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_deleted", [
         (1, "robuso_borrar_1", "Aquí no ha pasado nada",
-         "Solo Robuso: borra un mensaje tuyo.", C, True),
+         "Borra un mensaje tuyo.", C, True),
         (15, "robuso_borrar_15", "Borrado a martillazos",
-         "Solo Robuso: borra mensajes tuyos 15 días distintos.", R, True),
+         "Borra mensajes tuyos 15 días distintos.", R, True),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_peeks", [
         (1, "robuso_asomarse_1", "Asomarse y huir",
-         "Solo Robuso: entra en una llamada y sal antes de un minuto.", C),
+         "Entra en una llamada y sal antes de un minuto.", C),
         (10, "robuso_asomarse_10", "Toc, toc… adiós",
-         "Solo Robuso: hazlo 10 días distintos.", R, True),
+         "Hazlo 10 días distintos.", R, True),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_essays", [
         (1, "robuso_tocho_1", "Hilo de Twitter sin Twitter",
-         "Solo Robuso: escribe un mensaje de 500 caracteres o más.", C),
+         "Escribe un mensaje de 500 caracteres o más.", C),
         (15, "robuso_tocho_15", "Columna de opinión",
-         "Solo Robuso: hazlo 15 días distintos.", R),
+         "Hazlo 15 días distintos.", R),
     ])  # fmt: skip
     # Robuso con el resto del bot (ecos de `robuso.ECHOES`)
     a += _tiers("robuso", "robuso_casino", [
-        (1, "robuso_casino_1", "Macao queda cerca", "Solo Robuso: juega en el casino.", C),
+        (1, "robuso_casino_1", "Macao queda cerca", "Juega en el casino.", C),
         (100, "robuso_casino_100", "Ficha de cliente VIP",
-         "Solo Robuso: juega 100 veces en el casino.", R),
+         "Juega 100 veces en el casino.", R),
         (1_000, "robuso_casino_1k", "Tiburón de Macao",
-         "Solo Robuso: juega 1.000 veces en el casino.", E),
+         "Juega 1.000 veces en el casino.", E),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_dj", [
-        (1, "robuso_dj_1", "Pone lo suyo", "Solo Robuso: pon una canción con `poner`.", C),
-        (25, "robuso_dj_25", "DJ de música rara", "Solo Robuso: pon 25 canciones.", R),
+        (1, "robuso_dj_1", "Pone lo suyo", "Pon una canción con `poner`.", C),
+        (25, "robuso_dj_25", "DJ de música rara", "Pon 25 canciones.", R),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_clock", [
         (1, "robuso_reloj", "¿Qué hora es en mi casa?",
-         "Solo Robuso: mira la hora de Hong Kong con `hongkong`.", C, True),
+         "Mira la hora de Hong Kong con `hongkong`.", C, True),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_self_call", [
         (1, "robuso_autollamada", "Me llamo a mí mismo",
-         "Solo Robuso: usa una Llamada a Robuso de la tienda.", C, True),
+         "Usa una Llamada a Robuso de la tienda.", C, True),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_shifts", [
-        (1, "robuso_turno_1", "Pluriempleo de Discord", "Solo Robuso: trabaja un turno en `pala`.",
+        (1, "robuso_turno_1", "Pluriempleo de Discord", "Trabaja un turno en `pala`.",
          C),
         (50, "robuso_turno_50", "Fichando hasta en el bot",
-         "Solo Robuso: trabaja 50 turnos en `pala`.", R),
+         "Trabaja 50 turnos en `pala`.", R),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_bizum_in", [
         (1, "robuso_bizum_recibido", "Bizum recibido, amistad confirmada",
-         "Solo Robuso: recibe un Bizum.", C),
+         "Recibe un Bizum.", C),
     ])  # fmt: skip
     a += _tiers("robuso", "robuso_funny", [
         (10, "robuso_gracia_10", "Te ríen las gracias",
-         "Solo Robuso: recibe 10 reacciones de risa.", C),
+         "Recibe 10 reacciones de risa.", C),
         (100, "robuso_gracia_100", "El club de la comedia de Robuso",
-         "Solo Robuso: recibe 100 reacciones de risa.", R),
+         "Recibe 100 reacciones de risa.", R),
         (500, "robuso_gracia_500", "Monólogo con claque",
-         "Solo Robuso: recibe 500 reacciones de risa.", E),
+         "Recibe 500 reacciones de risa.", E),
     ])  # fmt: skip
     a += [
         combo("robuso_robusismo", "Robusismo puro",
-              "Solo Robuso: habla de música alternativa, del bajo, de un juego indie y de tus "
+              "Habla de música alternativa, del bajo, de un juego indie y de tus "
               "compañeros de trabajo, y di que vas a jugar sin venir.",
               "robuso", R, (("robuso_altmusic", 1), ("robuso_bass", 1), ("robuso_indie_talk", 1),
                             ("robuso_coworkers", 1), ("robuso_flakes", 1)), secret=True),
