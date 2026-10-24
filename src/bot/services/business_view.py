@@ -1205,7 +1205,7 @@ def nave_state(
         room = nave.size_info.lots - chain.used_lots(nave)
         blocked = None
         if not chain.can_import(item):
-            blocked = "Se estropea antes de llegar: se compra al mayorista"
+            blocked = "Caduca: no aguanta lo que dura un contenedor"
         elif item.key not in products:
             blocked = "Ninguno de tus locales de la isla lo vende"
         elif room < chain.CONTAINER_LOTS:

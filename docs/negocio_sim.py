@@ -17,6 +17,7 @@ Uso, desde la raíz del repo (`PYTHONIOENCODING=utf-8` en la consola de Windows)
     python docs/negocio_sim.py --fase2       # mejoras, tamaños y campañas (fase 2)
     python docs/negocio_sim.py --sociedad    # autónomo o sociedad limitada (fase 3)
     python docs/negocio_sim.py --plantilla   # empleados (fase 4)
+    python docs/negocio_sim.py --cadena      # importar con nave, el gerente y vender (fase 5)
 
 Con `--fase2`, un jugador `bueno` en el barrio del medio de cada sector, con el cupo del
 barrio (`daily_pool`) y la amortización en el IRPF: lo que suma al día cada mejora, cada
@@ -30,6 +31,11 @@ y como sociedad (gestoría, Sociedades, su sueldo con su IRPF y el resto en divi
 Con `--plantilla`, el barrio del medio de cada sector con el cupo: lo que deja al día el
 negocio llevado por empleados (con sus turnos jugados por `business_staff.play_turn`, su
 nómina con la cuota de la empresa y su humor) frente al dueño solo, según lo que saben.
+
+Con `--cadena`, el barrio del medio de cada sector con el cupo: lo que gasta al día cada
+local en el mayorista, lo que se ahorraría importándolo (`business_chain.import_quote`, solo
+lo que no caduca), cuántos locales de ese sector pagan una nave pequeña en un barrio obrero,
+lo que cuesta un gerente y lo que pagaría un comprador por una cadena así (art. 37.1.b LIRPF).
 
 Jugadores: `perfecto` (todo bien y rápido), `bueno` (falla 1 de cada 8 clientes) y
 `flojo` (falla 1 de cada 3). Dedicación: 4 turnos al día (con curro a jornada completa) u
@@ -165,6 +171,8 @@ class Run:
     stars: float
     opening: int
     payback: float
+    #: Unidades que gasta al día cada producto (media de los días 15 al final).
+    units_day: dict[str, float] | None = None
 
 
 #: El día 0 de la simulación (un lunes), para las campañas.
@@ -201,6 +209,7 @@ def simulate(
         invested += item.cost + igic(item.cost)
     need = {p.key: float(p.pack) for p in sector.products}
     nets: list[float] = []
+    spent_units: dict[str, int] = {}
     week_net = 0
     cash = -quote.total + quote.deposit - invested  # la fianza vuelve al cerrar: no es gasto
     payback = float("nan")
@@ -272,11 +281,14 @@ def simulate(
             payback = day + 1
         if day >= 14:
             nets.append(day_net - tax)  # el IRPF de la semana, el día que se declara
+            for key, units in used.items():
+                spent_units[key] = spent_units.get(key, 0) + units
     return Run(
         net_day=sum(nets) / max(1, len(nets)),
         stars=business.stars,
         opening=quote.total,
         payback=payback,
+        units_day={k: v / max(1, len(nets)) for k, v in spent_units.items()},
     )
 
 
@@ -433,13 +445,76 @@ def plantilla(days: int) -> None:
                       f"{payroll:>10,}".replace(",", "."))  # fmt: skip
 
 
+def cadena(days: int) -> None:
+    """Importar con nave frente al mayorista, el gerente y vender (fase 5)."""
+    from bot.services import business_chain as chain_rules
+
+    nave = chain_rules.Nave(1, "telde", 0)
+    nave_night = chain_rules.nave_bill(nave).total
+    print(f"Nave pequeña en Telde: {nave_night:,} Y$ la noche".replace(",", "."))
+    print(f"{'sector':<10} {'quién':<16} {'mayorista/día':>13} {'ahorro/día':>10} "
+          f"{'locales/nave':>12}")  # fmt: skip
+    for sector in SECTORS:
+        barrio = barrios_for(sector)[1]
+        for label, turns, specs in (
+            ("dueño 4 turnos", 4, ()),
+            ("mañana y tarde", 0, (("manana", 4), ("tarde", 4))),
+        ):
+            runs = [
+                simulate(
+                    sector, barrio, turns, PLAYERS["bueno"], days, seed, pool=True,
+                    staff=tuple(hire(50, s, i + 1, j) for i, (s, j) in enumerate(specs)),
+                )
+                for seed in SEEDS
+            ]  # fmt: skip
+            units: dict[str, float] = {}
+            for run in runs:
+                for key, value in (run.units_day or {}).items():
+                    units[key] = units.get(key, 0.0) + value / len(runs)
+            spend = saving = 0.0
+            for product in sector.products:
+                daily = units.get(product.key, 0.0)
+                base, tax = wholesale(product, 1)
+                spend += daily * (base + tax)
+                if chain_rules.can_import(product):
+                    quote = chain_rules.import_quote(product)
+                    saving += daily * quote.saving / quote.units
+            need = math.ceil(nave_night / saving) if saving > 0 else 0
+            print(f"{sector.key:<10} {label:<16} {spend:>13,.0f} {saving:>10,.0f} "
+                  f"{need if need else '—':>12}".replace(",", "."))  # fmt: skip
+    print()
+    print("Contenedor por producto (lo que no caduca):")
+    for sector in SECTORS:
+        for product in sector.products:
+            if not chain_rules.can_import(product):
+                continue
+            quote = chain_rules.import_quote(product)
+            print(f"  {sector.key:<10} {product.key:<12} {quote.total:>8,} frente a "
+                  f"{quote.wholesale:>8,} · AIEM {quote.aiem:>6,} · "
+                  f"{quote.saving:>+8,}".replace(",", "."))  # fmt: skip
+    boss = hire(50, "manana", 9)
+    boss["role"] = staff_rules.MANAGER
+    boss["wage"] = staff_rules.manager_ask(boss["skills"], ())
+    print()
+    print(f"Gerente con todo a 50: {staff_rules.payslip(boss, 'tienda', DAY0).cost:,} Y$ la "
+          "noche (bruto y cuota de la empresa)".replace(",", "."))  # fmt: skip
+    print("Vender la sociedad: el comprador paga 5 veces la media de sus 3 últimas semanas")
+    for weekly in (100_000, 250_000, 500_000):
+        print(f"  {weekly:>9,} Y$ a la semana -> {weekly * chain_rules.CAPITALIZE:>10,} Y$"
+              .replace(",", "."))  # fmt: skip
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--dias", type=int, default=28)
     parser.add_argument("--fase2", action="store_true", help="Mejoras, tamaños y campañas.")
     parser.add_argument("--sociedad", action="store_true", help="Autónomo o sociedad.")
     parser.add_argument("--plantilla", action="store_true", help="Empleados (fase 4).")
+    parser.add_argument("--cadena", action="store_true", help="Nave, gerente y venta (fase 5).")
     args = parser.parse_args()
+    if args.cadena:
+        cadena(args.dias)
+        return
     if args.plantilla:
         plantilla(args.dias)
         return

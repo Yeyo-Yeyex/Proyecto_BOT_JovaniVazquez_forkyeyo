@@ -269,7 +269,7 @@ def test_el_contenedor_lleva_flete_aiem_e_igic_de_importacion() -> None:
     assert parts.aiem == 0  # los recambios no están en el anexo
     assert parts.igic == igic(parts.goods + parts.freight)
     assert parts.saving > 0  # sin AIEM, importar sale a cuenta
-    for key in ("pan", "zumo", "bocadillo", "fruta"):
+    for key in ("pan", "zumo", "bocadillo", "fruta", "leche", "vainilla"):
         item = chain.product_by_key(key)
         assert item is not None and not chain.can_import(item)
 
@@ -317,7 +317,7 @@ async def test_la_nave_importa_y_reparte_a_los_locales_de_su_isla(tmp_path: Path
     nave, quote, _balance = await service.open_nave(GUILD, USER, barrio="telde", size=0)
     assert nave.deposit == quote.deposit > 0
     assert wallet(tmp_path, STATE_ACCOUNT_ID)[1] - state == quote.license
-    with pytest.raises(BusinessError, match="estropea"):
+    with pytest.raises(BusinessError, match="caduca"):
         await service.import_container(GUILD, USER, "bocadillo")
     with pytest.raises(BusinessError, match="vende eso"):
         await service.import_container(GUILD, USER, "bateria")  # no tiene taller

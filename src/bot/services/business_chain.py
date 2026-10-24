@@ -9,7 +9,7 @@ Lógica pura, sin Discord ni base de datos. Un miembro puede llevar varios local
 - **Importar** (`import_quote`): un contenedor de `CONTAINER_LOTS` lotes de un producto,
   directo del fabricante de la Península, más barato que el mayorista pero con su flete, el
   AIEM, el IGIC de la importación y la tasa del agente de aduanas. Llega a las
-  `IMPORT_NIGHTS` noches. Lo que se estropea pronto no se importa.
+  `IMPORT_NIGHTS` noches. Solo lo que no caduca: un contenedor dura semanas.
 - **El gerente** (`restock`): un empleado con el puesto de gerente que no atiende, pero cada
   noche repone el stock de su local (de la nave primero y luego del mayorista) y cubre las
   bajas de la plantilla (`business_staff`).
@@ -75,7 +75,7 @@ NAVE_FIT = 1.0
 #: Lotes de un contenedor (todos del mismo producto).
 CONTAINER_LOTS = 20
 #: Lo que cobra el fabricante frente al mayorista (sin su margen).
-IMPORT_SHARE = 0.6
+IMPORT_SHARE = 0.7
 #: Flete marítimo de un contenedor desde la Península (entra en el valor en aduana).
 FREIGHT = 4_000
 #: Lo que cobra el agente de aduanas por el despacho (DUA), base sin IGIC.
@@ -83,22 +83,19 @@ CUSTOMS_FEE = 1_000
 #: Noches que tarda en llegar: sale del puerto el día que se pide y está en la nave a la
 #: mañana siguiente de la segunda noche.
 IMPORT_NIGHTS = 2
-#: Lo que se estropea esta parte o más cada noche no aguanta el barco.
-IMPORT_MAX_SPOIL = 0.25
 #: AIEM (Arbitrio sobre Importaciones y Entregas de Mercancías en las Islas Canarias, art. 92
 #: y anexo 2.º del Decreto Legislativo 1/2025 de Canarias, vigente en 2026): grava la entrada
 #: de lo que también se produce en las islas. Por producto, de su partida del anexo: el café
-#: tostado (0901.21) al 15 %; los helados (21.05) al 15 %; los zumos (20.09) al 5 %; los
-#: refrescos y bebidas con azúcar (22.02) al 5 %; los detergentes (34.02) al 5 %; las pinturas
-#: al agua (32.09) al 10 %. La leche líquida, las conservas de pescado, los recambios, la
-#: tornillería, las bombillas y las herramientas no están en el anexo; el aceite de motor
-#: salió en 2026 (Ley 9/2025). Interpretaciones del proyecto: el cortado y el barraquito, como
-#: el café; el granizado y el batido, como refrescos; la pintura, al agua; la fontanería y las
-#: cerraduras, fuera del anexo.
+#: tostado (0901.21) al 15 %; los refrescos y bebidas con azúcar (22.02) al 5 %; los
+#: detergentes (34.02) al 5 %; las pinturas al agua (32.09) al 10 %. Las conservas de pescado,
+#: los recambios, la tornillería, las bombillas y las herramientas no están en el anexo; el
+#: aceite de motor salió en 2026 (Ley 9/2025). Interpretaciones del proyecto: el cortado y el
+#: barraquito, como el café; el granizado, como un refresco; la pintura, al agua; la
+#: fontanería y las cerraduras, fuera del anexo. Solo se importa lo que no caduca: los helados
+#: (21.05, al 15 %) y la leche no llegan a importarse.
 AIEM: dict[str, float] = {
     "cafe": 0.15, "cortado": 0.15, "barraquito": 0.15, "bebidas": 0.05, "limpieza": 0.05,
-    "vainilla": 0.15, "chocolate": 0.15, "gofio": 0.15, "mango": 0.15, "granizado": 0.05,
-    "pintura": 0.10,
+    "granizado": 0.05, "pintura": 0.10,
 }  # fmt: skip
 
 
@@ -275,20 +272,6 @@ def nave_bill(nave: Nave) -> NaveBill:
     return NaveBill(base, igic(base), round(base * 0.19), utilities, igic(utilities))
 
 
-def spoil_nave(nave: Nave) -> int:
-    """Quita lo que se estropea esta noche en la nave (sin cámaras: como en un local sin
-    mejoras) y devuelve las unidades perdidas."""
-    lost = 0
-    for key, units in list(nave.stock.items()):
-        item = product_by_key(key)
-        gone = math.ceil(units * item.spoil) if item is not None and item.spoil and units else 0
-        if gone:
-            nave.stock[key] = units - gone
-            lost += gone
-    nave.stock = {k: v for k, v in nave.stock.items() if v > 0}
-    return lost
-
-
 def stock_value(nave: Nave) -> int:
     """Lo que costó al mayorista el stock de la nave (sin IGIC)."""
     return sum(
@@ -337,8 +320,8 @@ class ImportQuote:
 
 
 def can_import(product: Product) -> bool:
-    """Si aguanta el barco: lo que se estropea pronto no se importa."""
-    return product.spoil < IMPORT_MAX_SPOIL
+    """Si se puede importar: lo que caduca no aguanta las semanas que dura un contenedor."""
+    return not product.spoil
 
 
 def import_quote(product: Product) -> ImportQuote:

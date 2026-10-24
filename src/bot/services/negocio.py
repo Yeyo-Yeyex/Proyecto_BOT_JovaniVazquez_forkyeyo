@@ -782,12 +782,17 @@ class BusinessService:
             return await self.repository.save(guild_id, business)
 
     async def take_news(self, guild_id: int, user_id: int, biz: int | None = None) -> list[str]:
-        """Los avisos guardados de un local (las noches) y los borra."""
+        """Los avisos guardados de un local (las noches) y los de la nave, y los borra."""
         async with self._lock(guild_id, user_id):
+            news: list[str] = []
+            nave = await self.repository.nave(guild_id, user_id)
+            if nave is not None and nave.news:
+                news, nave.news = list(nave.news), []
+                await self.repository.save_nave(guild_id, nave)
             business = await self.repository.business(guild_id, user_id, biz)
             if business is None or not business.news:
-                return []
-            news, business.news = business.news, []
+                return news
+            news, business.news = [*business.news, *news], []
             await self.repository.save(guild_id, business)
             return news
 
@@ -3222,7 +3227,7 @@ class BusinessService:
             raise BusinessError("Ese producto no existe.")
         if not chain.can_import(item):
             raise BusinessError(
-                f"{item.name}: se estropea antes de llegar. Eso se compra al mayorista."
+                f"{item.name} caduca: no aguanta lo que dura un contenedor. Eso, al mayorista."
             )
         quote = chain.import_quote(item)
         async with self._lock(guild_id, user_id):
@@ -3389,8 +3394,8 @@ class BusinessService:
     async def _close_nave_night(
         self, guild_id: int, user_id: int, day: date, now: float
     ) -> list[str]:
-        """La noche de la nave: llegan los contenedores, se estropea lo perecedero y se paga el
-        alquiler y los suministros, hasta donde llegue (como un local: el alquiler lleva IGIC y
+        """La noche de la nave: llegan los contenedores y se paga el alquiler y los
+        suministros, hasta donde llegue (como un local: el alquiler lleva IGIC y
         la retención del casero). A las `NAVE_EVICTION_NIGHTS` noches sin pagar, o si una nave
         propia deja de ser entera suya, se cierra. El candado lo tiene quien llama.
 
@@ -3424,9 +3429,6 @@ class BusinessService:
                 else:
                     keep.append(order)
             nave.orders = keep
-            spoiled = chain.spoil_nave(nave)
-            if spoiled:
-                nave.tell(f"🗑️ En la nave se estropearon {spoiled} unidades.")
             bill = chain.nave_bill(nave)
             debt = nave.rent_debt
             bills = []

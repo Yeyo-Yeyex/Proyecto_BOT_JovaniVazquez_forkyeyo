@@ -1463,9 +1463,7 @@ class PalaPanel(ui.LayoutView):
             if status is None and business is not None
             else None
         )
-        return dia_state(
-            self._name, self.service.now(), agenda, status, business, battery, locales
-        )
+        return dia_state(self._name, self.service.now(), agenda, status, business, battery, locales)
 
     async def show_home_screen(self, interaction: discord.Interaction | None) -> None:
         """Pinta el inicio y lo pone en el mensaje."""

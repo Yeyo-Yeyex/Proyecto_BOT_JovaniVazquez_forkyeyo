@@ -113,7 +113,7 @@ STAFF_CAP = (2, 4, 6)
 #: Fase 5: el puesto de gerente (`employee["role"]`; los demás, `""`), uno por local y a jornada
 #: completa, y lo que pide de más frente a un dependiente que sepa lo mismo (un encargado).
 MANAGER = "gerente"
-MANAGER_PREMIUM = 1.3
+MANAGER_PREMIUM = 1.2
 #: Candidatos que llegan cada día.
 CANDIDATES_PER_DAY = 3
 

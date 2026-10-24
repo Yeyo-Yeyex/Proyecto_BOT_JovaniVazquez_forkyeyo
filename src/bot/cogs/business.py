@@ -1523,7 +1523,7 @@ class NegocioPanel(ui.LayoutView):
                     value=key,
                     emoji=PRODUCT_EMOJI.get(key),
                     description=(
-                        "Se estropea en el barco: al mayorista"
+                        "Caduca: se compra al mayorista"
                         if not chain.can_import(item)
                         else f"Contenedor {format_amount(quote.total)} · {signed(quote.saving)}"
                     )[:100],
