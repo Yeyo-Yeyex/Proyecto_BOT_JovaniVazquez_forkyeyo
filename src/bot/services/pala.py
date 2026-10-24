@@ -225,6 +225,10 @@ class BusinessLink(Protocol):
         """Cuándo abrió su negocio por última vez (`None` si nunca)."""
         ...
 
+    async def reset_franjas(self, guild_id: int, user_id: int) -> None:
+        """Pone a cero sus turnos de hoy en el negocio (`WorkService.reset_day`)."""
+        ...
+
 
 def branch_quality(contract: Contract) -> float:
     """Calidad de lo cotizado en la rama en curso (`work.contribution_quality`).
@@ -1932,6 +1936,35 @@ class WorkService:
             contract.battery = before - cost
             await self.repository.save_contract(guild_id, user_id, contract)
             return before
+
+    async def reset_day(self, guild_id: int, user_id: int) -> bool:
+        """Empieza el día de nuevo: el `amanece` de Yeyo (`bot.cogs.admin`).
+
+        Vacía las franjas de hoy del curro (jornada fichada, horas extra, guardias y
+        estudio) y del negocio, el límite semanal de horas extra, y llena la batería.
+        El saliente de guardia sigue. Sin contrato, solo la batería y el negocio.
+
+        Returns:
+            Si tiene contrato.
+        """
+        async with self._lock(guild_id, user_id):
+            now = self._clock()
+            contract = await self._contract(guild_id, user_id)
+            if contract is None:
+                await self.repository.save_person_battery(
+                    guild_id, user_id, float(BATTERY_MAX), now
+                )
+            else:
+                roll_over_day(contract, now)
+                settle(contract, now)
+                contract.battery = float(BATTERY_MAX)
+                contract.shifts_today = contract.extras_week = 0
+                contract.franjas = {}
+                await self.repository.save_contract(guild_id, user_id, contract)
+        # Fuera del candado: el negocio coge el suyo y luego el de la pala (`start_turn`).
+        if self.business is not None:
+            await self.business.reset_franjas(guild_id, user_id)
+        return contract is not None
 
     async def battery(self, guild_id: int, user_id: int) -> float:
         """Batería de ahora (con la recarga), tenga contrato o no. Solo lee."""

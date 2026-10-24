@@ -8,6 +8,10 @@ criterio.
 
 ## 9.x
 
+### 9.17.1 · 2026-10-24
+
+- Hotfix: arreglo menor de la 9.17.0
+
 ### 9.17.0 · 2026-10-24
 
 - Hacienda: `hacienda` es un panel con pestañas (Resumen, Impuestos, Contribuyentes, Caseros y Empresarios): el saldo del Estado en grande, barras con lo que aporta cada impuesto y el podio de quien más paga
