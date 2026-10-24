@@ -4,8 +4,8 @@ Robuso es un miembro del servidor (`ROBUSO_ID`) y una broma interna del grupo: s
 fotos de Hong Kong, sus quejas de los compañeros del curro, su música alternativa, sus
 juegos «tipo Robuso» (indies, pixelados o que solo juega él), el bajo, decir que viene a
 jugar y no venir, y que el resto son sus «amigos de Discord». La categoría tiene logros
-que solo puede conseguir él (su descripción empieza por «Solo Robuso:») y otros para los
-demás por tratar con él. No sale en el menú de logros hasta conseguir uno de los suyos
+que solo puede conseguir él (su descripción no lo dice, para que quede la duda) y otros
+para los demás por tratar con él. No sale en el menú de logros hasta conseguir uno de los suyos
 (`Category.secret` en `bot.services.achievements`).
 
 Aquí está lo puro: qué cuenta de un mensaje, de un juego y de lo que ya suman otros
