@@ -105,6 +105,7 @@ from bot.services.housing_catalog import (
     listings_of,
 )
 from bot.services.housing_furniture import furniture_stars, nomad_boost
+from bot.services.housing_streets import STREET_UNIT_BY_KEY, units_of_barrio
 from bot.services.levels import local_day
 from bot.services.taxes import (
     INCOME_BUSINESS,
@@ -305,7 +306,7 @@ class Market:
 
     def base(self, key: str) -> Listing | None:
         """El inmueble de una clave, sin sus reformas."""
-        listing = LISTING_BY_KEY.get(key)
+        listing = LISTING_BY_KEY.get(key) or STREET_UNIT_BY_KEY.get(key)
         if listing is None and (promotion := self.promotions.get(key)) is not None:
             listing = promotion.listing
         if listing is None and (parent := rules.parent_key(key)) is not None:
@@ -356,13 +357,14 @@ class Market:
         return rules.improved(listing, done) if done else listing
 
     def keys(self) -> list[str]:
-        """Las claves de todos los inmuebles del servidor: el catálogo y luego la obra nueva.
+        """Las claves de todos los inmuebles del servidor: el catálogo, las unidades de las
+        calles y la obra nueva.
 
         Uno dividido por plantas deja su sitio a sus plantas. Las habitaciones no salen: sus
         participaciones son las del piso (`room_keys`).
         """
         out: list[str] = []
-        for key in (*LISTING_BY_KEY, *self.promotions):
+        for key in (*LISTING_BY_KEY, *STREET_UNIT_BY_KEY, *self.promotions):
             if self.split_mode(key) == rules.FLOORS:
                 out.extend(unit.key for unit in self.units_of(key))
             else:
@@ -379,9 +381,11 @@ class Market:
         return self.indexes.get(barrio, 1.0)
 
     def index_level(self, barrio: str) -> float:
-        """El índice al que tiende un barrio con lo que tienen comprado los miembros."""
+        """El índice al que tiende un barrio con lo que tienen comprado los miembros (en sus
+        destacados, la obra nueva y las unidades de sus calles)."""
         items: list[Listing] = []
-        for item in self.listings_of(barrio):
+        streets = tuple(self._improved(unit) for unit in units_of_barrio(barrio))
+        for item in (*self.listings_of(barrio), *streets):
             if self.split_mode(item.key) == rules.FLOORS:
                 items.extend(self._improved(unit) for unit in self.units_of(item.key))
             else:

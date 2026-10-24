@@ -247,8 +247,9 @@ async def test_el_barrio_pone_sus_botones_en_dos_filas_de_cinco_como_las_tarjeta
     assert solar.label == "🚧 10 · Solar" and solar.disabled and solar.row == 2
     assert buttons["pisos:mapa"].row == buttons["pisos:cartera"].row == 3
     rows = [b.row for b in buttons.values()]
-    assert [rows.count(r) for r in (1, 2, 3)] == [5, 5, 2]
-    assert len(panel.children) == 1 + 12 <= 25  # el desplegable y los doce botones
+    assert [rows.count(r) for r in (1, 2, 3)] == [5, 5, 3]
+    assert buttons["pisos:calles"].row == 3  # 🗺️ Calles (9.14.0)
+    assert len(panel.children) == 1 + 13 <= 25  # el desplegable y los trece botones
     # Un clic atrasado en el hueco del solar no abre nada.
     await panel._open_listing(clicked(ana, [], custom_id="pisos:ver:9"))
     assert panel.screen == BARRIO
@@ -269,7 +270,7 @@ async def test_con_obra_nueva_la_decima_tarjeta_es_un_boton_que_abre_su_ficha(
     kind = KINDS[panel.market.promotions["obra_1"].listing.kind].name
     assert obra.label == f"🏗️ 10 · {kind}" and not obra.disabled and obra.row == 2
     assert not any("Solar" in (b.label or "") for b in buttons.values())
-    assert len(panel.children) == 1 + 12 <= 25
+    assert len(panel.children) == 1 + 13 <= 25
     panel._go = AsyncMock()  # type: ignore[method-assign]  # sin base de datos: el mercado es de mentira
     click = clicked(ana, [], custom_id="pisos:ver:9")
     await panel._open_listing(click)
@@ -305,7 +306,7 @@ async def test_desde_un_barrio_se_precargan_las_fichas_una_a_una_el_mapa_y_la_ca
         keys = [key for screen, key in painted if screen == "ficha"]
         assert keys == [item.key for item in market.listings_of("taco")] and len(keys) == fichas
         assert sorted(screen for screen, _ in painted) == sorted(
-            ["cartera", "mapa"] + ["ficha"] * fichas
+            ["calles", "cartera", "mapa"] + ["ficha"] * fichas
         )
     assert set(sizes) == {1}  # de una en una, nunca varias a la vez
 

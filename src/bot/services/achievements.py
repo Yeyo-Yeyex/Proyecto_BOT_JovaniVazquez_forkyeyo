@@ -125,12 +125,24 @@ from bot.services.horses import Pick as HorsePick
 from bot.services.horses import RaceCard as HorseCard
 from bot.services.horses import RaceResult as HorseResult
 from bot.services.housing import OVERBURDEN as HOUSING_OVERBURDEN
-from bot.services.housing_catalog import BARRIO_BY_KEY, ROOM_KIND
+from bot.services.housing import SHARES as HOUSING_SHARES
+from bot.services.housing_catalog import BARRIO_BY_KEY, LISTING_BY_KEY, ROOM_KIND
 from bot.services.housing_catalog import BARRIO_NEWS as HOUSING_NEWS
 from bot.services.housing_catalog import KINDS as HOUSING_KINDS
 from bot.services.housing_catalog import REFORMS as HOUSING_REFORMS
 from bot.services.housing_catalog import TENANTS as HOUSING_TENANTS
 from bot.services.housing_catalog import THEMES as HOUSING_THEMES
+from bot.services.housing_streets import (
+    APARCAMIENTO,
+    BLOQUE,
+    GUARDAMUEBLES,
+    PANTALAN,
+    STREET_UNIT_BY_KEY,
+    building_of,
+)
+from bot.services.housing_streets import BUILDING_BY_KEY as STREET_BUILDING_BY_KEY
+from bot.services.housing_streets import BUILDINGS as STREET_BUILDINGS
+from bot.services.housing_streets import HOMES as STREET_HOMES
 from bot.services.interest import (
     INTEREST_DAILY_MAX,
     INTEREST_TIERS,
@@ -678,6 +690,10 @@ PISOS_ROOM_TENANTS_STAT = "pisos_room_tenants"
 #: Fase 4: un contador por reforma hecha; las distintas, en `with_derived`.
 PISOS_REFORM_PREFIX = "pisos_reform_"
 PISOS_REFORM_KINDS_STAT = "pisos_reform_kinds"
+#: 9.14.0: un contador por edificio de las calles visto por dentro; los distintos, en
+#: `with_derived`.
+PISOS_BUILDING_PREFIX = "pisos_bldg_"
+PISOS_BUILDINGS_SEEN_STAT = "pisos_buildings_seen"
 PISOS_NEWS_STAT = "pisos_news"
 PISOS_KINDS_STAT = "pisos_kinds"
 PISOS_THEMES_STAT = "pisos_themes"
@@ -8711,6 +8727,67 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("pisos", "pisos_auction_deserted", [
         (1, "pisos_deserted_1", "Nadie da un duro",
          "Que tu subasta acabe sin una sola puja.", R, True),
+    ])  # fmt: skip
+
+    # 9.14.0: las calles, sus edificios y sus unidades nuevas
+    a += _tiers("pisos", "pisos_streets_opened", [
+        (1, "pisos_streets_1", "Calle Melancolía", "Abre 🗺️ Calles en un barrio.", C),
+    ])  # fmt: skip
+    a += _tiers("pisos", PISOS_BUILDINGS_SEEN_STAT, [
+        (10, "pisos_bldg_seen_10", "13, Rue del Percebe",
+         "Mira por dentro 10 edificios distintos de las calles.", C),
+        (50, "pisos_bldg_seen_50", "Inspector de la ITE",
+         "Mira por dentro 50 edificios distintos de las calles.", C),
+        (len(STREET_BUILDINGS), "pisos_bldg_seen_all", "Catastro con patas",
+         f"Mira por dentro los {len(STREET_BUILDINGS)} edificios de las calles.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_street_units_max", [
+        (1, "pisos_street_units_1", "Bienvenido, Mr. Vecino",
+         "Compra participaciones de una unidad nueva de una calle.", C),
+        (5, "pisos_street_units_5", "Casitas verdes del Monopoly",
+         "Ten participaciones en 5 unidades nuevas de las calles a la vez.", R),
+        (25, "pisos_street_units_25", "El Pocero de Seseña",
+         "Ten participaciones en 25 unidades nuevas de las calles a la vez.", E),
+        (100, "pisos_street_units_100", "SimCity sin alcalde",
+         "Ten participaciones en 100 unidades nuevas de las calles a la vez.", L),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_buildings_max", [
+        (5, "pisos_buildings_5", "Cinco portales y ningún ascensor",
+         "Ten algo en 5 edificios distintos de las calles a la vez.", R),
+        (25, "pisos_buildings_25", "Un portal en cada puerto",
+         "Ten algo en 25 edificios distintos de las calles a la vez.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_streets_barrio_max", [
+        (3, "pisos_streets_barrio_3", "Tres en raya de callejero",
+         "Ten algo en las tres calles de un mismo barrio.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_pack", [
+        (1, "pisos_pack_1", "Menú del día con plaza y trastero",
+         "Ten una vivienda, una plaza de garaje y un trastero en el mismo edificio.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_whole_bloque", [
+        (1, "pisos_whole_bloque_1", "La comunidad soy yo",
+         "Ten enteras todas las unidades de un bloque de pisos de al menos 6.", L),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_whole_guardamuebles", [
+        (1, "pisos_whole_guardamuebles_1", "Diógenes con escrituras",
+         "Ten enteros todos los trasteros de un guardamuebles.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_whole_aparcamiento", [
+        (1, "pisos_whole_aparcamiento_1", "Zona azul de mi propiedad",
+         "Ten enteras todas las plazas de un aparcamiento.", E, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_whole_pantalan", [
+        (1, "pisos_whole_pantalan_1", "La Armada Invencible, amarrada",
+         "Ten enteros todos los amarres de un pantalán.", E, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_attic_basement", [
+        (1, "pisos_attic_basement_1", "Bocadillo sin chicha",
+         "Ten entero el ático y todo el sótano de un mismo bloque de pisos.", E, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_above_shop", [
+        (1, "pisos_above_shop_1", "Bajar a la tienda en zapatillas",
+         "Ten enteros una vivienda y un local del bajo del mismo bloque de pisos.", R, True),
     ])  # fmt: skip
 
     # 🏛️ Economía y Hacienda -------------------------------------------------------------
@@ -20928,6 +21005,9 @@ def with_derived(stats: Mapping[str, int]) -> dict[str, int]:
     full[PISOS_REFORM_KINDS_STAT] = sum(
         1 for r in HOUSING_REFORMS if stats.get(f"{PISOS_REFORM_PREFIX}{r.key}", 0) > 0
     )
+    full[PISOS_BUILDINGS_SEEN_STAT] = sum(
+        1 for b in STREET_BUILDINGS if stats.get(f"{PISOS_BUILDING_PREFIX}{b.key}", 0) > 0
+    )
     full[PISOS_THEMES_STAT] = len(
         {
             barrio.theme
@@ -25387,16 +25467,21 @@ def market_outbid_stats() -> StatDelta:
 
 
 def housing_panel_stats(
-    *, screen: str, level: str | None = None, squatters: bool = False
+    *,
+    screen: str,
+    level: str | None = None,
+    squatters: bool = False,
+    building: str | None = None,
 ) -> StatDelta:
     """Estadísticas de usar el panel de `pisos`.
 
     Args:
         screen: `abrir` (el comando), `renta` (cambiar la renta que se pide),
             `desahucio` (pedirlo), `atajo` (el botón 👥 Candidatos) o una pantalla (solo
-            cuenta `candidatos`).
+            cuenta `candidatos`, `calles` y `edificio`).
         level: La renta elegida, con `renta`.
         squatters: Si el desahucio es de okupas.
+        building: La clave del edificio que se ve, con `edificio`.
     """
     add: dict[str, int] = {}
     if screen == "abrir":
@@ -25413,7 +25498,68 @@ def housing_panel_stats(
         add["pisos_candidates_seen"] = 1
     elif screen == "atajo":
         add["pisos_shortcut"] = 1
+    elif screen == "calles":
+        add["pisos_streets_opened"] = 1
+    elif screen == "edificio" and building:
+        add[f"{PISOS_BUILDING_PREFIX}{building}"] = 1
     return StatDelta(add=add)
+
+
+def _unit_kind(key: str) -> str:
+    item = STREET_UNIT_BY_KEY.get(key) or LISTING_BY_KEY.get(key)
+    return item.kind if item is not None else ""
+
+
+def housing_streets_stats(shares: Mapping[str, int]) -> StatDelta:
+    """Lo que tiene un miembro en los edificios de las calles de `pisos`, como máximos.
+
+    Args:
+        shares: Sus participaciones por inmueble (una planta o una habitación, con su clave).
+    """
+    whole = {key for key, n in shares.items() if n >= HOUSING_SHARES}
+    held: dict[str, set[str]] = {}  # edificio -> unidades en que tiene algo
+    for key in shares:
+        if (found := building_of(key)) is not None:
+            held.setdefault(found.key, set()).add(key.split("~")[0])
+    streets: dict[str, set[str]] = {}
+    for key in held:
+        b = STREET_BUILDING_BY_KEY[key]
+        streets.setdefault(b.barrio, set()).add(b.street)
+    new_units = {key.split("~")[0] for key in shares} & STREET_UNIT_BY_KEY.keys()
+    peak = {
+        "pisos_street_units_max": len(new_units),
+        "pisos_buildings_max": len(held),
+        "pisos_streets_barrio_max": max(map(len, streets.values()), default=0),
+    }
+    for key, units in held.items():
+        b = STREET_BUILDING_BY_KEY[key]
+        kinds = {_unit_kind(k) for k in units}
+        complete = all(u.key in whole for u in b.units)
+        whole_kinds = {(_unit_kind(u.key), u.level) for u in b.units if u.key in whole}
+        cellar = [u for u in b.units if u.level == -1]
+        for stat, hit in (
+            ("pisos_pack", bool(kinds & STREET_HOMES) and {"garaje", "trastero"} <= kinds),
+            ("pisos_whole_bloque", complete and b.kind == BLOQUE and len(b.units) >= 6),
+            ("pisos_whole_guardamuebles", complete and b.kind == GUARDAMUEBLES),
+            ("pisos_whole_aparcamiento", complete and b.kind == APARCAMIENTO),
+            ("pisos_whole_pantalan", complete and b.kind == PANTALAN),
+            (
+                "pisos_attic_basement",
+                b.kind == BLOQUE
+                and bool(cellar)
+                and all(u.key in whole for u in cellar)
+                and any(kind == "atico" for kind, _level in whole_kinds),
+            ),
+            (
+                "pisos_above_shop",
+                b.kind == BLOQUE
+                and ("local", 0) in whole_kinds
+                and any(kind in STREET_HOMES and level > 0 for kind, level in whole_kinds),
+            ),
+        ):
+            if hit:
+                peak[stat] = 1
+    return StatDelta(peak=peak)
 
 
 def housing_purchase_stats(

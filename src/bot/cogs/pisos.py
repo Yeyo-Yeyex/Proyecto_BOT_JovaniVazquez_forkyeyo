@@ -33,6 +33,10 @@ vende entero y se puede volver a juntar). La pantalla de plantas o habitaciones 
 botón por cada una. El botón verde 👥 Candidatos (del mapa, el barrio, Mis pisos y esa
 pantalla) solo sale si alguien espera en algo en que decides tú, y lleva de uno a otro.
 
+Calles (9.14.0): desde el barrio, 🗺️ Calles abre el plano de sus tres calles con sus nueve
+edificios (el N es el de la tarjeta N), y cada edificio se ve en corte, con un desplegable
+de sus unidades que abre la ficha de cada una.
+
 Dinero (todo por `EconomyService.housing`, impuestos en su docstring): comprar
 participaciones (ITP del 6,5 % al Estado, notaría que desaparece), venderlas al
 mercado (agencia, deudas del piso e IRPF de la ganancia) y, cada noche, la renta de
@@ -106,6 +110,7 @@ from bot.services.achievements import (
     housing_panel_stats,
     housing_purchase_stats,
     housing_sale_stats,
+    housing_streets_stats,
     housing_tax_stats,
     loan_night_stats,
     remortgage_executed_stats,
@@ -126,6 +131,13 @@ from bot.services.housing_catalog import (
 )
 from bot.services.housing_market import HousingService
 from bot.services.housing_scene import HousingScene
+from bot.services.housing_streets import (
+    BUILDING_BY_KEY,
+    STREET_UNIT_BY_KEY,
+    building_of,
+    buildings_of,
+    streets_of,
+)
 from bot.services.levels import TIMEZONE
 from bot.services.pending import Pending
 from bot.services.pets import Event, Moment
@@ -156,6 +168,7 @@ MAPA, BARRIO, FICHA, CARTERA, CAJA, VPO = "mapa", "barrio", "ficha", "cartera", 
 GESTION, CANDIDATOS, SUBASTAS = "gestion", "candidatos", "subastas"
 REFORMAS, IMPREVISTOS, RESENAS, JUNTA = "reformas", "imprevistos", "resenas", "junta"
 PLANTAS, DIVIDIR = "plantas", "dividir"
+CALLES, EDIFICIO = "calles", "edificio"
 #: Minutos que tienen el inquilino que es miembro y los copropietarios para quedarse lo que
 #: se vende a otro (tanteo del art. 25 LAU y retracto de comuneros del art. 1522 CC).
 PREFERENCE_SECONDS = 10 * 60
@@ -515,6 +528,8 @@ class Panel(ui.View):
         self.screen = MAPA
         self.barrio = BARRIOS[0].key
         self.listing = listings_of(self.barrio)[0].key
+        #: El edificio de la pantalla 🏢 Edificio.
+        self.building = f"{self.barrio}_e1"
         #: Caja abierta: `(vende, participaciones)`.
         self.pending: tuple[bool, int] | None = None
         #: Si la compra de la caja va con hipoteca.
@@ -557,11 +572,20 @@ class Panel(ui.View):
         self.cash = await self.cog.economy.balance(self.guild.id, self.owner.id)
 
     async def _state(
-        self, screen: str, *, barrio: str | None = None, listing: str | None = None
+        self,
+        screen: str,
+        *,
+        barrio: str | None = None,
+        listing: str | None = None,
+        building: str | None = None,
     ) -> dict[str, Any]:
         market, me = self.market, self.owner.id
         names = self._names(market)
         today = self.cog.service.today()
+        if screen == CALLES:
+            return view.streets_state(market, barrio or self.barrio, me, today)
+        if screen == EDIFICIO:
+            return view.building_state(market, building or self.building, me, names, today)
         if screen == BARRIO:
             return view.barrio_state(market, barrio or self.barrio, me, names, today)
         if screen == FICHA:
@@ -735,7 +759,17 @@ class Panel(ui.View):
             return [(CARTERA, {}), (VPO, {})] + [(BARRIO, {"barrio": b.key}) for b in barrios]
         if self.screen == BARRIO:
             fichas = [(FICHA, {"listing": i.key}) for i in self.market.listings_of(self.barrio)]
-            return [*fichas, (MAPA, {}), (CARTERA, {})]
+            return [*fichas, (CALLES, {}), (MAPA, {}), (CARTERA, {})]
+        if self.screen == CALLES:
+            buildings = [
+                (EDIFICIO, {"building": b.key})
+                for street in streets_of(self.barrio)
+                for b in buildings_of(street.key)
+            ]
+            return [*buildings, (BARRIO, {}), (MAPA, {})]
+        if self.screen == EDIFICIO:
+            units = view.building_units(self.market, BUILDING_BY_KEY[self.building])
+            return [*((FICHA, {"listing": u.key}) for u in units[:6]), (CALLES, {})]
         if self.screen == FICHA:
             barrio = self._at(self.listing).barrio
             mine = me in self.market.shares_of(self.listing)
@@ -800,6 +834,7 @@ class Panel(ui.View):
             self.screen,
             self.barrio,
             self.listing,
+            self.building,
             self.pending,
             self.financed,
             self.done is None,
@@ -896,9 +931,15 @@ class Panel(ui.View):
                     row=1 + slot // BARRIO_COLS,
                     disabled=True,
                 )
+            self._button("🗺️ Calles", "calles", self._go_streets, row=3,
+                         style=discord.ButtonStyle.primary)  # fmt: skip
             self._button("🗺️ Mapa", "mapa", self._go_map, row=3)
             self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=3)
             self._waiting_button(row=3)
+        elif self.screen == CALLES:
+            self._streets_buttons()
+        elif self.screen == EDIFICIO:
+            self._building_buttons()
         elif self.screen == FICHA:
             self._ficha_buttons()
         elif self.screen == CARTERA:
@@ -1083,6 +1124,8 @@ class Panel(ui.View):
         if rules.parent_key(key) is not None:
             back = "◀ Habitaciones" if room else "◀ Plantas"
             self._button(back, "volver", self._go_parent, row=3)
+        elif key in STREET_UNIT_BY_KEY:
+            self._button("◀ Su edificio", "volver", self._go_own_building, row=3)
         else:
             barrio = BARRIO_BY_KEY[self._at(key).barrio].name
             self._button(f"◀ {barrio}"[:80], "volver", self._go_barrio, row=3)
@@ -1264,6 +1307,52 @@ class Panel(ui.View):
                 style=discord.ButtonStyle.success,
             )  # fmt: skip
 
+    def _streets_buttons(self) -> None:
+        """🗺️ Calles: un botón por edificio, una fila por calle, con el número de su tarjeta."""
+        for row, street in enumerate(streets_of(self.barrio), start=1):
+            for building in buildings_of(street.key):
+                slot = building.key.rsplit("_e", 1)[1]
+                mine = any(
+                    self.owner.id in self.market.shares_of(u.key)
+                    for u in view.building_units(self.market, building)
+                )
+                self._button(
+                    f"{slot} · {building.name}", f"edificio:{slot}", self._open_building, row=row,
+                    style=discord.ButtonStyle.success if mine else discord.ButtonStyle.primary,
+                )  # fmt: skip
+        barrio = BARRIO_BY_KEY[self.barrio].name
+        self._button(f"◀ {barrio}"[:80], "barrio", self._back_to_barrio, row=4)
+        self._button("🗺️ Mapa", "mapa", self._go_map, row=4)
+        self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=4)
+        self._waiting_button(row=4)
+
+    def _building_buttons(self) -> None:
+        """🏢 Edificio: el desplegable de sus unidades, en el orden de los números del corte."""
+        building = BUILDING_BY_KEY[self.building]
+        state = view.building_state(self.market, building.key, self.owner.id, {})
+        units = sorted((u for f in state["floors"] for u in f["units"]), key=lambda u: u["slot"])
+        pick: ui.Select = ui.Select(
+            placeholder="Elige una unidad para ver su ficha",
+            custom_id=f"{GAME}:unidad",
+            row=1,
+            options=[
+                discord.SelectOption(
+                    label=f"{u['slot']} · {u['label']} · {u['kind_name']}"[:100],
+                    value=u["key"],
+                    description=f"{u['use']} · {u['owner']} · {u['price']}"[:100],
+                )
+                for u in units[:MAX_OPTIONS]
+            ],
+        )
+        pick.callback = self._pick_unit  # type: ignore[method-assign]
+        self.add_item(pick)
+        self._button("◀ Calles", "calles", self._go_streets, row=2)
+        barrio = BARRIO_BY_KEY[building.barrio].name
+        self._button(f"◀ {barrio}"[:80], "barrio", self._back_to_barrio, row=2)
+        self._button("🗺️ Mapa", "mapa", self._go_map, row=2)
+        self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=2)
+        self._waiting_button(row=2)
+
     def _waiting_keys(self) -> list[str]:
         """Dónde decides tú y esperan candidatos (pisos, plantas y habitaciones). Solo memoria."""
         today, me, market = self.cog.service.today(), self.owner.id, self.market
@@ -1423,7 +1512,7 @@ class Panel(ui.View):
             self.cog.bot,
             self.guild.id,
             self.owner.id,
-            housing_panel_stats(screen=screen),
+            housing_panel_stats(screen=screen, building=self.building),
             getattr(interaction.channel, "id", None),
         )
 
@@ -1441,6 +1530,38 @@ class Panel(ui.View):
 
     async def _go_reforms(self, interaction: discord.Interaction) -> None:
         await self._go(interaction, REFORMAS)
+
+    async def _go_streets(self, interaction: discord.Interaction) -> None:
+        await self._go(interaction, CALLES)
+
+    async def _back_to_barrio(self, interaction: discord.Interaction) -> None:
+        await self._go(interaction, BARRIO)
+
+    async def _open_building(self, interaction: discord.Interaction) -> None:
+        custom_id = interaction.data.get("custom_id", "") if interaction.data else ""
+        key = f"{self.barrio}_e{custom_id.rsplit(':', 1)[-1]}"
+        if key not in BUILDING_BY_KEY:
+            await ack(interaction)
+            return
+        self.building = key
+        await self._go(interaction, EDIFICIO)
+
+    async def _go_own_building(self, interaction: discord.Interaction) -> None:
+        """De la ficha de una unidad de una calle a su edificio en corte."""
+        building = building_of(self.listing)
+        if building is None:
+            await ack(interaction)
+            return
+        self.building, self.barrio = building.key, building.barrio
+        await self._go(interaction, EDIFICIO)
+
+    async def _pick_unit(self, interaction: discord.Interaction) -> None:
+        values = interaction.data.get("values", []) if interaction.data else []
+        if not values or self.market.listing(values[0]) is None:
+            await ack(interaction)
+            return
+        self.listing = values[0]
+        await self._go(interaction, FICHA)
 
     async def _go_split(self, interaction: discord.Interaction) -> None:
         await self._go(interaction, DIVIDIR)
@@ -1733,16 +1854,20 @@ class Panel(ui.View):
         done, _balance = result
         quote = done.quote
         self.screen = PLANTAS
+        # Los logros cuentan plantas o habitaciones, no los trasteros de un edificio.
+        storage = rules.storage_of(self._at(self.listing)) if mode == rules.FLOORS else 0
         await self._done(interaction, Event.BUY, housing_action_stats(
-            mode, amount=quote.total, units=quote.units, mortgaged=mortgaged,
+            mode, amount=quote.total, units=quote.units - storage, mortgaged=mortgaged,
         ))  # fmt: skip
         if mode == rules.FLOORS:
+            extra = f" (con un local en el bajo y {storage} trasteros)" if storage else ""
             text = (
-                f"🏢 Obras hasta el {done.until:%d/%m}: {quote.units} plantas por "
-                f"{format_amount(quote.cost)} de obra, {format_amount(quote.igic)} de IGIC, "
+                f"🏢 Obras hasta el {done.until:%d/%m}: {quote.units - storage} plantas{extra} "
+                f"por {format_amount(quote.cost)} de obra, {format_amount(quote.igic)} de IGIC, "
                 f"{format_amount(quote.icio)} de ICIO, {format_amount(quote.license)} de "
-                f"licencia y {format_amount(quote.ajd)} de AJD de la escritura. Cada planta es ya "
+                f"licencia y {format_amount(quote.ajd)} de AJD de la escritura. Cada uno es ya "
                 "un inmueble: con su inquilino, su hipoteca y su precio, y se vende por separado."
+                + (" En el local puedes montar tu negocio." if storage else "")
             )
         else:
             text = (
@@ -3355,6 +3480,7 @@ class Pisos(commands.Cog):
                     for item in listings_of(listing.barrio)
                 ),
             )
+            delta.merge(housing_streets_stats({h.listing: h.shares for h in mine}))
         else:
             delta = housing_sale_stats(
                 shares=deal.quote.shares,
