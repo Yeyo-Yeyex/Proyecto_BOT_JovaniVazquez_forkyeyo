@@ -877,15 +877,15 @@ def _phase5(today: date) -> dict[str, dict[str, Any]]:
         [hardware, garage, ice, cafe], nave, selected=garage.id
     )
 
-    products = ["cafe", "cortado", "barraquito", "conservas", "limpieza", "bebidas", "gofio"]
+    products = ["cafe", "cortado", "barraquito", "conservas", "limpieza", "bebidas"]
     s["nave_alquilar"] = nave_state(None, today, products=[], barrio="schamann", size=1)
     s["nave_alquilar_tenerife"] = nave_state(None, today, products=[], barrio="ofra", size=2)
     empty = chain.Nave(user_id=21, barrio="taco", size=0)
     s["nave_vacia"] = nave_state(empty, today, products=["tornillos"])
     s["nave_con_stock"] = nave_state(nave, today, products=products)
     s["nave_cotiza_bien"] = nave_state(nave, today, products=products, selected="conservas")
-    # El gofio lleva un AIEM del 15 %: lo que menos ahorra de todo.
-    s["nave_cotiza_mal_aiem"] = nave_state(nave, today, products=products, selected="gofio")
+    # El café tostado lleva un AIEM del 15 %: de lo que menos ahorra.
+    s["nave_cotiza_mal_aiem"] = nave_state(nave, today, products=products, selected="cafe")
     # Ningún producto sale hoy más caro que al mayorista: el rojo, a mano.
     worse = copy.deepcopy(s["nave_cotiza_mal_aiem"])
     worse["quote"].update(saving="−1.840 Y$", good=False, wholesale="23.868 Y$")
