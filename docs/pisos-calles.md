@@ -99,3 +99,12 @@ normales entre los bloques y el centro tiene que tener más edificios que el cam
   en los rurales; repartidos por las calles con una regla fija.
 - Las 866 unidades de la 9.14.0 siguen idénticas (prueba con su huella, `UNITS_9_14`).
 - Falcon (`--calles`): día 356-360.
+
+## 9.16.0: áticos caros y edificios variados
+
+- `Theme.penthouse`: en la mitad de los bloques (por `_seed(clave, "atico")`) de los barrios
+  con vistas, una planta nueva arriba con un ático caro: sobreático (`_sa`) sobre un ático, o
+  ático con vistas (`_va`) donde no lo había. `PENTHOUSE_RENT` 25 % y `PENTHOUSE_VALUE` 40 %;
+  1,3 veces los metros del bloque. 54 en total. Las 1.271 unidades de la 9.15 no cambian
+  (`UNITS_9_15`). Falcon: día 356-360.
+- La escena del corte varía por tema, edificio y unidad (subagente).
