@@ -1471,6 +1471,8 @@ class Panel(ui.View):
             await notify(interaction, "Ya no espera nadie: los candidatos se han ido.")
             await self.show(interaction)
             return
+        logros.note(self.cog.bot, self.guild.id, self.owner.id,
+                    housing_panel_stats(screen="atajo"))  # fmt: skip
         here = keys.index(self.listing) if self.listing in keys else -1
         self.listing = keys[(here + 1) % len(keys)] if self.screen == CANDIDATOS else keys[0]
         self.barrio = self._at(self.listing).barrio
@@ -1720,6 +1722,7 @@ class Panel(ui.View):
         custom_id = interaction.data.get("custom_id", "") if interaction.data else ""
         parts = custom_id.split(":")
         mode = parts[2] if len(parts) > 2 else ""
+        mortgaged = bool(self.market.mortgages_of(self.owner.id, self.listing))
 
         async def run() -> Any:
             return await self.cog.service.split(self.guild.id, self.owner.id, self.listing, mode)
@@ -1731,7 +1734,7 @@ class Panel(ui.View):
         quote = done.quote
         self.screen = PLANTAS
         await self._done(interaction, Event.BUY, housing_action_stats(
-            mode, amount=quote.total, units=quote.units,
+            mode, amount=quote.total, units=quote.units, mortgaged=mortgaged,
         ))  # fmt: skip
         if mode == rules.FLOORS:
             text = (
@@ -1753,6 +1756,10 @@ class Panel(ui.View):
         """Junta las habitaciones (segundo clic): el piso vuelve a alquilarse entero."""
         await ack(interaction)
         self.confirm = None
+        rushed = any(
+            self.market.leases.get(unit.key, rules.Lease()).status == rules.OBRAS
+            for unit in self.market.units_of(self.listing)
+        )
         try:
             await self.cog.service.join_rooms(self.guild.id, self.owner.id, self.listing)
         except HousingError as error:
@@ -1767,7 +1774,7 @@ class Panel(ui.View):
         await self.show(interaction)
         await notify(interaction, "🔀 Habitaciones juntadas: el piso vuelve a alquilarse entero.")
         await logros.track(self.cog.bot, self.guild.id, self.owner, interaction.channel,
-                           housing_action_stats("juntar"))  # fmt: skip
+                           housing_action_stats("juntar", rushed=rushed))  # fmt: skip
 
     async def _decide(self, interaction: discord.Interaction) -> None:
         """Elige cómo arreglar un imprevisto. No mueve dinero: se paga con la noche."""
@@ -3235,8 +3242,9 @@ class Pisos(commands.Cog):
     ) -> None:
         """Logros de una venta entre miembros (de los dos). Nunca lanza."""
         quote = sale.quote
+        floor = rules.parent_key(sale.listing) is not None and not rules.is_room(sale.listing)
         await logros.track(self.bot, guild_id, seller, channel, housing_action_stats(
-            "vende_miembro", amount=quote.price, gift=quote.gift > 0,
+            "vende_miembro", amount=quote.price, gift=quote.gift > 0, floor_unit=floor,
         ))  # fmt: skip
         await logros.track(self.bot, guild_id, buyer, channel, housing_action_stats(
             "compra_miembro", amount=quote.price, preference=preference,
@@ -3355,6 +3363,8 @@ class Pisos(commands.Cog):
                 arrears=deal.quote.arrears,
                 held_days=deal.held_days,
                 holdings_left=len(mine),
+                floor=rules.parent_key(deal.listing) is not None
+                and not rules.is_room(deal.listing),
             )
         if isinstance(deal, Purchase) and deal.loan:
             euribor = deal.rate - rules.MORTGAGE_SPREAD

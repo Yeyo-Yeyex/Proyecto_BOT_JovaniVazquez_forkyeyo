@@ -125,7 +125,7 @@ from bot.services.horses import Pick as HorsePick
 from bot.services.horses import RaceCard as HorseCard
 from bot.services.horses import RaceResult as HorseResult
 from bot.services.housing import OVERBURDEN as HOUSING_OVERBURDEN
-from bot.services.housing_catalog import BARRIO_BY_KEY
+from bot.services.housing_catalog import BARRIO_BY_KEY, ROOM_KIND
 from bot.services.housing_catalog import BARRIO_NEWS as HOUSING_NEWS
 from bot.services.housing_catalog import KINDS as HOUSING_KINDS
 from bot.services.housing_catalog import REFORMS as HOUSING_REFORMS
@@ -671,7 +671,10 @@ PISOS_BARRIOS_STAT = "pisos_barrios"
 #: barrio vivida (`housing_day_stats`, `housing_action_stats`). Los distintos, en `with_derived`.
 PISOS_TENANT_PREFIX = "pisos_tenant_"
 PISOS_NEWS_PREFIX = "pisos_news_"
+ROOM_TENANTS = tuple(t.key for t in HOUSING_TENANTS if ROOM_KIND in t.kinds)
 PISOS_TENANTS_STAT = "pisos_tenants"
+#: 9.11.0: los inquilinos distintos que solo alquilan habitaciones (`with_derived`).
+PISOS_ROOM_TENANTS_STAT = "pisos_room_tenants"
 #: Fase 4: un contador por reforma hecha; las distintas, en `with_derived`.
 PISOS_REFORM_PREFIX = "pisos_reform_"
 PISOS_REFORM_KINDS_STAT = "pisos_reform_kinds"
@@ -8446,6 +8449,71 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("pisos", "pisos_divisions", [
         (1, "pisos_division_1", "Divorcio inmobiliario", "Pide una acción de división.", R,
          True),
+    ])  # fmt: skip
+    # 9.11.0: dividir por plantas, alquilar por habitaciones y el atajo de candidatos
+    a += _tiers("pisos", "pisos_floor_splits", [
+        (1, "pisos_floors_1", "Propiedad horizontal, ambición vertical",
+         "Divide un inmueble por plantas.", R),
+        (3, "pisos_floors_3", "Comunidad Montepinar", "Divide 3 inmuebles por plantas.", E),
+        (6, "pisos_floors_6", "Aquí no hay quien viva", "Divide 6 inmuebles por plantas.", L),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_room_splits", [
+        (1, "pisos_rooms_1", "Una habitación ajena",
+         "Prepara un piso para alquilarlo por habitaciones.", C),
+        (5, "pisos_rooms_5", "Residencia de estudiantes",
+         "Prepara 5 veces un piso para alquilarlo por habitaciones.", R),
+        (20, "pisos_rooms_20", "El Internado",
+         "Prepara 20 veces un piso para alquilarlo por habitaciones.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_rooms_joined", [
+        (1, "pisos_joined_1", "Juntos y no revueltos", "Junta las habitaciones de un piso.", C),
+        (5, "pisos_joined_5", "Dar cera, quitar tabique",
+         "Junta las habitaciones de un piso 5 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_split_spent", [
+        (1_000_000, "pisos_split_1m", "Licencia de obra mayor",
+         "Gasta 1.000.000 Y$ en dividir inmuebles, con impuestos.", R),
+        (10_000_000, "pisos_split_10m", "Marina d'Or, ciudad de obras",
+         "Gasta 10.000.000 Y$ en dividir inmuebles, con impuestos.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("pisos", "pisos_split_units", [
+        (5, "pisos_units_5", "Los Cinco y el edificio misterioso",
+         "Saca 5 plantas o habitaciones de una sola división.", R),
+        (6, "pisos_units_6", "Seis novias para seis hermanos",
+         "Saca 6 habitaciones de un mismo piso.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", PISOS_ROOM_TENANTS_STAT, [
+        (1, "pisos_room_tenants_1", "Acuerdo de compañeros de piso",
+         "Ten contrato con un inquilino de habitación.", C),
+        (5, "pisos_room_tenants_5", "Friends con fianza",
+         "Ten contrato con 5 inquilinos de habitación distintos.", R),
+        (len(ROOM_TENANTS), "pisos_room_tenants_all", "Una casa de locos",
+         f"Ten contrato con los {len(ROOM_TENANTS)} inquilinos de habitación del catálogo.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_TENANT_PREFIX}astrofisica", [
+        (1, "pisos_tenant_astrofisica", "Una habitación con vistas",
+         "Alquila una habitación a la becaria de astrofísica.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_TENANT_PREFIX}jubilado_hab", [
+        (1, "pisos_tenant_jubilado_hab", "Los chicos de oro",
+         "Alquila una habitación al jubilado que no quiere vivir solo.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_shortcut", [
+        (1, "pisos_shortcut_1", "El que espera, desespera",
+         "Usa el botón 👥 Candidatos para ir a donde esperan.", C),
+        (50, "pisos_shortcut_50", "Pase el siguiente", "Usa el botón 👥 Candidatos 50 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_rooms_rushed", [
+        (1, "pisos_rushed_1", "Billy sin estrenar",
+         "Junta las habitaciones antes de que terminen de amueblarse.", C, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_split_mortgaged", [
+        (1, "pisos_split_mortgaged_1", "A cada planta, su cruz",
+         "Divide por plantas un inmueble que tienes hipotecado.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_floor_sold", [
+        (1, "pisos_floor_sold_1", "Edificio por entregas",
+         "Vende participaciones de una planta suelta.", R, True),
     ])  # fmt: skip
     # Fase 5 de la ampliación (8.4.0): vacacional con reseñas y la Ley 6/2025
     a += _tiers("pisos", "pisos_reviews", [
@@ -20626,6 +20694,9 @@ def with_derived(stats: Mapping[str, int]) -> dict[str, int]:
     full[PISOS_TENANTS_STAT] = sum(
         1 for t in HOUSING_TENANTS if stats.get(f"{PISOS_TENANT_PREFIX}{t.key}", 0) > 0
     )
+    full[PISOS_ROOM_TENANTS_STAT] = sum(
+        1 for key in ROOM_TENANTS if stats.get(f"{PISOS_TENANT_PREFIX}{key}", 0) > 0
+    )
     full[PISOS_NEWS_STAT] = sum(
         1 for n in HOUSING_NEWS if stats.get(f"{PISOS_NEWS_PREFIX}{n.key}", 0) > 0
     )
@@ -25097,7 +25168,8 @@ def housing_panel_stats(
 
     Args:
         screen: `abrir` (el comando), `renta` (cambiar la renta que se pide),
-            `desahucio` (pedirlo) o una pantalla (no cuenta nada).
+            `desahucio` (pedirlo), `atajo` (el botón 👥 Candidatos) o una pantalla (solo
+            cuenta `candidatos`).
         level: La renta elegida, con `renta`.
         squatters: Si el desahucio es de okupas.
     """
@@ -25114,6 +25186,8 @@ def housing_panel_stats(
             add["pisos_squatters_evicted"] = 1
     elif screen == "candidatos":
         add["pisos_candidates_seen"] = 1
+    elif screen == "atajo":
+        add["pisos_shortcut"] = 1
     return StatDelta(add=add)
 
 
@@ -25186,6 +25260,7 @@ def housing_sale_stats(
     arrears: int,
     held_days: int,
     holdings_left: int,
+    floor: bool = False,
 ) -> StatDelta:
     """Estadísticas de una venta en `pisos`.
 
@@ -25196,9 +25271,11 @@ def housing_sale_stats(
         arrears: Deudas del piso que se le descontaron.
         held_days: Días desde que compró.
         holdings_left: Inmuebles en los que le queda algo.
+        floor: Si lo vendido es una planta de un inmueble dividido.
     """
     add = {"pisos_sold": 1, "pisos_sold_y": received}
     for stat, hit in (
+        ("pisos_floor_sold", floor),
         ("pisos_exit", holdings_left == 0),
         ("pisos_sold_whole", shares == 100),
         ("pisos_flip", held_days == 0),
@@ -25293,6 +25370,9 @@ def housing_action_stats(
     choice: str = "",
     silent: bool = False,
     units: int = 0,
+    mortgaged: bool = False,
+    rushed: bool = False,
+    floor_unit: bool = False,
 ) -> StatDelta:
     """Estadísticas de una acción de las fases 2 a 6 (`HOUSING_ACTIONS`, o `hipoteca`).
 
@@ -25322,6 +25402,9 @@ def housing_action_stats(
         silent: Con `junta_aprobada`, si nadie más votó (el silencio vale como sí).
         units: Con `plantas` o `habitaciones`, cuántas salen (`amount`, lo que costó con
             impuestos).
+        mortgaged: Con `plantas`, si quien divide lo tiene hipotecado.
+        rushed: Con `juntar`, si alguna habitación aún se estaba amueblando.
+        floor_unit: Con `vende_miembro`, si vende una planta de un inmueble dividido.
         choice: Con `decide`, la forma elegida (no cuenta nada más: los logros de cada forma
             salen al resolverse, con el cierre de la noche).
     """
@@ -25358,6 +25441,9 @@ def housing_action_stats(
         ("pisos_member_reference", action == "compra_miembro" and reference),
         ("pisos_moved_in", action == "compra_miembro" and moved_in),
         ("pisos_member_overpaid", action == "compra_miembro" and overpaid),
+        ("pisos_split_mortgaged", action == "plantas" and mortgaged),
+        ("pisos_rooms_rushed", action == "juntar" and rushed),
+        ("pisos_floor_sold", action == "vende_miembro" and floor_unit),
     ):
         if hit:
             delta.add[stat] = 1
