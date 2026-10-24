@@ -220,7 +220,12 @@ SHIFT_HOURS = {
 CONTRACTS: tuple[tuple[str, str, str], ...] = (
     ("indefinido", "Indefinido", "Con período de prueba; al parado de larga duración, bonificado"),
     ("temporal", "Temporal (6 meses)", "Se acaba solo y cotiza algo más de desempleo"),
-    ("b", "En B, sin alta", "Ni cotiza ni contrato. Si pasa la Inspección, multa de 3.750 €"),
+    (
+        "b",
+        "En B, sin alta",
+        "Ni cotiza ni contrato. Si pasa la Inspección, multa de "
+        f"{format_amount(staff.FINE_PER_WORKER)}",
+    ),
     ("gerente", "Gerente (indefinido)", "No atiende: repone el almacén y cubre las bajas"),
 )
 
@@ -1801,11 +1806,11 @@ class NegocioPanel(ui.LayoutView):
         if not view.business.is_company:
             options = [
                 discord.SelectOption(
-                    label=f"Capital de {format_amount(c)} ({c // 100:,} €)".replace(",", "."),
+                    label=f"Capital de {format_amount(c)}",
                     value=str(c),
                     default=c == self.capital,
                     description=(
-                        "Reserva del 20 % y respondes hasta 3.000 €"
+                        f"Reserva del 20 % y respondes hasta {format_amount(sl.FULL_CAPITAL)}"
                         if c < sl.FULL_CAPITAL
                         else "Responsabilidad limitada al capital"
                     ),

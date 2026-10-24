@@ -29,7 +29,7 @@ romper algo al cavar no reste y la chuleta que tacha una respuesta mala.
 - **Diálogo**: una situación y tres respuestas. La buena suma.
 - **Clasificar**: cada ronda trae un papel o una persona y unos sitios fijos
   (los negociados, los registros). Mandarlo al suyo suma.
-- **Calcular**: varias ofertas con números y una cuenta (euros por kilómetro,
+- **Calcular**: varias ofertas con números y una cuenta (Y$ por kilómetro,
   me gusta por visita). Elegir la mejor suma; siempre gana por un margen claro
   (`CALC_MARGIN`), para que no dependa de redondeos.
 """
@@ -39,6 +39,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field
 
+from bot.services.economy import format_amount
 from bot.services.work import GUARD_TIME_FACTOR, TIRED_TIME_FACTOR, Mechanic, Position
 from bot.services.work_catalog import (
     APP_BIEN,
@@ -763,13 +764,13 @@ def _orders(rng: random.Random, offers: int, rounds: int) -> tuple[str, list[Rou
     for number in range(1, rounds + 1):
         while True:
             km = [round(rng.uniform(0.8, 6.0), 1) for _ in range(offers)]
-            pay = [round(k * rng.uniform(0.5, 1.6) + 1, 2) for k in km]
+            pay = [round((k * rng.uniform(0.5, 1.6) + 1) * 100) for k in km]  # Y$, a 100 el euro
             best = _best_index([p / k for p, k in zip(pay, km, strict=True)])
             if best is not None:
                 break
         names = rng.sample(RESTAURANTS, offers)
         lines = [
-            f"`{i + 1}.` {name} · {_decimal(km[i], 1)} km · **{_decimal(pay[i])} €**"
+            f"`{i + 1}.` {name} · {_decimal(km[i], 1)} km · **{format_amount(pay[i])}**"
             for i, name in enumerate(names)
         ]
         built.append(
@@ -779,7 +780,7 @@ def _orders(rng: random.Random, offers: int, rounds: int) -> tuple[str, list[Rou
                 [best],
             )
         )
-    return "📱 La app te ofrece pedidos. Cuenta rápido: euros entre kilómetros.", built
+    return "📱 La app te ofrece pedidos. Cuenta rápido: Y$ entre kilómetros.", built
 
 
 def _metrics(rng: random.Random, rounds: int) -> tuple[str, list[Round]]:

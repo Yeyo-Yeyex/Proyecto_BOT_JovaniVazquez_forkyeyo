@@ -1427,6 +1427,16 @@ class EconomyRepository:
                 CREATE INDEX IF NOT EXISTS economy_payroll_member
                     ON economy_payroll (guild_id, user_id, created_at);
 
+                CREATE TABLE IF NOT EXISTS economy_bank_hidden (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    since REAL NOT NULL,
+                    until REAL NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS economy_bank_hidden_member
+                    ON economy_bank_hidden (guild_id, user_id);
+
                 CREATE TABLE IF NOT EXISTS economy_sanctions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     guild_id INTEGER NOT NULL,
@@ -7050,36 +7060,69 @@ class EconomyRepository:
             connection.close()
         return row is not None
 
-    async def work_net(self, guild_id: int, user_id: int, since: float) -> int:
+    async def work_net(
+        self, guild_id: int, user_id: int, since: float, *, bank: bool = False
+    ) -> int:
         """Neto cobrado trabajando desde `since`: nóminas más lo que deja el negocio propio.
 
         El negocio cuenta con sus ventas menos la retención y los gastos de la actividad
         (`economy_tax_records`, concepto `negocio:`), nunca en negativo: comprar stock no
         sube el IMV ni el banco lo resta de la nómina. Lo cobrado en negro no cuenta.
-        """
-        return await self._run(self._work_net_sync, guild_id, user_id, since)
 
-    def _work_net_sync(self, guild_id: int, user_id: int, since: float) -> int:
+        Args:
+            bank: Lo que mira el banco: sin los turnos de `pala` ni del negocio cobrados
+                dentro de un tramo de `hide_from_bank` (las pensiones y opciones, sí).
+        """
+        return await self._run(self._work_net_sync, guild_id, user_id, since, bank)
+
+    def _work_net_sync(self, guild_id: int, user_id: int, since: float, bank: bool) -> int:
+        # Para el banco, fuera lo cobrado dentro de un tramo de `hide_from_bank` (`t`, la fila).
+        hidden = """EXISTS (
+            SELECT 1 FROM economy_bank_hidden h
+            WHERE h.guild_id = t.guild_id AND h.user_id = t.user_id
+              AND t.created_at BETWEEN h.since AND h.until
+        )"""
+        # Las pensiones y las opciones no salen de los turnos: esas las ve siempre.
+        payroll = (
+            "AND (concept NOT LIKE 'pala:%' OR concept IN ('pala:pension', 'pala:opciones') "
+            f"OR NOT {hidden})"
+            if bank
+            else ""
+        )
         connection = self._connect()
         try:
             (net,) = connection.execute(
                 """
-                SELECT COALESCE(SUM(net), 0) FROM economy_payroll
+                SELECT COALESCE(SUM(net), 0) FROM economy_payroll t
                 WHERE guild_id = ? AND user_id = ? AND created_at > ? AND country = 'es'
-                """,
+                """
+                + payroll,
                 (guild_id, user_id, since),
             ).fetchone()
             (business,) = connection.execute(
                 """
-                SELECT COALESCE(SUM(gross - withheld), 0) FROM economy_tax_records
+                SELECT COALESCE(SUM(gross - withheld), 0) FROM economy_tax_records t
                 WHERE guild_id = ? AND user_id = ? AND created_at > ? AND kind = ?
                   AND concept LIKE 'negocio:%'
-                """,
+                """
+                + (f"AND NOT {hidden}" if bank else ""),
                 (guild_id, user_id, since, INCOME_BUSINESS),
             ).fetchone()
             return int(net) + max(0, int(business))
         finally:
             connection.close()
+
+    async def hide_from_bank(self, guild_id: int, user_id: int, since: float, until: float) -> None:
+        """Lo que cobre trabajando entre `since` y `until` no lo ve el banco (`work_net`)."""
+        await self._run(self._hide_from_bank_sync, guild_id, user_id, since, until)
+
+    def _hide_from_bank_sync(self, guild_id: int, user_id: int, since: float, until: float) -> None:
+        with self._transaction() as connection:
+            connection.execute(
+                "INSERT INTO economy_bank_hidden (guild_id, user_id, since, until) "
+                "VALUES (?, ?, ?, ?)",
+                (guild_id, user_id, since, until),
+            )
 
     async def payroll_totals(
         self, guild_id: int, user_id: int, since: float
@@ -7435,6 +7478,7 @@ class EconomyRepository:
                 "economy_lottery_tax",
                 "economy_public_debt",
                 "economy_payroll",
+                "economy_bank_hidden",
                 "economy_sanctions",
                 "economy_imv_suspensions",
                 "economy_residence",

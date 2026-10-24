@@ -529,14 +529,21 @@ class BusinessService:
             b.turns_today for b in await self.repository.owned(guild_id, user_id) if b.day == today
         )
 
-    async def reset_franjas(self, guild_id: int, user_id: int) -> None:
-        """Pone a cero los turnos de hoy de sus negocios (el cupo del barrio no vuelve)."""
+    async def reset_franjas(self, guild_id: int, user_id: int) -> int:
+        """Pone a cero los turnos de hoy de sus negocios (el cupo del barrio no vuelve).
+
+        Returns:
+            Cuántos turnos había.
+        """
+        wiped = 0
         async with self._lock(guild_id, user_id):
             today = local_day(self._clock()).isoformat()
             for business in await self.repository.owned(guild_id, user_id):
                 if business.day == today and business.turns_today:
+                    wiped += business.turns_today
                     business.turns_today = 0
                     await self.repository.save(guild_id, business)
+        return wiped
 
     async def last_turn_at(self, guild_id: int, user_id: int) -> float | None:
         """Cuándo abrió alguno de sus negocios por última vez (`None` si nunca abrió)."""

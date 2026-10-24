@@ -168,7 +168,7 @@ _USES: tuple[Use, ...] = (
             _o(
                 8,
                 "🥚 El huevo de {who} vuela hacia {target} y le cae a {collector}, que "
-                "pasaba por ahí cobrando. Multa de 600 € por ensuciar la vía pública. "
+                "pasaba por ahí cobrando. Multa de 60.000 Y$ por ensuciar la vía pública. "
                 "Es broma. Por ahora.",
                 "collector",
             ),
@@ -781,7 +781,7 @@ _USES: tuple[Use, ...] = (
             _o(
                 100,
                 "🚓 {who} le pone una multa de la DGT a {target}: {multa}. "
-                "{importe} € y {puntos}. Recurra si quiere: no sirve de nada.",
+                "{importe} Y$ y {puntos}. Recurra si quiere: no sirve de nada.",
             ),
         ),
         pools={
@@ -796,7 +796,7 @@ _USES: tuple[Use, ...] = (
                 "no usar el intermitente desde 2019",
                 "tunear un Seat Ibiza sin homologar el alerón",
             ),
-            "importe": ("100", "200", "500", "600", "1.000"),
+            "importe": ("10.000", "20.000", "50.000", "60.000", "100.000"),
             "puntos": ("sin puntos", "2 puntos", "4 puntos", "6 puntos"),
         },
         on_self="🚓 {who} se multa a sí mismo. Perro Sanxe aplaude con las orejas: "
@@ -1172,7 +1172,7 @@ _USES: tuple[Use, ...] = (
                 "que salga el rojo",
                 "una cita previa en el SEPE",
                 "que Perro Sanxe se olvide de su renta",
-                "un piso de alquiler por menos de 1.000 €",
+                "un piso de alquiler por menos de 100.000 Y$",
             ),
         },
         outcomes=(

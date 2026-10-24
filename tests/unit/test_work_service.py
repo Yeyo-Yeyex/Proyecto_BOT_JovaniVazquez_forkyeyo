@@ -27,7 +27,7 @@ from bot.services.economy import (
 )
 from bot.services.levels import TIMEZONE
 from bot.services.pala import NeedsBlack, WorkError, WorkService
-from bot.services.taxes import igic
+from bot.services.taxes import INCOME_BUSINESS, igic
 from bot.services.work import (
     ACCIDENT_ZOMBIE,
     ACTIVE_SHARES,
@@ -1190,6 +1190,52 @@ async def test_el_enchufe_sube_sin_requisitos_y_para_en_la_rama_y_en_lo_mas_alto
     assert status.position.title == "Comisario europeo"
     assert (await service.force_promotion(GUILD, USER))[0] == 0
     assert (await service.history(GUILD, USER))["politica"].max_level == POLITICA.top
+
+
+async def test_lo_cobrado_tras_amanece_no_lo_ve_el_banco_pero_si_el_imv(
+    tmp_path: Path, dice: Dice
+) -> None:
+    clock = Clock()
+    service = await make(tmp_path, clock)
+    economy = service.economy
+    await service.hire(GUILD, USER, "politica")
+    # Sin nada gastado, `amanece` no devuelve nada y no esconde nada.
+    await service.reset_day(GUILD, USER)
+    await work(service)
+    bank = await economy.work_net_days(GUILD, USER, 30)
+    assert bank > 0
+    clock.now += 600
+    await service.reset_day(GUILD, USER)
+    clock.now += 600
+    await work(service)
+    pension = await economy.pay_salary(GUILD, USER, gross=500, concept="pala:pension", pension=True)
+    # El turno con las franjas devueltas no lo ve; la pensión, sí. El IMV lo ve todo.
+    assert await economy.work_net_days(GUILD, USER, 30) == bank + pension.payslip.net
+    assert await economy.work_week_net(GUILD, USER) > bank + pension.payslip.net
+    # Al día siguiente vuelve a contar todo lo nuevo.
+    clock.now += DAY
+    await work(service)
+    assert await economy.work_net_days(GUILD, USER, 30) > bank + pension.payslip.net
+
+
+async def test_el_banco_tampoco_ve_el_negocio_cobrado_en_el_tramo(tmp_path: Path) -> None:
+    repository = EconomyRepository(tmp_path / "bot.db", starting_balance=STARTING_BALANCE)
+    await repository.initialize()
+    with sqlite3.connect(tmp_path / "bot.db") as db:
+        db.executemany(
+            "INSERT INTO economy_tax_records "
+            "(guild_id, user_id, created_at, concept, gross, withheld, kind) "
+            "VALUES (?, ?, ?, 'negocio:ventas', ?, ?, ?)",
+            [
+                (GUILD, USER, 100.0, 1000, 100, INCOME_BUSINESS),
+                (GUILD, USER, 200.0, 500, 50, INCOME_BUSINESS),
+            ],
+        )
+    await repository.hide_from_bank(GUILD, USER, 150.0, 250.0)
+    assert await repository.work_net(GUILD, USER, 0) == 1350
+    assert await repository.work_net(GUILD, USER, 0, bank=True) == 900
+    await repository.hide_from_bank(GUILD + 1, USER, 0.0, 1000.0)  # otro servidor: nada
+    assert await repository.work_net(GUILD, USER, 0, bank=True) == 900
 
 
 async def test_amanece_vacia_las_franjas_de_hoy_y_llena_la_bateria(

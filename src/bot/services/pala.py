@@ -56,7 +56,7 @@ import sqlite3
 import time
 from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Protocol
 
 from bot.services.agenda import EXTRA, GUARD, GUARD_FRANJAS, JORNADAS, STUDY, Agenda
@@ -225,8 +225,8 @@ class BusinessLink(Protocol):
         """Cuándo abrió su negocio por última vez (`None` si nunca)."""
         ...
 
-    async def reset_franjas(self, guild_id: int, user_id: int) -> None:
-        """Pone a cero sus turnos de hoy en el negocio (`WorkService.reset_day`)."""
+    async def reset_franjas(self, guild_id: int, user_id: int) -> int:
+        """Pone a cero sus turnos de hoy en el negocio y dice cuántos había."""
         ...
 
 
@@ -1944,9 +1944,13 @@ class WorkService:
         estudio) y del negocio, el límite semanal de horas extra, y llena la batería.
         El saliente de guardia sigue. Sin contrato, solo la batería y el negocio.
 
+        Si devuelve algo ya gastado, lo que cobre hasta medianoche no lo ve el banco
+        (`EconomyService.hide_from_bank`): no se nota en lo que le presta.
+
         Returns:
             Si tiene contrato.
         """
+        wiped = 0
         async with self._lock(guild_id, user_id):
             now = self._clock()
             contract = await self._contract(guild_id, user_id)
@@ -1956,6 +1960,8 @@ class WorkService:
                 )
             else:
                 roll_over_day(contract, now)
+                wiped = contract.shifts_today + sum(contract.franjas.values())
+                wiped += contract.extras_week
                 settle(contract, now)
                 contract.battery = float(BATTERY_MAX)
                 contract.shifts_today = contract.extras_week = 0
@@ -1963,7 +1969,15 @@ class WorkService:
                 await self.repository.save_contract(guild_id, user_id, contract)
         # Fuera del candado: el negocio coge el suyo y luego el de la pala (`start_turn`).
         if self.business is not None:
-            await self.business.reset_franjas(guild_id, user_id)
+            wiped += await self.business.reset_franjas(guild_id, user_id)
+        if wiped:
+            # shortcut: esconde todo lo cobrado hasta medianoche aunque le quedaran franjas
+            # sin gastar, y no los días siguientes de la semana con las horas extra libres;
+            # para afinar, contar turno a turno las franjas devueltas.
+            midnight = datetime.combine(
+                local_day(now) + timedelta(days=1), datetime.min.time(), TIMEZONE
+            )
+            await self.economy.hide_from_bank(guild_id, user_id, now, midnight.timestamp())
         return contract is not None
 
     async def battery(self, guild_id: int, user_id: int) -> float:

@@ -1482,9 +1482,7 @@ class EconomyService:
             BalanceLimitError: Si quien recibe superaría el saldo máximo.
         """
         if amount < BIZUM_MIN_AMOUNT:
-            raise ValueError(
-                f"Bizum no deja mandar menos de {format_amount(BIZUM_MIN_AMOUNT)} (0,50 €)."
-            )
+            raise ValueError(f"Bizum no deja mandar menos de {format_amount(BIZUM_MIN_AMOUNT)}.")
         if sender_id == receiver_id:
             raise ValueError("Un Bizum a ti mismo no es un Bizum, es mirar el saldo.")
         now = self._clock()
@@ -2241,8 +2239,17 @@ class EconomyService:
         )
 
     async def work_net_days(self, guild_id: int, user_id: int, days: int) -> int:
-        """Neto de nóminas, pensiones y negocio de los últimos `days` días (lo mira el banco)."""
-        return await self.repository.work_net(guild_id, user_id, self._clock() - days * 86_400)
+        """Neto de nóminas, pensiones y negocio de los últimos `days` días (lo mira el banco).
+
+        Sin lo cobrado en los tramos de `hide_from_bank`; el IMV (`work_week_net`) sí lo ve.
+        """
+        return await self.repository.work_net(
+            guild_id, user_id, self._clock() - days * 86_400, bank=True
+        )
+
+    async def hide_from_bank(self, guild_id: int, user_id: int, since: float, until: float) -> None:
+        """Lo que cobre en `pala` o en su negocio entre `since` y `until` no lo ve el banco."""
+        await self.repository.hide_from_bank(guild_id, user_id, since, until)
 
     async def week_tax_burden(self, guild_id: int, user_id: int) -> tuple[int, int]:
         """`(impuestos, neto)` de los últimos 7 días, para «Socio de Hacienda».

@@ -561,7 +561,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
 
     # 🥘 Typical Spanish ------------------------------------------------------------------
     _t("huevo", "espana", "🥚", "Huevo de corral", 50,
-       "La docena está a 3 €. Este vale 5 € porque es de gallina feliz y porque se puede "
+       "La docena está a 300 Y$. Este vale 500 Y$ porque es de gallina feliz y porque se puede "
        "lanzar. Huevo: IGIC tipo cero.", igic="cero", use="huevo", food=True),
     _t("tomate", "espana", "🍅", "Tomate de la Tomatina", 40,
        "Maduro, blandito y con muchas ganas de reventar en la cara de alguien.",
@@ -919,7 +919,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
        "Para quien lleva veinte años en el bar sin acertar una porra. La paga la peña: tú "
        "solo pones el dinero."),
     _title("verificado", "shitpost", "☑️", "Cuenta verificada", 8_000,
-       "En la red social del pajarito cuesta ocho euros al mes. Aquí, una vez y para "
+       "En la red social del pajarito cuesta 800 Y$ al mes. Aquí, una vez y para "
        "siempre. Verifica que has pagado, nada más."),
     _t("porsche", "lujo", "🏎️", "Porsche 911 de segunda mano", 1_500_000,
        "De un concejal de urbanismo que no sabe explicar cómo lo pagó. Más de 11 CV: IGIC "

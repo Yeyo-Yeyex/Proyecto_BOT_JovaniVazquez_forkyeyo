@@ -2404,9 +2404,8 @@ function paintSociedadAutonomo(st) {
     if (cp.selected) fillRR(kx - 4, ky - 4, kw + 8, kh + 8, 18, C.turqDk);
     card(kx, ky, kw, kh, cp.selected ? { fill: "#effaf8" } : {});
     if (cp.selected) chip("ELEGIDO", kx + kw - 14, ky + 12, "turq", { align: "right", size: 14 });
-    fitText(cp.euros || "", kx + 18, ky + 30, kw - 140, F.t, 30, 18, { color: C.ink, fancy: true });
-    fitText(cp.amount || "", kx + 18, ky + 58, kw - 36, F.d, 17, 12, { color: C.mute });
-    paragraph(cp.note || "", kx + 18, ky + 84, kw - 36, F.m(16), 20, 2, { color: C.ink });
+    fitText(cp.amount || "", kx + 18, ky + 30, kw - 140, F.t, 30, 18, { color: C.ink, fancy: true });
+    paragraph(cp.note || "", kx + 18, ky + 64, kw - 36, F.m(16), 20, 2, { color: C.ink });
   });
   // lo que cuesta o, si su oficio no le deja, el aviso
   const by = ky + kh + 18, bh = 92;

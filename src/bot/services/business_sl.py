@@ -485,7 +485,7 @@ def zec_blocker(sector: str, island: str, jobs: int, day: date) -> str | None:
     if jobs < need:
         return (
             f"Hacen falta {need} empleos con alta: {need - 1} del mínimo y uno más para que no "
-            "pidan la inversión de 100.000 € (art. 31.2 de la Ley 19/1994)."
+            "pidan la inversión de 10.000.000 Y$ (art. 31.2 de la Ley 19/1994)."
         )
     return None
 

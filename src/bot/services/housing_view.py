@@ -61,6 +61,7 @@ from bot.services.housing_streets import (
 )
 from bot.services.levels import TIMEZONE
 from bot.services.pending import Pending, Side
+from bot.services.taxes import vacant_rental_deduction
 
 State = dict[str, Any]
 
@@ -993,7 +994,10 @@ def gestion_state(
                 "Zona tensionada: bajar la renta más de un 5 % en el próximo contrato da el 90 %"
             )
         if lease.status == rules.VACANT:
-            tips.append("Si se alquila tras una semana vacía, deduce 1.000 € en la Renta (art. 16)")
+            tips.append(
+                "Si se alquila tras una semana vacía, deduce "
+                f"{format_amount(vacant_rental_deduction(100))} en la Renta (art. 16)"
+            )
     waiting = market.candidates_of(key, today)
     state: State = {
         "screen": "gestion",
@@ -1390,7 +1394,9 @@ def split_state(market: Market, key: str, user_id: int) -> State:
                     if floors
                     else [
                         "Se deshace cuando estén todas vacías",
-                        "Cada habitación paga 60 € al mes de comunidad y suministros",
+                        "Cada habitación paga "
+                        f"{format_amount(rules.monthly_room_community())} al mes de comunidad "
+                        "y suministros",
                         "Contratos de un año, sin seguro de impago ni vacacional",
                     ]
                 ),

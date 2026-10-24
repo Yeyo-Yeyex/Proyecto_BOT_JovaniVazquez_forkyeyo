@@ -5,7 +5,7 @@ Comandos (todos con `/` y con `.`, mismo nombre; `tajo` elige dónde se usa `pal
 `slow`, `say`, `nick`, `role`, `bienv`, `niveles`, `cambios`, `catalogo`, `tajo`,
 `informe` (descarga la telemetría interna, ver `bot.cogs.telemetry`), `robuso` (si
 Robuso está en Hong Kong o en Madrid, para sus logros: ver `bot.cogs.robuso`),
-`bloquear`, `crear`, `enchufe` y `amanece`.
+`bloquear`, `crear`, `dinero`, `enchufe` y `amanece`.
 
 `bloquear` es el freno de emergencia para un fallo o un exploit. Como `reinicio`, solo
 lo usan los IDs de `DEPLOYERS` (Yeyo y Dani), sean o no administradores, y no sale en
@@ -22,6 +22,11 @@ Los mismos controles cierran la puerta durante un reinicio: ningún comando salv
 perdido por un fallo), con los mismos dos IDs y sin salir en `ayuda`. Solo objetos:
 un rol no se daría en Discord, un potenciador no caducaría y una mascota se adopta.
 No cobra nada ni gasta existencias, y lo que da llega sin número de serie.
+
+`dinero` mete yapdollars en la cuenta de un miembro (o en la tuya), con los mismos dos
+IDs y sin salir en `ayuda`: para devolver lo perdido por un fallo o dar un premio.
+Salen de la nada, como un regalo de cumpleaños: exentos de IRPF (`EconomyService.grant`)
+y, si debe a Hacienda, con su embargo. Quedan en el libro con su motivo (`admin:dinero`).
 
 `enchufe` sube de puesto en `pala` a un miembro sin pedirle barra, días, tareas ni
 formación. `amanece` le vacía las franjas de hoy (curro y negocio) y las horas extra
@@ -76,6 +81,7 @@ from bot.cogs.errors import BLOCKED_ERROR, CLOSING_CLICK, RESTART_CLICK, RESTART
 from bot.cogs.telemetry import Telemetry, report_inputs
 from bot.repositories.news import NewsSettings
 from bot.repositories.welcome import WelcomeSettings
+from bot.services.economy import format_amount
 from bot.services.levels import MAX_XP_COOLDOWN_SECONDS, MIN_XP_COOLDOWN_SECONDS
 from bot.services.moderation import (
     MAX_PURGE,
@@ -118,7 +124,9 @@ GIF_RESET_WORDS = {"quitar", "video", "vídeo", "ninguno"}
 # Lo que `bloquear` no bloquea, ni el modo reinicio: el desbloqueo y el despliegue.
 UNBLOCKABLE = {"bloquear", "reinicio"}
 # Comandos del cog que filtran por `DEPLOYERS` en vez de por Administrador.
-DEPLOYER_COMMANDS = {"bloquear", "crear"}
+DEPLOYER_COMMANDS = {"bloquear", "crear", "dinero"}
+# Tope de `dinero` por vez: un cero de más al teclear no rompe la economía.
+MAX_DINERO = 100_000_000
 # Único que puede usar los comandos secretos (`enchufe`, `amanece`): Yeyo (Dani no).
 SECRET_OWNER = 403646452414545921
 ENCHUFE_USAGE = "Uso: `.enchufe @miembro [puestos] [rama]`."
@@ -1501,6 +1509,68 @@ class Admin(commands.Cog):
         also = " Ya tenía otro igual." if dupe else ""
         await responder.finish(
             f"🎁 {item.emoji} **{item.name}** ya está en la mochila de {member.mention}.{also}",
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
+    # --- dinero -----------------------------------------------------------
+
+    @app_commands.command(name="dinero", description="Da yapdollars a un miembro o a ti.")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(cantidad="Cuántos Y$.", miembro="A quién (si no, a ti).")
+    async def dinero(
+        self,
+        interaction: discord.Interaction,
+        cantidad: app_commands.Range[int, 1, MAX_DINERO],
+        miembro: discord.Member | None = None,
+    ) -> None:
+        """Da dinero sin quitárselo a nadie (solo lo ves tú).
+
+        Solo para los IDs de `DEPLOYERS`; que Discord oculte el `/` a quien no es
+        administrador es solo estética.
+        """
+        await self._dinero_impl(InteractionResponder(interaction), miembro, cantidad)
+
+    @commands.command(name="dinero", hidden=True)
+    async def dinero_text(
+        self, ctx: commands.Context, cantidad: int, miembro: discord.Member | None = None
+    ) -> None:
+        """Versión de texto: `.dinero 5000` (a ti) o `.dinero 5000 @miembro`."""
+        await self._dinero_impl(ContextResponder(ctx), miembro, cantidad)
+
+    async def _dinero_impl(
+        self, responder: CommandResponder, member: discord.Member | None, amount: int
+    ) -> None:
+        """Mete `amount` en la cuenta de `member` (o de quien lo pide) y responde cómo queda."""
+        guild = responder.guild
+        if guild is None:
+            await responder.send_error("Esto solo funciona en un servidor.")
+            return
+        if responder.member is None or responder.member.id not in DEPLOYERS:
+            await responder.send_error("Solo Yeyo y Dani pueden dar dinero.")
+            return
+        member = member or responder.member
+        if member.bot:
+            await responder.send_error("Los bots no tienen cuenta.")
+            return
+        if not 1 <= amount <= MAX_DINERO:
+            await responder.send_error(
+                f"La cantidad va de 1 a {format_amount(MAX_DINERO)} por vez."
+            )
+            return
+        await responder.start_progress(ephemeral=True)
+        try:
+            balance = await self.bot.economy.grant(  # type: ignore[attr-defined]
+                guild.id, member.id, amount=amount, reason="admin:dinero"
+            )
+        except sqlite3.Error:
+            logger.exception("No se pudo dar dinero en %s", guild.id)
+            await responder.finish("No se ha podido guardar ahora mismo. Prueba en un rato.")
+            return
+        logger.info("%s da %s Y$ a %s en %s", responder.member.id, amount, member.id, guild.id)
+        await responder.finish(
+            f"💸 {format_amount(amount)} para {member.mention}. Su saldo: "
+            f"{format_amount(balance)}.",
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
