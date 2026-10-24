@@ -14,9 +14,10 @@ from typing import Any
 from PIL import Image, ImageDraw, ImageFont
 
 W, H = 1000, 640
-#: Pantallas que miden más de `H` (el barrio, con sus diez tarjetas en dos filas); la escena
-#: (`SCREEN_H` de `assets/pisos/escena.html`) y el dibujo de reserva tienen que coincidir.
-SCREEN_H = {"barrio": 760}
+#: Pantallas que miden más de `H` (el barrio y las plantas, con sus tarjetas en dos filas, y
+#: dividir); la escena (`SCREEN_H` de `assets/pisos/escena.html`) y el dibujo de reserva
+#: tienen que coincidir.
+SCREEN_H = {"barrio": 760, "plantas": 760, "dividir": 700}
 
 FONTS = Path(__file__).resolve().parent.parent / "assets" / "memes" / "fonts"
 TITLE_FONT = FONTS / "MontserratBold.ttf"
