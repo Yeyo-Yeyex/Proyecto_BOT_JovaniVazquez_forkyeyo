@@ -45,6 +45,7 @@ def make_ctx(guild: SimpleNamespace, author: MagicMock) -> MagicMock:
     ctx.guild = guild
     ctx.author = author
     ctx.channel = MagicMock()
+    ctx.command.extras = {}  # como un comando de verdad
     ctx.send = AsyncMock()
     ctx.message.delete = AsyncMock()
     return ctx

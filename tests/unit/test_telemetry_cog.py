@@ -472,6 +472,7 @@ async def test_comandos_mal_escritos_se_cuentan_como_uso_mal() -> None:
     cog = Telemetry(bot, telemetry)
     ctx = MagicMock()
     ctx.command.qualified_name = "informe"
+    ctx.command.extras = {}
     ctx.guild.id = 1
     await cog.on_command_error(ctx, commands.BadArgument("no es un número"))
     message = MagicMock(spec=discord.Message)

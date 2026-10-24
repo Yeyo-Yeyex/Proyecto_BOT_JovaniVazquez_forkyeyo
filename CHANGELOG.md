@@ -8,6 +8,10 @@ criterio.
 
 ## 9.x
 
+### 9.16.1 · 2026-10-24
+
+- Hotfix: arreglo menor de la 9.16.0
+
 ### 9.16.0 · 2026-10-24
 
 - Pisos: sobreáticos y áticos con vistas en la mitad de los bloques de los barrios con vistas: más grandes, con terraza y bastante más caros (54 nuevos)

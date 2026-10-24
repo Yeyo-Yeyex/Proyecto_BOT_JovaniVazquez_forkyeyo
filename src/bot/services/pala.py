@@ -1663,6 +1663,42 @@ class WorkService:
             await self.repository.save_contract(guild_id, user_id, status.contract)
             return await self._status(guild_id, user_id, status.contract)
 
+    async def force_promotion(
+        self, guild_id: int, user_id: int, steps: int = 1, branch: str = ""
+    ) -> tuple[int, Status]:
+        """Sube `steps` puestos sin pedir nada: el `enchufe` de Yeyo (`bot.cogs.admin`).
+
+        Cada subida es un ascenso normal (`promote`). Para en lo más alto o donde toca
+        elegir rama, si `branch` (clave o nombre) no es una de las que quedan.
+
+        Returns:
+            Cuántos puestos ha subido y cómo queda.
+
+        Raises:
+            WorkError: Si no tiene curro.
+        """
+        async with self._lock(guild_id, user_id):
+            status = await self.status(guild_id, user_id)
+            if status is None:
+                raise WorkError("No tiene curro.")
+            contract, job = status.contract, status.job
+            wanted = branch.strip().casefold()
+            done = 0
+            while done < steps and contract.level < job.top:
+                chosen = ""
+                if job.forks(contract.level, contract.branch):
+                    options = open_branches(job, status.retired)
+                    match = [b for b in options if wanted in (b.key, b.name.casefold())]
+                    if not match:
+                        break
+                    chosen = match[0].key
+                promote(contract, status.now, chosen)
+                done += 1
+            if not done:
+                return 0, status
+            await self.repository.save_contract(guild_id, user_id, contract)
+            return done, await self._status(guild_id, user_id, contract)
+
     async def retire(self, guild_id: int, user_id: int) -> Retirement:
         """Se jubila de la rama en la que está (en lo más alto de ella).
 
