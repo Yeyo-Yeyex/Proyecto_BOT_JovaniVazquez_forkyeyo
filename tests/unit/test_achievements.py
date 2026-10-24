@@ -241,6 +241,15 @@ PRODUCED_STATS = {
     "staff_fired_disciplinario", "staff_fired_objetivo", "staff_fired_improcedente",
     "staff_fired_b", "staff_severance", "staff_bonus_refund", "staff_raises",
     "staff_permanent", "staff_courses", "staff_course_spent", "staff_fundae", "staff_skill_max",
+    # Las cadenas (fase 5): locales, nave, importar, gerentes y vender la sociedad.
+    "biz_locales_max", "biz_chain_sectors_max", "biz_chain_islands_max", "biz_chain_brand_max",
+    "biz_nave_size_max", "biz_nave_fill_max", "biz_managers_max", "biz_sale_price_max",
+    "biz_sale_locales_max", "biz_sl_chain_max", "biz_chain_opened", "biz_branch_closed",
+    "biz_nave_opened", "biz_nave_own", "biz_nave_closed", "biz_nave_lost", "biz_imports",
+    "biz_import_spent", "biz_aiem_paid", "biz_import_saved", "biz_import_aiem_free",
+    "biz_containers", "biz_from_nave", "biz_managers_hired", "biz_manager_restocks",
+    "biz_manager_nave", "biz_manager_hires", "biz_manager_absent", "biz_company_sold",
+    "biz_sale_gain", "biz_sale_tax", "biz_sale_loss",
     # cogs/achievements.py: mensajes, voz, reacciones y la siembra del historial
     *message_stats("x", when=datetime(2026, 1, 1, tzinfo=TIMEZONE)).keys(),
     "msg_night", "msg_morning", "msg_long", "msg_short", "msg_caps", "msg_questions",
