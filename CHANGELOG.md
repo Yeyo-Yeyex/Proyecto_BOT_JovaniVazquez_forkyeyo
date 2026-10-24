@@ -8,6 +8,13 @@ criterio.
 
 ## 9.x
 
+### 9.11.0 · 2026-10-24
+
+- Pisos: en 🧰 Gestionar → 🏢 Dividir, los edificios, las casonas, los chalés y los dúplex se dividen por plantas: cada planta es un inmueble con su inquilino, su hipoteca y su precio, y se vende por separado (juntas piden un 25 % más; obra con IGIC, ICIO, licencia y AJD de la escritura)
+- Pisos: los pisos de tres dormitorios, los áticos, los dúplex, las terreras, los chalés y las casonas se pueden alquilar por habitaciones, cada una con su inquilino (10 inquilinos nuevos que solo buscan habitación); compensa en el centro, los barrios históricos y la playa, y se vuelven a juntar cuando están vacías
+- Pisos: botón verde 👥 Candidatos en el mapa, el barrio y Mis pisos cuando alguien espera a que elijas inquilino, que lleva de un piso o habitación al siguiente
+- Hacienda: el AJD de las escrituras de división horizontal sale con el ITP de los pisos
+
 ### 9.10.2 · 2026-10-24
 
 - Tienda: las ediciones limitadas dicen cuántas quedan en la lista y en el desplegable, sin tener que abrir la ficha
