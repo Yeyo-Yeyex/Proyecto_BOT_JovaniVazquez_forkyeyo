@@ -37,6 +37,7 @@ from bot.repositories.housing import (
     SignedLoan,
     SignedRemortgage,
     Signing,
+    SplitDone,
     TenantDeal,
     VoteResult,
     VpoDeal,
@@ -552,6 +553,31 @@ class HousingService:
         run = self.repository.start_reform(guild_id, user_id, key, reform, local_day(now), now)
         done, balances = await self.economy.housing(guild_id, run)
         return done, balances[user_id]
+
+    async def split(
+        self, guild_id: int, user_id: int, key: str, mode: str
+    ) -> tuple[SplitDone, int]:
+        """Divide un inmueble por plantas o lo prepara para alquilarlo por habitaciones.
+
+        Paga la obra (o los muebles) con su IGIC y, por plantas, el ICIO, la licencia y el AJD
+        de la escritura. `(lo hecho, saldo)`.
+
+        Raises:
+            HousingError: Si no se puede.
+            InsufficientFundsError: Si no le llega.
+        """
+        now = self._clock()
+        run = self.repository.split(guild_id, user_id, key, mode, local_day(now), now)
+        done, balances = await self.economy.housing(guild_id, run)
+        return done, balances[user_id]
+
+    async def join_rooms(self, guild_id: int, user_id: int, key: str) -> None:
+        """Deja de alquilar un piso por habitaciones (con todas vacías). No mueve dinero.
+
+        Raises:
+            HousingError: Si no se puede.
+        """
+        await self.repository.join_rooms(guild_id, user_id, key, self._clock())
 
     async def choose(self, guild_id: int, user_id: int, decision_id: int, choice: str) -> Decision:
         """Elige cómo resolver un imprevisto (se paga con el cierre de la noche)."""

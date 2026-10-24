@@ -25261,6 +25261,9 @@ HOUSING_ACTIONS = {
     "administra": "pisos_admin",
     "derrama_fondo": "pisos_levies",
     "division": "pisos_divisions",
+    "plantas": "pisos_floor_splits",
+    "habitaciones": "pisos_room_splits",
+    "juntar": "pisos_rooms_joined",
 }
 
 
@@ -25289,6 +25292,7 @@ def housing_action_stats(
     rehab: bool = False,
     choice: str = "",
     silent: bool = False,
+    units: int = 0,
 ) -> StatDelta:
     """Estadísticas de una acción de las fases 2 a 6 (`HOUSING_ACTIONS`, o `hipoteca`).
 
@@ -25316,6 +25320,8 @@ def housing_action_stats(
         reform: Con `reforma`, cuál (`amount`, lo que costó con impuestos).
         rehab: Con `reforma`, si cuenta como rehabilitación.
         silent: Con `junta_aprobada`, si nadie más votó (el silencio vale como sí).
+        units: Con `plantas` o `habitaciones`, cuántas salen (`amount`, lo que costó con
+            impuestos).
         choice: Con `decide`, la forma elegida (no cuenta nada más: los logros de cada forma
             salen al resolverse, con el cierre de la noche).
     """
@@ -25365,6 +25371,9 @@ def housing_action_stats(
             delta.add[f"{PISOS_REFORM_PREFIX}{reform}"] = 1
         if rehab:
             delta.add["pisos_rehab"] = 1
+    if action in ("plantas", "habitaciones"):
+        delta.add["pisos_split_spent"] = amount
+        delta.peak["pisos_split_units"] = units
     if action == "firma_candidato":
         if tenant:
             delta.add[f"{PISOS_TENANT_PREFIX}{tenant}"] = 1

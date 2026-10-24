@@ -1531,6 +1531,8 @@ def motion_text(kind: str, value: str, amount: int, names: dict[int, str]) -> st
         )
     if kind == "licencia":
         return f"Pedir la licencia vacacional ({format_amount(rules.LICENSE_FEE)})"
+    if kind in rules.SPLIT_MODES:
+        return rules.MOTION_BY_KEY[kind].name
     return "Vender el inmueble entero al mercado"
 
 
