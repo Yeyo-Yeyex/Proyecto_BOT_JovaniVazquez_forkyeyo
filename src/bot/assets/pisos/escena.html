@@ -226,7 +226,7 @@ const CHIP = {
 };
 const STATUS_COLOR = { venta: "green", tuyo: "blue", compartido: "blue", parcial: "amber", ajeno: "grey",
   vacio: "grey", alquilado: "green", impago: "red", desahucio: "red", okupa: "red", habitual: "blue", obras: "amber", negocio: "blue",
-  por_habitaciones: "turq", plantas: "steel" };
+  por_habitaciones: "turq", plantas: "steel", dividido: "steel" };
 // Una etiqueta de color, con brillo arriba y canto abajo. Devuelve su ancho. `align`: left | right | center.
 // `outline`: borde y sin relleno.
 function chip(text, x, y, kind, o = {}) {
@@ -1732,6 +1732,7 @@ const RIBBON = {
   alquilado: ["ALQUILADO", "#1f9d55"], impago: ["NO PAGA", "#c9302c"], desahucio: ["DESAHUCIO", "#8a1c14"],
   okupa: ["OKUPADO", "#b3261e"], vacio: ["VACÍO", "#6b7a8a"], habitual: ["HOGAR", "#1f6fb2"], obras: ["EN OBRAS", "#c98a00"],
   negocio: ["TU NEGOCIO", "#13867f"], por_habitaciones: ["HABITACIONES", "#13867f"], plantas: ["POR PLANTAS", "#44546a"],
+  dividido: ["EN DOS", "#44546a"],
 };
 function ribbon(status, x, y) {
   const rb = RIBBON[status]; if (!rb) return;
@@ -2371,7 +2372,7 @@ const BARRIO_COLS = 5, CARD_W = 186, CARD_H = 278, CARD_GAP = 10, GRID_TOP = 162
 // Lo que no cabe a 19 px se dice más corto (la ficha lo lleva entero).
 const shortStatus = (s) => s.replace(/^Tienes el (\d+) %$/, "Tienes $1 %").replace(/^Queda el (\d+) % libre$/, "$1 % libre");
 const LEASE_SHORT = { alquilado: "Alquilado", impago: "No paga", desahucio: "Desahucio", okupa: "Okupado", vacio: "Vacío", habitual: "Hogar", obras: "En obras", negocio: "Negocio",
-  por_habitaciones: "Habitaciones", plantas: "Por plantas" };
+  por_habitaciones: "Habitaciones", plantas: "Por plantas", dividido: "En dos" };
 function kindLabel(name, maxW) { return width(name, F.m(20)) > maxW ? name.replace("dormitorios", "dorm.") : name; }
 
 // El número de la tarjeta, el mismo que el de su botón (apagado si es un solar).
@@ -2696,7 +2697,7 @@ function sofaRoom(x, y, w, h) {
 
 // Lo que cabe en la etiqueta de una fila: la frase entera y, si no entra, una más corta.
 const SHORT = { vacio: "Vacío", alquilado: "Alquilado", impago: "No paga", desahucio: "Desahucio", okupa: "Okupado", habitual: "Vives aquí", obras: "En obras", negocio: "Tu negocio",
-  por_habitaciones: "Por habitaciones", plantas: "Por plantas" };
+  por_habitaciones: "Por habitaciones", plantas: "Por plantas", dividido: "En dos" };
 // `compact`: dos líneas y la etiqueta a la derecha; con hipoteca lleva además una tercera con la deuda.
 function itemRow(it, x, y, w, h, compact) {
   card(x, y, w, h, { r: 12 });
@@ -4473,7 +4474,8 @@ function unitText(u, x, y, w, h, fs) {
 // Dónde va el cartel del texto y dónde lo de dentro en un hueco de w × h (en relativo). Ancho: el texto a la
 // izquierda; estrecho: lo de dentro arriba y el texto debajo.
 function cellLayout(w, h) {
-  if (w >= 300) { const tw = Math.min(250, Math.round(w * 0.48)); return { side: true, tx: 12, ty: 0, tw, th: h >= 160 ? 110 : h, ix: tw + 22, iy: 5, iw: w - tw - 28, ih: h - 10 }; }
+  // por debajo de 360 (huecos estrechados por sus metros), el cartel no baja de 200 para que quepa el precio
+  if (w >= 300) { const tw = Math.min(250, Math.max(Math.round(w * 0.48), w < 360 ? Math.min(200, w - 120) : 0)); return { side: true, tx: 12, ty: 0, tw, th: h >= 160 ? 110 : h, ix: tw + 22, iy: 5, iw: w - tw - 28, ih: h - 10 }; }
   const th = h >= 160 ? 96 : 62;
   return { side: false, tx: 10, ty: h - th, tw: w - 20, th, ix: 6, iy: 5, iw: w - 12, ih: h - th - 8 };
 }
@@ -4481,8 +4483,31 @@ function cellLayout(w, h) {
 function terraceAt(x, w, h) { const L = cellLayout(w, h); return x + L.ix + Math.round(L.iw * (L.side ? 0.4 : 0.5)); }
 // Un hueco: su fondo, lo de dentro, el sótano más oscuro, el texto en su cartel y el borde azul si es tuyo.
 // `o.water`: un puesto del pantalán (sin paredes; el agua por debajo del barco).
+// Un hueco estrecho y bajo (los del sótano, tres en fila) no tiene sitio para lo de dentro encima del cartel:
+// el cartel se queda en lo que mide su texto y lo de dentro va a su derecha, si quedan al menos 64 px.
+function compactLayout(u, w, h, fs) {
+  const cs = fs - 4, r = fs <= 17 ? 12 : 14, sale = u.use_kind === "venta";
+  const chipW = width(u.use, F.d(cs)) + 22;
+  const ownW = u.mine ? tagW(u.owner, cs - 1, "house") : width(sale ? u.price : u.owner, sale ? F.d(cs) : F.m(cs));
+  const labW = 2 * r + 8 + width(u.label, F.d(fs + 1)) + (u.featured ? 24 : 0) + (u.waiting > 0 ? tagW(String(u.waiting), 14, "people") + 6 : 0);
+  const tw = Math.ceil(Math.max(labW, chipW + 8 + Math.max(ownW, 50), chipW / 0.62)) + 4;
+  if (w - tw - 28 < 64) return null;
+  return { side: true, tx: 12, ty: 0, tw, th: h, ix: tw + 22, iy: 5, iw: w - tw - 28, ih: h - 10 };
+}
+// Dónde se podría partir un hueco que aún se puede dividir: una raya discontinua por la mitad de lo de dentro,
+// con dos flechitas que se separan arriba.
+function splitMark(x, y0, y1) {
+  if (y1 - y0 < 16) return;
+  // arriba y abajo, no por el centro: ahí van los carteles del escaparate o de la persiana
+  const ya = y0 + 12 + (y1 - y0 - 12) * 0.3, yb = y1 - (y1 - y0) * 0.22;
+  g.setLineDash([6, 5]);
+  for (const [a, b] of [[y0 + 12, ya], [yb, y1]]) { line(x, a, x, b, "rgba(255,255,255,0.85)", 3.4); line(x, a, x, b, "rgba(27,42,53,0.6)", 1.6); }
+  g.setLineDash([]);
+  poly([[x - 3, y0 + 2], [x - 3, y0 + 10], [x - 9, y0 + 6]], "rgba(27,42,53,0.6)"); poly([[x + 3, y0 + 2], [x + 3, y0 + 10], [x + 9, y0 + 6]], "rgba(27,42,53,0.6)");
+}
 function unitCell(u, x, y, w, h, o = {}) {
-  const fs = h >= 100 ? 21 : h >= 60 ? 19 : 17, seed = hash(u.key), L = cellLayout(w, h);
+  const fs = h >= 100 ? 21 : h >= 60 ? 19 : 17, seed = hash(u.key), L0 = cellLayout(w, h);
+  const L = !L0.side && L0.ih < 28 && w >= 160 && !o.water ? compactLayout(u, w, h, fs) || L0 : L0;
   const k = u.kind === "piso2" || u.kind === "piso3" ? "piso" : u.kind, home = HOME_KINDS.has(k) || k === "edificio";
   const tx0 = u.premium && !o.water && L.ih >= 28 ? terraceAt(x, w, h) : null, ix1 = tx0 ?? x + w;
   if (!o.water) {
@@ -4497,6 +4522,7 @@ function unitCell(u, x, y, w, h, o = {}) {
     rect(x, wy, w, 16, "rgba(31,150,190,0.7)"); line(x + 6, wy + 4, x + w * 0.4, wy + 4, "rgba(255,255,255,0.6)", 1.6);
   }
   if (o.below) rect(x, y, w, h, "rgba(18,22,30,0.24)");
+  if (u.divisible && !o.water && L.ih >= 28) splitMark(Math.round(x + L.ix + (ix1 - x - L.ix) / 2), y + L.iy, y + L.iy + L.ih);
   g.restore();
   const tx = x + L.tx, ty = y + L.ty;
   if (L.side) fillRR(x + 5, y + 4, L.tw + 12, L.th - 9, 8, "rgba(255,253,246,0.88)");
@@ -4639,6 +4665,45 @@ function parkingEntrance(bx, bw, gy) {
   T("P", px, gy - 108, { font: F.d(30), color: "#fff", align: "center" });
 }
 // Una planta en la columna de la escalera: los peldaños y su nombre.
+// Dónde va cada hueco de una planta: el ancho, por sus metros (`area`), con un mínimo para que quepan el nombre,
+// el chip y el precio; sin metros, a partes iguales. Las dos mitades de algo dividido en dos («izda.» y «dcha.»)
+// van pegadas, con un tabique fino en vez del muro entre viviendas.
+const MIN_CELL = 230;
+function rowPlaces(us, x0, total, gap, byArea) {
+  const n = us.length;
+  if (!n) return [];
+  const gaps = us.slice(1).map((u, i) => (us[i].half === "izda." && u.half === "dcha." ? 3 : gap));
+  const free = total - gaps.reduce((a, b) => a + b, 0), area = us.map((u) => (u.area > 0 ? u.area : 0));
+  let ws = us.map(() => free / n);
+  if (byArea && n > 1 && area.every((a) => a > 0)) {
+    const fixed = new Set(), min = Math.min(MIN_CELL, free / n);
+    for (let pass = 0; pass < n; pass++) {
+      const rest = free - fixed.size * min, sum = area.reduce((s_, a, i) => s_ + (fixed.has(i) ? 0 : a), 0);
+      ws = area.map((a, i) => (fixed.has(i) ? min : (rest * a) / sum));
+      const low = ws.findIndex((w_, i) => !fixed.has(i) && w_ < min);
+      if (low < 0) break;
+      fixed.add(low);
+    }
+  }
+  let x = x0;
+  return ws.map((w_, i) => { const p = { x, w: w_, wall: i && gaps[i - 1] === 3 }; x += w_ + (gaps[i] ?? 0); return p; });
+}
+// El portal del bajo de un bloque, que no es de nadie: el vestíbulo, el arranque de la escalera (que sube hacia la
+// columna de la escalera, a su izquierda), los buzones y la puerta de la calle.
+function portalCell(x, y, w, h, look) {
+  rect(x, y, w, h, "#ece5d6"); rect(x, y + h - 7, w, 7, "#9a8f80");
+  g.beginPath(); for (let k = x; k < x + w; k += 14) g.rect(k, y + h - 7, 7, 7); g.fillStyle = "rgba(255,255,255,0.25)"; g.fill();
+  const sh = Math.min(7, (h - 10) / 8), sw = Math.min(12, w * 0.1);
+  for (let k = 0; k < 4; k++) rect(x, y + h - 7 - (k + 1) * sh, (4 - k) * sw, sh, k % 2 ? "#d8cdb6" : "#cdbfa4");
+  line(x, y + h - 7 - 4 * sh - 14, x + 4 * sw, y + h - 7 - 16, "#6b5a48", 2);
+  const dw = Math.min(40, w * 0.34), dh = Math.min(h - 14, 64), dx = x + w - dw - 6, dy = y + h - 7 - dh;
+  rect(dx - 3, dy - 3, dw + 6, dh + 3, look.wood); glass(dx, dy, dw, dh); line(dx + dw / 2, dy, dx + dw / 2, dy + dh, look.wood, 2); dot(dx + dw / 2 - 4, dy + dh * 0.55, 1.6, "#e0c060");
+  const mx = x + 4 * sw + 8, mw = Math.max(18, dx - mx - 10), cols = clamp(Math.floor(mw / 9), 2, 4), bw = mw / cols;
+  const my = y + h - 7 - Math.min(h * 0.62, 44);
+  if (mw >= 18) { rect(mx - 2, my - 2, mw + 4, 22, "#7a6a5a"); for (let r = 0; r < 2; r++) for (let c = 0; c < cols; c++) { rect(mx + c * bw + 1, my + r * 10, bw - 2, 8, "#c9b48a"); rect(mx + c * bw + 2, my + r * 10 + 2, bw - 4, 1.4, "#3a2a20"); } }
+  fillRR(x + 4, y + 4, Math.min(w - 8, 70), 20, 10, "#fff");
+  fitText("Portal", x + 4 + Math.min(w - 8, 70) / 2, y + 14, Math.min(w - 8, 70) - 10, F.d, 14, 10, { color: C.ink, align: "center" });
+}
 function coreRow(label, x, y, h, below) {
   rect(x, y, 88, h, below ? "#c4c7ca" : "#e9e4da");
   g.beginPath(); for (let k = 0; k < 6; k++) { const sx = x + 10 + k * 12, sy = y + h - 6 - k * (h - 12) / 6; g.rect(sx, sy, 12, 2.4); g.rect(sx, sy - (h - 12) / 6, 2.4, (h - 12) / 6); }
@@ -4711,9 +4776,12 @@ function section(st, theme, sty, px, py, pw, ph) {
       if (!(topRow && cut) && rb() < 0.8) sideBalcony(look, wx1, y + rowH - 3, 1, rowH, rb);
     }
     if (core) coreRow(f.label, bx, y + 3, rowH - 6, bel);
-    const us = f.units, uw = (uwAll - (us.length - 1) * gap) / Math.max(us.length, 1);
+    const us = f.units, pw0 = f.portal && block && !park && us.length ? clamp(Math.round(uwAll * 0.14), 96, 130) : 0;
+    if (pw0) portalCell(ux0, y + 3, pw0, rowH - 6, look);
+    const places = rowPlaces(us, ux0 + (pw0 ? pw0 + gap : 0), uwAll - (pw0 ? pw0 + gap : 0), gap, block);
     us.forEach((u, i) => {
-      const ux = ux0 + i * (uw + gap);
+      const ux = places[i].x, uw = places[i].w;
+      if (places[i].wall) rect(ux - 3, y + 3, 3, rowH - 6, "#d9d0bf"); // el tabique entre dos mitades
       if (separate) { // cada bungalow o nave es una casita aparte, con sus muros y su tejado
         rect(ux - 6, y - 3, uw + 12, rowH + 3, shade(sty.wall, -0.18));
         if (kind === "complejo") gableRoof(ux - 6, ux + uw + 6, y - 3, y - 34, sty.roof, 8);
@@ -4721,7 +4789,7 @@ function section(st, theme, sty, px, py, pw, ph) {
       }
       unitCell(u, ux, y + 3, uw, rowH - 6, { below: bel, water });
     });
-    if (water) for (let i = 1; i < us.length; i++) rect(ux0 + i * (uw + gap) - gap / 2 - 3, y + rowH * 0.35, 6, gy - y - rowH * 0.35, "#6b4a2e"); // los pilotes entre puestos
+    if (water) for (let i = 1; i < us.length; i++) rect(places[i].x - gap / 2 - 3, y + rowH * 0.35, 6, gy - y - rowH * 0.35, "#6b4a2e"); // los pilotes entre puestos
   }
   if (block && above.length) rect(wx0, gy - 3, wx1 - wx0, 6, shade(sty.wall, -0.42));
 }
