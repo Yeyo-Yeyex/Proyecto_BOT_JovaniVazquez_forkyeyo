@@ -8,6 +8,10 @@ criterio.
 
 ## 9.x
 
+### 9.18.0 · 2026-10-24
+
+- Admin: `dinero`, para que Yeyo y Dani den yapdollars a un miembro o a sí mismos (devolver lo perdido por un fallo o dar premios)
+
 ### 9.17.3 · 2026-10-24
 
 - Yapdollars: ningún panel enseña ya euros. La lotería (décimos, rascas y sus premios), `/renta`, el capital y el contrato en B de los negocios, las fichas de `pisos`, Hong Kong, el casino y el Bizum dan sus cifras en Y$, con el valor que aplica el juego

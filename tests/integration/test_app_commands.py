@@ -105,7 +105,7 @@ ADMIN_COMMANDS = {
 TEXT_ONLY_COMMANDS = {"magik", "memes"}
 
 # Utilidades de mantenimiento para unos pocos IDs: no salen en la ayuda.
-HIDDEN_COMMANDS = {"reinicio", "bloquear", "crear"}
+HIDDEN_COMMANDS = {"reinicio", "bloquear", "crear", "dinero"}
 
 # Secretos: solo con `.`, sin `/`, fuera de la ayuda y de la telemetría.
 SECRET_COMMANDS = {"enchufe", "amanece"}
