@@ -68,7 +68,7 @@ def test_las_muestras_cubren_cada_pantalla_y_las_variantes_del_contrato() -> Non
     screens = {s["screen"] for s in states.values()}
     assert screens == {
         "dia", "montar", "negocio", "almacen", "cuentas", "cliente", "cierre", "mejoras", "resenas",
-        "sociedad", "plantilla", "candidatos",
+        "sociedad", "plantilla", "candidatos", "cadena", "nave", "venta",
     }  # fmt: skip
     sectors = {sector.key for sector in SECTORS}
     clients = [s for s in states.values() if s["screen"] == "cliente"]
@@ -133,6 +133,30 @@ def test_las_muestras_cubren_cada_pantalla_y_las_variantes_del_contrato() -> Non
     assert any(c["bonus"] for c in people) and any(c["part_time"] for c in people)
     assert {s["room"] == "No queda sitio" for s in hiring} == {True, False}
     assert any(s.get("staff") for s in shops) and any(s.get("staff") is None for s in covers)
+    # Fase 5: la cadena, la nave y la venta, y los retoques de las pantallas de antes.
+    chains = [s for s in states.values() if s["screen"] == "cadena"]
+    assert {len(s["locales"]) for s in chains} >= {1, 2, 4}
+    assert {s["nave"] is None for s in chains} == {True, False}
+    places = [p for s in chains for p in s["locales"]]
+    assert {p["manager"] for p in places} == {True, False}
+    assert {p["alert"] is None for p in places} == {True, False}
+    assert any(p["selected"] for p in places) and len({p["island"] for p in places}) > 1
+    assert any(len(p["name"]) == 24 for p in places)
+    naves = [s for s in states.values() if s["screen"] == "nave"]
+    assert {s["mode"] for s in naves} == {"alquilar", "nave"}
+    stores = [s for s in naves if s["mode"] == "nave"]
+    assert any(not s["stock"] and not s["coming"] for s in stores)
+    assert any(s["stock"] and s["coming"] for s in stores) and any(s["debt"] for s in stores)
+    quotes = [s["quote"] for s in stores if s["quote"]]
+    assert any(s["quote"] is None for s in stores)
+    assert {q["good"] for q in quotes} == {True, False} and any(q["blocked"] for q in quotes)
+    assert any(q["aiem_rate"] != "no lleva" and not q["blocked"] for q in quotes)
+    sales = [s for s in states.values() if s["screen"] == "venta"]
+    assert {s["blocker"] is None for s in sales} == {True, False}
+    assert any(s.get("locales") and s.get("manager") for s in covers)
+    assert any(e["role"] == "gerente" for e in cards)
+    assert any(o.get("role") == "gerente" for o in offers)
+    assert any(s["business"] and s["business"].get("more") for s in days)
 
 
 async def test_sin_node_ni_chromium_no_se_pinta_y_el_panel_va_en_texto() -> None:

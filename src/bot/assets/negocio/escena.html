@@ -19,8 +19,16 @@ mejoras (las del local y las campañas) y resenas, desde la fase 3, sociedad (co
 en sociedad limitada o el balance de la suya, con la RIC, la chapa «ZEC 4 %» si está inscrita o
 por qué no, en una franja azul, debajo de los avisos) y, desde la fase 4, plantilla (hasta 6 tarjetas de
 empleado con su cara, contrato, humor, habilidades, rasgos y avisos, y las nóminas de la noche) y
-candidatos (los de hoy y la oferta al elegido, con el sello «sin alta» si es en B). La portada
-pinta a la plantilla en la acera (`staff`: sus caras salen de `seeds`) con su línea de hoy. Las
+candidatos (los de hoy y la oferta al elegido, con el sello «sin alta» si es en B) y, desde la fase 5,
+cadena (hasta 4 tarjetas de local con su fachada pequeña, sus cifras de hoy, el gerente y el aviso, los
+huecos que quedan y la tarjeta de la nave o «sin nave»), nave (en `mode` «alquilar», los tres tamaños
+con el elegido y lo que cuesta abrirla; en «nave», el almacén con su barra de lleno, el stock, el barco
+con lo que viene y el desglose del contenedor del producto elegido, con el ahorro en verde o en rojo o
+por qué no se puede) y venta (lo que paga el comprador por la sociedad y lo que te llevas, con el sello
+«sin comprador» y el porqué si no lo hay). La portada pinta a la plantilla en la acera (`staff`: sus
+caras salen de `seeds`) con su línea de hoy, la chapa de la cadena (`locales`) y el gerente (`manager`);
+la tarjeta del día, la chapa «+N locales» (`more`); el gerente de la plantilla lleva camisa y corbata
+en vez del delantal y un maletín, y la oferta de gerente, su sello. Las
 caras de empleados y candidatos son las de la gente (`person`, de `seed`) con el delantal del
 negocio. El contrato de cada una está en la docstring de
 bot/services/business_view.py. Una pantalla desconocida lanza un error. Los cinco sectores
@@ -297,6 +305,16 @@ function smallIcon(key, cx, cy, r, color) {
   } else if (key === "tools") { // una llave inglesa: obras y reformas
   } else if (key === "star") {
     starPath(0, 0, r * 1.15, color);
+  } else if (key === "case") { // el maletín del gerente: el asa, el cuerpo y el cierre
+    rr(-r * 0.36, -r * 0.92, r * 0.72, r * 0.6, r * 0.16); g.lineWidth = r * 0.2; g.stroke();
+    fillRR(-r, -r * 0.5, r * 2, r * 1.32, r * 0.24, color);
+    g.fillStyle = "rgba(0,0,0,0.28)"; g.fillRect(-r, -r * 0.02, r * 2, r * 0.13);
+    g.fillStyle = color; g.fillRect(-r * 0.16, -r * 0.12, r * 0.32, r * 0.32);
+  } else if (key === "nave") { // la nave: tejado a dos aguas, la chapa y la persiana
+    g.beginPath(); g.moveTo(-r * 1.05, -r * 0.2); g.lineTo(0, -r * 0.85); g.lineTo(r * 1.05, -r * 0.2); g.closePath(); g.fill();
+    g.fillRect(-r * 0.85, -r * 0.2, r * 1.7, r * 1.05);
+    g.fillStyle = "rgba(0,0,0,0.35)"; g.fillRect(-r * 0.42, r * 0.12, r * 0.84, r * 0.73);
+    g.fillStyle = color; for (let k = 0; k < 3; k++) g.fillRect(-r * 0.42, r * 0.28 + k * r * 0.18, r * 0.84, r * 0.05);
   } else if (key === "hand") { // la mano levantada: eliges tú
     fillRR(-r * 0.55, -r * 0.05, r * 1.1, r * 0.95, r * 0.3, color);
     for (let i = 0; i < 4; i++) fillRR(-r * 0.55 + i * r * 0.28, -r * (i === 1 || i === 2 ? 0.95 : 0.8), r * 0.22, r * 1.0, r * 0.11, color);
@@ -1101,8 +1119,17 @@ function person(cx, top, R, seed, o = {}) {
     }
     fillRR(px, py, pw, ph, 3, shade(L.shirt, -0.12)); line(px + 2, py + ph * 0.25, px + pw - 2, py + ph * 0.25, "rgba(0,0,0,0.18)", 1.2);
   }
+  // el gerente (`o.tie`): camisa blanca de cuello abierto y la corbata, sin delantal
+  if (o.tie) {
+    const tb = Math.min(bodyBot - R * 0.1, bodyTop + R * 2.0);
+    poly([[cx - R * 0.34, bodyTop - 1], [cx + R * 0.34, bodyTop - 1], [cx + R * 0.2, tb], [cx - R * 0.2, tb]], "#fff");
+    for (const sx of [-1, 1]) poly([[cx + sx * R * 0.44, bodyTop - 2], [cx, bodyTop + R * 0.32], [cx + sx * R * 0.1, bodyTop + R * 0.46], [cx + sx * R * 0.56, bodyTop + R * 0.14]], "#f4f4f0");
+    poly([[cx - R * 0.14, bodyTop + R * 0.12], [cx + R * 0.14, bodyTop + R * 0.12], [cx + R * 0.09, bodyTop + R * 0.36], [cx - R * 0.09, bodyTop + R * 0.36]], shade(o.tie, -0.2));
+    poly([[cx - R * 0.09, bodyTop + R * 0.36], [cx + R * 0.09, bodyTop + R * 0.36], [cx + R * 0.2, tb - R * 0.22], [cx, tb], [cx - R * 0.2, tb - R * 0.22]], o.tie);
+    line(cx - R * 0.12, bodyTop + R * 0.8, cx + R * 0.14, bodyTop + R * 0.66, "rgba(255,255,255,0.35)", R * 0.07);
+  }
   // el delantal de la plantilla (`o.apron`, el color del negocio), con sus tirantes y el bolsillo
-  if (o.apron) {
+  if (o.apron && !o.tie) {
     const ax = bw * 0.34, ay = bodyTop + R * 0.75, ab = o.full ? bodyBot + R * 0.9 : bodyBot;
     line(cx - ax + R * 0.1, ay + 1, cx - R * 0.3, bodyTop + R * 0.05, o.apron, R * 0.13);
     line(cx + ax - R * 0.1, ay + 1, cx + R * 0.3, bodyTop + R * 0.05, o.apron, R * 0.13);
@@ -1564,7 +1591,7 @@ function shopHeader(st, title, o = {}) {
   for (let x = -hh; x < W; x += 34) poly([[x, hh], [x + 16, hh], [x + 16 + hh, 0], [x + hh, 0]], accent);
   g.globalAlpha = 1; g.restore();
   rect(0, hh - 4, W, 4, accent);
-  emblemDisc(st.emblem, 52, hh / 2 - 2, hh * 0.36, main, accent);
+  if (o.icon) o.icon(52, hh / 2 - 2, hh * 0.36); else emblemDisc(st.emblem, 52, hh / 2 - 2, hh * 0.36, main, accent);
   const rightW = o.rightW ?? width(title, F.t(30)) + 40, maxW = W - 104 - rightW - 20;
   fitText(String(st.name || ""), 100, o.sub ? hh / 2 - 16 : hh / 2 - 2, maxW, F.t, 38, 20, { color: accent, fancy: true, shadow: "rgba(0,0,0,0.35)", dx: 1.5, dy: 2.5 });
   if (o.sub) fitText(o.sub, 102, hh / 2 + 20, maxW, F.m, 21, 15, { color: mix(accent, main, 0.18) });
@@ -1637,9 +1664,12 @@ function jobCard(job, x, y, w, h) {
 }
 function businessCard(b, x, y, w, h) {
   card(x, y, w, h, { top: 10, topColor: b.main });
-  const fw = 160, fh = Math.min(128, h - 110);
+  const fw = 160, fh = Math.min(128, h - 110), more = Math.max(0, Number(b.more) || 0);
+  // los otros locales de la cadena, como fichas apiladas detrás de la fachada
+  for (let k = Math.min(2, more); k >= 1; k--) { fillRR(x + 18 + k * 7, y + 24 + k * 7, fw, fh, 12, shade(b.main || C.atl, k === 1 ? 0.25 : 0.5)); rr(x + 18.5 + k * 7, y + 24.5 + k * 7, fw - 1, fh - 1, 12); stroke("rgba(0,0,0,0.12)", 1.2); }
   storefront(x + 18, y + 24, fw, fh, { ...b, open: true, mini: true, theme: "centro", seed: hash(b.name || ""), r: 12 });
   rr(x + 18, y + 24, fw, fh, 12); stroke("rgba(0,0,0,0.12)", 1.4);
+  if (more) chip(`+${more} ${more === 1 ? "local" : "locales"}`, x + 18 + fw - 6, y + 24 + fh - 38, "ink", { align: "right", size: 16 });
   const tx = x + fw + 34, tw = w - fw - 52;
   sectionLabel(b.sector_name || "Negocio", tx, y + 40);
   fitText(b.name || "", tx, y + 72, tw, F.t, 30, 16, { color: C.ink, fancy: true });
@@ -1763,6 +1793,16 @@ function equipmentPill(keys, x, y) {
   fillRR(x, y + 3, w, h, 14, "rgba(0,0,0,0.22)"); fillRR(x, y, w, h, 14, "#fffdf6");
   T("MEJORAS", x + 14, y + h / 2, { font: F.d(15), color: C.mute });
   keys.slice(0, n).forEach((k, i) => { const ix = x + 100 + i * (sz + 6); fillRR(ix, y + 6, sz, sz, 9, "#f2e9d4"); equipIcon(k, ix + sz / 2, y + 6 + sz / 2, 16); });
+  return h;
+}
+// El gerente del local (fase 5), en una nota con su maletín.
+function managerNote(name, x, y, maxW) {
+  const w = Math.min(maxW, Math.max(width(name, F.d(18)), width("Gerente del local", F.m(15))) + 76), h = 52;
+  fillRR(x, y + 3, w, h, 14, "rgba(0,0,0,0.22)"); fillRR(x, y, w, h, 14, "#fffdf6");
+  dot(x + 27, y + h / 2, 18, C.atl); smallIcon("case", x + 27, y + h / 2 + 1, 9.5, "#fff");
+  fitText(name, x + 56, y + 18, w - 68, F.d, 18, 13, { color: C.ink });
+  T("Gerente del local", x + 56, y + 38, { font: F.m(15), color: C.atl });
+  return h;
 }
 // El distintivo RECOMENDADO: una escarapela dorada con su cinta.
 function rosette(cx, cy, r) {
@@ -1792,10 +1832,14 @@ function streetStaff(st, fx, fy, fw, fh) {
   return n ? x0 - 26 : fx + fw - 14;
 }
 function paintNegocio(st) {
-  const preview = st.mode === "preview";
+  const preview = st.mode === "preview", chainText = !preview && st.locales ? st.locales.text || "" : "";
+  const chainW = chainText ? Math.min(260, width(chainText, F.d(18)) + 22) + 12 : 0;
   shopHeader(st, "", {
-    sub: [SECTOR_NAME[st.sector] || "", st.barrio || "", preview ? "" : st.size || ""].filter(Boolean).join(" · "), rightW: 200,
-    right: (hh) => chip(preview ? "Vista previa" : st.open ? "Abierto" : "Cerrado", W - 24, hh / 2 - 19, preview ? "ink" : st.open ? "green" : "red", { align: "right", size: 22 }),
+    sub: [SECTOR_NAME[st.sector] || "", st.barrio || "", preview ? "" : st.size || ""].filter(Boolean).join(" · "), rightW: 200 + chainW,
+    right: (hh) => {
+      const w = chip(preview ? "Vista previa" : st.open ? "Abierto" : "Cerrado", W - 24, hh / 2 - 19, preview ? "ink" : st.open ? "green" : "red", { align: "right", size: 22 });
+      if (chainText) chip(chainText, W - 24 - w - 12, hh / 2 - 16, "steel", { align: "right", size: 18, maxW: 260 });
+    },
   });
   const fx = 16, fy = 106, fw = 600, fh = 476;
   storefront(fx, fy, fw, fh, { ...st, preview, r: 16, span: 330 });
@@ -1815,7 +1859,8 @@ function paintNegocio(st) {
     let oy = fy + 14;
     if (st.campaign) oy += campaignNote(st.campaign, fx + 14, oy, fw - 150) + 8;
     const kit = (st.equipment || []).filter((k) => k !== "terraza");
-    if (kit.length) equipmentPill(kit, fx + 14, oy);
+    if (kit.length) oy += equipmentPill(kit, fx + 14, oy) + 8;
+    if (st.manager) managerNote(st.manager, fx + 14, oy, fw - 150);
     if (st.rating && st.rating.badge) rosette(fx + fw - 64, fy + 68, 46);
   }
   const px = 632, pw = W - 16 - px;
@@ -2491,12 +2536,12 @@ function moodFace(mood, cx, cy, r) {
   g.lineCap = "butt";
 }
 // El retrato de un empleado o candidato: su busto (de `seed`) con el delantal del negocio.
-function portrait(x, y, s, seed, st, age) {
-  const main = st.main || C.atl;
+function portrait(x, y, s, seed, st, age, role) {
+  const main = st.main || C.atl, boss = role === "gerente";
   fillRR(x, y, s, s, 14, mix(main, "#ffffff", 0.82));
   g.save(); rr(x, y, s, s, 14); g.clip();
   rect(x, y + s * 0.62, s, s * 0.38, mix(main, "#ffffff", 0.7));
-  person(x + s / 2, y + s * 0.1, s * 0.25, seed || 1, { cut: y + s + 6, apron: main, pocketColor: st.accent || C.gold });
+  person(x + s / 2, y + s * 0.1, s * 0.25, seed || 1, { cut: y + s + 6, apron: main, pocketColor: st.accent || C.gold, tie: boss ? main : null });
   if (age != null) { // la edad, en una pastilla sobre la foto
     const t = `${age} años`, tw = width(t, F.d(14)) + 14;
     fillRR(x + 5, y + s - 25, tw, 20, 10, "rgba(20,28,36,0.72)");
@@ -2504,6 +2549,7 @@ function portrait(x, y, s, seed, st, age) {
   }
   g.restore();
   rr(x + 0.5, y + 0.5, s - 1, s - 1, 14); stroke("rgba(0,0,0,0.14)", 1.4);
+  if (boss) { dot(x + 14, y + 14, 15, C.gold); circle(x + 14, y + 14, 15); stroke("#fff", 2.2); smallIcon("case", x + 14, y + 15, 8, C.ink); }
 }
 // El nombre en una línea si cabe a `big`; si no, en dos a `small` (y si ni así, con «…»).
 function nameBlock(name, x, cy, w, big, small) {
@@ -2562,8 +2608,8 @@ function humorRow(mood, humor, x, cy, w) {
 }
 // El turno («Mañana · …» o «Tarde · …»), con su sol o su luna.
 function shiftLine(text, x, cy, maxW) {
-  const night = /^tarde/i.test(String(text || ""));
-  if (night) glyph("moon", x + 8, cy, 8, "#7a3aa8"); else smallIcon("sun", x + 8, cy, 8, C.sunDk);
+  const night = /^tarde/i.test(String(text || "")), boss = /^gerente/i.test(String(text || ""));
+  if (boss) smallIcon("case", x + 8, cy + 1, 7.5, C.atl); else if (night) glyph("moon", x + 8, cy, 8, "#7a3aa8"); else smallIcon("sun", x + 8, cy, 8, C.sunDk);
   fitText(text || "", x + 22, cy, maxW - 22, F.m, 15, 12, { color: C.ink });
 }
 // La selección: un marco naranja y un visto en la esquina (no solo el color).
@@ -2578,7 +2624,7 @@ function staffCard(e, x, y, w, h, st) {
   if (e.selected) selectedFrame(x, y, w, h);
   card(x, y, w, h);
   const p = 12, fs = 80, rx = x + p + fs + 12, rw = x + w - p - rx, iw = w - 2 * p;
-  portrait(x + p, y + p, fs, e.seed, st, e.age);
+  portrait(x + p, y + p, fs, e.seed, st, e.age, e.role);
   nameBlock(e.name || "", rx, y + 30, rw, 19, 17);
   contractBadge(e.contract, e.contract_name, rx, y + 52, rw, 13);
   glyph("calendar", rx + 8, y + 98, 7.5, C.mute);
@@ -2722,10 +2768,19 @@ function offerPanel(o, x, y, w, h) {
   const kind = o.kind || (o.black ? "b" : /^indef/i.test(o.contract || "") ? "indefinido" : "temporal");
   contractBadge(kind, o.contract, lx, y + 44, 220, 20);
   shiftLine(o.shift, lx, y + 106, 230);
-  const tx = x + 268, tw = (o.black ? 520 : 680) / 3 - 10;
+  const boss = o.role === "gerente", tx = x + 268, tw = (o.black || boss ? 520 : 680) / 3 - 10;
   [[o.gross, C.ink], [o.net, C.greenDk], [o.cost, C.redDk]].forEach(([t, col], i) => offerTile(t, tx + i * (tw + 10), y + 16, tw, 74, col));
   if (o.bonus) tag(o.bonus, tx, y + h - 42, "green", "down", 16, 3 * tw + 20);
   if (o.black) blackStamp(x + w - 92, y + h / 2);
+  else if (boss) managerStamp(x + w - 92, y + h / 2);
+}
+// El sello de la oferta de gerente: azul, torcido, con el maletín.
+function managerStamp(cx, cy) {
+  g.save(); g.translate(cx, cy); g.rotate(-0.12);
+  rr(-78, -30, 156, 60, 8); stroke(C.atl, 4); rr(-70, -22, 140, 44, 5); stroke(C.atl, 1.6);
+  smallIcon("case", -48, 1, 11, C.atl);
+  TX("GERENTE", 14, -1, { font: F.t(26), color: C.atl, align: "center" });
+  g.restore();
 }
 function paintCandidatos(st) {
   shopHeader(st, "CANDIDATOS", { sub: SECTOR_NAME[st.sector] || "" });
@@ -2742,9 +2797,381 @@ function paintCandidatos(st) {
   footer(st.foot, H - 15);
 }
 
+// -- cadena, nave y venta: los locales, la nave para importar y vender la sociedad (fase 5) ----
+
+// «Esta semana: +58.000 Y$» → ["Esta semana", "+58.000 Y$"].
+function splitLabel(text) { const s = String(text || ""), i = s.indexOf(": "); return i > 0 ? [s.slice(0, i), s.slice(i + 2)] : ["", s]; }
+// El color de lo lleno que está la nave (y su forma: la barra no se lee solo por el color).
+const fillColor = (f) => (f >= 0.95 ? C.red : f >= 0.75 ? C.amber : C.turqDk);
+function fillBar(x, y, w, h, f) {
+  f = clamp(Number(f) || 0, 0, 1);
+  fillRR(x, y, w, h, h / 2, "#ece2cc");
+  if (f > 0) fillRR(x, y, Math.max(h, w * f), h, h / 2, fillColor(f));
+  g.beginPath(); for (let k = 1; k < 10; k++) g.rect(x + w * k / 10 - 0.75, y + 3, 1.5, h - 6); g.fillStyle = "rgba(255,255,255,0.5)"; g.fill();
+}
+// Un contenedor de lado: la chapa con sus nervios, el brillo de arriba y la sombra de abajo.
+function container(x, y, w, h, color) {
+  rect(x, y, w, h, color); rect(x, y, w, h * 0.16, "rgba(255,255,255,0.2)"); rect(x, y + h * 0.86, w, h * 0.14, "rgba(0,0,0,0.22)");
+  g.beginPath(); for (let sx = x + 3; sx < x + w - 1; sx += 4) g.rect(sx, y + h * 0.2, 1, h * 0.62); g.fillStyle = "rgba(0,0,0,0.16)"; g.fill();
+}
+const BOX_COLORS = [C.red, C.sun, C.turqDk, C.bug, C.blue, C.laurel, "#7a5aa8"];
+
+// La nave por fuera, en su recuadro: el cielo, el monte de picón, el almacén de chapa con su franja, las
+// persianas, la puerta de la oficina, unos palés y una palmera. `k` (0-1): lo ancha que es (su tamaño).
+function naveArt(x, y, w, h, k = 0.7, seed = 1) {
+  g.save(); rr(x, y, w, h, 10); g.clip();
+  rect(x, y, w, h, vgrad(y, y + h, "#6fb8e2", "#e4f2f8"));
+  cloud(x + w * 0.12, y + h * 0.2, h / 160, 0.85); cloud(x + w * 0.72, y + h * 0.13, h / 200, 0.7);
+  const gy = y + h * 0.84;
+  poly([[x, gy], [x, y + h * 0.52], [x + w * 0.22, y + h * 0.4], [x + w * 0.5, y + h * 0.55], [x + w * 0.78, y + h * 0.38], [x + w, y + h * 0.5], [x + w, gy]], "#b7ab90");
+  rect(x, gy, w, y + h - gy, "#8f979f"); rect(x, gy, w, 2, "rgba(0,0,0,0.2)");
+  g.beginPath(); for (let sx = x + 10; sx < x + w; sx += 40) g.rect(sx, gy + (y + h - gy) * 0.5 - 1, 18, 2.2); g.fillStyle = "rgba(255,255,255,0.6)"; g.fill();
+  const bw = w * k, bx = x + (w - bw) / 2, bh = h * (0.34 + 0.16 * k), by = gy - bh, roof = h * 0.08;
+  poly([[bx - 5, by + 2], [bx + bw / 2, by - roof], [bx + bw + 5, by + 2]], "#5f6f80");
+  rect(bx, by, bw, bh, lgrad(bx, 0, bx + bw, 0, [[0, "#e3e9ee"], [1, "#b4c0cb"]]));
+  g.beginPath(); for (let sx = bx + 5; sx < bx + bw; sx += 6) g.rect(sx, by + 6, 1, bh - 6); g.fillStyle = "rgba(60,80,100,0.16)"; g.fill();
+  rect(bx, by, bw, 6, C.sun);
+  const doors = k > 0.7 ? 2 : 1, dw = Math.min(bw * (doors === 1 ? 0.4 : 0.28), bh * 0.95), dh = bh * 0.6;
+  for (let d = 0; d < doors; d++) {
+    const dx = bx + bw * (doors === 1 ? 0.4 : 0.28 + d * 0.36) - dw / 2;
+    rect(dx - 3, gy - dh - 4, dw + 6, dh + 4, "#44546a"); rollShutter(dx, gy - dh, dw, dh);
+  }
+  const ow = Math.max(12, bw * 0.08), ox = bx + bw - ow - Math.max(8, bw * 0.06); // la oficina, con su ventanuco
+  rect(ox, gy - bh * 0.42, ow, bh * 0.42, "#2f6b8a"); rect(ox + ow * 0.2, gy - bh * 0.38, ow * 0.6, bh * 0.12, "#a8d0e8");
+  const r = rng(seed); // los palés con sus cajas
+  for (let i = 0; i < 2; i++) {
+    const px = bx - 30 - i * 26;
+    if (px < x + 4) break;
+    rect(px, gy - 4, 22, 4, "#a07a4a");
+    for (let j = 0, n = 1 + Math.floor(r() * 2); j < n; j++) { fillRR(px + 1, gy - 4 - (j + 1) * 12, 20, 12, 1.5, j % 2 ? "#d8bf8a" : "#c9a86a"); line(px + 11, gy - 4 - (j + 1) * 12, px + 11, gy - 4 - j * 12, "rgba(120,80,30,0.4)", 1); }
+  }
+  if (x + w - bx - bw > 30) palm(bx + bw + (x + w - bx - bw) / 2, gy + 2, h * 0.42, -0.1, h / 220);
+  g.restore();
+  rr(x + 0.5, y + 0.5, w - 1, h - 1, 10); stroke("rgba(0,0,0,0.14)", 1.4);
+}
+// El portacontenedores en el mar, con la isla de fondo; cargado o con la cubierta vacía.
+function shipArt(x, y, w, h, seed, loaded) {
+  g.save(); rr(x, y, w, h, 10); g.clip();
+  rect(x, y, w, h, vgrad(y, y + h, "#86c8ec", "#e8f6fb"));
+  const sea = y + h * 0.7;
+  poly([[x + w * 0.55, sea], [x + w * 0.7, sea - h * 0.1], [x + w * 0.8, sea - h * 0.22], [x + w * 0.88, sea - h * 0.12], [x + w, sea - h * 0.06], [x + w, sea]], "rgba(80,100,115,0.32)");
+  rect(x, sea, w, y + h - sea, vgrad(sea, y + h, "#2c8fc9", "#1d6aa0"));
+  const q = rng(seed);
+  g.beginPath(); for (let wy = sea + 6; wy < y + h; wy += 8) for (let wx = x + q() * 20; wx < x + w; wx += 26 + q() * 18) { g.moveTo(wx, wy); g.lineTo(wx + 8 + q() * 6, wy); } stroke("rgba(255,255,255,0.4)", 1.4);
+  const hx = x + w * 0.07, hw = w * 0.84, hy = sea - h * 0.09, hh = h * 0.18;
+  if (loaded) {
+    const cw = hw * 0.125, ch = h * 0.12;
+    for (let c = 0; c < 6; c++) for (let row = 0; row < 2; row++) container(hx + hw * 0.22 + c * cw, hy - (row + 1) * ch, cw - 2, ch - 1.5, BOX_COLORS[Math.floor(q() * BOX_COLORS.length)]);
+  }
+  poly([[hx, hy], [hx + hw * 1.04, hy], [hx + hw * 0.97, hy + hh], [hx + hw * 0.05, hy + hh]], C.atlDk);
+  poly([[hx + hw * 0.02, hy + hh * 0.62], [hx + hw * 1.0, hy + hh * 0.62], [hx + hw * 0.97, hy + hh], [hx + hw * 0.05, hy + hh]], C.redDk);
+  rect(hx, hy, hw * 1.04, 2.4, "#f4f4f0");
+  const bx = hx + hw * 0.04, bwd = hw * 0.14, bh = h * 0.27; // el puente, con su chimenea
+  rect(bx + bwd * 0.32, hy - bh - h * 0.08, bwd * 0.34, h * 0.08, C.sun);
+  rect(bx, hy - bh, bwd, bh, "#f4f4f0"); rect(bx + 2, hy - bh + 4, bwd - 4, 4, "#2a3440"); rect(bx + 2, hy - bh + 12, bwd - 4, 3, "#2a3440");
+  g.restore();
+  rr(x + 0.5, y + 0.5, w - 1, h - 1, 10); stroke("rgba(0,0,0,0.14)", 1.4);
+}
+// El icono de la nave en la cabecera, en un disco como el emblema de un negocio.
+function naveDisc(cx, cy, r) {
+  dot(cx, cy + 2, r, "rgba(0,0,0,0.25)"); dot(cx, cy, r, C.gold); dot(cx, cy, r * 0.84, C.atl);
+  smallIcon("nave", cx, cy + r * 0.05, r * 0.5, C.gold);
+}
+
+function localCard(l, x, y, w, h) {
+  if (l.selected) selectedFrame(x, y, w, h);
+  card(x, y, w, h, { top: 8, topColor: l.main || C.atl });
+  const fx = x + 12, fy = y + 20, fw = 120, fh = 100, tx = fx + fw + 14, tw = x + w - 14 - tx;
+  storefront(fx, fy, fw, fh, { ...l, open: true, mini: true, theme: "centro", seed: hash(l.name || ""), r: 10 });
+  rr(fx, fy, fw, fh, 10); stroke("rgba(0,0,0,0.12)", 1.4);
+  fitText(String(l.sector_name || "").toUpperCase(), tx, y + 30, tw - (l.selected ? 18 : 0), F.d, 14, 13, { color: C.mute });
+  const lines = wrap(l.name || "", tw, F.t(20), 2);
+  lines.forEach((t, i) => TX(t, tx, y + 54 + i * 23, { font: F.t(20), color: C.ink }));
+  const by = y + 56 + lines.length * 23;
+  glyph("pin", tx + 7, by, 8, C.bugDk); fitText(l.barrio || "", tx + 20, by, tw - 20, F.m, 16, 13, { color: C.ink });
+  fitText(String(l.island || "").toUpperCase(), tx + 20, by + 20, tw - 20, F.d, 13, 13, { color: C.turqDk });
+  // las estrellas y, a la derecha, quién atiende y el maletín del gerente si lo tiene
+  starRow(x + 22 + 2 * 22, y + 146, 10, 22, l.stars || 0);
+  let rx = x + w - 14;
+  if (l.manager) { dot(rx - 14, y + 146, 14, C.gold); smallIcon("case", rx - 14, y + 147, 7.5, C.ink); rx -= 36; }
+  const n = Number(l.staff) || 0, who = n ? `${n} ${n === 1 ? "atiende" : "atienden"}` : "Nadie atiende";
+  const ww = Math.min(rx - x - 140, width(who, F.d(15)));
+  fitText(who, rx, y + 146, rx - x - 140, F.d, 15, 13, { color: n ? C.ink : C.mute, align: "right" });
+  smallIcon("people", rx - ww - 14, y + 147, 8, n ? C.turqDk : C.grey);
+  // la caja de hoy y sus turnos
+  const today = String(l.today || ""), tdw = width(today, F.d(24));
+  T(today, x + 14, y + 182, { font: F.d(24), color: money(today) });
+  fitText(l.turns || "", x + w - 14, y + 182, w - 42 - tdw, F.m, 16, 13, { color: C.mute, align: "right" });
+  if (l.alert) { // el aviso, en una franja ámbar abajo
+    const ay = y + h - 30;
+    g.save(); rr(x, y, w, h, 14); g.clip(); rect(x, ay, w, 30, "#fdf0cc"); rect(x, ay, w, 1.5, "rgba(200,140,20,0.5)"); g.restore();
+    glyph("warn", x + 22, ay + 15, 8.5, "#c98a00");
+    fitText(l.alert, x + 38, ay + 16, w - 52, F.d, 15, 13, { color: "#5a4000" });
+  } else {
+    const ay = y + h - 30;
+    g.save(); rr(x, y, w, h, 14); g.clip(); rect(x, ay, w, 30, "#e3f4e8"); g.restore();
+    smallIcon("check", x + 22, ay + 15, 8, C.greenDk);
+    T("Todo en orden", x + 38, ay + 16, { font: F.d(15), color: C.greenDk });
+  }
+  if (l.selected) selectedMark(x + w - 4, y + 4);
+}
+// El hueco de un local que aún no está.
+function emptyLocal(x, y, w, h) {
+  dashedCard(x, y, w, h);
+  const cx = x + w / 2, cy = y + h * 0.38;
+  dot(cx, cy, 38, "rgba(103,95,82,0.1)"); glyph("shop", cx, cy, 20, "rgba(103,95,82,0.55)");
+  dot(cx + 30, cy - 26, 13, C.sun); glyph("plus", cx + 30, cy - 26, 8, "#fff");
+  fitText("Hueco para otro local", cx, y + h * 0.7, w - 30, F.t, 22, 15, { color: C.ink, align: "center", fancy: true });
+  fitText("Cada uno con su plantilla y su caja", cx, y + h * 0.7 + 28, w - 30, F.m, 16, 13, { color: C.mute, align: "center" });
+}
+function naveCard(n, x, y, w, h) {
+  if (!n) {
+    dashedCard(x, y, w, h);
+    const cx = x + w / 2, cy = y + h * 0.32;
+    dot(cx, cy, 52, "rgba(103,95,82,0.1)"); smallIcon("nave", cx, cy, 30, "rgba(103,95,82,0.5)");
+    TX("Sin nave", cx, y + h * 0.58, { font: F.t(32), color: C.ink, align: "center" });
+    paragraph("Con una nave importas por contenedor para los locales de su isla.", cx, y + h * 0.58 + 40, w - 48, F.m(17), 22, 3, { color: C.mute, align: "center" });
+    return;
+  }
+  card(x, y, w, h, { top: 8, topColor: C.atl });
+  naveArt(x + 12, y + 20, w - 24, 132, /grande/i.test(n.size || "") ? 0.86 : /mediana/i.test(n.size || "") ? 0.64 : 0.44, hash(n.barrio || "nave"));
+  sectionLabel("La nave", x + 18, y + 176);
+  fitText(n.size || "", x + 18, y + 204, w - 36, F.t, 28, 18, { color: C.ink, fancy: true });
+  glyph("pin", x + 25, y + 236, 8, C.bugDk);
+  fitText([n.barrio, n.island].filter(Boolean).join(" · "), x + 38, y + 236, w - 56, F.m, 17, 13, { color: C.ink });
+  fitText(n.used || "", x + 18, y + 270, w - 36, F.d, 17, 13, { color: C.ink });
+  fillBar(x + 18, y + 284, w - 36, 16, n.fill);
+  const coming = String(n.coming || ""), none = /^nada/i.test(coming);
+  container(x + 18, y + 322, 34, 18, none ? "#c4cbd3" : C.sun);
+  fitText(coming, x + 62, y + 331, w - 80, F.d, 16, 13, { color: none ? C.mute : C.ink });
+  const [label, value] = splitLabel(n.tonight);
+  T(label || "", x + 18, y + 372, { font: F.m(16), color: C.mute });
+  fitText(value, x + w - 18, y + 372, w - 36 - width(label || "", F.m(16)) - 10, F.d, 20, 13, { color: money(value), align: "right" });
+}
+function paintCadena(st) {
+  shopHeader(st, "CADENA", { sub: [st.form, st.slots].filter(Boolean).join(" · ") });
+  const locs = (st.locales || []).slice(0, 4), m = /de (\d+)/.exec(String(st.slots || "")), slots = clamp(m ? +m[1] : 4, locs.length, 4);
+  const gx = 16, gy = 104, gap = 12, cw = (644 - gap) / 2, ch = (496 - gap) / 2;
+  for (let i = 0; i < slots; i++) {
+    const x = gx + (i % 2) * (cw + gap), y = gy + Math.floor(i / 2) * (ch + gap);
+    if (locs[i]) localCard(locs[i], x, y, cw, ch); else emptyLocal(x, y, cw, ch);
+  }
+  const nx = gx + 644 + gap, nw = W - 16 - nx;
+  naveCard(st.nave || null, nx, gy, nw, 412);
+  const [label, value] = splitLabel(st.week);
+  slTile(nx, gy + 424, nw, 72, "coin", C.bug, `${label || "Esta semana"}, toda la cadena`, value);
+  footer(st.foot, H - 20);
+}
+
+// -- nave --
+function sizeCard(sz, i, x, y, w, h) {
+  if (sz.selected) fillRR(x - 4, y - 4, w + 8, h + 8, 18, C.turqDk);
+  card(x, y, w, h, sz.selected ? { fill: "#effaf8" } : {});
+  naveArt(x + 12, y + 12, w - 24, 150, [0.42, 0.62, 0.86][i] ?? 0.6, 31 + i);
+  if (sz.selected) chip("ELEGIDA", x + w - 20, y + 22, "turq", { align: "right", size: 14 });
+  fitText(sz.name || "", x + 18, y + 194, w - 36, F.t, 28, 18, { color: C.ink, fancy: true });
+  let cx = x + 18;
+  for (const t of [sz.m2, sz.lots].filter(Boolean)) cx += chip(t, cx, y + 218, "steel", { size: 15, maxW: (w - 46) / 2 }) + 8;
+  const m = /^(.*?Y\$)\s*(.*)$/.exec(String(sz.rent || "")), amount = m ? m[1] : sz.rent || "", rest = m ? m[2] : "";
+  T("Alquiler", x + 18, y + 274, { font: F.m(15), color: C.mute });
+  fitText(amount, x + 18, y + 302, w - 36, F.d, 26, 15, { color: C.ink });
+  if (rest) fitText(rest, x + 18, y + 328, w - 36, F.m, 16, 13, { color: C.mute });
+}
+function stockTile(p, x, y, w, h) {
+  fillRR(x, y, w, h, 10, "#fbf6ea"); rr(x + 0.5, y + 0.5, w - 1, h - 1, 10); stroke(C.line, 1.2);
+  fillRR(x + 7, y + 7, h - 14, h - 14, 8, "#fffdf6"); productIcon(p.key, x + h / 2, y + h / 2, (h - 14) * 0.36);
+  const tx = x + h + 4, lw = tagW(p.lots || "", 14, null), nw = w - (tx - x) - lw - 14;
+  fitText(p.name || "", tx, y + h * 0.34, nw, F.d, 17, 13, { color: C.ink });
+  T(`${p.units || ""} uds.`, tx, y + h * 0.7, { font: F.m(15), color: C.mute });
+  tag(p.lots || "", x + w - 8 - lw, y + (h - 24) / 2, "steel", null, 14);
+}
+function quotePanel(q, x, y, w, h) {
+  if (!q) {
+    dashedCard(x, y, w, h);
+    const cx = x + w / 2, cy = y + h * 0.34;
+    dot(cx, cy, 56, "rgba(103,95,82,0.1)");
+    container(cx - 40, cy - 20, 80, 40, "rgba(103,95,82,0.35)");
+    TX("Pide un contenedor", cx, y + h * 0.58, { font: F.t(28), color: C.ink, align: "center" });
+    const lines = wrap("Elige un producto para ver lo que cuesta traerlo y lo que te ahorras.", w - 50, F.m(17), 3);
+    lines.forEach((l, i) => T(l, cx, y + h * 0.58 + 40 + i * 22, { font: F.m(17), color: C.mute, align: "center" }));
+    return;
+  }
+  card(x, y, w, h, { top: 8, topColor: C.sun });
+  fillRR(x + 16, y + 22, 58, 58, 12, "#f2e9d4"); productIcon(q.key, x + 45, y + 51, 21);
+  sectionLabel("Un contenedor", x + 88, y + 34);
+  fitText(q.name || "", x + 88, y + 58, w - 104, F.t, 24, 15, { color: C.ink, fancy: true });
+  fitText(q.units || "", x + 88, y + 80, w - 104, F.m, 15, 13, { color: C.mute });
+  const aiemOn = !/no lleva/i.test(q.aiem_rate || ""), rows = [
+    ["Fábrica", q.goods], ["Flete del barco", q.freight], [`AIEM (${q.aiem_rate || ""})`, q.aiem, aiemOn],
+    ["IGIC de la importación", q.igic], ["Aduanas", q.customs],
+  ], rh = 34, ry0 = y + 100;
+  rows.forEach(([label, value, hot], i) => {
+    const ry = ry0 + i * rh + rh / 2;
+    if (hot) { fillRR(x + 12, ry - rh / 2 + 2, w - 24, rh - 4, 8, "#fdf0cc"); glyph("warn", x + w - 30 - width(value || "", F.d(17)) - 14, ry, 7.5, "#c98a00"); }
+    else if (i % 2) rect(x + 12, ry - rh / 2, w - 24, rh, "rgba(160,120,60,0.06)");
+    fitText(label, x + 22, ry, w * 0.58, F.m, 17, 13, { color: hot ? "#5a4000" : C.ink });
+    fitText(value || "", x + w - 22, ry, w * 0.36, F.d, 17, 13, { color: hot ? "#7a4a00" : C.ink, align: "right" });
+  });
+  const ty = ry0 + rows.length * rh + 8;
+  line(x + 18, ty, x + w - 18, ty, C.ink, 1.6);
+  T("Total", x + 22, ty + 22, { font: F.d(20), color: C.ink });
+  fitText(q.total || "", x + w - 22, ty + 22, w * 0.5, F.d, 22, 14, { color: C.ink, align: "right" });
+  T("Al mayorista", x + 22, ty + 52, { font: F.m(17), color: C.mute });
+  fitText(q.wholesale || "", x + w - 22, ty + 52, w * 0.5, F.m, 18, 13, { color: C.mute, align: "right" });
+  const by = ty + 74, bh = y + h - 14 - by;
+  if (q.blocked) {
+    fillRR(x + 12, by, w - 24, bh, 12, "#fde6e3"); rr(x + 13, by + 1, w - 26, bh - 2, 11); stroke(C.red, 2);
+    dot(x + 40, by + bh / 2, 18, C.red); smallIcon("cross", x + 40, by + bh / 2, 10, "#fff");
+    T("No se puede pedir", x + 68, by + 22, { font: F.d(17), color: C.redDk });
+    paragraph(q.blocked, x + 68, by + 44, w - 92, F.m(15), 18, Math.max(1, Math.floor((bh - 40) / 18)), { color: C.ink });
+  } else {
+    const good = q.good !== false, [bg, edge, ink] = good ? ["#e3f4e8", C.green, C.greenDk] : ["#fde3e0", C.red, C.redDk];
+    fillRR(x + 12, by, w - 24, bh, 12, bg); rr(x + 13, by + 1, w - 26, bh - 2, 11); stroke(edge, 2);
+    dot(x + 40, by + bh / 2, 18, edge); smallIcon(good ? "down" : "up", x + 40, by + bh / 2, 10, "#fff");
+    T(good ? "Te ahorras" : "Sale más caro", x + 68, by + bh / 2 - 13, { font: F.m(16), color: ink });
+    fitText(q.saving || "", x + 68, by + bh / 2 + 13, w - 92, F.t, 28, 16, { color: ink, fancy: true });
+  }
+}
+function paintNaveAlquilar(st) {
+  shopHeader({ name: "Alquilar una nave", main: C.atl, accent: C.gold }, "NAVE", { sub: [st.barrio, st.island].filter(Boolean).join(" · "), icon: naveDisc });
+  const sizes = (st.sizes || []).slice(0, 3), gap = 14, kw = (W - 32 - gap * 2) / 3, ky = 110, kh = 346;
+  sizes.forEach((sz, i) => sizeCard(sz, i, 16 + i * (kw + gap), ky, kw, kh));
+  const by = ky + kh + 18, bh = 88, m = /^([^:]*):\s*(.*?)\s*(\((.*)\))?$/.exec(String(st.cost || ""));
+  card(16, by, W - 32, bh);
+  dot(64, by + bh / 2, 28, C.atl); slIcon("stamp", 64, by + bh / 2, 15, "#fff");
+  T(m ? m[1] : "", 108, by + 26, { font: F.m(17), color: C.mute });
+  fitText(m ? m[2] : st.cost || "", 108, by + 58, 420, F.t, 32, 18, { color: C.ink, fancy: true });
+  if (m && m[4]) fitText(m[4].charAt(0).toUpperCase() + m[4].slice(1), W - 36, by + bh / 2, W - 600, F.m, 18, 13, { color: C.mute, align: "right" });
+  footer(st.foot, H - 20);
+}
+function paintNaveAlmacen(st) {
+  shopHeader({ name: st.size || "Nave", main: C.atl, accent: C.gold }, "NAVE", { sub: [st.barrio, st.island].filter(Boolean).join(" · "), icon: naveDisc });
+  const lx = 16, lw = 580, y0 = 104;
+  // el almacén: lo lleno que está y lo que hay
+  const ah = 282;
+  card(lx, y0, lw, ah);
+  smallIcon("nave", lx + 28, y0 + 26, 11, C.ink); sectionLabel("Almacén", lx + 48, y0 + 26, C.ink);
+  T(st.used || "", lx + lw - 18, y0 + 26, { font: F.d(18), color: C.ink, align: "right" });
+  fillBar(lx + 18, y0 + 46, lw - 36, 18, st.fill);
+  const stock = (st.stock || []), shown = stock.slice(0, stock.length > 6 ? 5 : 6), tw = (lw - 36 - 10) / 2, th = 58;
+  shown.forEach((p, i) => stockTile(p, lx + 18 + (i % 2) * (tw + 10), y0 + 80 + Math.floor(i / 2) * (th + 8), tw, th));
+  if (stock.length > 6) { const i = 5, x = lx + 18 + (i % 2) * (tw + 10), y = y0 + 80 + Math.floor(i / 2) * (th + 8); dashedCard(x, y, tw, th); T(`y ${stock.length - 5} más`, x + tw / 2, y + th / 2, { font: F.d(17), color: C.mute, align: "center" }); }
+  if (!stock.length) {
+    const cy = y0 + 80 + (ah - 80) / 2 - 12;
+    TX("La nave está vacía", lx + lw / 2, cy, { font: F.t(28), color: C.mute, align: "center" });
+    T("Lo que pidas ocupa sus lotes en cuanto sale el barco", lx + lw / 2, cy + 36, { font: F.m(17), color: C.mute, align: "center" });
+  }
+  // lo que viene en camino
+  const cy0 = y0 + ah + 12, chh = 572 - cy0, coming = (st.coming || []).slice(0, 3);
+  card(lx, cy0, lw, chh);
+  shipArt(lx + 12, cy0 + 12, 190, chh - 24, hash(st.barrio || "barco"), coming.length > 0);
+  const rx = lx + 216, rw = lx + lw - 16 - rx;
+  sectionLabel("En camino", rx, cy0 + 26, C.ink);
+  if (!coming.length) T("Nada en camino", rx, cy0 + 70, { font: F.t(24), color: C.mute });
+  const rh = Math.min(40, (chh - 50) / Math.max(1, coming.length));
+  coming.forEach((c, i) => {
+    const ry = cy0 + 56 + i * rh + rh / 2 - 6;
+    container(rx, ry - 9, 30, 18, BOX_COLORS[hash(c.key || "") % BOX_COLORS.length]);
+    const whenW = Math.min(150, tagW(c.when || "", 14, null));
+    fitText(`${c.name || ""} · ${c.units || ""} uds.`, rx + 40, ry, rw - 40 - whenW - 8, F.d, 16, 13, { color: C.ink });
+    tag(c.when || "", rx + rw - whenW, ry - 12, /mañana|esta noche/i.test(c.when || "") ? "turq" : "steel", null, 14, 150);
+  });
+  // el contenedor del producto elegido
+  quotePanel(st.quote || null, lx + lw + 12, y0, W - 16 - (lx + lw + 12), 572 - y0);
+  // las cuentas de la nave: esta noche y la deuda
+  let px = 16;
+  for (const [t, icon, kind] of [[st.tonight, "coin", ""], [st.debt, "warn", "red"]]) if (t) px += accountPill(t, px, 594, icon, kind, W - 16 - px) + 10;
+  footer(st.foot, H - 13);
+}
+function paintNave(st) { (st.mode === "alquilar" ? paintNaveAlquilar : paintNaveAlmacen)(st); }
+
+// -- venta --
+function soldStamp(cx, cy, text) {
+  g.save(); g.translate(cx, cy); g.rotate(-0.18);
+  rr(-130, -34, 260, 68, 8); g.fillStyle = "rgba(255,253,246,0.85)"; g.fill(); stroke(C.red, 4); rr(-121, -25, 242, 50, 5); stroke(C.red, 1.6);
+  TX(text, 0, -1, { font: F.t(30), color: C.red, align: "center" });
+  g.restore();
+}
+function paintVenta(st) {
+  shopHeader(st, "VENDER", { sub: "Vender la sociedad" });
+  const lx = 16, lw = 600, y0 = 104;
+  // los resultados de las semanas cerradas
+  const rh = 128, res = (st.results || []).slice(-3);
+  card(lx, y0, lw, rh);
+  slIcon("scale", lx + 28, y0 + 26, 11, C.ink); sectionLabel("Resultados de las semanas cerradas", lx + 48, y0 + 26, C.ink);
+  const gap = 10, tw = (lw - 36 - gap * 2) / 3;
+  for (let i = 0; i < 3; i++) {
+    const x = lx + 18 + i * (tw + gap), y = y0 + 46;
+    if (i < res.length) { fillRR(x, y, tw, 66, 12, "#fbf6ea"); rr(x + 0.5, y + 0.5, tw - 1, 65, 12); stroke(C.line, 1.2); T(`Semana ${i + 1}`, x + 14, y + 20, { font: F.m(15), color: C.mute }); fitText(res[i], x + 14, y + 46, tw - 24, F.d, 22, 14, { color: money(res[i]) }); }
+    else { dashedCard(x, y, tw, 66); T("Sin cerrar", x + tw / 2, y + 33, { font: F.d(17), color: C.mute, align: "center" }); }
+  }
+  // lo que vale: la media por cinco o el patrimonio, el mayor de los dos
+  const vy = y0 + rh + 12, vh = 196;
+  card(lx, vy, lw, vh);
+  const hw = (lw - 36 - 40) / 2;
+  for (const [i, label, value, icon] of [[0, "Media × 5", st.capitalized, "coin"], [1, "Patrimonio neto", st.equity, "safe"]]) {
+    const x = lx + 18 + i * (hw + 40), y = vy + 16;
+    fillRR(x, y, hw, 70, 12, "#fbf6ea"); rr(x + 0.5, y + 0.5, hw - 1, 69, 12); stroke(C.line, 1.2);
+    dot(x + 30, y + 35, 18, i ? C.laurel : C.atl); (SL_ICON[icon] ? slIcon : glyph)(icon, x + 30, y + 35, 9, "#fff");
+    fitText(label, x + 58, y + 22, hw - 70, F.m, 16, 13, { color: C.mute });
+    fitText(value || "", x + 58, y + 48, hw - 70, F.d, 22, 14, { color: C.ink });
+  }
+  T("o", lx + lw / 2, vy + 49, { font: F.d(22), color: C.mute, align: "center" });
+  // las dos llaves que bajan al precio
+  g.beginPath(); for (const sx of [lx + 18 + hw / 2, lx + 18 + hw * 1.5 + 40]) { g.moveTo(sx, vy + 90); g.lineTo(sx, vy + 104); g.lineTo(lx + lw / 2, vy + 104); } stroke(C.sandDk, 2.4);
+  line(lx + lw / 2, vy + 104, lx + lw / 2, vy + 114, C.sandDk, 2.4);
+  const py = vy + 116, ph = vh - 128;
+  fillRR(lx + 18, py, lw - 36, ph, 12, "#effaf8"); rr(lx + 18.5, py + 0.5, lw - 37, ph - 1, 12); stroke(C.turqDk, 2);
+  T("Precio: el mayor de los dos", lx + 36, py + ph / 2, { font: F.m(17), color: C.turqDk });
+  fitText(st.price || "", lx + lw - 36, py + ph / 2, 260, F.t, 30, 18, { color: C.ink, align: "right", fancy: true });
+  // lo que se va con ella, o por qué no hay comprador
+  const gy = vy + vh + 12, gh = 572 - gy;
+  if (st.blocker) {
+    fillRR(lx, gy, lw, gh, 16, "#fde6e3"); rr(lx + 1, gy + 1, lw - 2, gh - 2, 15); stroke(C.red, 2.4);
+    dot(lx + 46, gy + gh / 2, 26, C.red); glyph("warn", lx + 46, gy + gh / 2 - 1, 14, "#fff");
+    T("Hoy nadie la compra", lx + 88, gy + 28, { font: F.t(24), color: C.redDk });
+    paragraph(st.blocker, lx + 88, gy + 58, lw - 108, F.m(17), 21, 3, { color: C.ink });
+  } else {
+    card(lx, gy, lw, gh);
+    sectionLabel("Se va con ella", lx + 18, gy + 24);
+    const items = [["building", st.locales], ["people", st.staff], ["safe", "La caja"]].filter(([, t]) => t), iw = (lw - 36) / items.length;
+    items.forEach(([icon, t], i) => {
+      const x = lx + 18 + i * iw, cy = gy + 24 + (gh - 24) / 2;
+      dot(x + 24, cy, 20, C.atl);
+      if (icon === "people") smallIcon("people", x + 24, cy + 1, 11, "#fff"); else slIcon(icon, x + 24, cy, 10, "#fff");
+      fitText(t, x + 54, cy, iw - 62, F.d, 19, 13, { color: C.ink });
+    });
+  }
+  // lo que te llevas: el tique de la venta
+  const rx = lx + lw + 16, rw = W - 16 - rx, ry = y0, rH = 572 - y0;
+  if (st.blocker) g.globalAlpha = 0.5;
+  card(rx, ry, rw, rH, { top: 8, topColor: st.main || C.atl });
+  slIcon("stamp", rx + 28, ry + 32, 11, C.ink); sectionLabel("Lo que te llevas", rx + 48, ry + 32, C.ink);
+  const rows = [
+    ["Precio", st.price, C.ink], ["Te devuelve tu préstamo", st.loan, isZero(st.loan) ? C.mute : C.ink], null,
+    ["Lo que metiste", st.basis, C.mute], ["Ganancia", st.gain, money(st.gain)], ["IRPF de la ganancia", st.tax, isZero(st.tax) ? C.mute : C.redDk],
+  ];
+  let yy = ry + 70;
+  for (const row of rows) {
+    if (!row) { line(rx + 18, yy - 6, rx + rw - 18, yy - 6, C.line, 1.4); yy += 12; continue; }
+    const [label, value, col] = row, vw = Math.min(rw * 0.5, width(value || "", F.d(19)) + 4);
+    fitText(label, rx + 20, yy + 14, rw - 50 - vw, F.m, 17, 13, { color: C.mute });
+    fitText(value || "", rx + rw - 20, yy + 14, rw * 0.5, F.d, 19, 13, { color: col, align: "right" });
+    yy += 44;
+  }
+  const ny = ry + rH - 112;
+  line(rx + 18, ny, rx + rw - 18, ny, C.ink, 1.6); line(rx + 18, ny + 4, rx + rw - 18, ny + 4, C.ink, 1.6);
+  TX("TE LLEVAS", rx + 20, ny + 34, { font: F.t(24), color: C.ink });
+  fitText(st.net || "", rx + rw - 20, ny + 76, rw - 40, F.t, 36, 20, { color: C.greenDk, align: "right", fancy: true });
+  g.globalAlpha = 1;
+  if (st.blocker) soldStamp(rx + rw / 2, ry + rH / 2, "SIN COMPRADOR");
+  footer(st.foot, H - 20);
+}
+
 // -- Entrada ---------------------------------------------------------------------------------
 
-const SCREENS = { dia: paintDia, montar: paintMontar, negocio: paintNegocio, almacen: paintAlmacen, cuentas: paintCuentas, cliente: paintCliente, cierre: paintCierre, mejoras: paintMejoras, resenas: paintResenas, sociedad: paintSociedad, plantilla: paintPlantilla, candidatos: paintCandidatos };
+const SCREENS = { dia: paintDia, montar: paintMontar, negocio: paintNegocio, almacen: paintAlmacen, cuentas: paintCuentas, cliente: paintCliente, cierre: paintCierre, mejoras: paintMejoras, resenas: paintResenas, sociedad: paintSociedad, plantilla: paintPlantilla, candidatos: paintCandidatos,
+  cadena: paintCadena, nave: paintNave, venta: paintVenta };
 
 function paintScreen(st) {
   const draw = SCREENS[st.screen];

@@ -812,6 +812,116 @@ def _phase4(today: date) -> dict[str, dict[str, Any]]:
         offer={"contract": "b", "jornada": staff.HALF_DAY, "shift": "manana"},
     )  # fmt: skip
     s["negocio_con_plantilla"] = negocio_state(cafe, foot="Abrir gasta 1 franja. Te quedan 4.")
+    s.update(_phase5(today))
+    return s
+
+
+def _phase5(today: date) -> dict[str, dict[str, Any]]:
+    """Las muestras de la cadena, la nave y vender la sociedad, con las funciones de verdad."""
+    from bot.services import business_chain as chain
+    from bot.services import business_sl as sl
+    from bot.services import business_staff as staff
+    from bot.services.business_view import (
+        cadena_state,
+        candidatos_state,
+        nave_state,
+        plantilla_state,
+        venta_state,
+    )
+    from bot.services.negocio import CompanyView
+
+    iso = today.isoformat()
+    s: dict[str, dict[str, Any]] = {}
+
+    def shop(n: int, sector: str, barrio: str, name: str, **kw: Any) -> Business:
+        stock = {p.key: p.pack * 2 for p in SECTOR_BY_KEY[sector].products}
+        return Business(
+            user_id=20, sector=sector, barrio=barrio, name=name, seed=700 + n, day=iso,
+            palette=n % 6, emblem=n % 5, id=n + 1, stock=stock, **kw,
+        )  # fmt: skip
+
+    cafe = shop(0, "cafeteria", "triana", "Cafetería La Tertulia", reputation=82.0, turns_today=2,
+                sales_today=18_200, size=2)  # fmt: skip
+    cafe.week_totals = {"ventas": 96_000, "compras": -38_000}
+    pool = [c for n in range(60) for c in staff.candidates(cafe, today - timedelta(days=n))]
+    full = [c for c in pool if not c["part_time"]]
+    boss = _hire(cafe, full[0], "indefinido", start=today - timedelta(days=9))
+    boss["role"] = staff.MANAGER
+    for c in full[1:4]:
+        _hire(cafe, c, "indefinido", start=today - timedelta(days=5))
+    cafe.staff_today = {"turns": 4, "sales": 21_000}
+    ice = shop(1, "heladeria", "canteras", "Heladería Dácil", sales_today=-1_200)
+    ice.stock = {}  # sin nada: el aviso del local
+    _hire(ice, full[4], "temporal", start=today - timedelta(days=2))
+    # El nombre más largo que admite el bot (24), para ver que se recorta.
+    garage = shop(2, "taller", "laguna", "Talleres Drago de Laguna", turns_today=1,
+                  sales_today=9_600, rent_debt=7_800)  # fmt: skip
+    hardware = shop(3, "ferreteria", "adeje", "Ferretería El Tornillo", sales_today=31_400,
+                    turns_today=3, reputation=95.0)  # fmt: skip
+    for c in full[5:7]:
+        _hire(hardware, c, "indefinido", start=today - timedelta(days=4))
+
+    nave = chain.Nave(user_id=20, barrio="schamann", size=1)
+    nave.stock = {"cafe": 600, "cortado": 260, "conservas": 300, "limpieza": 40}
+    nave.orders = [
+        {"id": 1, "product": "bebidas", "units": 480, "arrives": iso},
+        {"id": 2, "product": "cafe", "units": 800, "arrives": (today + timedelta(1)).isoformat()},
+    ]
+    nave.week_totals = {"compras": -54_000, "local": -6_200}
+    nave.rent_debt = 0
+
+    s["cadena_uno"] = cadena_state([cafe], None)
+    s["cadena_dos_con_nave"] = cadena_state([cafe, ice], nave, selected=ice.id)
+    s["cadena_cuatro_sin_nave"] = cadena_state([cafe, ice, garage, hardware], None)
+    s["cadena_cuatro_con_nave"] = cadena_state(
+        [hardware, garage, ice, cafe], nave, selected=garage.id
+    )
+
+    products = ["cafe", "cortado", "barraquito", "conservas", "limpieza", "bebidas", "gofio"]
+    s["nave_alquilar"] = nave_state(None, today, products=[], barrio="schamann", size=1)
+    s["nave_alquilar_tenerife"] = nave_state(None, today, products=[], barrio="ofra", size=2)
+    empty = chain.Nave(user_id=21, barrio="taco", size=0)
+    s["nave_vacia"] = nave_state(empty, today, products=["tornillos"])
+    s["nave_con_stock"] = nave_state(nave, today, products=products)
+    s["nave_cotiza_bien"] = nave_state(nave, today, products=products, selected="conservas")
+    # El gofio lleva un AIEM del 15 %: lo que menos ahorra de todo.
+    s["nave_cotiza_mal_aiem"] = nave_state(nave, today, products=products, selected="gofio")
+    # Ningún producto sale hoy más caro que al mayorista: el rojo, a mano.
+    worse = copy.deepcopy(s["nave_cotiza_mal_aiem"])
+    worse["quote"].update(saving="−1.840 Y$", good=False, wholesale="23.868 Y$")
+    s["nave_cotiza_pierde"] = worse
+    debt = copy.deepcopy(nave)
+    debt.rent_debt = 4_300
+    s["nave_bloqueada"] = nave_state(debt, today, products=products, selected="zumo")
+    full_nave = chain.Nave(user_id=22, barrio="laguna", size=0)
+    full_nave.stock = {"pastillas": 100, "aceite": 120}
+    s["nave_no_cabe"] = nave_state(full_nave, today, products=["aceite"], selected="aceite")
+
+    company = copy.deepcopy(cafe)
+    company.form = "sl"
+    company.company = sl.new_company(300_000, 325_000, 0)
+    company.company.update(results=[142_000, 168_000, 151_000], loan=50_000, retained=320_000)
+    view = CompanyView(company, 412_000, 620_000, 168_000, 0.19, None, False,
+                       locales=(company, ice))  # fmt: skip
+    offer = chain.sale_offer(company.company, view.equity, weeks=sl.SALE_WEEKS, debts=0)
+    s["venta_con_comprador"] = venta_state(view, offer)
+    young = copy.deepcopy(company)
+    young.company.update(results=[-12_000], loan=0)
+    view = CompanyView(young, 80_000, 290_000, 0, 0.19, None, False, locales=(young,))
+    offer = chain.sale_offer(young.company, view.equity, weeks=sl.SALE_WEEKS, debts=0)
+    s["venta_sin_comprador"] = venta_state(view, offer)
+
+    s["negocio_cadena_gerente"] = negocio_state(
+        cafe, foot="Abrir gasta 1 franja. Te quedan 4.", chain_count=4
+    )
+    s["plantilla_con_gerente"] = plantilla_state(cafe, today, selected=boss["id"])
+    hoy = staff.candidates(ice, today)
+    s["candidatos_gerente"] = candidatos_state(
+        ice, hoy, today, selected=hoy[0]["key"],
+        offer={"contract": "indefinido", "jornada": staff.FULL_DAY, "shift": "manana",
+               "role": staff.MANAGER},
+    )  # fmt: skip
+    s["dia_cadena"] = _dia(business=_business("cafeteria", more=3))
     return s
 
 
