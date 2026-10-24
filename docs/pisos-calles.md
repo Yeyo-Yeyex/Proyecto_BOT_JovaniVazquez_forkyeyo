@@ -86,3 +86,16 @@ Juego por etapas: **early** trasteros y garajes (~100.000-300.000 Y$), **mid** p
   porque los bloques de un estudio eran todos estudios (lo que más renta por lo que cuesta). Con
   vecinos del tamaño del barrio y plazas y trasteros nuevos un 25 % más baratos de alquilar,
   sale el día 356-361 (sin calles, 363-367): dentro de los 350-390 de `CLAUDE.md`.
+
+## 9.15.0: calles mezcladas y más densas
+
+El usuario, al probarlo: el plano tiene que salir al elegir el barrio, tiene que haber casas
+normales entre los bloques y el centro tiene que tener más edificios que el campo. Así que:
+
+- Elegir un barrio abre `calles` (con el índice, el precio y la noticia del barrio); la pantalla
+  de siempre queda en ⭐ Destacados.
+- `EXTRA` y `EXTRA_HOUSES` en `housing_streets.py`: bloques y casas de más, sin destacado, con
+  claves `e10` en adelante. 15 edificios en el centro y los obreros, 12 en los demás urbanos, 9
+  en los rurales; repartidos por las calles con una regla fija.
+- Las 866 unidades de la 9.14.0 siguen idénticas (prueba con su huella, `UNITS_9_14`).
+- Falcon (`--calles`): día 356-360.
