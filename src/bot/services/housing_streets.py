@@ -65,6 +65,8 @@ class Theme:
         trasteros: Trasteros en el sótano.
         attic: Si la planta de arriba es un ático.
         m2: Metros de una vivienda de las que se inventan, si el destacado no es vivienda.
+        penthouse: Si la mitad de sus bloques tienen arriba un ático caro (9.16.0): un
+            sobreático sobre el ático o, donde no hay ático, un ático con vistas.
     """
 
     floors: int
@@ -74,15 +76,16 @@ class Theme:
     trasteros: int
     attic: bool
     m2: int
+    penthouse: bool = False
 
 
 THEMES: dict[str, Theme] = {
-    "centro": Theme(4, 2, 1, 2, 1, True, 85),
-    "historico": Theme(3, 1, 1, 0, 1, False, 95),
+    "centro": Theme(4, 2, 1, 2, 1, True, 85, True),
+    "historico": Theme(3, 1, 1, 0, 1, False, 95, True),
     "obrero": Theme(5, 2, 1, 1, 1, False, 70),
-    "playa": Theme(4, 2, 1, 1, 1, True, 60),
-    "marinero": Theme(3, 1, 1, 0, 1, False, 65),
-    "lujo": Theme(3, 1, 1, 2, 0, True, 120),
+    "playa": Theme(4, 2, 1, 1, 1, True, 60, True),
+    "marinero": Theme(3, 1, 1, 0, 1, False, 65, True),
+    "lujo": Theme(3, 1, 1, 2, 0, True, 120, True),
     "rural": Theme(2, 1, 0, 0, 1, False, 90),
 }
 #: Edificios de más, sin destacado, por tipo de barrio (9.15.0): `(bloques, casas)`. El centro
@@ -122,6 +125,10 @@ HOMES = frozenset({"estudio", "bajo", "piso2", "piso3", "atico", "loft", "duplex
 #: los alquilan sobre todo los vecinos, que pagan menos. Sin esto, cientos de ellos a un 9-12 %
 #: adelantaban el Falcon de la simulación por debajo del día 350.
 BASEMENT_RENT = -0.25
+#: Lo que piden y valen de más los áticos caros (9.16.0) por su terraza y sus vistas, frente a
+#: un ático normal del mismo barrio y metros.
+PENTHOUSE_RENT = 0.25
+PENTHOUSE_VALUE = 0.40
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,10 +226,12 @@ def _floor_of(listing: Listing) -> tuple[int, int]:
 
 def _unit(
     building: str, barrio: str, slot: str, kind: str, m2: int, label: str, street: Street,
-    number: int, energy: str,
+    number: int, energy: str, premium: bool = False,
 ) -> Listing:  # fmt: skip
-    """Una unidad nueva de un edificio, con su clave `<edificio>_<hueco>`."""
-    blurbs = UNIT_BLURBS[kind]
+    """Una unidad nueva de un edificio, con su clave `<edificio>_<hueco>`. Un ático caro
+    (`premium`) pide y vale más (`PENTHOUSE_RENT`, `PENTHOUSE_VALUE`)."""
+    blurbs = UNIT_BLURBS["atico_lujo" if premium else kind]
+    rent_bonus = BASEMENT_RENT if kind in ("garaje", "trastero") else 0.0
     return Listing(
         key=f"{building}_{slot}",
         barrio=barrio,
@@ -232,7 +241,8 @@ def _unit(
         blurb=blurbs[_seed(building, slot) % len(blurbs)],
         floor=label,
         energy=energy,
-        rent_bonus=BASEMENT_RENT if kind in ("garaje", "trastero") else 0.0,
+        rent_bonus=PENTHOUSE_RENT if premium else rent_bonus,
+        value_bonus=PENTHOUSE_VALUE if premium else 0.0,
     )
 
 
@@ -255,8 +265,8 @@ def _bloque(
     energy = featured.energy if featured is not None else "CDEFG"[_seed(key, "energia") % 5]
     out: list[tuple[Unit, Listing | None]] = []
 
-    def new(slot: str, level: int, kind: str, m2: int, label: str) -> None:
-        listing = _unit(key, barrio, slot, kind, m2, label, street, number, energy)
+    def new(slot: str, level: int, kind: str, m2: int, label: str, premium: bool = False) -> None:
+        listing = _unit(key, barrio, slot, kind, m2, label, street, number, energy, premium)
         out.append((Unit(listing.key, level, label), listing))
 
     for n in range(1, theme.garajes + 1):
@@ -295,6 +305,14 @@ def _bloque(
             out.append((Unit(featured.key, top, featured.floor), None))
         else:
             new("at", top, "atico", _vary(round(base_m2 * 1.1), key, "at"), "Ático")
+    # Un ático caro en la mitad de los bloques de los barrios con vistas (9.16.0), en una planta
+    # nueva arriba: sobre el ático, un sobreático; donde no hay ático, un ático con vistas. Con
+    # claves nuevas (`_sa`, `_va`): lo de antes no cambia.
+    if theme.penthouse and _seed(key, "atico") % 2 == 0:
+        slot, label = ("sa", "Sobreático") if top is not None else ("va", "Ático")
+        m2 = _vary(round(base_m2 * 1.3), key, "lujo")
+        new(slot, floors, "atico", m2, label, premium=True)
+        floors += 1
     return floors, out
 
 
@@ -439,6 +457,11 @@ def streets_of(barrio: str) -> tuple[Street, ...]:
 def buildings_of(street: str) -> tuple[Building, ...]:
     """Los edificios de una calle, por su número."""
     return tuple(sorted((b for b in BUILDINGS if b.street == street), key=lambda b: b.number))
+
+
+def is_penthouse(key: str) -> bool:
+    """Si una clave es la de un ático caro (9.16.0): un sobreático o un ático con vistas."""
+    return key in STREET_UNIT_BY_KEY and key.endswith(("_sa", "_va"))
 
 
 def map_order(barrio: str) -> tuple[Building, ...]:

@@ -428,7 +428,7 @@ PRODUCED_STATS = {
     "pisos_streets_opened", PISOS_BUILDINGS_SEEN_STAT, "pisos_street_units_max",
     "pisos_buildings_max", "pisos_streets_barrio_max", "pisos_pack", "pisos_whole_bloque",
     "pisos_whole_guardamuebles", "pisos_whole_aparcamiento", "pisos_whole_pantalan",
-    "pisos_attic_basement", "pisos_above_shop",
+    "pisos_attic_basement", "pisos_above_shop", "pisos_penthouses_max",
     *(f"{PISOS_BUILDING_PREFIX}{b.key}" for b in STREET_BUILDINGS),
     # Bizum (cogs/bizum.py: bizum_stats y bizum_received_stats)
     "bizum_sent_count", "bizum_sent", "bizum_max", "bizum_day_max", "bizum_full", "bizum_min",
@@ -2021,6 +2021,13 @@ def test_pisos_cuenta_las_calles_y_lo_que_se_tiene_en_sus_edificios() -> None:
     home = next(u.key for u in bloque.units if u.level > 0)
     local = next(u.key for u in bloque.units if kind(u.key) == "local")
     assert housing_streets_stats({home: 100, local: 100}).peak.get("pisos_above_shop") == 1
+    # Los áticos caros (9.16.0): uno se cuenta; un ático normal, no.
+    from bot.services.housing_streets import STREET_UNITS as _UNITS
+
+    penthouse = next(u.key for u in _UNITS if u.key.endswith("_sa"))
+    plain = next(u.key for u in _UNITS if u.key.endswith("_at"))
+    assert housing_streets_stats({penthouse: 10}).peak["pisos_penthouses_max"] == 1
+    assert housing_streets_stats({plain: 100}).peak["pisos_penthouses_max"] == 0
     # Todo el bloque (una planta de un inmueble dividido cuenta como suyo)
     whole = housing_streets_stats({**dict.fromkeys(keys, 100), f"{home}~1": 100}).peak
     assert whole["pisos_whole_bloque"] == whole["pisos_attic_basement"] == 1
@@ -2042,6 +2049,7 @@ def test_pisos_cuenta_las_calles_y_lo_que_se_tiene_en_sus_edificios() -> None:
     assert housing_streets_stats(portals).peak["pisos_buildings_max"] == 25
     assert housing_streets_stats({}).peak == {
         "pisos_street_units_max": 0, "pisos_buildings_max": 0, "pisos_streets_barrio_max": 0,
+        "pisos_penthouses_max": 0,
     }  # fmt: skip
     stats = with_derived({
         **every, "pisos_streets_opened": 1, "pisos_street_units_max": 100,

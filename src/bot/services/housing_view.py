@@ -55,6 +55,7 @@ from bot.services.housing_streets import (
     PANTALAN,
     Building,
     buildings_of,
+    is_penthouse,
     map_order,
     streets_of,
 )
@@ -1620,6 +1621,8 @@ def building_state(
                 "price": format_amount(rules.price(unit, index)),
                 "rent": format_amount(rules.reference_rent(unit, index)) + "/mes",
                 "featured": unit.key == building.featured,
+                # Un ático caro (sobreático o con vistas, 9.16.0): la escena le pinta su terraza.
+                "premium": is_penthouse(unit.key),
                 "waiting": len(market.candidates_of(unit.key, today)) if today else 0,
             }
         )

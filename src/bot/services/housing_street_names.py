@@ -164,6 +164,12 @@ UNIT_BLURBS: dict[str, tuple[str, ...]] = {
         "Terraza con sitio para la barbacoa y la tendedera.",
         "Desde aquí se ve llegar la calima antes que en la tele.",
     ),
+    "atico_lujo": (
+        "Ático con terraza de lado a lado y vistas despejadas.",
+        "Terraza con jacuzzi, pérgola y sitio para cenar veinte.",
+        "Lo más alto del edificio, con ascensor directo a la puerta.",
+        "Desde la terraza se ve el mar, el Teide y la factura de la comunidad.",
+    ),
     "bungalow": (
         "Bungalow con terraza y piscina comunitaria.",
         "Una planta, jardín pequeño y tumbona de serie.",
