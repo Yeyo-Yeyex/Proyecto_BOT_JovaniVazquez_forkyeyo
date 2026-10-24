@@ -28,6 +28,7 @@ from bot.repositories.housing_junta import Vote
 from bot.repositories.housing_trade import Auction
 from bot.services import browser_scene, node_scene
 from bot.services import housing as rules
+from bot.services import housing_streets as streets
 from bot.services import housing_view as view
 from bot.services.browser_scene import BrowserScene
 from bot.services.housing_catalog import (
@@ -716,6 +717,69 @@ def split_samples() -> dict[str, dict[str, Any]]:
     }
 
 
+def tallest() -> streets.Building:
+    """El edificio con más unidades del catálogo (un bloque de 9 plantas con su sótano)."""
+    return max(streets.BUILDINGS, key=lambda b: len(view.building_units(Market(), b)))
+
+
+def street_market() -> Market:
+    """Triana, calle 1: en el bloque del 16, una tuya alquilada, otra vacía con candidatos y una
+    de otro que no paga; en el aparcamiento, una plaza tuya."""
+    block = [u.key for u in view.building_units(Market(), streets.BUILDING_BY_KEY["triana_e2"])]
+    plaza = view.building_units(Market(), streets.BUILDING_BY_KEY["triana_e1"])[0].key
+    mine, empty, other = block[0], block[2], block[4]
+    return Market(
+        holdings={
+            mine: {10: Holding(mine, 10, 100, 1, 1, 0)},
+            empty: {10: Holding(empty, 10, 60, 1, 1, 0), 30: Holding(empty, 30, 40, 1, 1, 0)},
+            other: {30: Holding(other, 30, 100, 1, 1, 0)},
+            plaza: {10: Holding(plaza, 10, 100, 1, 1, 0)},
+        },
+        leases={
+            mine: rules.Lease(status="alquilado", tenant="familia", rent=21000),
+            empty: rules.Lease(status="vacio", pick="yo"),
+            other: rules.Lease(status="impago", tenant="enfermeros", rent=9000, arrears=9000),
+        },
+        candidates={empty: waiting("enfermeros", "familia", "universitaria")},
+    )
+
+
+def street_samples() -> dict[str, dict[str, Any]]:
+    """🗺️ El plano de las calles (centro y rural) y 🏢 el corte de cada tipo de edificio."""
+    empty = Market()
+    casa = next(
+        b.key
+        for b in streets.BUILDINGS
+        if b.kind == streets.CASA and empty.listing(b.featured).kind == "chalet"
+    )
+    corte = {
+        "bloque": "triana_e2",
+        "alto": tallest().key,
+        "aparcamiento": "triana_e1",
+        "pantalan": "mogan_e4",
+        "casa": casa,
+        "casa_terrera": "isleta_e5",
+        "entero": "triana_e9",
+        "complejo": "maspalomas_e4",
+        "poligono": "telde_e4",
+        "guardamuebles": "isleta_e7",
+    }
+    out = {
+        "calles_triana": view.streets_state(street_market(), "triana", 10),
+        "calles_rural": view.streets_state(empty, "tafira", 10),
+        "calles_playa": view.streets_state(empty, "mogan", 10),
+        "edificio_tuyas": view.building_state(street_market(), "triana_e2", 10, NAMES, TODAY),
+        "edificio_plaza_tuya": view.building_state(street_market(), "triana_e1", 10, NAMES, TODAY),
+    }
+    out.update(
+        {
+            f"edificio_{name}": view.building_state(empty, key, 10, NAMES)
+            for name, key in corte.items()
+        }
+    )
+    return out
+
+
 def checkout(key: str, **kwargs: Any) -> dict[str, Any]:
     return view.checkout_state(LISTING_BY_KEY[key], **kwargs)
 
@@ -809,6 +873,7 @@ def samples() -> dict[str, dict[str, Any]]:
     out.update(phase5_samples())
     out.update(phase6_samples())
     out.update(split_samples())
+    out.update(street_samples())
     return out
 
 
@@ -929,11 +994,14 @@ def test_cada_barrio_lleva_diez_tarjetas_con_la_obra_nueva_o_el_solar_la_ultima(
     assert sin_obra[9]["sign"] and not {"price", "status", "owners"} & sin_obra[9].keys()
 
 
-def test_solo_el_barrio_las_plantas_y_dividir_miden_mas_que_el_resto() -> None:
-    """1000 × 760 para el barrio y las plantas (tarjetas en dos filas), 1000 × 700 para dividir
-    (seis habitaciones y las cuentas) y 1000 × 640 para las demás pantallas."""
+def test_solo_el_barrio_las_plantas_dividir_y_las_calles_miden_mas_que_el_resto() -> None:
+    """1000 × 760 para el barrio, las plantas (tarjetas en dos filas) y las calles (tres bandas),
+    1000 × 700 para dividir (seis habitaciones y las cuentas), 1000 × 1000 para el corte del
+    edificio (hasta diez plantas) y 1000 × 640 para las demás pantallas."""
     assert (W, H) == (1000, 640)
-    assert SCREEN_H == {"barrio": 760, "plantas": 760, "dividir": 700}
+    assert SCREEN_H == {
+        "barrio": 760, "plantas": 760, "dividir": 700, "calles": 760, "edificio": 1000,
+    }  # fmt: skip
     assert size_of({"screen": "plantas"}) == (1000, 760)
     tall = set(SCREEN_H)
     assert {size_of(s) for s in samples().values() if s["screen"] not in tall} == {(1000, 640)}
@@ -945,11 +1013,12 @@ async def test_la_escena_y_la_reserva_saben_el_alto_de_cada_pantalla(scene: Hous
     assert await scene.painter.evaluate("SCREEN_H") == SCREEN_H
 
 
-def test_las_muestras_cubren_las_quince_pantallas_y_las_claves_de_las_fases_2_a_6() -> None:
+def test_las_muestras_cubren_las_diecisiete_pantallas_y_las_claves_de_las_fases_2_a_6() -> None:
     states = samples()
     assert {s["screen"] for s in states.values()} == {
         "mapa", "barrio", "ficha", "cartera", "caja", "vpo", "gestion", "candidatos",
         "subastas", "reformas", "imprevistos", "resenas", "junta", "plantas", "dividir",
+        "calles", "edificio",
     }  # fmt: skip
     assert [len(states[k]["cards"]) for k in ("candidatos_tres", "candidatos_uno")] == [3, 1]
     assert states["candidatos_vacia"]["empty"] and not states["candidatos_vacia"]["cards"]
@@ -1038,6 +1107,28 @@ def test_las_muestras_de_dividir_traen_lo_que_pinta_la_escena() -> None:
     assert states["dividir_sin_dueno"]["options"][0]["problem"]
     assert states["dividir_por_habitaciones"]["rooms"]
     assert states["dividir_no_se_puede"]["options"] == []
+
+
+def test_las_muestras_de_calles_y_edificios_traen_lo_que_pinta_la_escena() -> None:
+    """El plano (tres calles de tres edificios) y cortes de cada tipo, del más bajo al más alto."""
+    states = samples()
+    plano = states["calles_triana"]
+    assert [len(s["buildings"]) for s in plano["streets"]] == [3, 3, 3]
+    assert [b["slot"] for s in plano["streets"] for b in s["buildings"]] == list(range(1, 10))
+    assert {b["kind"] for s in plano["streets"] for b in s["buildings"]} >= {"bloque", "edificio"}
+    assert plano["streets"][0]["buildings"][1]["mine"] == 2  # la alquilada y la de los candidatos
+    assert states["calles_rural"]["barrio"]["theme"] == "rural"
+    alto = states["edificio_alto"]
+    assert sum(len(f["units"]) for f in alto["floors"]) >= 19 and len(alto["floors"]) >= 10
+    assert [f["level"] for f in alto["floors"]][-1] < 0  # el sótano, abajo
+    assert states["edificio_pantalan"]["kind"] == "pantalan"
+    assert all(f["level"] < 0 for f in states["edificio_aparcamiento"]["floors"])
+    for name in ("casa", "entero"):
+        assert sum(len(f["units"]) for f in states[f"edificio_{name}"]["floors"]) == 1, name
+    units = [u for f in states["edificio_tuyas"]["floors"] for u in f["units"]]
+    assert {u["use_kind"] for u in units} >= {"alquilado", "vacio", "impago", "venta"}
+    assert sum(u["mine"] for u in units) == 2 and max(u["waiting"] for u in units) == 3
+    assert sum(u["featured"] for u in units) == 1
 
 
 # -- Reserva con Pillow ------------------------------------------------------------------

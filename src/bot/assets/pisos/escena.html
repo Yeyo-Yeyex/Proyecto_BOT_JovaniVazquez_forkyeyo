@@ -14,9 +14,10 @@ Python:
 - setup(meta)                no guarda nada entre pantallas: cada una se pinta entera desde cero.
 - renderFrames(states)       una pantalla entera por estado: {x: 0, y: 0, u}.
 
-Pantallas (`screen`): mapa, barrio, ficha, cartera, caja, vpo, gestion, candidatos, subastas, reformas, imprevistos, resenas, junta, plantas y dividir. Miden 1000 × 640, salvo el barrio y las plantas
-(tarjetas en dos filas), que miden 1000 × 760, y dividir, 1000 × 700 (`SCREEN_H`; el Pillow de reserva, `housing_render`,
-lo repite). Como no hay estado entre fotogramas, el dibujo se reparte entre procesos sin cambiar un píxel.
+Pantallas (`screen`): mapa, barrio, ficha, cartera, caja, vpo, gestion, candidatos, subastas, reformas, imprevistos, resenas, junta, plantas, dividir,
+calles (streets_state: el plano del barrio) y edificio (building_state: el edificio en corte). Miden 1000 × 640, salvo el barrio y las plantas
+(tarjetas en dos filas) y las calles (tres bandas), que miden 1000 × 760, dividir, 1000 × 700, y el edificio, 1000 × 1000 (hasta diez
+plantas) (`SCREEN_H`; el Pillow de reserva, `housing_render`, lo repite). Como no hay estado entre fotogramas, el dibujo se reparte entre procesos sin cambiar un píxel.
 
 El estilo es el de «Idealjovani», un portal de pisos parodiado: paleta canaria (atlántico,
 turquesa, arena, picón, laurisilva, buganvilla y atardecer), rótulos en Luckiest Guy y cifras en
@@ -46,7 +47,7 @@ const S = 2;
 // Todas miden 1000 de ancho. De alto, 640 salvo las de `SCREEN_H` (el barrio, con sus diez tarjetas en
 // dos filas, mide más): cada alto tiene sus lienzos y `paintScreen` pone `H` y `g` de la pantalla que toca.
 const W = 1000;
-const SCREEN_H = { barrio: 760, plantas: 760, dividir: 700 };
+const SCREEN_H = { barrio: 760, plantas: 760, dividir: 700, calles: 760, edificio: 1000 };
 let H = 640;
 
 const SURFACES = new Map();
@@ -2432,12 +2433,7 @@ function paintPlantas(st) {
   const rooms = st.mode === "habitaciones";
   header(st.title, `${st.barrio} · ${st.mode_name}`, { size: 30, wordmark: false });
   paragraph(st.summary, 20, 112, 450, F.m(19), 24, 2, { color: C.ink });
-  (st.stats || []).slice(0, 3).forEach((s, i) => {
-    const bx = 480 + i * 170;
-    card(bx, 98, 164, 56, { r: 12, fill: "#e9f3f4" });
-    fitText(s.label, bx + 12, 114, 140, F.m, 17, 14, { color: C.mute });
-    fitText(s.value, bx + 12, 138, 140, F.d, 24, 15, { color: C.ink });
-  });
+  statBoxes(st.stats);
   const cards = st.cards.slice(0, BARRIO_COLS * 2); // un edificio: plantas y trasteros, hasta 10
   cardGrid(cards, rooms ? { room: true } : { floor: true });
   // con una fila sola sobra la de abajo: ahí va cómo funciona
@@ -3877,11 +3873,402 @@ function paintJunta(st) {
   if (st.more > 0) T(`y ${st.more} más sin enseñar`, rx + rw / 2, y0 + H0 + 4 + (div ? 0 : 8), { font: F.d(16), color: C.mute, align: "center" });
 }
 
+// CALLES ----------------------------------------------------------------------------------
+
+// El plano del barrio: sus tres calles en bandas, cada una con su placa de azulejo, su descripción y sus tres
+// edificios (la fachada del destacado y el número de su botón, el de la tarjeta del destacado en el barrio).
+const AZULEJO = "#1d4f9c";
+const CALLE_TOP = 98, CALLE_H = 204, CALLE_GAP = 10, CALLE_ROAD = 22, CALLE_PROP = 28;
+
+// Una placa de calle canaria: azulejo blanco con su doble filete azul y los rombos en las esquinas. Devuelve su ancho.
+function streetPlate(text, x, y, maxW, h = 40) {
+  const [t, z] = fit(text, maxW - 44, F.d, 21, 14), w = width(t, F.d(z)) + 44;
+  fillRR(x + 1, y + 3, w, h, 6, "rgba(0,0,0,0.22)");
+  fillRR(x, y, w, h, 6, "#fbfaf3");
+  g.save(); rr(x, y, w, h, 6); g.clip();
+  for (let k = x + h; k < x + w - 4; k += h) line(k, y, k, y + h, "rgba(29,79,156,0.14)", 1); // las juntas de los azulejos
+  rect(x, y, w, h * 0.42, "rgba(255,255,255,0.55)");
+  g.restore();
+  g.strokeStyle = AZULEJO; rr(x + 3.5, y + 3.5, w - 7, h - 7, 4); g.lineWidth = 2.6; g.stroke();
+  rr(x + 7.5, y + 7.5, w - 15, h - 15, 2); g.lineWidth = 1; g.stroke();
+  for (const [cx, cy] of [[x + 12, y + 12], [x + w - 12, y + 12], [x + 12, y + h - 12], [x + w - 12, y + h - 12]]) poly([[cx, cy - 3.5], [cx + 3.5, cy], [cx, cy + 3.5], [cx - 3.5, cy]], AZULEJO);
+  T(t, x + w / 2, y + h / 2 + 1, { font: F.d(z), color: AZULEJO, align: "center" });
+  return w;
+}
+// Lo que hay en la acera según el tipo de barrio: palmeras, farolas, semáforos, árboles…
+function streetProp(theme, x, y, seed) {
+  if (theme === "playa" || theme === "lujo") palm(x, y, 66, seed % 2 ? 0.12 : -0.12, 0.85);
+  else if (theme === "marinero") { palm(x, y, 58, 0.15, 0.8); bollard(x + 9, y); }
+  else if (theme === "historico") lamp(x, y, 0.9);
+  else if (theme === "centro") trafficLight(x, y);
+  else if (theme === "rural") tree(x, y, 58, seed % 2 ? "pine" : "laurel");
+  else { tree(x, y, 48); bin(x + 9, y, ["#2f8a46", "#e8b52a", "#1f6fb2"][seed % 3]); }
+}
+// El número del botón, en grande.
+function bigSlot(n, x, y, r = 21) {
+  dot(x, y + 2, r, "rgba(0,0,0,0.28)"); dot(x, y, r, "#fff"); dot(x, y, r - 3, C.sun);
+  T(String(n), x, y + 0.5, { font: F.d(Math.round(n > 9 ? r * 0.95 : r * 1.15)), color: "#fff", align: "center" });
+}
+// Lo que no cabe en la tarjeta del plano se dice más corto.
+const BUILDING_SHORT = { complejo: "Bungalows", poligono: "Naves" };
+function streetBuilding(bd, b, x, y, w, h) {
+  const fw = 112, tx = x + fw + 12, tw = w - fw - 20;
+  card(x, y, w, h, { r: 12, ...(bd.mine > 0 ? { stroke: C.blue } : {}) });
+  g.save(); rr(x, y, w, h, 12); g.clip();
+  facade(bd.featured_kind || "bajo", x, y, fw, h, { key: bd.key, barrio: b.key, theme: b.theme });
+  rect(x + fw, y, 2, h, "rgba(0,0,0,0.12)");
+  g.restore();
+  bigSlot(bd.slot, x + 26, y + 26);
+  const name = width(bd.kind_name, F.d(16)) > tw ? BUILDING_SHORT[bd.kind] || bd.kind_name : bd.kind_name;
+  fitText(name, tx, y + 17, tw, F.d, 19, 13, { color: C.ink });
+  fitText(`Portal ${bd.number}` + (bd.floors > 1 ? ` · ${bd.floors} plantas` : ""), tx, y + 39, tw, F.m, 17, 13, { color: C.mute });
+  fitText(`${bd.units} ${bd.units === 1 ? "unidad" : "unidades"}`, tx, y + 62, tw, F.d, 20, 14, { color: C.ink });
+  fitText(`${bd.free} en venta`, tx, y + 84, tw, F.d, 18, 13, { color: bd.free ? C.greenDk : C.mute });
+  if (bd.mine > 0) tag(`${bd.mine} ${bd.mine === 1 ? "tuya" : "tuyas"}`, tx, y + h - 30, "blue", "house", 16, tw);
+  else T("Ninguna tuya", tx, y + h - 17, { font: F.m(17), color: C.mute });
+}
+function streetBand(s, b, theme, y) {
+  const x = 16, w = W - 32, h = CALLE_H, gy = y + h - CALLE_ROAD, [sky1, sky2] = SKY[theme], seed = hash(s.key || s.name);
+  card(x, y, w, h, { r: 16 });
+  g.save(); rr(x, y, w, h, 16); g.clip();
+  rect(x, y, w, gy - y, vgrad(y, gy, mix(sky1, "#ffffff", 0.72), mix(sky2, "#ffffff", 0.15)));
+  rect(x, gy - 34, w, 34, mix(BAND[theme], "#ffffff", 0.4)); // a lo lejos: el mar, el monte o la ciudad del tema
+  rect(x, gy, w, 7, GROUND[theme]); rect(x, gy + 7, w, CALLE_ROAD - 7, "#565b63");
+  for (let k = x + 10; k < x + w; k += 34) rect(k, gy + 13, 16, 2.4, "rgba(255,255,255,0.75)");
+  g.restore();
+  const cw = (w - 32 - 2 * CALLE_PROP) / 3;
+  for (let j = 1; j < 3; j++) streetProp(theme, x + 16 + j * cw + (j - 0.5) * CALLE_PROP, gy, seed + j);
+  const pw = streetPlate(s.name, x + 14, y + 8, 470), bw = w - pw - 44, lines = wrap(s.blurb || "", bw, F.m(17), 2);
+  lines.forEach((l, i) => T(l, x + pw + 28, y + (lines.length === 1 ? 28 : 19) + i * 19, { font: F.m(17), color: C.ink }));
+  (s.buildings || []).slice(0, 3).forEach((bd, j) => streetBuilding(bd, b, x + 16 + j * (cw + CALLE_PROP), y + 56, cw, gy - y - 56));
+}
+function paintCalles(st) {
+  const b = st.barrio, theme = SKY[b.theme] ? b.theme : "centro";
+  header(b.name, [b.town, b.island, b.theme_name].filter(Boolean).join(" · "), { size: 34, wordmark: false });
+  themeBadge(theme, W - 46, 45, 22);
+  (st.streets || []).slice(0, 3).forEach((s, i) => streetBand(s, b, theme, CALLE_TOP + i * (CALLE_H + CALLE_GAP)));
+}
+
+// EDIFICIO --------------------------------------------------------------------------------
+
+// El edificio partido por la mitad, como una casa de muñecas: la azotea arriba, cada planta con sus huecos y lo
+// de dentro de cada uno, el sótano bajo la calle (más oscuro), y en cada hueco su número del desplegable, su
+// nombre, su uso y de quién es.
+const ED_TOP = 166;
+const HOME_KINDS = new Set(["estudio", "bajo", "piso", "atico", "duplex", "habitacion", "bungalow", "terrera", "chalet", "cueva", "finca", "casona", "vpo"]);
+const ROOM_PAL = ["#f5e7cf", "#e2edf1", "#f3e1dc", "#e7efda", "#eee5f1", "#f6eed4"];
+const FURN_PAL = ["#3f7cac", "#b5483a", "#5a8a4a", "#8a5aa8", "#d08a2a", "#2a8a8a"];
+const UNIT_WALL = { local: "#f7efdf", garaje: "#d3d6d9", trastero: "#ddd5c6", nave: "#d9dde0", loft: "#efe1d4", edificio: "#f1e6d2" };
+
+// Dibuja `draw` (pensado en un recuadro de rw × rh con el suelo abajo) centrado y apoyado en el suelo del hueco.
+function inBox(x, y, w, h, rw, rh, maxS, draw) {
+  const s = Math.min(w / rw, h / rh, maxS);
+  g.save(); g.translate(x + (w - rw * s) / 2, y + h - rh * s); g.scale(s, s); draw(); g.restore();
+}
+function winBack(x, y, w, h) {
+  fillRR(x, y, w, h, 2, "#8a6a4a"); rect(x + 3, y + 3, w - 6, h - 6, "#a8d8f2"); rect(x + 3, y + 3, w - 6, (h - 6) * 0.4, "rgba(255,255,255,0.35)");
+  line(x + w / 2, y + 3, x + w / 2, y + h - 3, "#8a6a4a", 2);
+}
+// Las habitaciones de una vivienda, en un recuadro de 120 × 70.
+const ROOM = {
+  salon(c) {
+    winBack(10, 10, 28, 26);
+    fillRR(68, 12, 26, 18, 2, "#6b4a2e"); rect(71, 15, 20, 12, "#eadfc8"); poly([[73, 27], [80, 19], [87, 27]], "#7aa86a");
+    fillRR(52, 38, 58, 20, 6, c); fillRR(48, 50, 66, 14, 5, shade(c, -0.12)); fillRR(45, 44, 10, 22, 4, shade(c, -0.25)); fillRR(107, 44, 10, 22, 4, shade(c, -0.25));
+    rect(51, 64, 4, 6, "#3a2a20"); rect(107, 64, 4, 6, "#3a2a20");
+    line(26, 44, 26, 70, "#5a4a3a", 2); poly([[18, 44], [34, 44], [30, 36], [22, 36]], "#f0d68a");
+  },
+  dorm(c) {
+    winBack(82, 10, 28, 26);
+    rect(6, 34, 6, 36, "#7a5434"); rect(8, 60, 74, 8, "#8a5a38"); fillRR(10, 50, 70, 12, 3, "#fff"); fillRR(30, 47, 52, 14, 3, c); fillRR(14, 44, 16, 8, 4, "#fff");
+    rect(10, 68, 4, 2, "#3a2a20"); rect(76, 68, 4, 2, "#3a2a20");
+    rect(90, 52, 18, 18, "#8a5a38"); rect(92, 57, 14, 2, "rgba(0,0,0,0.25)"); line(99, 52, 99, 44, "#5a4a3a", 1.6); poly([[94, 44], [104, 44], [102, 38], [96, 38]], "#f0d68a");
+  },
+  cocina(c) {
+    fillRR(6, 8, 74, 18, 2, shade(c, 0.35)); for (let k = 1; k < 4; k++) line(6 + k * 18.5, 8, 6 + k * 18.5, 26, "rgba(0,0,0,0.18)", 1);
+    rect(6, 46, 74, 24, "#ece6da"); rect(4, 43, 78, 4, "#7a6a5a"); for (let k = 1; k < 4; k++) line(6 + k * 18.5, 50, 6 + k * 18.5, 68, "rgba(0,0,0,0.15)", 1);
+    rect(30, 41, 20, 3, "#2a2f36"); fillRR(33, 32, 14, 9, 2, "#9aa4ae");
+    fillRR(88, 16, 26, 54, 3, "#f3f5f7"); rr(88.5, 16.5, 25, 53, 3); g.strokeStyle = "#c3cad2"; g.lineWidth = 1; g.stroke();
+    line(88, 36, 114, 36, "#c3cad2", 1.4); rect(92, 22, 2.4, 10, "#9aa4ae"); rect(92, 40, 2.4, 14, "#9aa4ae");
+  },
+  bano(c) {
+    g.beginPath(); for (let k = 0; k < 120; k += 12) { g.moveTo(k, 0); g.lineTo(k, 44); } for (let k = 0; k < 44; k += 11) { g.moveTo(0, k); g.lineTo(120, k); }
+    g.strokeStyle = "rgba(90,130,160,0.18)"; g.lineWidth = 1; g.stroke();
+    fillRR(9, 12, 22, 18, 3, "#8a6a4a"); rect(11, 14, 18, 14, "#cfe6f0");
+    rect(8, 40, 24, 5, "#fff"); rect(16, 45, 8, 25, "#eef1f4");
+    fillRR(40, 50, 18, 13, 5, "#fff"); rect(44, 62, 10, 8, "#eef1f4"); fillRR(54, 36, 8, 18, 2, "#fff");
+    fillRR(68, 46, 48, 24, 8, "#fff"); rr(68.5, 46.5, 47, 23, 8); g.strokeStyle = "#b9c2ca"; g.lineWidth = 1.2; g.stroke();
+    line(108, 8, 108, 32, "#9aa4ae", 2); ell(103, 32, 6, 2.5, "#9aa4ae"); rect(70, 44, 44, 3, c);
+  },
+};
+// Lo de dentro de los huecos que no son viviendas: [ancho, alto, dibujo].
+const INSIDE = {
+  local: [150, 70, (c) => { // el escaparate: rótulo, toldo, género y la puerta
+    rect(0, 0, 150, 12, c); rect(0, 10, 150, 2, "rgba(0,0,0,0.2)");
+    awningOver(6, 16, 92, c, "#fff");
+    rect(6, 24, 92, 46, "#6b4a2e"); glass(9, 27, 86, 40);
+    rect(12, 54, 54, 3, "#8a6a4a"); for (let i = 0; i < 4; i++) fillRR(14 + i * 13, 44, 10, 10, 2, FURN_PAL[(i + 1) % 6]);
+    dot(80, 35, 4.5, "#e8d2b8"); poly([[73, 41], [87, 41], [90, 66], [70, 66]], c); rect(78, 66, 4, 3, "#3a2a20");
+    rect(106, 22, 36, 48, "#6b4a2e"); glass(110, 26, 28, 44); dot(134, 50, 1.8, "#e8d2b8");
+  }],
+  garaje: [120, 70, (c) => { // la plaza con su coche
+    rect(0, 0, 8, 70, "#b4b9be"); rect(112, 0, 8, 70, "#b4b9be"); rect(8, 66, 104, 4, "#f2c230");
+    g.save(); g.translate(14, 58); g.scale(2, 2); parkedCar(0, 0, c); g.restore();
+  }],
+  trastero: [120, 70, (c) => { // cajas apiladas y la bici que nadie usa
+    const box = (x, y, w, h, col) => { rect(x, y, w, h, col); rect(x, y + h * 0.42, w, 3, "rgba(150,110,50,0.55)"); rect(x + w / 2 - 1.5, y, 3, h, "rgba(255,255,255,0.35)"); rect(x, y, w, 2, "rgba(0,0,0,0.12)"); };
+    box(6, 44, 30, 26, "#c8a26a"); box(37, 50, 24, 20, "#b8925a"); box(9, 21, 24, 23, "#d4ae74"); box(38, 34, 18, 16, "#c19a62");
+    g.strokeStyle = "#2a2f36"; g.lineWidth = 2.4; circle(76, 58, 11); g.stroke(); circle(106, 58, 11); g.stroke();
+    g.strokeStyle = c; g.beginPath(); g.moveTo(76, 58); g.lineTo(88, 40); g.lineTo(102, 40); g.lineTo(106, 58); g.moveTo(88, 40); g.lineTo(92, 58); g.lineTo(76, 58); g.moveTo(92, 58); g.lineTo(102, 40); g.stroke();
+    line(84, 36, 92, 36, "#222", 3); line(102, 40, 100, 31, "#2a2f36", 2.4); line(96, 31, 104, 31, "#222", 2.6);
+  }],
+  nave: [160, 70, (c) => { // palés, bidones y la carretilla elevadora
+    pallets(8, 70, 3); pallets(36, 70, 2);
+    rect(84, 14, 4, 56, "#3a424c"); rect(64, 64, 22, 3, "#9aa4ae"); pallets(62, 64, 1);
+    fillRR(88, 38, 36, 24, 4, C.gold); rect(120, 42, 8, 20, "#3a424c");
+    line(91, 38, 91, 14, "#2a2f36", 2.4); line(121, 38, 121, 14, "#2a2f36", 2.4); rect(88, 12, 36, 3, "#2a2f36");
+    fillRR(100, 30, 10, 8, 2, "#2a2f36");
+    dot(98, 63, 7, "#222"); dot(118, 63, 7, "#222"); dot(98, 63, 2.5, "#9aa4ae"); dot(118, 63, 2.5, "#9aa4ae");
+    barrel(142, 70, "#2a6a8a"); barrel(154, 70, c);
+  }],
+  loft: [130, 70, (c) => { // ladrillo visto, lámpara de fábrica y la mesa con el ordenador
+    g.fillStyle = "rgba(178,90,60,0.3)"; g.beginPath();
+    for (let r = 0; r < 5; r++) for (let k = 0; k < 10; k++) g.rect(k * 14 + (r % 2) * 7 - 7, r * 8, 12, 6);
+    g.fill();
+    line(66, 0, 66, 14, "#2a2f36", 1.4); poly([[58, 21], [74, 21], [70, 14], [62, 14]], "#2a2f36"); dot(66, 22, 3, "#ffe9a0");
+    rect(30, 46, 70, 4, "#8a5a38"); rect(34, 50, 3, 20, "#3a2a20"); rect(93, 50, 3, 20, "#3a2a20");
+    fillRR(52, 26, 30, 19, 2, "#2a2f36"); rect(54, 28, 26, 15, "#7fc4e6"); rect(65, 45, 4, 2, "#2a2f36"); rect(38, 42, 11, 4, "#f4efe2");
+    fillRR(12, 38, 14, 16, 3, c); rect(12, 52, 18, 4, shade(c, -0.2)); line(21, 56, 21, 66, "#2a2f36", 2); line(15, 68, 27, 68, "#2a2f36", 2);
+    plant(116, 70, 1.4);
+  }],
+  amarre: [120, 70, (c, seed) => { // el barco del puesto: velero o lancha
+    if (seed % 2) { line(60, 2, 60, 52, "#555", 2); poly([[62, 4], [98, 50], [62, 50]], "#fff"); poly([[58, 12], [28, 50], [58, 50]], "#ffe9a0"); }
+    else { fillRR(42, 34, 44, 18, 5, "#f4f6f8"); rect(48, 38, 30, 8, "#7fb8d8"); line(64, 34, 64, 18, "#555", 1.6); rect(62, 18, 8, 5, c); }
+    poly([[12, 50], [114, 50], [100, 70], [24, 70]], "#fff"); rect(12, 50, 102, 4, c); rect(22, 60, 82, 2, "rgba(0,0,0,0.12)");
+  }],
+};
+// Lo de dentro de un hueco, según su tipo. Las viviendas se parten en habitaciones según el sitio que haya
+// (una casa entera o un edificio sin dividir enseñan varias plantas de habitaciones).
+function unitInterior(u, x, y, w, h) {
+  if (w < 36 || h < 28) return;
+  const k = u.kind === "piso2" || u.kind === "piso3" ? "piso" : u.kind, seed = hash(u.key);
+  if (HOME_KINDS.has(k) || k === "edificio") {
+    const order = seed % 2 ? ["salon", "dorm", "cocina", "bano"] : ["dorm", "salon", "bano", "cocina"];
+    const one = k === "estudio" || k === "habitacion";
+    const rows = one ? 1 : clamp(Math.round(h / 115), 1, k === "edificio" ? 4 : ["terrera", "chalet", "cueva", "finca", "casona", "duplex"].includes(k) ? 2 : 1), rh = h / rows;
+    const cols = one ? 1 : clamp(Math.round(w / (rh * 1.6)), 1, 4), cw = w / cols;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const cx = x + c * cw, cy = y + r * rh, i = r * cols + c;
+      if (c) rect(cx - 1.5, cy, 3, rh, "rgba(0,0,0,0.13)");
+      if (r) rect(cx, cy - 2, cw, 4, "rgba(0,0,0,0.18)");
+      inBox(cx + 4, cy + 3, cw - 8, rh - 5, 120, 70, 2.4, () => ROOM[one ? "dorm" : order[(i + r) % 4]](FURN_PAL[(seed + i) % FURN_PAL.length]));
+    }
+    return;
+  }
+  const d = INSIDE[k] || INSIDE.trastero;
+  inBox(x, y, w, h, d[0], d[1], 2.4, () => d[2](FURN_PAL[seed % FURN_PAL.length], seed));
+}
+// De quién es (o lo que cuesta, si está en venta); las tuyas, en una etiqueta azul.
+function ownerText(u, x, cy, w, size) {
+  if (u.mine) { tag(u.owner, x, cy - (size + 8) / 2, "blue", "house", size - 1, w); return; }
+  const sale = u.use_kind === "venta";
+  fitText(sale ? u.price : u.owner, x, cy, w, sale ? F.d : F.m, size, 11, { color: sale ? C.ink : C.mute });
+}
+// El texto de un hueco: número y nombre (estrellita si es el destacado, «👥 N» si hay candidatos), el uso en su
+// chip y de quién es. Con poco alto, dos líneas: el dueño va detrás del chip si cabe.
+function unitText(u, x, y, w, h, fs) {
+  const two = h < 96, l1 = y + (two ? 17 : 20), r = fs <= 17 ? 12 : 14;
+  dot(x + r, l1 + 1.5, r, "rgba(0,0,0,0.22)"); dot(x + r, l1, r, u.mine ? C.blue : C.sun);
+  T(String(u.slot), x + r, l1 + 0.5, { font: F.d(u.slot > 9 ? r + 1 : r + 4), color: "#fff", align: "center" });
+  let right = x + w;
+  if (u.waiting > 0) { const tw_ = tagW(String(u.waiting), 14, "people"); right -= tw_; tag(String(u.waiting), right, l1 - 12, "green", "people", 14); right -= 6; }
+  if (u.featured) { starPath(right - 10, l1, 11, "#a86f00"); starPath(right - 10, l1, 8.5, C.gold); right -= 24; }
+  fitText(u.label, x + 2 * r + 8, l1, right - x - 2 * r - 8, F.d, fs + 1, 12, { color: C.ink });
+  const cs = fs - 4, cy = l1 + (two ? 15 : 18), cw = chip(u.use, x, cy, u.use_kind, { size: cs, maxW: two ? Math.max(w * 0.62, 110) : w });
+  if (!two) ownerText(u, x, cy + cs + 14 + 15, w, cs + 1);
+  else if (x + w - (x + cw + 8) >= 50) ownerText(u, x + cw + 8, cy + (cs + 14) / 2, w - cw - 8, cs);
+}
+// Un hueco: su fondo, lo de dentro, el sótano más oscuro, el texto en su cartel y el borde azul si es tuyo.
+// `o.water`: un puesto del pantalán (sin paredes; el agua por debajo del barco).
+// Dónde va el cartel del texto y dónde lo de dentro en un hueco de w × h (en relativo). Ancho: el texto a la
+// izquierda; estrecho: lo de dentro arriba y el texto debajo.
+function cellLayout(w, h) {
+  if (w >= 300) { const tw = Math.min(250, Math.round(w * 0.48)); return { side: true, tx: 12, ty: 0, tw, th: h >= 160 ? 110 : h, ix: tw + 22, iy: 5, iw: w - tw - 28, ih: h - 10 }; }
+  const th = h >= 160 ? 96 : 62;
+  return { side: false, tx: 10, ty: h - th, tw: w - 20, th, ix: 6, iy: 5, iw: w - 12, ih: h - th - 8 };
+}
+function unitCell(u, x, y, w, h, o = {}) {
+  const fs = h >= 100 ? 21 : h >= 60 ? 19 : 17, seed = hash(u.key), L = cellLayout(w, h);
+  const k = u.kind === "piso2" || u.kind === "piso3" ? "piso" : u.kind;
+  if (!o.water) {
+    rect(x, y, w, h, UNIT_WALL[k] || ROOM_PAL[seed % ROOM_PAL.length]);
+    rect(x, y + h - 5, w, 5, HOME_KINDS.has(k) || k === "loft" || k === "edificio" ? "#c9a07a" : "#9aa0a6");
+  }
+  g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip();
+  if (L.ih >= 28) unitInterior(u, x + L.ix, y + L.iy, L.iw, L.ih);
+  if (o.water) { // el casco, metido en el agua
+    const wy = y + L.iy + L.ih - 12;
+    rect(x, wy, w, 16, "rgba(31,150,190,0.7)"); line(x + 6, wy + 4, x + w * 0.4, wy + 4, "rgba(255,255,255,0.6)", 1.6);
+  }
+  if (o.below) rect(x, y, w, h, "rgba(18,22,30,0.24)");
+  g.restore();
+  const tx = x + L.tx, ty = y + L.ty;
+  if (L.side) fillRR(x + 5, y + 4, L.tw + 12, L.th - 9, 8, "rgba(255,253,246,0.88)");
+  else fillRR(x + 4, ty + 1, w - 8, L.th - 5, 8, "rgba(255,253,246,0.92)");
+  unitText(u, tx, ty + (L.side ? 0 : -1), L.tw, L.th, fs);
+  if (u.mine) { rr(x + 1.5, y + 1.5, w - 3, h - 3, 4); g.strokeStyle = C.blue; g.lineWidth = 3.5; g.stroke(); }
+}
+// A lo lejos, detrás del edificio: el mar, el monte o la ciudad, según el tema.
+function horizon(theme, x0, x1, gy, hgt, seed) {
+  const r = rng(seed), w = x1 - x0;
+  if (theme === "playa" || theme === "lujo" || theme === "marinero") {
+    const sy = gy - Math.min(70, hgt * 0.45);
+    mountain(x0 + w * 0.22, sy + 2, w * 0.55, hgt * 0.6, 0, "#a08a6c"); mountain(x1 - w * 0.12, sy + 2, w * 0.4, hgt * 0.42, 0, "#8f7c62");
+    rect(x0, sy, w, gy - sy, vgrad(sy, gy, BAND[theme], shade(BAND[theme], -0.25)));
+    g.beginPath(); for (let k = 0; k < 16; k++) { const wx = x0 + r() * w, wy = sy + 6 + r() * Math.max(4, gy - sy - 12); g.moveTo(wx, wy); g.lineTo(wx + 14, wy); }
+    g.strokeStyle = "rgba(255,255,255,0.45)"; g.lineWidth = 1.6; g.stroke();
+    if (theme !== "playa") { boat(x0 + 26, sy + 12, 1.1); boat(x1 - 28, sy + 16, 0.9); }
+    else umbrella(x1 - 26, gy, 1, "#e8742a", "#fff");
+  } else if (theme === "rural") {
+    [["#b5d6a0", 1, 0], ["#86b870", 0.62, 2]].forEach(([col, amp, ph]) => {
+      g.beginPath(); g.moveTo(x0, gy);
+      for (let x = x0; x <= x1 + 20; x += 20) g.lineTo(x, gy - hgt * amp * (0.55 + 0.45 * Math.sin((x - x0) / 95 + (seed % 7) + ph)));
+      g.lineTo(x1, gy); g.closePath(); g.fillStyle = col; g.fill();
+    });
+    for (let k = 0; k < 6; k++) tree(x0 + 14 + r() * (w - 28), gy - r() * hgt * 0.25, 22 + r() * 14, k % 2 ? "pine" : "laurel");
+  } else {
+    const col = theme === "historico" ? "#cdbda3" : theme === "obrero" ? "#b6bfc9" : "#bccadb";
+    g.fillStyle = col; let x = x0 - 10;
+    while (x < x1) { const bw = 34 + r() * 46, bh = hgt * (theme === "historico" ? 0.22 + r() * 0.25 : 0.32 + r() * 0.6); g.fillRect(x, gy - bh, bw - 5, bh); x += bw; }
+    if (theme === "historico") { // el campanario y la cúpula de la iglesia
+      const tx = x0 + w * 0.12, th = hgt * 0.85;
+      rect(tx, gy - th, 26, th, "#c2b08f"); poly([[tx - 3, gy - th], [tx + 13, gy - th - 26], [tx + 29, gy - th]], "#b4532a"); rect(tx + 9, gy - th + 8, 8, 12, "#7a6a50");
+      g.beginPath(); g.arc(x1 - w * 0.14, gy - hgt * 0.42, 28, Math.PI, TAU); g.fillStyle = "#c2b08f"; g.fill();
+    }
+    g.beginPath(); x = x0;
+    for (let k = 0; k < 40; k++) g.rect(x0 + r() * w, gy - r() * hgt * 0.5 - 8, 5, 7);
+    g.fillStyle = "rgba(255,255,255,0.4)"; g.fill();
+  }
+}
+// La azotea de un bloque: pretil, casetón de la escalera, bidones negros, antena y la cuerda de la ropa.
+function flatRoof(sty, bx, bw, top, core, seed, clothes = true) {
+  if (core) { rect(bx + 4, top - 36, 80, 36, shade(sty.wall, -0.06)); rect(bx + 30, top - 28, 24, 28, sty.trim); rect(bx, top - 40, 88, 5, shade(sty.wall, -0.25)); }
+  const tx = bx + bw - 90;
+  for (const dx of [0, 28]) { rect(tx + dx, top - 30, 22, 22, "#2a2f36"); ell(tx + dx + 11, top - 30, 11, 3, "#3e454e"); rect(tx + dx + 2, top - 8, 3, 8, "#555"); rect(tx + dx + 17, top - 8, 3, 8, "#555"); }
+  antenna(bx + bw - 140, top - 10, 1.6);
+  const cx0 = bx + 150, cx1 = bx + Math.min(bw - 170, 420);
+  if (clothes && cx1 - cx0 > 80) {
+    line(cx0, top - 10, cx0, top - 34, "#6b5a48", 2); line(cx1, top - 10, cx1, top - 34, "#6b5a48", 2); line(cx0, top - 32, cx1, top - 32, "#555", 1);
+    for (let i = 0; i < 6; i++) { const px = cx0 + 14 + i * (cx1 - cx0 - 28) / 5; rect(px - 6, top - 32, 12, 12 + (i % 2) * 4, PASTEL[(seed + i) % PASTEL.length]); }
+  }
+  rect(bx - 10, top - 10, bw + 20, 10, shade(sty.wall, -0.1)); rect(bx - 12, top - 12, bw + 24, 3, shade(sty.wall, -0.3));
+}
+// La entrada de un aparcamiento: la rampa, la barrera y la «P».
+function parkingEntrance(bx, bw, gy) {
+  poly([[bx + 30, gy], [bx + 210, gy], [bx + 236, gy + 14], [bx + 4, gy + 14]], "#2a2f36");
+  for (let k = 0; k < 3; k++) poly([[bx + 104 + k * 18, gy + 3], [bx + 114 + k * 18, gy + 7], [bx + 104 + k * 18, gy + 11]], "#f2c230");
+  const kx = bx + 260; rect(kx, gy - 44, 46, 44, "#d9dee5"); rect(kx + 6, gy - 36, 34, 16, "#9fd0ea"); rect(kx - 2, gy - 48, 50, 5, "#6b7480");
+  for (let k = 0; k < 6; k++) rect(kx - 16 - k * 16, gy - 22, 16, 5, k % 2 ? "#fff" : C.red);
+  const px = bx + bw - 70; rect(px - 2, gy - 90, 4, 90, "#6b7480"); fillRR(px - 22, gy - 130, 44, 44, 6, "#1f5fb0"); rr(px - 19, gy - 127, 38, 38, 4); g.strokeStyle = "#fff"; g.lineWidth = 2; g.stroke();
+  T("P", px, gy - 108, { font: F.d(30), color: "#fff", align: "center" });
+}
+// Una planta en la columna de la escalera: los peldaños y su nombre.
+function coreRow(label, x, y, h, below) {
+  rect(x, y, 88, h, below ? "#c4c7ca" : "#e9e4da");
+  g.beginPath(); for (let k = 0; k < 6; k++) { const sx = x + 10 + k * 12, sy = y + h - 6 - k * (h - 12) / 6; g.rect(sx, sy, 12, 2.4); g.rect(sx, sy - (h - 12) / 6, 2.4, (h - 12) / 6); }
+  g.fillStyle = "rgba(0,0,0,0.16)"; g.fill();
+  fillRR(x + 4, y + h / 2 - 13, 80, 26, 13, "#fff");
+  fitText(label, x + 44, y + h / 2, 72, F.d, 16, 10, { color: C.ink, align: "center" });
+}
+function section(st, theme, sty, px, py, pw, ph) {
+  const floors = st.floors || [], above = floors.filter((f) => f.level >= 0), below = floors.filter((f) => f.level < 0);
+  const kind = st.kind, water = kind === "pantalan", park = kind === "aparcamiento", separate = kind === "complejo" || kind === "poligono";
+  const first = (floors[0] && floors[0].units[0]) || {}, gable = kind === "casa" && !["terrera", "cueva"].includes(first.kind);
+  const core = !water && !separate && (floors.length > 1 || floors.some((f) => f.level !== 0));
+  const roofH = water ? 30 : park ? 140 : gable ? 64 : 44;
+  const maxRow = { casa: 400, edificio: 470, complejo: 300, poligono: 300, pantalan: 260, guardamuebles: 260, aparcamiento: 220 }[kind] ?? 150;
+  const under = water ? 70 : below.length ? 0 : 34, n = Math.max(floors.length, 1);
+  const rowH = Math.floor(clamp((ph - 24 - roofH - 14 - under) / n, 40, maxRow));
+  const bottom = py + ph - 10, gy = bottom - (below.length ? below.length * rowH : under) - 14, top = gy - above.length * rowH;
+  const bx = px + 56, bw = pw - 112, seed = hash(st.key);
+  const [sky1, sky2] = SKY[theme];
+  // cielo, lo de lejos y el suelo (o el mar)
+  rect(px, py, pw, gy - py, vgrad(py, gy, sky1, sky2));
+  const rc = rng(seed); for (let k = 0; k < 4; k++) cloud(px + 30 + rc() * (pw - 120), py + 20 + rc() * Math.max(10, (top - roofH - py) * 0.7), 0.9 + rc() * 0.6, 0.85);
+  const nb = water && floors[0] ? floors[0].units.length : 1, Lw = cellLayout((bw - (nb - 1) * 10) / nb, rowH - 6);
+  const sea = water ? top + 3 + Lw.iy + Lw.ih - 6 : gy; // en el pantalán, el agua llega hasta el casco de los barcos
+  horizon(theme, px, px + pw, sea, Math.min(260, (sea - py) * 0.45), seed);
+  if (water) {
+    rect(px, sea, pw, bottom + 10 - sea, vgrad(sea, bottom + 10, "#2fb6c8", "#1d6fa0"));
+    rect(bx - 24, gy, bw + 48, 14, "#a07a4a"); for (let k = bx - 24; k < bx + bw + 24; k += 18) rect(k, gy, 1.5, 14, "rgba(0,0,0,0.25)");
+    for (let k = 0; k <= 8; k++) rect(bx - 20 + k * (bw + 32) / 8, gy + 14, 8, 44, "#6b4a2e");
+    g.save(); g.translate(px, 0); g.scale(pw / 420, 1); waves(gy + 20, bottom, seed, 0.3); g.restore();
+  } else {
+    rect(px, gy + 14, pw, bottom + 10 - gy - 14, "#7a5a3c"); speckle(px, gy + 14, pw, bottom - gy, seed, 220, 2.2, "rgba(40,24,10,0.35)");
+    rect(px, gy, pw, 14, GROUND[theme]); rect(px, gy, pw, 3, "rgba(255,255,255,0.35)");
+    streetProp(theme, px + 28, gy, seed); streetProp(theme, px + pw - 28, gy, seed + 1);
+  }
+  // el edificio: muros cortados (gruesos), forjados y la azotea
+  if (!water && !separate) {
+    if (above.length) rect(bx - 8, top - 3, bw + 16, gy - top + 3, shade(sty.wall, -0.18));
+    if (below.length) rect(bx - 8, gy + 14, bw + 16, below.length * rowH + 4, "#7d8288");
+  }
+  if (gable) gableRoof(bx - 8, bx + bw + 8, top - 3, top - 60, sty.roof, 14);
+  else if (park) parkingEntrance(bx, bw, gy);
+  else if (!water && !separate && above.length) flatRoof(sty, bx, bw, top - 3, core, seed, kind !== "guardamuebles");
+  if (kind === "guardamuebles") { fillRR(bx + bw / 2 - 120, top - 46, 240, 30, 6, sty.trim); fitText(st.kind_name.toUpperCase(), bx + bw / 2, top - 31, 220, F.d, 18, 12, { color: "#fff", align: "center" }); }
+  const ux0 = bx + (core ? 94 : 0), uwAll = bw - (core ? 94 : 0), gap = water ? 10 : separate ? 22 : 6;
+  let ia = 0, ib = 0;
+  for (const f of floors) {
+    const bel = f.level < 0, y = bel ? gy + 14 + (ib++) * rowH : top + (ia++) * rowH;
+    if (!water && !separate) rect(bx - 8, y - 3, bw + 16, 6, bel ? "#666b71" : "#9a9ea4");
+    if (core) coreRow(f.label, bx, y + 3, rowH - 6, bel);
+    const us = f.units, uw = (uwAll - (us.length - 1) * gap) / Math.max(us.length, 1);
+    us.forEach((u, i) => {
+      const ux = ux0 + i * (uw + gap);
+      if (separate) { // cada bungalow o nave es una casita aparte, con sus muros y su tejado
+        rect(ux - 6, y - 3, uw + 12, rowH + 3, shade(sty.wall, -0.18));
+        if (kind === "complejo") gableRoof(ux - 6, ux + uw + 6, y - 3, y - 34, sty.roof, 8);
+        else for (let k = 0; k < 3; k++) { const tx = ux - 6 + k * (uw + 12) / 3, tw = (uw + 12) / 3; poly([[tx, y - 3], [tx, y - 30], [tx + tw, y - 3]], "#9aa4ae"); rect(tx, y - 30, 4, 27, "#bfe0f0"); }
+      }
+      unitCell(u, ux, y + 3, uw, rowH - 6, { below: bel, water });
+    });
+    if (water) for (let i = 1; i < us.length; i++) rect(ux0 + i * (uw + gap) - gap / 2 - 3, y + rowH * 0.35, 6, gy - y - rowH * 0.35, "#6b4a2e"); // los pilotes entre puestos
+  }
+  if (!water && !separate && above.length) rect(bx - 8, gy - 3, bw + 16, 6, "#9a9ea4");
+}
+function statBoxes(stats) {
+  (stats || []).slice(0, 3).forEach((s, i) => {
+    const bx = 480 + i * 170;
+    card(bx, 98, 164, 56, { r: 12, fill: "#e9f3f4" });
+    fitText(s.label, bx + 12, 114, 140, F.m, 17, 14, { color: C.mute });
+    fitText(s.value, bx + 12, 138, 140, F.d, 24, 15, { color: C.ink });
+  });
+}
+function paintEdificio(st) {
+  const theme = SKY[st.theme] ? st.theme : "centro", sty = styleOf(st.key, st.barrio_key, theme);
+  header(st.title, `${st.barrio} · ${st.kind_name}`, { size: 30, wordmark: false });
+  const floors = st.floors || [], units = floors.reduce((a, f) => a + f.units.length, 0);
+  fitText(`${floors.length} ${floors.length === 1 ? "planta" : "plantas"} · ${units} ${units === 1 ? "unidad" : "unidades"}`, 20, 114, 440, F.d, 22, 15, { color: C.ink });
+  // la leyenda: la estrellita es el destacado y la etiqueta verde, los candidatos que esperan
+  starPath(30, 141, 10, "#a86f00"); starPath(30, 141, 7.5, C.gold);
+  T("de la tarjeta del barrio", 46, 141, { font: F.m(17), color: C.mute });
+  const lx = 46 + width("de la tarjeta del barrio", F.m(17)) + 18;
+  tag("N", lx, 129, "green", "people", 14); T("candidatos", lx + tagW("N", 14, "people") + 8, 141, { font: F.m(17), color: C.mute });
+  statBoxes(st.stats);
+  const px = 16, py = ED_TOP, pw = W - 32, ph = H - ED_TOP - 40;
+  card(px, py, pw, ph, { r: 16 });
+  g.save(); rr(px, py, pw, ph, 16); g.clip();
+  section(st, theme, sty, px, py, pw, ph);
+  g.restore();
+}
+
 // -- Entrada ------------------------------------------------------------------------------
 
 const SCREENS = { mapa: paintMapa, barrio: paintBarrio, ficha: paintFicha, cartera: paintCartera, caja: paintCaja, vpo: paintVpo,
   gestion: paintGestion, candidatos: paintCandidatos, subastas: paintSubastas, reformas: paintReformas,
-  imprevistos: paintImprevistos, resenas: paintResenas, junta: paintJunta, plantas: paintPlantas, dividir: paintDividir };
+  imprevistos: paintImprevistos, resenas: paintResenas, junta: paintJunta, plantas: paintPlantas, dividir: paintDividir,
+  calles: paintCalles, edificio: paintEdificio };
 
 function paintScreen(st) {
   const draw = SCREENS[st.screen];
