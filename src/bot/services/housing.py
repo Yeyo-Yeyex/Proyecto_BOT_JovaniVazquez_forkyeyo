@@ -69,6 +69,7 @@ from bot.services.housing_catalog import (
     RentLevel,
     Tenant,
 )
+from bot.services.housing_streets import STREET_UNIT_BY_KEY, STREET_UNITS
 from bot.services.taxes import (
     IGIC_BY_KEY,
     IGIC_GENERAL_RATE,
@@ -454,13 +455,35 @@ def sale_quote(
     )
 
 
-def barrio_weight(listing: Listing) -> float:
-    """Lo que pesa un inmueble en su barrio: su precio entre el de todos los del barrio.
+#: Lo que pesan juntas en el índice de su barrio las unidades de sus calles (9.14.0): lo mismo
+#: que sus nueve destacados. Así los destacados mueven el índice como siempre y comprar todo el
+#: barrio, calles incluidas, lo sube el doble que comprar solo los nueve.
+STREETS_WEIGHT = 1.0
 
-    La obra nueva cuenta con los nueve del catálogo y ella misma (cada barrio tiene una como
-    mucho), así que nunca pesa más que todo el barrio.
+
+@cache
+def _featured_value(barrio: str) -> int:
+    """Lo que valen los nueve destacados de un barrio."""
+    return sum(base_price(item) for item in LISTINGS if item.barrio == barrio)
+
+
+@cache
+def _streets_value(barrio: str) -> int:
+    """Lo que valen juntas las unidades de las calles de un barrio."""
+    return sum(base_price(item) for item in STREET_UNITS if item.barrio == barrio)
+
+
+def barrio_weight(listing: Listing) -> float:
+    """Lo que pesa un inmueble en su barrio: su precio entre el de todos los destacados del
+    barrio (los nueve juntos pesan 1).
+
+    Las unidades de las calles pesan su precio entre el de todas las de su barrio, y juntas
+    `STREETS_WEIGHT`. La obra nueva (y una planta de un edificio dividido) cuenta con los nueve
+    y ella misma, así que nunca pesa más que todo el barrio.
     """
-    total = sum(base_price(item) for item in LISTINGS if item.barrio == listing.barrio)
+    if listing.key in STREET_UNIT_BY_KEY:
+        return STREETS_WEIGHT * base_price(listing) / _streets_value(listing.barrio)
+    total = _featured_value(listing.barrio)
     if listing.key not in LISTING_BY_KEY:
         total += base_price(listing)
     return base_price(listing) / total
