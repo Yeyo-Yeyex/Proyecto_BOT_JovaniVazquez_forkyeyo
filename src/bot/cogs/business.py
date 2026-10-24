@@ -933,7 +933,8 @@ class NegocioPanel(ui.LayoutView):
         today = self._today()
         pay = staff.payroll(business, today)
         lines = [
-            f"👥 **Plantilla** · {len(business.staff)} de {staff.cap(business.size)} puestos · "
+            f"👥 **Plantilla** · {len(staff.counter_staff(business))} de "
+            f"{staff.cap(business.size)} puestos · "
             f"nóminas de esta noche {format_amount(pay.cost + pay.black)}"
         ]
         if not business.staff:
@@ -947,8 +948,13 @@ class NegocioPanel(ui.LayoutView):
             lines.append(
                 f"{mark}**{employee['name']}** ({employee['age']}) · "
                 f"{CONTRACT_NAMES[employee['contract']]} · "
-                f"{shift_text(employee['shift'], employee['jornada'])} · "
-                f"{format_amount(employee['wage'])} la noche · humor {round(employee['humor'])} · "
+                + (
+                    "🧑‍💼 gerente"
+                    if staff.is_manager(employee)
+                    else shift_text(employee["shift"], employee["jornada"])
+                )
+                + f" · {format_amount(employee['wage'])} la noche · humor "
+                f"{round(employee['humor'])} · "
                 f"{skills}"
             )
         if business.wage_debt:
@@ -974,7 +980,13 @@ class NegocioPanel(ui.LayoutView):
             )
         candidate = self._candidate(business)
         offer = self._offer(business)
-        if candidate is not None and offer is not None:
+        if candidate is not None and offer is not None and offer["role"]:
+            wage = staff.manager_ask(candidate["skills"], candidate["traits"])
+            lines.append(
+                f"✍️ Oferta: gerente, {CONTRACT_NAMES[offer['contract']].lower()} · "
+                f"{format_amount(wage)} brutos la noche. No atiende: repone y cubre las bajas."
+            )
+        elif candidate is not None and offer is not None:
             jornada = offer["jornada"]
             wage = staff.ask(candidate["skills"], candidate["traits"], jornada)
             lines.append(
