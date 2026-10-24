@@ -2131,6 +2131,10 @@ FLOOR_WEIGHTS = {"bajo": 0.9, "atico": 1.2}
 #: 1/2009). Sube el valor como una reforma (`REFORM_VALUE_SHARE`): dividir para vender pierde.
 FLOOR_UNIT_EUR = 20_000
 FLOOR_M2_EUR = 80
+#: Un edificio dividido desde la 9.13.0 lleva un local en el bajo y un trastero por vivienda
+#: (`storage_of`): tabiques y puerta de cada trastero, en euros, y los metros que se anuncian.
+STORAGE_EUR = 2_000
+STORAGE_M2 = 5
 FLOOR_DAYS = 8
 FLOOR_MAX = 5
 SPLIT_AJD_RATE = 0.0075
@@ -2181,6 +2185,12 @@ def floors_of(listing: Listing) -> int:
     return min(FLOOR_MAX, int(found.group(1)) + 1) if found else 2
 
 
+def storage_of(listing: Listing) -> int:
+    """Trasteros que salen al dividir un edificio: uno por vivienda (las plantas de encima del
+    bajo, que pasa a ser un local). Los demás inmuebles no tienen."""
+    return floors_of(listing) - 1 if listing.kind == "edificio" else 0
+
+
 def rooms_of(listing: Listing) -> int:
     """Habitaciones que salen de un piso: una por cada `ROOM_M2` metros."""
     return max(ROOMS_MIN, min(ROOMS_MAX, listing.m2 // ROOM_M2))
@@ -2205,12 +2215,21 @@ def split_problem(listing: Listing, mode: str, *, promotion: bool = False) -> st
 
 
 def _floor_plan(parent: Listing, units: int) -> list[tuple[str, str]]:
-    """`(tipo, planta)` de cada planta de un inmueble, de abajo arriba."""
-    m2 = parent.m2 // units
+    """`(tipo, planta)` de cada planta de un inmueble, de abajo arriba, y detrás sus trasteros.
+
+    Un edificio dividido desde la 9.13.0 guarda en `units` sus plantas más sus trasteros: el bajo
+    es un local y hay un trastero por vivienda. Los que se dividieron antes guardaron solo sus
+    plantas y siguen como estaban, con el bajo de vivienda y sin trasteros.
+    """
+    storage = units - floors_of(parent) if parent.kind == "edificio" else 0
+    floors = units - storage
+    m2 = parent.m2 // floors
     middle = "piso3" if m2 >= 90 else "piso2" if m2 >= 50 else "estudio"
     if parent.kind == "edificio":
-        labels = ["Bajo", *(f"{i}.º" for i in range(1, units - 1)), "Ático"]
-        return list(zip(["bajo", *([middle] * (units - 2)), "atico"], labels, strict=True))
+        labels = ["Bajo", *(f"{i}.º" for i in range(1, floors - 1)), "Ático"]
+        kinds = ["local" if storage else "bajo", *([middle] * (floors - 2)), "atico"]
+        rooms = [("trastero", f"Trastero {n}") for n in range(1, storage + 1)]
+        return [*zip(kinds, labels, strict=True), *rooms]
     if parent.kind == "duplex":
         parts = parent.floor.split(" y ")
         labels = parts if len(parts) == 2 else ["Planta de abajo", "Planta de arriba"]
@@ -2224,9 +2243,10 @@ def split_units(parent: Listing, mode: str, units: int, cost: int) -> tuple[List
     `parent` va sin reformas: las suyas se copian a cada planta al dividir y suman aparte
     (`improved`). Las plantas piden juntas `FLOOR_RENT_GAIN` más que el entero, repartido
     por metros con `FLOOR_WEIGHTS`, y valen lo que él más `REFORM_VALUE_SHARE` de la obra
-    (`cost`). Las habitaciones piden `ROOM_RENT_GAIN` más a partes iguales y valen lo que el
-    piso (los muebles no hacen más caro el piso). Cada una lleva en `rent_bonus` y
-    `value_bonus` lo que le falta a su tipo para llegar ahí.
+    (`cost`). Los trasteros de un edificio piden y valen lo de cualquier trastero del barrio,
+    y salen de esa misma cuenta: no suben el total. Las habitaciones piden `ROOM_RENT_GAIN`
+    más a partes iguales y valen lo que el piso (los muebles no hacen más caro el piso). Cada
+    una lleva en `rent_bonus` y `value_bonus` lo que le falta a su tipo para llegar ahí.
     """
     barrio = BARRIO_BY_KEY[parent.barrio]
     if mode == FLOORS:
@@ -2235,20 +2255,16 @@ def split_units(parent: Listing, mode: str, units: int, cost: int) -> tuple[List
     else:
         plan = [(ROOM_KIND, f"Habitación {n}") for n in range(1, units + 1)]
         gain, value = ROOM_RENT_GAIN[barrio.theme], base_price(parent)
-    m2 = parent.m2 // units
-    sizes = [parent.m2 - m2 * (units - 1)] + [m2] * (units - 1)
-    pairs = zip(plan, sizes, strict=True)
-    weights = [FLOOR_WEIGHTS.get(kind, 1.0) * size for (kind, _label), size in pairs]
-    total = sum(weights)
+    floors = sum(1 for kind, _label in plan if kind != "trastero")
+    m2 = parent.m2 // floors
+    sizes = [STORAGE_M2 if kind == "trastero" else m2 for kind, _label in plan]
+    sizes[0] += parent.m2 - m2 * floors
     rent_eur = (
         _m2(parent) * barrio.rent_m2 * KINDS[parent.kind].rent_factor
         * (1 + parent.rent_bonus) * (1 + gain)
     )  # fmt: skip
-    out = []
-    for number, ((kind, label), size, weight) in enumerate(
-        zip(plan, sizes, weights, strict=True), start=1
-    ):
-        unit = Listing(
+    units_ = [
+        Listing(
             key=unit_key(parent.key, mode, number),
             barrio=parent.barrio,
             kind=kind,
@@ -2257,9 +2273,25 @@ def split_units(parent: Listing, mode: str, units: int, cost: int) -> tuple[List
             blurb=parent.blurb,
             floor=label,
             energy=parent.energy,
+            breakdowns=parent.breakdowns,
+            damp=parent.damp,
+            rehab_until=parent.rehab_until,
         )
-        share = weight / total
-        raw = _m2(unit) * barrio.rent_m2 * KINDS[kind].rent_factor
+        for number, ((kind, label), size) in enumerate(zip(plan, sizes, strict=True), start=1)
+    ]
+    # Los trasteros, a precio de trastero; el resto se reparte entre las plantas por metros.
+    storage = [u for u in units_ if u.kind == "trastero"]
+    rent_eur -= sum(_m2(u) * barrio.rent_m2 * KINDS[u.kind].rent_factor for u in storage)
+    value -= sum(catalog_price(u) for u in storage)
+    weights = {u.key: FLOOR_WEIGHTS.get(u.kind, 1.0) * u.m2 for u in units_ if u not in storage}
+    total = sum(weights.values())
+    out = []
+    for unit in units_:
+        if unit in storage:
+            out.append(unit)
+            continue
+        share = weights[unit.key] / total
+        raw = _m2(unit) * barrio.rent_m2 * KINDS[unit.kind].rent_factor
         out.append(
             replace(
                 unit,
@@ -2276,7 +2308,7 @@ class SplitQuote:
 
     Attributes:
         mode: `FLOORS` o `ROOMS`.
-        units: Plantas o habitaciones que salen.
+        units: Plantas (con los trasteros de un edificio) o habitaciones que salen.
         cost: La obra o los muebles (desaparece).
         igic: Su IGIC, al general (al Estado).
         icio: El ICIO de la obra (al Estado; 0 en las habitaciones).
@@ -2303,8 +2335,10 @@ class SplitQuote:
 def split_quote(listing: Listing, mode: str, index: float = 1.0) -> SplitQuote:
     """La cuenta de dividir un inmueble por plantas o de alquilarlo por habitaciones."""
     if mode == FLOORS:
-        units = floors_of(listing)
-        cost = int(round(_euros(FLOOR_UNIT_EUR * units + FLOOR_M2_EUR * listing.m2), -2))
+        floors, storage = floors_of(listing), storage_of(listing)
+        units = floors + storage
+        euros = FLOOR_UNIT_EUR * floors + STORAGE_EUR * storage + FLOOR_M2_EUR * listing.m2
+        cost = int(round(_euros(euros), -2))
         return SplitQuote(
             mode, units, cost, igic(cost, SERVICES_IGIC), round(cost * ICIO_RATE),
             WORKS_LICENSE_FEE, round(price(listing, index) * SPLIT_AJD_RATE), FLOOR_DAYS,

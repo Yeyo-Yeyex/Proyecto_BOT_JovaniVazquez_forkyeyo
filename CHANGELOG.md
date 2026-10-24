@@ -8,6 +8,11 @@ criterio.
 
 ## 9.x
 
+### 9.13.0 · 2026-10-24
+
+- Pisos: al dividir un edificio por plantas, el bajo es un local comercial (se puede montar ahí tu negocio) y sale un trastero por vivienda; los edificios que ya se dividieron siguen como estaban
+- Pisos: la pantalla de plantas enseña hasta diez tarjetas y los edificios dicen sus plantas en el título
+
 ### 9.12.0 · 2026-10-24
 
 - Pisos: en 🧰 Gestionar → 🏢 Dividir, los edificios, las casonas, los chalés y los dúplex se dividen por plantas: cada planta es un inmueble con su inquilino, su hipoteca y su precio, y se vende por separado (juntas piden un 25 % más; obra con IGIC, ICIO, licencia y AJD de la escritura)

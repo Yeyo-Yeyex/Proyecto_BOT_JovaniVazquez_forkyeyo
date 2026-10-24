@@ -389,6 +389,29 @@ def _card(market: Market, listing: Listing, user_id: int, names: dict[int, str])
     }
 
 
+def _parts(units: list[Listing] | tuple[Listing, ...]) -> str:
+    """Lo que sale de dividir un inmueble, en palabras: «un local, 3 viviendas y 3 trasteros»."""
+    locales = sum(1 for u in units if u.kind in rules.BUSINESS_SPACE_KINDS)
+    storage = sum(1 for u in units if u.kind == "trastero")
+    homes = len(units) - locales - storage
+    words = [
+        f"{n} {one if n == 1 else many}"
+        for n, one, many in (
+            (locales, "local", "locales"), (homes, "vivienda", "viviendas"),
+            (storage, "trastero", "trasteros"),
+        )
+        if n
+    ]  # fmt: skip
+    text = words[0] if len(words) == 1 else ", ".join(words[:-1]) + " y " + words[-1]
+    return text.replace("1 local", "un local", 1)
+
+
+def _each(units: list[Listing] | tuple[Listing, ...]) -> str:
+    """«cada una» si solo salen viviendas; si hay locales o trasteros, «cada uno»."""
+    mixed = any(u.kind in rules.BUSINESS_SPACE_KINDS or u.kind == "trastero" for u in units)
+    return "cada uno" if mixed else "cada una"
+
+
 def _floors_card(market: Market, listing: Listing, user_id: int, names: dict[int, str]) -> State:
     """La tarjeta de un inmueble dividido por plantas: lo que valen y piden todas juntas, y de
     quién son (las participaciones de cada dueño, en tanto por ciento del total)."""
@@ -432,9 +455,9 @@ def _floors_card(market: Market, listing: Listing, user_id: int, names: dict[int
             {"name": _name(names, m), "shares": s * rules.SHARES // total, "mine": m == user_id}
             for m, s in sorted(owned.items(), key=lambda kv: -kv[1])
         ],
-        "lease": f"{len(units)} plantas",
+        "lease": f"{rules.floors_of(listing)} plantas",
         "lease_kind": rules.FLOORS,
-        "split": len(units),
+        "split": rules.floors_of(listing),
     }
 
 
@@ -1203,16 +1226,16 @@ def units_state(
     if mode == rules.FLOORS:
         word = "plantas"
         summary = (
-            f"Dividido en {len(units)} plantas: cada una tiene sus dueños y su inquilino, y se "
-            "compra y se vende por separado."
+            f"{_parts(units).capitalize()}, {_each(units)} con sus dueños y su inquilino: se "
+            "venden por separado."
         )
         free = sum(1 for u in units if not market.shares_of(u.key))
         third = {"label": "En venta", "value": str(free)}
     else:
         word = "habitaciones"
         summary = (
-            f"Se alquila por habitaciones: {len(units)}, cada una con su inquilino. El piso se "
-            "compra y se vende entero."
+            f"{len(units)} habitaciones, cada una con su inquilino. El piso se compra y se "
+            "vende entero."
         )
         third = {"label": "Candidatos", "value": str(waiting)}
     state: State = {
@@ -1240,6 +1263,33 @@ def units_state(
         *(f"{c['title']}: {c['rent']} · {c['lease'] or c['status']}" for c in cards),
     ]
     return state
+
+
+def _unit_rows(units: tuple[Listing, ...], index: float) -> list[State]:
+    """Las filas de lo que sale al dividir, con los trasteros juntos en una (son iguales)."""
+    rows: list[State] = [
+        {
+            "label": u.floor,
+            "kind": u.kind,
+            "kind_name": KINDS[u.kind].name,
+            "m2": f"{u.m2} m²",
+            "rent": format_amount(rules.reference_rent(u, index)) + "/mes",
+        }
+        for u in units
+        if u.kind != "trastero"
+    ]
+    storage = [u for u in units if u.kind == "trastero"]
+    if storage:
+        rows.append(
+            {
+                "label": f"{len(storage)} trasteros" if len(storage) > 1 else "Trastero",
+                "kind": "trastero",
+                "kind_name": KINDS["trastero"].name,
+                "m2": f"{storage[0].m2} m² cada uno" if len(storage) > 1 else f"{storage[0].m2} m²",
+                "rent": format_amount(rules.reference_rent(storage[0], index)) + "/mes",
+            }
+        )
+    return rows
 
 
 def split_state(market: Market, key: str, user_id: int) -> State:
@@ -1294,22 +1344,13 @@ def split_state(market: Market, key: str, user_id: int) -> State:
                 "emoji": "🏢" if floors else "🛏️",
                 "name": "Dividir por plantas" if floors else "Alquilar por habitaciones",
                 "blurb": (
-                    f"{quote.units} viviendas independientes: cada una con su inquilino, sus "
-                    "dueños y su hipoteca, y se venden por separado."
+                    f"{_parts(units).capitalize()} independientes: {_each(units)} con su "
+                    "inquilino, sus dueños y su hipoteca, y se venden por separado."
                     if floors
                     else f"{quote.units} habitaciones amuebladas con cerradura, cada una con su "
                     "inquilino. El piso se sigue vendiendo entero."
                 ),
-                "units": [
-                    {
-                        "label": u.floor,
-                        "kind": u.kind,
-                        "kind_name": KINDS[u.kind].name,
-                        "m2": f"{u.m2} m²",
-                        "rent": format_amount(rules.reference_rent(u, index)) + "/mes",
-                    }
-                    for u in units
-                ],
+                "units": _unit_rows(units, index),
                 "cost": format_amount(quote.cost),
                 "taxes": format_amount(quote.total - quote.cost),
                 "total": format_amount(quote.total),
@@ -1320,7 +1361,7 @@ def split_state(market: Market, key: str, user_id: int) -> State:
                 "notes": (
                     [
                         "Para siempre: no se puede deshacer",
-                        "Cada planta cuenta como una vivienda (gran tenedor desde 5)",
+                        "Cada vivienda cuenta para gran tenedor (desde 5); locales y trasteros, no",
                         "Con varios dueños, la junta lo aprueba por unanimidad",
                     ]
                     if floors

@@ -1733,16 +1733,20 @@ class Panel(ui.View):
         done, _balance = result
         quote = done.quote
         self.screen = PLANTAS
+        # Los logros cuentan plantas o habitaciones, no los trasteros de un edificio.
+        storage = rules.storage_of(self._at(self.listing)) if mode == rules.FLOORS else 0
         await self._done(interaction, Event.BUY, housing_action_stats(
-            mode, amount=quote.total, units=quote.units, mortgaged=mortgaged,
+            mode, amount=quote.total, units=quote.units - storage, mortgaged=mortgaged,
         ))  # fmt: skip
         if mode == rules.FLOORS:
+            extra = f" (con un local en el bajo y {storage} trasteros)" if storage else ""
             text = (
-                f"🏢 Obras hasta el {done.until:%d/%m}: {quote.units} plantas por "
-                f"{format_amount(quote.cost)} de obra, {format_amount(quote.igic)} de IGIC, "
+                f"🏢 Obras hasta el {done.until:%d/%m}: {quote.units - storage} plantas{extra} "
+                f"por {format_amount(quote.cost)} de obra, {format_amount(quote.igic)} de IGIC, "
                 f"{format_amount(quote.icio)} de ICIO, {format_amount(quote.license)} de "
-                f"licencia y {format_amount(quote.ajd)} de AJD de la escritura. Cada planta es ya "
+                f"licencia y {format_amount(quote.ajd)} de AJD de la escritura. Cada uno es ya "
                 "un inmueble: con su inquilino, su hipoteca y su precio, y se vende por separado."
+                + (" En el local puedes montar tu negocio." if storage else "")
             )
         else:
             text = (

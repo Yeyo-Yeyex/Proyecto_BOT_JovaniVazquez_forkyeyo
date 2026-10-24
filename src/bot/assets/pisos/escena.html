@@ -2438,7 +2438,7 @@ function paintPlantas(st) {
     fitText(s.label, bx + 12, 114, 140, F.m, 17, 14, { color: C.mute });
     fitText(s.value, bx + 12, 138, 140, F.d, 24, 15, { color: C.ink });
   });
-  const cards = st.cards.slice(0, 6);
+  const cards = st.cards.slice(0, BARRIO_COLS * 2); // un edificio: plantas y trasteros, hasta 10
   cardGrid(cards, rooms ? { room: true } : { floor: true });
   // con una fila sola sobra la de abajo: ahí va cómo funciona
   if (cards.length <= BARRIO_COLS) postIt(rooms

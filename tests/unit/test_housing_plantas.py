@@ -8,6 +8,7 @@ tiene su inquilino, y se deshace al juntarlas o cuando el piso vuelve al mercado
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 
@@ -65,10 +66,17 @@ def test_cuantas_plantas_y_habitaciones_salen() -> None:
 def test_las_plantas_piden_un_25_mas_y_valen_lo_de_antes_mas_el_60_de_la_obra() -> None:
     quote = rules.split_quote(EDIFICIO, rules.FLOORS)
     units = rules.split_units(EDIFICIO, rules.FLOORS, quote.units, quote.cost)
-    assert [u.kind for u in units] == ["bajo", "piso3", "piso3", "atico"]
-    assert [u.floor for u in units] == ["Bajo", "1.º", "2.º", "Ático"]
-    assert sum(u.m2 for u in units) == EDIFICIO.m2
-    assert all(u.barrio == EDIFICIO.barrio and u.kind in rules.HOME_KINDS for u in units)
+    # Un local en el bajo, las viviendas encima y un trastero por vivienda (9.13.0).
+    kinds = ["local", "piso3", "piso3", "atico", "trastero", "trastero", "trastero"]
+    assert [u.kind for u in units] == kinds
+    assert [u.floor for u in units][:4] == ["Bajo", "1.º", "2.º", "Ático"]
+    assert units[-1].floor == "Trastero 3"
+    assert sum(u.m2 for u in units if u.kind != "trastero") == EDIFICIO.m2
+    assert all(u.barrio == EDIFICIO.barrio for u in units)
+    assert sum(u.kind in rules.HOME_KINDS for u in units) == 3  # el local y los trasteros no
+    # Los trasteros, a precio de trastero del barrio.
+    plain = replace(units[-1], rent_bonus=0.0, value_bonus=0.0)
+    assert rules.reference_rent(units[-1]) == rules.reference_rent(plain)
     rent = sum(rules.reference_rent(u) for u in units)
     assert rent == pytest.approx(rules.reference_rent(EDIFICIO) * 1.25, rel=0.002)
     value = sum(rules.price(u) for u in units)
@@ -76,12 +84,24 @@ def test_las_plantas_piden_un_25_mas_y_valen_lo_de_antes_mas_el_60_de_la_obra() 
     assert value == pytest.approx(expected, rel=0.002)
     assert value - rules.price(EDIFICIO) < quote.total  # dividir para vender pierde
     # El ático pide más por metro que el bajo.
-    assert rules.reference_rent(units[-1]) > rules.reference_rent(units[0])
+    assert rules.reference_rent(units[3]) > rules.reference_rent(units[0])
+
+
+def test_los_edificios_divididos_antes_siguen_como_estaban() -> None:
+    """La 9.12.0 guardó solo las plantas: su bajo sigue siendo vivienda y no tiene trasteros."""
+    units = rules.split_units(EDIFICIO, rules.FLOORS, 4, 1_200_000)
+    assert [u.kind for u in units] == ["bajo", "piso3", "piso3", "atico"]
+    assert [u.key for u in units] == [f"{EDIFICIO.key}~{n}" for n in range(1, 5)]
+    rent = sum(rules.reference_rent(u) for u in units)
+    assert rent == pytest.approx(rules.reference_rent(EDIFICIO) * 1.25, rel=0.002)
+    # Una casona o un dúplex no tienen trasteros ni local.
+    assert rules.storage_of(DUPLEX) == 0 and rules.storage_of(EDIFICIO) == 3
 
 
 def test_la_obra_de_dividir_paga_igic_icio_licencia_y_ajd() -> None:
     quote = rules.split_quote(EDIFICIO, rules.FLOORS)
-    assert quote.cost == (20_000 * 4 + 80 * EDIFICIO.m2) * 10
+    assert quote.units == 4 + 3
+    assert quote.cost == (20_000 * 4 + 2_000 * 3 + 80 * EDIFICIO.m2) * 10
     assert quote.igic == round(quote.cost * rules.SERVICES_IGIC)
     assert quote.icio == round(quote.cost * rules.ICIO_RATE)
     assert quote.license == rules.WORKS_LICENSE_FEE
@@ -288,3 +308,28 @@ def test_una_habitacion_vacia_no_se_okupa_y_un_piso_vacio_si() -> None:
     # El piso entero tiene seis imprevistos posibles (está en un bloque).
     taken = rules.advance_day(PISO, empty, day, 1.0, Scripted([0.99] * 7 + [0.0]))
     assert taken.lease.status == rules.SQUATTED
+
+
+async def test_un_negocio_se_instala_en_el_local_del_bajo(tmp_path: Path) -> None:
+    from bot.repositories.housing import HousingRepository
+
+    clock = Clock(at(14))
+    economy, service = await make(tmp_path, clock, Scripted(fill=0.99))
+    await give(economy, ANA, 30_000_000)
+    await service.buy(GUILD, ANA, EDIFICIO.key, 100)
+    done, _balance = await service.split(GUILD, ANA, EDIFICIO.key, rules.FLOORS)
+    local = done.units[0]
+    assert len(done.units) == 7
+    for d in range(15, 15 + rules.FLOOR_DAYS + 1):
+        clock.now = at(d).timestamp()
+        await service.close_days(GUILD)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.row_factory = sqlite3.Row
+        locals_ = HousingRepository.business_locals_in(connection, GUILD, ANA)
+        assert [(listing.key, status) for listing, status in locals_] == [(local, rules.VACANT)]
+        HousingRepository.occupy_business_local_in(
+            connection, GUILD, ANA, local, at(23).date(), clock.now
+        )
+    market = await service.market(GUILD)
+    assert market.leases[local].status == rules.OWN_BUSINESS
+    assert market.whole_homes(ANA) == 3
