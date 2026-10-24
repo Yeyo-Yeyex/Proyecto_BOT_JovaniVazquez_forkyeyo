@@ -139,6 +139,7 @@ from bot.services.housing_streets import (
     PANTALAN,
     STREET_UNIT_BY_KEY,
     building_of,
+    is_penthouse,
 )
 from bot.services.housing_streets import BUILDING_BY_KEY as STREET_BUILDING_BY_KEY
 from bot.services.housing_streets import BUILDINGS as STREET_BUILDINGS
@@ -8788,6 +8789,13 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("pisos", "pisos_above_shop", [
         (1, "pisos_above_shop_1", "Bajar a la tienda en zapatillas",
          "Ten enteros una vivienda y un local del bajo del mismo bloque de pisos.", R, True),
+    ])  # fmt: skip
+    # 9.16.0: los áticos caros (sobreáticos y áticos con vistas) de las calles
+    a += _tiers("pisos", "pisos_penthouses_max", [
+        (1, "pisos_penthouse_1", "Tocar el cielo con la escritura",
+         "Ten participaciones en un sobreático o un ático con vistas.", R),
+        (5, "pisos_penthouse_5", "El señor de los áticos",
+         "Ten participaciones en 5 sobreáticos o áticos con vistas a la vez.", E),
     ])  # fmt: skip
 
     # 🏛️ Economía y Hacienda -------------------------------------------------------------
@@ -25530,6 +25538,7 @@ def housing_streets_stats(shares: Mapping[str, int]) -> StatDelta:
         "pisos_street_units_max": len(new_units),
         "pisos_buildings_max": len(held),
         "pisos_streets_barrio_max": max(map(len, streets.values()), default=0),
+        "pisos_penthouses_max": sum(1 for key in shares if is_penthouse(key.split("~")[0])),
     }
     for key, units in held.items():
         b = STREET_BUILDING_BY_KEY[key]

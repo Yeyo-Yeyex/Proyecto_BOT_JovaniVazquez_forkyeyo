@@ -2095,7 +2095,7 @@ MOTIONS: tuple[Motion, ...] = (
     Motion("reforma", "🏗️", "Una reforma", THREE_FIFTHS, "art. 17.4 LPH"),
     Motion("licencia", "🏖️", "La licencia vacacional", THREE_FIFTHS, "art. 17.12 LPH"),
     Motion("venta", "🤝", "Vender el inmueble entero", UNANIMITY, "art. 397 CC"),
-    Motion("plantas", "🏢", "Dividirlo por plantas", UNANIMITY, "art. 397 CC"),
+    Motion("plantas", "🏢", "Dividirlo (por plantas o en dos)", UNANIMITY, "art. 397 CC"),
     Motion("habitaciones", "🛏️", "Alquilarlo por habitaciones", MAJORITY, "art. 398 CC"),
 )
 MOTION_BY_KEY: dict[str, Motion] = {m.key: m for m in MOTIONS}
@@ -2143,6 +2143,10 @@ UNIT_SEP = "~"
 ROOM_TAG = "h"
 #: Lo que se puede dividir por plantas y lo que se puede alquilar por habitaciones.
 FLOOR_KINDS = frozenset({"edificio", "casona", "chalet", "duplex"})
+#: Lo que se divide en dos, izquierda y derecha (9.16.0), con los metros que hacen falta para
+#: que cada mitad siga siendo habitable (o un local que sirva). Va por la misma obra, los
+#: mismos impuestos y las mismas cuentas que dividir por plantas (`FLOORS`).
+HALVES_MIN_M2 = {"piso3": 90, "atico": 90, "loft": 70, "local": 70, "bajo": 60}
 ROOM_PARENT_KINDS = frozenset({"piso3", "atico", "duplex", "terrera", "chalet", "casona"})
 #: Plantas: juntas piden un 25 % más que el inmueble entero (lo pequeño se alquila más caro
 #: por metro), repartido por metros con el bajo un poco por debajo y el ático por encima.
@@ -2222,9 +2226,14 @@ def rooms_of(listing: Listing) -> int:
 def split_problem(listing: Listing, mode: str, *, promotion: bool = False) -> str | None:
     """Por qué no se puede dividir así un inmueble (`None` si se puede)."""
     if mode == FLOORS:
-        if listing.kind not in FLOOR_KINDS:
+        if UNIT_SEP in listing.key:
+            return "Ya es una parte de un inmueble dividido: no se divide otra vez."
+        least = HALVES_MIN_M2.get(listing.kind)
+        if listing.kind not in FLOOR_KINDS and (least is None or listing.m2 < least):
             return (
-                "Por plantas solo se dividen los edificios, las casonas, los chalés y los dúplex."
+                "Por plantas se dividen los edificios, las casonas, los chalés y los dúplex; en "
+                "dos, los pisos de tres dormitorios y los áticos de 90 m² o más, los lofts y "
+                "locales de 70 y los bajos de 60."
             )
         if promotion:
             return "La obra nueva se vende tal como la entrega el promotor."
@@ -2237,6 +2246,11 @@ def split_problem(listing: Listing, mode: str, *, promotion: bool = False) -> st
     return None
 
 
+def halves(listing: Listing) -> bool:
+    """Si dividir un inmueble lo parte en dos (izquierda y derecha) y no por plantas."""
+    return listing.kind not in FLOOR_KINDS and listing.kind in HALVES_MIN_M2
+
+
 def _floor_plan(parent: Listing, units: int) -> list[tuple[str, str]]:
     """`(tipo, planta)` de cada planta de un inmueble, de abajo arriba, y detrás sus trasteros.
 
@@ -2244,6 +2258,13 @@ def _floor_plan(parent: Listing, units: int) -> list[tuple[str, str]]:
     es un local y hay un trastero por vivienda. Los que se dividieron antes guardaron solo sus
     plantas y siguen como estaban, con el bajo de vivienda y sin trasteros.
     """
+    if halves(parent):
+        # En dos: cada mitad es del mismo tipo (dos locales, dos bajos, dos áticos) o, en un
+        # piso o un loft, un piso de dos dormitorios o un estudio según sus metros.
+        half = parent.m2 // 2
+        same = parent.kind in ("local", "bajo", "atico")
+        kind = parent.kind if same else ("piso2" if half >= 50 else "estudio")
+        return [(kind, f"{parent.floor} izda."), (kind, f"{parent.floor} dcha.")]
     storage = units - floors_of(parent) if parent.kind == "edificio" else 0
     floors = units - storage
     m2 = parent.m2 // floors

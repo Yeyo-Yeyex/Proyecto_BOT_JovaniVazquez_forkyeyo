@@ -8,6 +8,16 @@ criterio.
 
 ## 9.x
 
+### 9.16.0 · 2026-10-24
+
+- Pisos: sobreáticos y áticos con vistas en la mitad de los bloques de los barrios con vistas: más grandes, con terraza y bastante más caros (54 nuevos)
+- Pisos: los pisos grandes, los áticos, los lofts, los locales y los bajos amplios se pueden dividir en dos (izquierda y derecha), y en el edificio por dentro cada hueco ocupa lo que mide
+- Pisos: los edificios por dentro ya no son todos iguales: cada barrio tiene su estilo y cada vivienda, local, plaza y trastero se ve distinto según lo que pasa en él
+
+### 9.15.2 · 2026-10-24
+
+- Pisos: en el plano de calles los edificios y sus botones van numerados en orden (1, 2, 3… calle a calle y de izquierda a derecha), no por el número de su tarjeta
+
 ### 9.15.1 · 2026-10-24
 
 - Pisos: elegir un barrio ya abre su plano de calles; daba error porque dos botones del plano y del edificio repetían el identificador del desplegable de barrios y Discord rechazaba la pantalla

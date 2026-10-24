@@ -58,7 +58,8 @@ def test_cuantas_plantas_y_habitaciones_salen() -> None:
     for listing in LISTINGS:
         floors = rules.split_problem(listing, rules.FLOORS) is None
         rooms = rules.split_problem(listing, rules.ROOMS) is None
-        assert floors == (listing.kind in rules.FLOOR_KINDS), listing.key
+        two = listing.m2 >= rules.HALVES_MIN_M2.get(listing.kind, 10**9)
+        assert floors == (listing.kind in rules.FLOOR_KINDS or two), listing.key
         assert rooms == (listing.kind in rules.ROOM_PARENT_KINDS), listing.key
     assert rules.split_problem(DUPLEX, rules.FLOORS, promotion=True)
 
@@ -333,3 +334,52 @@ async def test_un_negocio_se_instala_en_el_local_del_bajo(tmp_path: Path) -> Non
     market = await service.market(GUILD)
     assert market.leases[local].status == rules.OWN_BUSINESS
     assert market.whole_homes(ANA) == 3
+
+
+# -- Dividir en dos (9.16.0) --------------------------------------------------------------
+
+
+def test_un_piso_grande_un_local_o_un_bajo_amplio_se_dividen_en_dos() -> None:
+    piso = LISTING_BY_KEY["triana_piso3"]  # 95 m²
+    quote = rules.split_quote(piso, rules.FLOORS)
+    assert quote.units == 2 and rules.halves(piso)
+    units = rules.split_units(piso, rules.FLOORS, quote.units, quote.cost)
+    assert [u.floor for u in units] == ["2.º izda.", "2.º dcha."]
+    assert sum(u.m2 for u in units) == piso.m2 and {u.kind for u in units} == {"estudio"}
+    rent = sum(rules.reference_rent(u) for u in units)
+    assert rent == pytest.approx(rules.reference_rent(piso) * 1.25, rel=0.003)
+    local = LISTING_BY_KEY["triana_local"]
+    assert {u.kind for u in rules.split_units(local, rules.FLOORS, 2, 0)} == {"local"}
+    # Lo pequeño no: cada mitad no serviría.
+    for key in ("triana_estudio", "isleta_bajo"):
+        assert rules.split_problem(LISTING_BY_KEY[key], rules.FLOORS)
+    # Una mitad (o una planta) no se divide otra vez.
+    assert rules.split_problem(units[0], rules.FLOORS)
+    assert not rules.halves(DUPLEX) and not rules.halves(EDIFICIO)  # esos, por plantas
+
+
+async def test_dividir_en_dos_deja_las_mitades_en_su_planta_del_edificio(tmp_path: Path) -> None:
+    from bot.services import housing_view as view
+    from bot.services.housing_streets import building_of
+
+    clock = Clock(at(14))
+    economy, service = await make(tmp_path, clock, Scripted(fill=0.99))
+    await give(economy, ANA, 10_000_000)
+    atico = LISTING_BY_KEY["canteras_atico"]  # 110 m²
+    await service.buy(GUILD, ANA, atico.key, 100)
+    market = await service.market(GUILD)
+    option = view.split_state(market, atico.key, ANA)["options"][0]
+    assert option["name"] == "Dividir en dos" and not option["problem"]
+    done, _balance = await service.split(GUILD, ANA, atico.key, rules.FLOORS)
+    assert list(done.units) == [f"{atico.key}~1", f"{atico.key}~2"]
+    market = await service.market(GUILD)
+    assert market.whole_homes(ANA) == 2
+    building = building_of(atico.key)
+    cut = view.building_state(market, building.key, ANA, {})
+    level = next(u.level for u in building.units if u.key == atico.key)
+    floor = next(f for f in cut["floors"] if f["level"] == level)
+    halves = [u for u in floor["units"] if u["key"].startswith(atico.key)]
+    assert [u["half"] for u in halves] == ["izda.", "dcha."]
+    assert all(u["mine"] and not u["divisible"] for u in halves)
+    assert sum(u["area"] for u in halves) == atico.m2
+    assert view.units_state(market, atico.key, ANA, {})["mode_name"] == "Dividido en dos"
