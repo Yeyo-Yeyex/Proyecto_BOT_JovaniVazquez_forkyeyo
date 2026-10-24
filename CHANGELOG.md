@@ -8,6 +8,11 @@ criterio.
 
 ## 9.x
 
+### 9.15.0 · 2026-10-24
+
+- Pisos: al elegir un barrio se ve directamente su plano de calles, con el índice y la noticia del barrio; los nueve de siempre, en ⭐ Destacados
+- Pisos: los barrios del centro y obreros tienen más edificios que los del campo, y entre los bloques hay casas terreras, casonas y chalés (405 inmuebles más)
+
 ### 9.14.0 · 2026-10-24
 
 - Pisos: 🗺️ Calles en cada barrio: tres calles reales con tres edificios cada una, y cada edificio se ve por dentro, partido por la mitad, con lo que hay en cada planta, qué se hace y de quién es

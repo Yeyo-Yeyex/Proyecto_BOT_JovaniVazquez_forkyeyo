@@ -133,7 +133,6 @@ from bot.services.housing_market import HousingService
 from bot.services.housing_scene import HousingScene
 from bot.services.housing_streets import (
     BUILDING_BY_KEY,
-    STREET_UNIT_BY_KEY,
     building_of,
     buildings_of,
     streets_of,
@@ -169,6 +168,11 @@ GESTION, CANDIDATOS, SUBASTAS = "gestion", "candidatos", "subastas"
 REFORMAS, IMPREVISTOS, RESENAS, JUNTA = "reformas", "imprevistos", "resenas", "junta"
 PLANTAS, DIVIDIR = "plantas", "dividir"
 CALLES, EDIFICIO = "calles", "edificio"
+#: Cómo se llama cada edificio en su botón del plano (caben cinco por fila en el móvil).
+SHORT_BUILDING = {
+    "bloque": "Bloque", "aparcamiento": "Parking", "guardamuebles": "Trasteros", "casa": "Casa",
+    "complejo": "Bungalows", "pantalan": "Pantalán", "poligono": "Naves", "edificio": "Edificio",
+}  # fmt: skip
 #: Minutos que tienen el inquilino que es miembro y los copropietarios para quedarse lo que
 #: se vende a otro (tanteo del art. 25 LAU y retracto de comuneros del art. 1522 CC).
 PREFERENCE_SECONDS = 10 * 60
@@ -756,7 +760,7 @@ class Panel(ui.View):
             mine = {self._at(h.listing).barrio for h in self.market.of_member(me)}
             # Los barrios donde ya tienes algo van primero (`sorted` es estable).
             barrios = sorted(BARRIOS, key=lambda b: b.key not in mine)
-            return [(CARTERA, {}), (VPO, {})] + [(BARRIO, {"barrio": b.key}) for b in barrios]
+            return [(CARTERA, {}), (VPO, {})] + [(CALLES, {"barrio": b.key}) for b in barrios]
         if self.screen == BARRIO:
             fichas = [(FICHA, {"listing": i.key}) for i in self.market.listings_of(self.barrio)]
             return [*fichas, (CALLES, {}), (MAPA, {}), (CARTERA, {})]
@@ -1124,7 +1128,7 @@ class Panel(ui.View):
         if rules.parent_key(key) is not None:
             back = "◀ Habitaciones" if room else "◀ Plantas"
             self._button(back, "volver", self._go_parent, row=3)
-        elif key in STREET_UNIT_BY_KEY:
+        elif building_of(key) is not None:
             self._button("◀ Su edificio", "volver", self._go_own_building, row=3)
         else:
             barrio = BARRIO_BY_KEY[self._at(key).barrio].name
@@ -1308,7 +1312,8 @@ class Panel(ui.View):
             )  # fmt: skip
 
     def _streets_buttons(self) -> None:
-        """🗺️ Calles: un botón por edificio, una fila por calle, con el número de su tarjeta."""
+        """🗺️ Calles: un botón por edificio, una fila por calle (de 3 a 5), con su número (del 1
+        al 9, el de la tarjeta de su destacado; del 10 en adelante, los de más)."""
         for row, street in enumerate(streets_of(self.barrio), start=1):
             for building in buildings_of(street.key):
                 slot = building.key.rsplit("_e", 1)[1]
@@ -1317,11 +1322,11 @@ class Panel(ui.View):
                     for u in view.building_units(self.market, building)
                 )
                 self._button(
-                    f"{slot} · {building.name}", f"edificio:{slot}", self._open_building, row=row,
+                    f"{slot} · {SHORT_BUILDING[building.kind]}", f"edificio:{slot}",
+                    self._open_building, row=row,
                     style=discord.ButtonStyle.success if mine else discord.ButtonStyle.primary,
                 )  # fmt: skip
-        barrio = BARRIO_BY_KEY[self.barrio].name
-        self._button(f"◀ {barrio}"[:80], "barrio", self._back_to_barrio, row=4)
+        self._button("⭐ Destacados", "barrio", self._back_to_barrio, row=4)
         self._button("🗺️ Mapa", "mapa", self._go_map, row=4)
         self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=4)
         self._waiting_button(row=4)
@@ -2067,8 +2072,9 @@ class Panel(ui.View):
         await interaction.response.edit_message(view=self)
 
     async def _go_barrio(self, interaction: discord.Interaction) -> None:
+        """«◀ Barrio»: a su plano de calles, que es como se ve el barrio desde la 9.15.0."""
         self.barrio = self._at(self.listing).barrio
-        await self._go(interaction, BARRIO)
+        await self._go(interaction, CALLES)
 
     async def _back_to_listing(self, interaction: discord.Interaction) -> None:
         await self._go(interaction, FICHA)
@@ -2079,7 +2085,7 @@ class Panel(ui.View):
             await ack(interaction)
             return
         self.barrio = values[0]
-        await self._go(interaction, BARRIO)
+        await self._go(interaction, CALLES)  # el barrio se ve por sus calles (9.15.0)
 
     async def _open_listing(self, interaction: discord.Interaction) -> None:
         custom_id = interaction.data.get("custom_id", "") if interaction.data else ""

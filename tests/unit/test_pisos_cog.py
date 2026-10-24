@@ -18,6 +18,7 @@ from bot.cogs.pisos import (
     BARRIO,
     CACHE_SIZE,
     CAJA,
+    CALLES,
     CANDIDATOS,
     CARTERA,
     FICHA,
@@ -131,7 +132,8 @@ async def test_el_panel_abre_el_mapa_y_pinta_los_barrios_por_adelantado(tmp_path
     assert scene.painted[0]["screen"] == "mapa"
     await cog.painter._worker  # el adelanto: los 20 barrios y la cartera
     screens = [s["screen"] for s in scene.painted[1:]]
-    assert screens.count("barrio") == len(BARRIOS) and "cartera" in screens
+    # Desde la 9.15.0 el barrio se abre por su plano de calles.
+    assert screens.count("calles") == len(BARRIOS) and "cartera" in screens
 
 
 async def test_el_adelanto_pinta_de_uno_en_uno_y_lo_mas_probable_primero(tmp_path: Path) -> None:
@@ -355,7 +357,7 @@ async def test_navegar_contesta_antes_de_pintar_y_no_resube_lo_que_ya_se_ve(
     await panel._pick_barrio(interaction)
 
     assert events[0] == "response.defer"
-    assert panel.screen == BARRIO and panel.barrio == barrio
+    assert panel.screen == CALLES and panel.barrio == barrio  # el barrio, por sus calles
     assert "attachments" in interaction.edit_original_response.await_args.kwargs
 
     again = clicked(ana, [], values=[barrio])

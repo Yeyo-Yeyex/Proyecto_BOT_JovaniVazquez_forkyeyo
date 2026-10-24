@@ -3,6 +3,7 @@ con su destacado y sus unidades nuevas, sin cambiar ninguna clave de antes."""
 
 from __future__ import annotations
 
+import hashlib
 from collections import Counter
 from pathlib import Path
 
@@ -17,23 +18,42 @@ from bot.services import housing_view as view
 from bot.services.housing_catalog import BARRIOS, LISTING_BY_KEY, LISTINGS, listings_of
 from tests.unit.test_housing import ANA, GUILD, Clock, Scripted, at, give, ledger_sum, make
 
-#: La huella del catálogo de calles. Si cambia, cambian unidades que pueden tener dueño:
-#: solo se toca a propósito y con una migración de lo que ya se haya comprado.
-FINGERPRINT = "59a7d55ed92b657c"
+#: La huella del catálogo de calles (claves, tipos, metros, plantas y dónde está cada edificio).
+#: Solo se toca a propósito: en la 9.15.0 cambió al añadir edificios y mezclar las calles.
+FINGERPRINT = "00c05afb17e34d9e"
+#: La huella de las 866 unidades nuevas de la 9.14.0 (clave, tipo, metros y planta): pueden
+#: tener dueño, así que nunca cambian. Lo nuevo va siempre con claves nuevas.
+UNITS_9_14 = "aa15f9941ac23caa"
 
 
 def test_el_catalogo_de_calles_no_cambia_sin_querer() -> None:
     assert streets.fingerprint() == FINGERPRINT
 
 
-def test_cada_barrio_tiene_tres_calles_con_tres_edificios_uno_por_destacado() -> None:
-    assert len(streets.STREETS) == 3 * len(BARRIOS) and len(streets.BUILDINGS) == 9 * len(BARRIOS)
-    featured = Counter(b.featured for b in streets.BUILDINGS)
+def test_las_unidades_de_la_9_14_siguen_exactamente_igual() -> None:
+    old = [
+        u
+        for u in streets.STREET_UNITS
+        if int(streets.building_of(u.key).key.rsplit("_e", 1)[1]) <= 9
+    ]
+    rows = sorted((u.key, u.kind, u.m2, u.floor) for u in old)
+    assert len(rows) == 866
+    assert hashlib.sha256(repr(rows).encode()).hexdigest()[:16] == UNITS_9_14
+
+
+def test_cada_barrio_tiene_tres_calles_y_mas_edificios_cuanto_mas_denso() -> None:
+    assert len(streets.STREETS) == 3 * len(BARRIOS)
+    featured = Counter(b.featured for b in streets.BUILDINGS if b.featured)
     assert set(featured) == set(LISTING_BY_KEY) and set(featured.values()) == {1}
+    per_street = {"centro": 5, "obrero": 5, "historico": 4, "playa": 4, "marinero": 4}
+    per_street |= {"lujo": 4, "rural": 3}
     for barrio in BARRIOS:
         roads = streets.streets_of(barrio.key)
         assert len(roads) == 3
-        assert all(len(streets.buildings_of(r.key)) == 3 for r in roads)
+        assert {len(streets.buildings_of(r.key)) for r in roads} == {per_street[barrio.theme]}
+        kinds = {b.kind for r in roads for b in streets.buildings_of(r.key)}
+        if barrio.theme in ("centro", "obrero", "historico", "marinero", "playa", "lujo"):
+            assert {streets.BLOQUE, streets.CASA} <= kinds, barrio.key  # pisos y casas mezclados
         # El edificio N es el de la tarjeta N del barrio.
         for n, item in enumerate(listings_of(barrio.key), start=1):
             assert streets.BUILDING_BY_KEY[f"{barrio.key}_e{n}"].featured == item.key
@@ -83,14 +103,17 @@ def test_las_calles_pesan_en_el_indice_lo_mismo_que_los_nueve_destacados() -> No
         assert featured == pytest.approx(1) and street == pytest.approx(rules.STREETS_WEIGHT)
     market = Market()
     assert len(market.keys()) == len(LISTINGS) + len(streets.STREET_UNITS)
-    assert market.listing("triana_e2_1a").title.endswith("Calle Mayor de Triana, 16")
+    building = streets.building_of("triana_e2_1a")
+    street = streets.STREET_BY_KEY[building.street]
+    assert market.listing("triana_e2_1a").title.endswith(f"{street.name}, {building.number}")
 
 
 def test_el_plano_y_el_corte_cuentan_lo_que_hay() -> None:
     state = view.streets_state(Market(), "triana", ANA)
-    assert [len(s["buildings"]) for s in state["streets"]] == [3, 3, 3]
+    assert [len(s["buildings"]) for s in state["streets"]] == [5, 5, 5]
     slots = sorted(b["slot"] for s in state["streets"] for b in s["buildings"])
-    assert slots == list(range(1, 10))
+    assert slots == list(range(1, 16))
+    assert state["barrio"]["index"] == "1,000" and state["barrio"]["price_m2"].endswith("/m²")
     cut = view.building_state(Market(), "triana_e2", ANA, {})
     levels = [f["level"] for f in cut["floors"]]
     assert levels == sorted(levels, reverse=True) and levels[-1] == -1  # de la azotea al sótano
