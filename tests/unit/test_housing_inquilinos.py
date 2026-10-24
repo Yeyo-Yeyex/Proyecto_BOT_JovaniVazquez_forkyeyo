@@ -26,6 +26,7 @@ from bot.services.housing_catalog import (
     KINDS,
     LISTING_BY_KEY,
     RENT_LEVELS,
+    ROOM_KIND,
     TENANT_BY_KEY,
     TENANTS,
 )
@@ -77,15 +78,28 @@ def test_cada_inquilino_tiene_personalidad_completa() -> None:
             # Quien firma un contrato largo habla en cada momento y tiene rasgos.
             assert tenant.renew and tenant.leave and tenant.unpaid and tenant.complaint
             assert len(tenant.traits) >= 2, tenant.key
-        if not tenant.kinds and tenant.levels != ("vacacional",):
+        person = not tenant.kinds or tenant.kinds == {ROOM_KIND}
+        if person and tenant.levels != ("vacacional",):
             assert 18 <= tenant.age <= 90, tenant.key
-        assert tenant.kinds <= BUSINESS_KINDS, tenant.key
+        assert tenant.kinds <= BUSINESS_KINDS | {ROOM_KIND}, tenant.key
+
+
+def test_una_habitacion_solo_la_alquila_quien_busca_habitacion() -> None:
+    """Una familia no se mete en una habitación, y quien busca habitación no alquila un piso."""
+    rooms = [t for t in TENANTS if t.kinds == {ROOM_KIND}]
+    assert len(rooms) >= 10
+    for level in ("social", "referencia", "mercado", "nomadas"):
+        pool = rules.tenant_pool(level, ROOM_KIND)
+        assert pool and set(pool) <= set(rooms), level
+        assert not set(rules.tenant_pool(level, "piso2")) & set(rooms), level
+    assert not rules.tenant_pool(rules.VACATION_LEVEL, ROOM_KIND)
+    assert not TENANT_BY_KEY["familia"].rents("referencia", ROOM_KIND)
 
 
 def test_la_gestora_deja_la_media_de_cada_grupo_como_estaba() -> None:
     """Elige al azar: la media de los factores de quien puede salir es exactamente 1."""
     for level in RENT_LEVELS:
-        for kind in ("piso2", *sorted(BUSINESS_KINDS)):
+        for kind in ("piso2", ROOM_KIND, *sorted(BUSINESS_KINDS)):
             pool = rules.tenant_pool(level, kind)
             if not pool:
                 continue
