@@ -49,6 +49,13 @@ from bot.services.housing_catalog import (
     Listing,
 )
 from bot.services.housing_furniture import FURNITURE, furniture_stars
+from bot.services.housing_streets import (
+    BUILDING_BY_KEY,
+    PANTALAN,
+    Building,
+    buildings_of,
+    streets_of,
+)
 from bot.services.levels import TIMEZONE
 from bot.services.pending import Pending, Side
 
@@ -1401,6 +1408,209 @@ def split_state(market: Market, key: str, user_id: int) -> State:
             f"{o['name']}: {o['total']} · {o['days']} · {o['rent_after']} ({o['rent_change']})"
             + (f" · {o['problem']}" if o["problem"] else "")
             for o in options
+        ),
+    ]
+    return state
+
+
+#: Lo que se hace en una unidad, según su contrato (para el corte del edificio).
+USE_TEXT = {
+    rules.VACANT: "Vacío",
+    rules.RENTED: "Alquilado",
+    rules.DEFAULTING: "No paga",
+    rules.EVICTING: "Desahucio",
+    rules.SQUATTED: "Okupado",
+    rules.HABITUAL: "Vive su dueño",
+    rules.OWN_BUSINESS: "Negocio de su dueño",
+    rules.OBRAS: "En obras",
+    rules.BY_ROOMS: "Por habitaciones",
+}
+
+
+def building_units(market: Market, building: Building) -> list[Listing]:
+    """Las unidades de un edificio que se ven en su corte: las suyas y, si el edificio entero
+    está dividido por plantas, sus plantas en su lugar."""
+    out = []
+    for unit in building.units:
+        if market.split_mode(unit.key) == rules.FLOORS:
+            out += [market.listing(u.key) or u for u in market.units_of(unit.key)]
+        elif (listing := market.listing(unit.key)) is not None:
+            out.append(listing)
+    return out
+
+
+def _use(market: Market, key: str) -> tuple[str, str]:
+    """`(qué se hace en una unidad, su tipo)`: «En venta», «Alquilado: Médica residente»…"""
+    lease = market.leases.get(key)
+    if not market.shares_of(key):
+        return "En venta", "venta"
+    if lease is None:
+        return "Vacío", rules.VACANT
+    text = USE_TEXT.get(lease.status, "")
+    if lease.status in (rules.RENTED, rules.DEFAULTING) and lease.member is not None:
+        return f"{text}: un miembro", lease.status
+    tenant = TENANT_BY_KEY.get(lease.tenant or "")
+    if tenant is not None and lease.status in (rules.RENTED, rules.DEFAULTING):
+        return f"{text}: {tenant.name}", lease.status
+    if lease.status == rules.BY_ROOMS:
+        rooms = [market.leases.get(u.key) for u in market.units_of(key)]
+        busy = sum(1 for r in rooms if r is not None and r.status == rules.RENTED)
+        return f"{text} ({busy} de {len(rooms)})", lease.status
+    return text, lease.status
+
+
+def _owner(market: Market, key: str, user_id: int, names: dict[int, str]) -> str:
+    """De quién es una unidad: «Tuya», «De Ana», «De Ana y 2 más» o «En venta»."""
+    holders = market.shares_of(key)
+    if not holders:
+        return "En venta"
+    if user_id in holders and len(holders) == 1:
+        return "Tuya"
+    first = max(holders, key=lambda m: (m == user_id, holders[m]))
+    who = "ti" if first == user_id else _name(names, first)
+    return f"De {who}" + (f" y {len(holders) - 1} más" if len(holders) > 1 else "")
+
+
+def _level_name(level: int, building: Building) -> str:
+    """Cómo se llama una planta en el corte: «Sótano», «Bajo», «2.ª planta», «Pantalán»…"""
+    if level < 0:
+        return "Sótano" if level == -1 else f"Sótano {level}"
+    if building.kind == PANTALAN:
+        return "Pantalán"
+    if level == 0:
+        return "Bajo" if building.floors > 1 else "Planta"
+    return f"{level}.ª planta"
+
+
+def streets_state(
+    market: Market, barrio_key: str, user_id: int, today: date | None = None
+) -> State:
+    """🗺️ Calles: el plano del barrio con sus tres calles y los edificios de cada una.
+
+    Cada edificio lleva el número de la tarjeta de su destacado (el 3 es el edificio de la
+    tarjeta 3) y un botón con el mismo número.
+    """
+    barrio = BARRIO_BY_KEY[barrio_key]
+    streets = []
+    for street in streets_of(barrio_key):
+        buildings = []
+        for building in buildings_of(street.key):
+            units = building_units(market, building)
+            featured = market.listing(building.featured)
+            buildings.append(
+                {
+                    "key": building.key,
+                    "slot": int(building.key.rsplit("_e", 1)[1]),
+                    "number": building.number,
+                    "kind": building.kind,
+                    "kind_name": building.name,
+                    "featured_kind": featured.kind if featured else "",
+                    "floors": building.floors,
+                    "units": len(units),
+                    "free": sum(1 for u in units if not market.shares_of(u.key)),
+                    "mine": sum(1 for u in units if user_id in market.shares_of(u.key)),
+                    "rented": sum(
+                        1
+                        for u in units
+                        if (lease := market.leases.get(u.key)) is not None
+                        and lease.status in (rules.RENTED, rules.DEFAULTING, rules.BY_ROOMS)
+                    ),
+                }
+            )
+        streets.append(
+            {"key": street.key, "name": street.name, "blurb": street.blurb, "buildings": buildings}
+        )
+    state: State = {
+        "screen": "calles",
+        "barrio": {
+            "key": barrio.key,
+            "name": barrio.name,
+            "town": barrio.town,
+            "island": ISLANDS[barrio.island],
+            "theme": barrio.theme,
+            "theme_name": THEMES[barrio.theme],
+        },
+        "streets": streets,
+        "footer": "Toca un edificio para verlo por dentro",
+    }
+    state["fallback"] = [
+        f"{barrio.name}: sus calles",
+        *(
+            f"{st['name']}: "
+            + ", ".join(f"{b['slot']} · {b['kind_name']} ({b['units']})" for b in st["buildings"])
+            for st in streets
+        ),
+    ]
+    return state
+
+
+def building_state(
+    market: Market, key: str, user_id: int, names: dict[int, str], today: date | None = None
+) -> State:
+    """🏢 Un edificio en corte, de arriba abajo: cada planta con sus unidades, qué se hace en
+    cada una y de quién es. Las unidades van numeradas como en el desplegable."""
+    building = BUILDING_BY_KEY[key]
+    street = next(s for s in streets_of(building.barrio) if s.key == building.street)
+    units = building_units(market, building)
+    index = market.index(building.barrio)
+    levels: dict[int, list[State]] = {}
+    for slot, unit in enumerate(units, start=1):
+        level = next((u.level for u in building.units if u.key == unit.key), None)
+        if level is None:  # una planta de un edificio entero dividido: su número de planta
+            level = slot - 1
+        use, use_kind = _use(market, unit.key)
+        levels.setdefault(level, []).append(
+            {
+                "slot": slot,
+                "key": unit.key,
+                "label": next((u.label for u in building.units if u.key == unit.key), unit.floor),
+                "kind": unit.kind,
+                "kind_name": KINDS[unit.kind].name,
+                "m2": f"{unit.m2} m²",
+                "use": use,
+                "use_kind": use_kind,
+                "owner": _owner(market, unit.key, user_id, names),
+                "mine": user_id in market.shares_of(unit.key),
+                "price": format_amount(rules.price(unit, index)),
+                "rent": format_amount(rules.reference_rent(unit, index)) + "/mes",
+                "featured": unit.key == building.featured,
+                "waiting": len(market.candidates_of(unit.key, today)) if today else 0,
+            }
+        )
+    floors = [
+        {"level": level, "label": _level_name(level, building), "units": levels[level]}
+        for level in sorted(levels, reverse=True)
+    ]
+    mine = sum(1 for u in units if user_id in market.shares_of(u.key))
+    state: State = {
+        "screen": "edificio",
+        "key": building.key,
+        "barrio_key": building.barrio,
+        "theme": BARRIO_BY_KEY[building.barrio].theme,
+        "kind": building.kind,
+        "kind_name": building.name,
+        "title": f"{street.name}, {building.number}",
+        "barrio": BARRIO_BY_KEY[building.barrio].name,
+        "featured": building.featured,
+        "floors": floors,
+        "stats": [
+            {"label": "Unidades", "value": str(len(units))},
+            {"label": "Tuyas", "value": str(mine)},
+            {
+                "label": "En venta",
+                "value": str(sum(1 for u in units if not market.shares_of(u.key))),
+            },
+        ],
+        "footer": "Elige una unidad en el desplegable para ver su ficha",
+    }
+    state["fallback"] = [
+        f"{building.name} · {state['title']} ({state['barrio']})",
+        *(
+            f"{f['label']}: "
+            + ", ".join(
+                f"{u['slot']} {u['label']} ({u['kind_name']}, {u['use']})" for u in f["units"]
+            )
+            for f in floors
         ),
     ]
     return state
