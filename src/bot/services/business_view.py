@@ -869,7 +869,7 @@ def staff_card(employee: dict[str, Any], today: date, *, selected: bool = False)
     if employee["absent_day"] == iso:
         line = "Hoy no ha venido"
     elif manager:
-        line = "Repone y cubre las bajas cada noche"
+        line = "Repone y cubre bajas"
     elif employee["grades_day"] == iso and employee["grades"]:
         turns = plural(len(employee["grades"]), "turno", "turnos")
         line = f"Hoy: {turns} · nota " + " ".join(employee["grades"])
