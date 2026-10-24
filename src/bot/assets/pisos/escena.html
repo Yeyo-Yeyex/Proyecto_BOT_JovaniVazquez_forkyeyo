@@ -14,8 +14,8 @@ Python:
 - setup(meta)                no guarda nada entre pantallas: cada una se pinta entera desde cero.
 - renderFrames(states)       una pantalla entera por estado: {x: 0, y: 0, u}.
 
-Pantallas (`screen`): mapa, barrio, ficha, cartera, caja, vpo, gestion, candidatos, subastas, reformas, imprevistos, resenas y junta. Miden 1000 × 640, salvo el barrio
-(diez tarjetas en dos filas), que mide 1000 × 760 (`SCREEN_H`; el Pillow de reserva, `housing_render`,
+Pantallas (`screen`): mapa, barrio, ficha, cartera, caja, vpo, gestion, candidatos, subastas, reformas, imprevistos, resenas, junta, plantas y dividir. Miden 1000 × 640, salvo el barrio y las plantas
+(tarjetas en dos filas), que miden 1000 × 760, y dividir, 1000 × 700 (`SCREEN_H`; el Pillow de reserva, `housing_render`,
 lo repite). Como no hay estado entre fotogramas, el dibujo se reparte entre procesos sin cambiar un píxel.
 
 El estilo es el de «Idealjovani», un portal de pisos parodiado: paleta canaria (atlántico,
@@ -46,7 +46,7 @@ const S = 2;
 // Todas miden 1000 de ancho. De alto, 640 salvo las de `SCREEN_H` (el barrio, con sus diez tarjetas en
 // dos filas, mide más): cada alto tiene sus lienzos y `paintScreen` pone `H` y `g` de la pantalla que toca.
 const W = 1000;
-const SCREEN_H = { barrio: 760 };
+const SCREEN_H = { barrio: 760, plantas: 760, dividir: 700 };
 let H = 640;
 
 const SURFACES = new Map();
@@ -224,7 +224,8 @@ const CHIP = {
   bug: [C.bug, "#fff"], turq: [C.turqDk, "#fff"], steel: ["#44546a", "#fff"],
 };
 const STATUS_COLOR = { venta: "green", tuyo: "blue", compartido: "blue", parcial: "amber", ajeno: "grey",
-  vacio: "grey", alquilado: "green", impago: "red", desahucio: "red", okupa: "red", habitual: "blue", obras: "amber", negocio: "blue" };
+  vacio: "grey", alquilado: "green", impago: "red", desahucio: "red", okupa: "red", habitual: "blue", obras: "amber", negocio: "blue",
+  por_habitaciones: "turq", plantas: "steel" };
 // Una etiqueta de color, con brillo arriba y canto abajo. Devuelve su ancho. `align`: left | right | center.
 // `outline`: borde y sin relleno.
 function chip(text, x, y, kind, o = {}) {
@@ -1284,6 +1285,48 @@ const DRAW = {
     fillRR(188, 66, 46, 10, 2, "#f6f6f2"); rect(194, 70, 34, 2, "#8a95a3");
     acUnit(232, 48); fillRR(232, 100, 12, 20, 2, "#45515d");
   },
+  // La habitación de un piso compartido: la fachada del bloque de cerca y, en medio, su ventana encendida, por la
+  // que se ven la cama, el escritorio con su flexo y el cartel de «SE ALQUILA HABITACIÓN» pegado al cristal.
+  habitacion(st, r, o) {
+    const v = hash(o.key + "h"), bx = 14, bw = 272, top = 22, wx = 82, wy = 40, ww = 136, wh = 100;
+    const duvet = ["#d6337a", "#2a8fbd", "#2f9a5a", "#e8742a", "#7a4a9a"][v % 5], poster = [C.gold, "#1fb5ad", "#d2403a"][(v >>> 4) % 3];
+    wallBox(st, bx, top, bw, 150); topOf(st, bx, bw, top, r, true);
+    if (!MINI) speckle(bx, top, bw, 150, hash(o.key), 30, 2, "rgba(0,0,0,0.045)");
+    for (const sx of [30, 240]) for (const sy of [48, 104]) win(st, sx, sy, 30, 32, { r });
+    // el resplandor y el marco de la ventana; dentro, la habitación encendida
+    fillRR(wx - 12, wy - 12, ww + 24, wh + 24, 8, "rgba(255,196,60,0.35)");
+    rect(wx - 5, wy - 5, ww + 10, wh + 10, st.t === "bloque" ? "#b8c0c8" : st.trim);
+    rect(wx, wy, ww, wh, vgrad(wy, wy + wh, "#fff3cf", mix("#ffd98a", st.acc, 0.15)));
+    rect(wx, wy + wh - 16, ww, 16, "#b98a5a"); for (let x = wx + 14; x < wx + ww; x += 22) line(x, wy + wh - 16, x - 4, wy + wh, "rgba(0,0,0,0.18)", 1);
+    rect(wx + 14, wy + 12, 24, 30, poster); rect(wx + 18, wy + 16, 16, 10, "rgba(255,255,255,0.6)"); // un póster
+    // la cama: cabecero, colchón, edredón y almohada
+    rect(wx + 6, wy + 50, 6, 38, "#7a5236"); fillRR(wx + 8, wy + 66, 64, 16, 3, "#f4efe6");
+    fillRR(wx + 28, wy + 62, 46, 20, 5, duvet); rect(wx + 28, wy + 62, 46, 4, "rgba(255,255,255,0.25)");
+    fillRR(wx + 11, wy + 59, 19, 10, 4, "#fff"); rect(wx + 10, wy + 82, 4, 4, "#5a3a26"); rect(wx + 68, wy + 82, 4, 4, "#5a3a26");
+    // el escritorio con el portátil, el flexo y la silla
+    rect(wx + 84, wy + 62, 48, 4, "#7a5a3a"); rect(wx + 86, wy + 66, 3, 18, "#5a3a26"); rect(wx + 127, wy + 66, 3, 18, "#5a3a26");
+    poly([[wx + 92, wy + 62], [wx + 112, wy + 62], [wx + 114, wy + 48], [wx + 94, wy + 48]], "#3a4654"); rect(wx + 96, wy + 50, 16, 9, "#8fd0f0");
+    poly([[wx + 104, wy + 49], [wx + 92, wy + 84], [wx + 122, wy + 84]], "rgba(255,244,170,0.35)"); // la luz del flexo
+    ell(wx + 124, wy + 61, 6, 2, "#2a2f36"); line(wx + 124, wy + 60, wx + 118, wy + 40, "#2a2f36", 2); line(wx + 118, wy + 40, wx + 106, wy + 44, "#2a2f36", 2);
+    poly([[wx + 100, wy + 50], [wx + 110, wy + 40], [wx + 113, wy + 46]], "#2a2f36");
+    fillRR(wx + 112, wy + 70, 14, 14, 2, "#45515d");
+    // la cortina, el brillo del cristal y el alféizar
+    poly([[wx, wy], [wx + 18, wy], [wx + 8, wy + wh - 16], [wx, wy + wh - 16]], st.acc);
+    g.fillStyle = "rgba(255,255,255,0.18)"; g.beginPath(); g.moveTo(wx + 40, wy + wh); g.lineTo(wx + 90, wy); g.lineTo(wx + 104, wy); g.lineTo(wx + 54, wy + wh); g.closePath(); g.fill();
+    rect(wx - 9, wy + wh + 5, ww + 18, 4, st.t === "bloque" ? "#c5c9ce" : "#e8e0cf");
+    // el cartel en el cristal, con las tiras del teléfono para arrancar
+    g.save(); g.translate(wx + ww - 64, wy + 6); g.rotate(0.04);
+    rect(0, 0, 58, 40, "#fffdf6"); rect(0, 0, 58, 3, "#c9302c");
+    if (!MINI) {
+      [["SE ALQUILA", 11, "#c9302c"], ["HABITACIÓN", 23, "#1b2a35"]].forEach(([s, ty, color]) => {
+        const [t, z] = fit(s, 52, F.t, 10, 6); TX(t, 29, ty, { font: F.t(z), color, align: "center" });
+      });
+      g.beginPath(); for (let k = 4; k < 56; k += 6) { g.moveTo(k, 31); g.lineTo(k, 40); } g.strokeStyle = "rgba(0,0,0,0.3)"; g.lineWidth = 0.8; g.stroke();
+    } else rect(4, 10, 50, 12, "#c9302c");
+    g.restore();
+    rect(bx, 156, bw, 16, shade(st.wall, -0.16)); // el zócalo del bajo
+    if (!MINI) { acUnit(244, 142); rect(bx + bw - 30, top + 6, 3, 150, "rgba(90,90,90,0.5)"); } // un aire y la bajante
+  },
   // El piso de dos dormitorios es un bloque estrecho con un vecino más bajo al lado; el de tres, uno ancho con garaje
   // y toldos. La planta decide la altura y la clave, el remate: liso, con mirador, con toldos o con casetón en la azotea.
   piso(st, r, o) {
@@ -1642,6 +1685,7 @@ const OV_AT = {
   bungalow: () => ({ banner: [150, 120], notice: [184, 124], webs: [[90, 122, 1], [220, 122, -1]] }),
   nave: () => ({ banner: [186, 92], notice: [150, 116], webs: [[20, 92, 1], [280, 92, -1]] }),
   amarre: () => ({ banner: [20, 104], notice: [64, 112], webs: [[6, 6, 1], [294, 6, -1]] }),
+  habitacion: () => ({ banner: [8, 98], notice: [240, 100], webs: [[82, 40, 1], [218, 40, -1]] }),
 };
 const OVERLAY = {
   okupa(o) { // una sábana con letras, colgada de la fachada con dos cuerdas
@@ -1686,7 +1730,7 @@ const OVERLAY = {
 const RIBBON = {
   alquilado: ["ALQUILADO", "#1f9d55"], impago: ["NO PAGA", "#c9302c"], desahucio: ["DESAHUCIO", "#8a1c14"],
   okupa: ["OKUPADO", "#b3261e"], vacio: ["VACÍO", "#6b7a8a"], habitual: ["HOGAR", "#1f6fb2"], obras: ["EN OBRAS", "#c98a00"],
-  negocio: ["TU NEGOCIO", "#13867f"],
+  negocio: ["TU NEGOCIO", "#13867f"], por_habitaciones: ["HABITACIONES", "#13867f"], plantas: ["POR PLANTAS", "#44546a"],
 };
 function ribbon(status, x, y) {
   const rb = RIBBON[status]; if (!rb) return;
@@ -1975,6 +2019,7 @@ const KIND_TAGS = {
   bungalow: ["Piscina para 80 bungalós, tres tumbonas y toallas desde las 7.", "Cinco estrellas en el folleto y la factura, de seis."],
   duplex: ["Escalera interior: cada peldaño es una cuota del banco.", "Pensado para dos sueldos. Tú tienes uno y medio."],
   loft: ["Techos de seis metros y una factura de luz que los toca.", "Diáfano: sin tabiques, sin intimidad y sin ahorros."],
+  habitacion: ["Gastos incluidos: luz, wifi y el drama del grupo de WhatsApp del piso.", "El turno de la ducha se pelea más que un Clásico. Y sin VAR."],
   solar: ["Aquí se levantará algo. El cartel lleva diez años diciéndolo.", "Obra nueva en solar vallado: de momento solo sube el precio."],
 };
 // Una etiqueta de cartón con su cuerda, algo torcida, y la guasa dentro.
@@ -2324,7 +2369,8 @@ const BARRIO_COLS = 5, CARD_W = 186, CARD_H = 278, CARD_GAP = 10, GRID_TOP = 162
 
 // Lo que no cabe a 19 px se dice más corto (la ficha lo lleva entero).
 const shortStatus = (s) => s.replace(/^Tienes el (\d+) %$/, "Tienes $1 %").replace(/^Queda el (\d+) % libre$/, "$1 % libre");
-const LEASE_SHORT = { alquilado: "Alquilado", impago: "No paga", desahucio: "Desahucio", okupa: "Okupado", vacio: "Vacío", habitual: "Hogar", obras: "En obras", negocio: "Negocio" };
+const LEASE_SHORT = { alquilado: "Alquilado", impago: "No paga", desahucio: "Desahucio", okupa: "Okupado", vacio: "Vacío", habitual: "Hogar", obras: "En obras", negocio: "Negocio",
+  por_habitaciones: "Habitaciones", plantas: "Por plantas" };
 function kindLabel(name, maxW) { return width(name, F.m(20)) > maxW ? name.replace("dormitorios", "dorm.") : name; }
 
 // El número de la tarjeta, el mismo que el de su botón (apagado si es un solar).
@@ -2333,7 +2379,9 @@ function slotNumber(n, x, y, off) {
   T(String(n), x, y + 0.5, { font: F.d(n > 9 ? 19 : 22), color: "#fff", align: "center" });
 }
 
-function listingCard(c, n, x, y) {
+// `o.room`: una habitación dice cuál es en lugar del tipo y enseña la renta en lugar del precio (no se vende: se
+// vende el piso entero); `o.floor`: la planta en una etiqueta sobre la fachada.
+function listingCard(c, n, x, y, o = {}) {
   const w = CARD_W, h = CARD_H, solar = c.kind === "solar", px = x + 10, pw = w - 20;
   card(x, y, w, h, { r: 12, top: 4, topColor: styleOf(c.key, c.barrio_key, c.theme).trim, ...(solar ? { fill: "#f6eed8", stroke: "#c9b27a" } : {}) });
   // la fachada ocupa lo de arriba de la tarjeta, con sus esquinas redondeadas
@@ -2342,12 +2390,15 @@ function listingCard(c, n, x, y) {
   g.restore();
   slotNumber(n, x + 24, y + 28, solar);
   if (c.lease_kind) chip(LEASE_SHORT[c.lease_kind] || c.lease, x + w - 8, y + 12, c.lease_kind, { size: 19, align: "right", maxW: w - 60 });
-  if (c.key.startsWith("obra_")) tag("Obra nueva", x + 8, y + 4 + FACADE_H - 37, "orange", null, 19, w - 16);
+  const low = y + 4 + FACADE_H - 37;
+  if (c.key.startsWith("obra_")) tag("Obra nueva", x + 8, low, "orange", null, 19, w - 16);
+  else if (c.split) tag(`${c.split} plantas`, x + 8, low, "steel", null, 19, w - 16);
+  else if (o.floor && c.floor && c.floor !== c.kind_name) tag(c.floor, x + 8, low, "ink", null, 19, w - 16);
   if ((c.badges || []).includes("chollo")) sticker("chollo", x + w - 34, y + 4 + FACADE_H - 30, -0.12, 0.76);
   const cy = y + 4 + FACADE_H + 16;
-  fitText(solar ? "Solar" : kindLabel(c.kind_name, pw), px, cy, pw, F.m, 20, 19, { color: C.ink });
+  fitText(solar ? "Solar" : o.room ? c.floor : kindLabel(c.kind_name, pw), px, cy, pw, F.m, 20, 19, { color: C.ink });
   if (solar) { paragraph(c.sign, px, cy + 28, pw, F.m(19), 24, 4, { color: C.mute }); return; }
-  fitText(c.price, px, cy + 30, pw, F.d, 30, 22, { color: C.ink });
+  fitText(o.room ? c.rent : c.price, px, cy + 30, pw, F.d, 30, 22, { color: o.room ? C.greenDk : C.ink });
   chip(shortStatus(c.status), px, cy + 44, c.status_kind, { size: 19, maxW: pw });
   if (c.owners.length) ownersBar(px, y + h - 22, pw, 9, c.owners, c.free);
 }
@@ -2368,7 +2419,32 @@ function paintBarrio(st) {
   fitText(b.price_m2, 694, 138, 280, F.d, 28, 22, { color: C.ink });
   if (b.badge) sticker(b.badge, b.badge === "buitre" ? 626 : 634, 126, -0.1, 0.85);
   const x0 = (W - BARRIO_COLS * CARD_W - (BARRIO_COLS - 1) * CARD_GAP) / 2;
-  st.cards.forEach((c, i) => listingCard(c, i + 1, x0 + (i % BARRIO_COLS) * (CARD_W + CARD_GAP), GRID_TOP + Math.floor(i / BARRIO_COLS) * (CARD_H + CARD_GAP)));
+  cardGrid(st.cards);
+}
+function cardGrid(cards, o) {
+  const x0 = (W - BARRIO_COLS * CARD_W - (BARRIO_COLS - 1) * CARD_GAP) / 2;
+  cards.forEach((c, i) => listingCard(c, i + 1, x0 + (i % BARRIO_COLS) * (CARD_W + CARD_GAP), GRID_TOP + Math.floor(i / BARRIO_COLS) * (CARD_H + CARD_GAP), o));
+}
+
+// PLANTAS ---------------------------------------------------------------------------------
+// Las plantas (o las habitaciones) de un inmueble dividido, en la rejilla del barrio: cada tarjeta, su botón.
+function paintPlantas(st) {
+  const rooms = st.mode === "habitaciones";
+  header(st.title, `${st.barrio} · ${st.mode_name}`, { size: 30, wordmark: false });
+  paragraph(st.summary, 20, 112, 450, F.m(19), 24, 2, { color: C.ink });
+  (st.stats || []).slice(0, 3).forEach((s, i) => {
+    const bx = 480 + i * 170;
+    card(bx, 98, 164, 56, { r: 12, fill: "#e9f3f4" });
+    fitText(s.label, bx + 12, 114, 140, F.m, 17, 14, { color: C.mute });
+    fitText(s.value, bx + 12, 138, 140, F.d, 24, 15, { color: C.ink });
+  });
+  const cards = st.cards.slice(0, 6);
+  cardGrid(cards, rooms ? { room: true } : { floor: true });
+  // con una fila sola sobra la de abajo: ahí va cómo funciona
+  if (cards.length <= BARRIO_COLS) postIt(rooms
+    ? "Cada habitación tiene su inquilino y su contrato de un año. El piso se vende entero, y para volver a alquilarlo entero tienen que estar todas vacías."
+    : "Cada planta es una vivienda: se compra, se vende, se hipoteca y se alquila por separado. Dividir un inmueble no se puede deshacer.",
+  (W - 620) / 2, GRID_TOP + CARD_H + 60, 620, 150, hash(st.key) % 2 ? 0.012 : -0.012, rooms ? "POR HABITACIONES" : "POR PLANTAS");
 }
 
 // FICHA ---------------------------------------------------------------------------------
@@ -2619,7 +2695,8 @@ function sofaRoom(x, y, w, h) {
 }
 
 // Lo que cabe en la etiqueta de una fila: la frase entera y, si no entra, una más corta.
-const SHORT = { vacio: "Vacío", alquilado: "Alquilado", impago: "No paga", desahucio: "Desahucio", okupa: "Okupado", habitual: "Vives aquí", obras: "En obras", negocio: "Tu negocio" };
+const SHORT = { vacio: "Vacío", alquilado: "Alquilado", impago: "No paga", desahucio: "Desahucio", okupa: "Okupado", habitual: "Vives aquí", obras: "En obras", negocio: "Tu negocio",
+  por_habitaciones: "Por habitaciones", plantas: "Por plantas" };
 // `compact`: dos líneas y la etiqueta a la derecha; con hipoteca lleva además una tercera con la deuda.
 function itemRow(it, x, y, w, h, compact) {
   card(x, y, w, h, { r: 12 });
@@ -3384,6 +3461,67 @@ function paintReformas(st) {
     (W - 620) / 2, gy + ch + 26, 620, 118, hash(st.key) % 2 ? 0.012 : -0.012, "QUÉ PASA AL REFORMAR");
 }
 
+// DIVIDIR ---------------------------------------------------------------------------------
+
+// Una forma de dividir: lo que sale (plantas o habitaciones), lo que cuesta, lo que da y por qué no se puede ahora.
+function splitCard(op, st, x, y, w, h) {
+  const floors = op.mode === "plantas", tone = floors ? C.blue : C.turqDk, ix = x + 16, iw = w - 32;
+  card(x, y, w, h, { r: 14, top: 5, topColor: tone });
+  // en lugar del emoji (las fuentes de la escena no lo tienen), la fachada de lo que sale
+  facade(floors ? st.kind : "habitacion", ix, y + 18, 72, 58, { key: floors ? st.key : `${st.key}:hab`, theme: st.theme, barrio: st.barrio_key, r: 8 });
+  fitText(op.name, ix + 86, y + 32, iw - 86, F.d, 24, 16, { color: C.ink });
+  paragraph(op.blurb, ix + 86, y + 56, iw - 86, F.r(16), 19, 3, { color: C.mute });
+  let ry = y + 116;
+  rect(ix, ry - 8, iw, 1.4, C.line);
+  for (const u of op.units.slice(0, 6)) { // una fila por planta o habitación: cuál, qué es, metros y lo que pide
+    const kind = floors && u.kind_name !== u.label ? ` · ${u.kind_name.replace("Piso de ", "")}` : "";
+    fitText(u.rent, ix + iw, ry + 9, 130, F.d, 17, 12, { color: C.greenDk, align: "right" });
+    fitText(`${u.label}${kind} · ${u.m2}`, ix, ry + 9, iw - 140, F.m, 17, 12, { color: C.ink });
+    ry += 23;
+  }
+  ry = y + 116 + 6 * 23 + 4;
+  rect(ix, ry, iw, 1.4, C.line); ry += 18;
+  const half = (iw - 20) / 2;
+  [[["Obra", op.cost], ["Impuestos", op.taxes], ["Total", op.total]], [["Tiempo", op.days], ["Valdrá", op.value_after]]].forEach((col, k) => {
+    col.forEach(([label, value], i) => row2(label, value, ix + k * (half + 20), ry + i * 25, half, { size: 16, vsize: label === "Total" ? 19 : 16 }));
+  });
+  ry += 3 * 25 + 4;
+  T("Renta", ix, ry, { font: F.m(16), color: C.mute });
+  const up = /^\+/.test(op.rent_change), cw_ = op.rent_change ? chip(op.rent_change, ix + iw, ry - 12, up ? "green" : "red", { size: 15, align: "right" }) + 8 : 0;
+  fitText(`${st.rent} → ${op.rent_after}`, ix + 60, ry, iw - 60 - cw_, F.d, 18, 12, { color: C.ink });
+  ry += 28;
+  for (const n of (op.notes || []).slice(0, 3)) { dot(ix + 4, ry, 2.6, tone); fitText(n, ix + 14, ry, iw - 14, F.r, 15, 11, { color: C.mute }); ry += 19; }
+  if (!op.problem) return;
+  const py = y + h - 46;
+  fillRR(ix - 4, py, iw + 8, 34, 10, "#fff3d6"); rr(ix - 3.5, py + 0.5, iw + 7, 33, 10); g.strokeStyle = C.amber; g.lineWidth = 1.5; g.stroke();
+  smallIcon("warn", ix + 14, py + 17, 11, C.amber);
+  fitText(op.problem, ix + 32, py + 17, iw - 40, F.d, 16, 11, { color: "#6a4500" });
+}
+
+function paintDividir(st) {
+  header(st.title, `${st.barrio} · Dividir`, { size: 30, wordmark: false });
+  const py = 100, ph = 64, ops = st.options || [];
+  card(16, py, 968, ph, { r: 14 });
+  [[34, "Entero pide", st.rent], [254, "Vale ahora", st.value]].forEach(([cx, label, v]) => {
+    T(label, cx, py + 20, { font: F.m(16), color: C.mute });
+    fitText(v, cx, py + 45, 200, F.d, 26, 16, { color: C.ink });
+  });
+  rect(236, py + 12, 1.4, ph - 24, C.line); if (ops.length) rect(474, py + 12, 1.4, ph - 24, C.line);
+  if (st.rooms) {
+    tag("Se alquila por habitaciones", 494, py + 8, "turq", "people", 16, 360);
+    fitText("Se pueden juntar otra vez cuando estén todas vacías.", 494, py + 46, 360, F.r, 17, 12, { color: C.mute });
+  } else if (ops.length) fitText("Mientras se prepara, no se alquila.", 494, py + 32, 360, F.r, 17, 12, { color: C.mute });
+  facade(st.kind, 868, py + 6, 104, ph - 12, { key: st.key, theme: st.theme, barrio: st.barrio_key, r: 8, status: st.rooms ? "por_habitaciones" : "" });
+  if (!ops.length) {
+    card(170, 230, 660, 170, { r: 18 });
+    TX("NO SE PUEDE DIVIDIR", 500, 286, { font: F.t(40), color: C.ink, align: "center", stroke: "#fff8ea", sw: 6 });
+    paragraph("Este inmueble no se puede dividir por plantas ni alquilar por habitaciones.", 500, 340, 560, F.m(21), 26, 2, { color: C.mute, align: "center" });
+    return;
+  }
+  const cw = ops.length > 1 ? 476 : 640, x0 = (W - (ops.length * cw + (ops.length - 1) * 16)) / 2, y0 = py + ph + 14;
+  ops.slice(0, 2).forEach((op, i) => splitCard(op, st, x0 + i * (cw + 16), y0, cw, H - y0 - 40));
+}
+
 // IMPREVISTOS -----------------------------------------------------------------------------
 
 // Un parte de incidencias: el número del botón, qué ha pasado, lo que dice el inquilino y las formas de arreglarlo.
@@ -3743,7 +3881,7 @@ function paintJunta(st) {
 
 const SCREENS = { mapa: paintMapa, barrio: paintBarrio, ficha: paintFicha, cartera: paintCartera, caja: paintCaja, vpo: paintVpo,
   gestion: paintGestion, candidatos: paintCandidatos, subastas: paintSubastas, reformas: paintReformas,
-  imprevistos: paintImprevistos, resenas: paintResenas, junta: paintJunta };
+  imprevistos: paintImprevistos, resenas: paintResenas, junta: paintJunta, plantas: paintPlantas, dividir: paintDividir };
 
 function paintScreen(st) {
   const draw = SCREENS[st.screen];

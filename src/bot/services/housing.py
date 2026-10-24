@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import math
 import random
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
@@ -59,6 +60,7 @@ from bot.services.housing_catalog import (
     PROMOTION_FLOORS,
     PROMOTION_NAMES,
     RENT_LEVELS,
+    ROOM_KIND,
     TENANT_BY_KEY,
     TENANTS,
     BarrioNews,
@@ -254,9 +256,11 @@ def is_dwelling(listing: Listing, level: str) -> bool:
     """Si un alquiler es de vivienda (art. 2 LAU): solo ese tiene la reducción del art. 23.2.
 
     No lo son los locales, garajes y trasteros, ni el alquiler de temporada de los
-    nómadas digitales (art. 3 LAU), ni el vacacional (un alquiler turístico).
+    nómadas digitales (art. 3 LAU), ni el vacacional (un alquiler turístico). Una habitación
+    sí, si quien la alquila vive ahí (DGT V0412-2025): no en la de los nómadas.
     """
-    return listing.kind in HOME_KINDS and level not in (VACATION_LEVEL, NOMAD_LEVEL)
+    kinds = HOME_KINDS | {ROOM_KIND}
+    return listing.kind in kinds and level not in (VACATION_LEVEL, NOMAD_LEVEL)
 
 
 def contract_reduction(
@@ -615,10 +619,11 @@ class EventKind:
     worn: bool = False
 
 
-#: Lo que tiene instalaciones que se rompen (las viviendas y los negocios con techo).
+#: Lo que tiene instalaciones que se rompen (las viviendas, sus habitaciones y los negocios
+#: con techo).
 _HOMES = frozenset(
     {"estudio", "bajo", "piso2", "piso3", "atico", "chalet", "edificio", "terrera", "cueva"}
-    | {"finca", "casona", "bungalow", "duplex", "loft", "local", "nave"}
+    | {"finca", "casona", "bungalow", "duplex", "loft", "local", "nave", "habitacion"}
 )
 #: Lo que está en una comunidad de propietarios (derramas, ITE y vecinos).
 _BLOCKS = frozenset(
@@ -691,8 +696,9 @@ NEUTRAL = TenantFactors()
 
 
 def _group(kind: str) -> str:
-    """El grupo de inquilinos de un tipo de inmueble: cada negocio, o las personas."""
-    return kind if kind in BUSINESS_KINDS else "vivienda"
+    """El grupo de inquilinos de un tipo de inmueble: cada negocio, las habitaciones o las
+    personas."""
+    return kind if kind in BUSINESS_KINDS or kind == ROOM_KIND else "vivienda"
 
 
 def tenant_pool(level: str, kind: str) -> tuple[Tenant, ...]:
@@ -891,6 +897,15 @@ def find_chance(
     return min(1.0, find)
 
 
+def contract_months(listing: Listing, level: RentLevel) -> int:
+    """Lo que dura un contrato: el de su nivel, o `ROOM_MONTHS` como mucho en una habitación.
+
+    La habitación se rige por el Código Civil y no por la LAU (criterio mayoritario de las
+    Audiencias): no tiene las prórrogas obligatorias de cinco años.
+    """
+    return min(level.months, ROOM_MONTHS) if listing.kind == ROOM_KIND else level.months
+
+
 def sign(listing: Listing, lease: Lease, tenant: str, day: date, index: float) -> Lease:
     """El contrato que firma un inquilino del catálogo con la renta que pide el inmueble.
 
@@ -905,7 +920,7 @@ def sign(listing: Listing, lease: Lease, tenant: str, day: date, index: float) -
         status=RENTED,
         tenant=tenant,
         rent=rent,
-        until=day + timedelta(days=level.months),
+        until=day + timedelta(days=contract_months(listing, level)),
         since=day,
         unpaid=0,
         claims=0,
@@ -984,7 +999,7 @@ def advance_day(
         rent = lease.rent
         if lease.until is not None and day >= lease.until:
             if rng.random() < max(0.0, 1 - (1 - RENEWAL) * factors.stay):
-                lease = replace(lease, until=day + timedelta(days=level.months))
+                lease = replace(lease, until=day + timedelta(days=contract_months(listing, level)))
                 events.append(Event("renueva"))
             else:
                 lease = _vacated(lease, day)
@@ -1013,8 +1028,11 @@ def advance_day(
             else:
                 lease = sign(listing, lease, tenant, day, index)
                 events.append(Event("firma"))
-        elif vacant_for >= SQUAT_AFTER_DAYS and rng.random() < SQUAT * (
-            news.squat if news else 1.0
+        # Una habitación vacía no se okupa: en el piso vive gente.
+        elif (
+            listing.kind != ROOM_KIND
+            and vacant_for >= SQUAT_AFTER_DAYS
+            and rng.random() < SQUAT * (news.squat if news else 1.0)
         ):
             lease = replace(lease, status=SQUATTED, tenant=None, rent=0, since=day)
             events.append(Event("okupa"))
@@ -1776,6 +1794,9 @@ def reform_quote(listing: Listing, reform: Reform, index: float = 1.0) -> Reform
 def improved(listing: Listing, done: Iterable[tuple[Reform, int, date, bool]]) -> Listing:
     """El inmueble con sus reformas terminadas: renta, valor, averías y certificado.
 
+    Suman a lo que ya trae el inmueble: 0 en el catálogo, y lo que le toca a cada planta o
+    habitación de un inmueble dividido (`split_units`).
+
     Args:
         done: `(reforma, lo que costó, día que acabó, si fue rehabilitación)`.
     """
@@ -1796,8 +1817,8 @@ def improved(listing: Listing, done: Iterable[tuple[Reform, int, date, bool]]) -
             rehab_until = until if rehab_until is None else max(rehab_until, until)
     return replace(
         listing,
-        rent_bonus=min(REFORM_MAX_BONUS, rent),
-        value_bonus=min(REFORM_MAX_BONUS, value),
+        rent_bonus=listing.rent_bonus + min(REFORM_MAX_BONUS, rent),
+        value_bonus=listing.value_bonus + min(REFORM_MAX_BONUS, value),
         breakdowns=breakdowns,
         damp=damp,
         energy=energy,
@@ -2051,6 +2072,8 @@ MOTIONS: tuple[Motion, ...] = (
     Motion("reforma", "🏗️", "Una reforma", THREE_FIFTHS, "art. 17.4 LPH"),
     Motion("licencia", "🏖️", "La licencia vacacional", THREE_FIFTHS, "art. 17.12 LPH"),
     Motion("venta", "🤝", "Vender el inmueble entero", UNANIMITY, "art. 397 CC"),
+    Motion("plantas", "🏢", "Dividirlo por plantas", UNANIMITY, "art. 397 CC"),
+    Motion("habitaciones", "🛏️", "Alquilarlo por habitaciones", MAJORITY, "art. 398 CC"),
 )
 MOTION_BY_KEY: dict[str, Motion] = {m.key: m for m in MOTIONS}
 #: Fondo de reserva (art. 9.1.f LPH): el 10 % de la comunidad se guarda y paga las derramas y
@@ -2077,3 +2100,215 @@ def passes(threshold: str, total: int, against: int) -> bool:
 def division_minimum(values: list[int]) -> int:
     """Puja mínima de la acción de división: el valor de mercado de todo (arts. 400 y 404 CC)."""
     return max(1, sum(values))
+
+
+# -- Dividir por plantas y alquilar por habitaciones (9.12.0) ---------------------------
+
+#: Las dos formas de dividir un inmueble (`housing_splits.mode`). Por plantas sale una
+#: división horizontal: cada planta es un inmueble con sus dueños, que se vende por separado.
+#: Por habitaciones el piso sigue siendo uno (se compra y se vende entero) y cada habitación
+#: tiene su inquilino; se deshace cuando están todas vacías.
+FLOORS = "plantas"
+ROOMS = "habitaciones"
+SPLIT_MODES = (FLOORS, ROOMS)
+#: El contrato del piso mientras se alquila por habitaciones: no se cierra de noche (lo hacen
+#: sus habitaciones) ni se alquila entero.
+BY_ROOMS = "por_habitaciones"
+#: Lo que separa la clave del inmueble de la de cada planta (`triana_edificio~2`) o
+#: habitación (`isleta_piso3~h1`).
+UNIT_SEP = "~"
+ROOM_TAG = "h"
+#: Lo que se puede dividir por plantas y lo que se puede alquilar por habitaciones.
+FLOOR_KINDS = frozenset({"edificio", "casona", "chalet", "duplex"})
+ROOM_PARENT_KINDS = frozenset({"piso3", "atico", "duplex", "terrera", "chalet", "casona"})
+#: Plantas: juntas piden un 25 % más que el inmueble entero (lo pequeño se alquila más caro
+#: por metro), repartido por metros con el bajo un poco por debajo y el ático por encima.
+FLOOR_RENT_GAIN = 0.25
+FLOOR_WEIGHTS = {"bajo": 0.9, "atico": 1.2}
+#: La obra de dividir: cocina, baño y contadores por vivienda, y escalera e instalaciones
+#: comunes por metro (euros). Lleva IGIC, ICIO y licencia, como las reformas, y la escritura
+#: de división horizontal paga AJD al 0,75 % del valor (art. 36 del Decreto Legislativo
+#: 1/2009). Sube el valor como una reforma (`REFORM_VALUE_SHARE`): dividir para vender pierde.
+FLOOR_UNIT_EUR = 20_000
+FLOOR_M2_EUR = 80
+FLOOR_DAYS = 8
+FLOOR_MAX = 5
+SPLIT_AJD_RATE = 0.0075
+#: Habitaciones: una por cada 30 m² (de 3 a 6), amuebladas con cerradura (euros por
+#: habitación, con IGIC; no es obra, así que ni ICIO ni licencia). Dos meses en prepararlas.
+ROOM_M2 = 30
+ROOMS_MIN, ROOMS_MAX = 3, 6
+ROOM_EUR = 4_000
+ROOM_DAYS = 2
+#: Lo más que dura el contrato de una habitación: va por el Código Civil, no por la LAU.
+ROOM_MONTHS = 12
+#: Lo que piden de más las habitaciones juntas frente al piso entero, por tipo de barrio:
+#: donde hay universidad, playa o mucho trabajo de temporada se llenan; en el campo, no.
+ROOM_RENT_GAIN: dict[str, float] = {
+    "centro": 0.25,
+    "historico": 0.25,
+    "playa": 0.23,
+    "marinero": 0.20,
+    "obrero": 0.18,
+    "lujo": 0.05,
+    "rural": 0.03,
+}
+
+
+def unit_key(parent: str, mode: str, number: int) -> str:
+    """La clave de la planta o habitación `number` (desde 1) de un inmueble dividido."""
+    return f"{parent}{UNIT_SEP}{ROOM_TAG if mode == ROOMS else ''}{number}"
+
+
+def parent_key(key: str) -> str | None:
+    """El inmueble del que sale una planta o habitación (`None` si no sale de ninguno)."""
+    head, sep, _tail = key.rpartition(UNIT_SEP)
+    return head if sep else None
+
+
+def is_room(key: str) -> bool:
+    """Si una clave es la de una habitación (`isleta_piso3~h1`)."""
+    _head, sep, tail = key.rpartition(UNIT_SEP)
+    return bool(sep) and tail.startswith(ROOM_TAG)
+
+
+def floors_of(listing: Listing) -> int:
+    """Plantas de un inmueble: las del anuncio de un edificio («Bajo a 3.º» son cuatro), dos
+    en los demás."""
+    if listing.kind != "edificio":
+        return 2
+    found = re.search(r" a (\d+)\.", listing.floor)
+    return min(FLOOR_MAX, int(found.group(1)) + 1) if found else 2
+
+
+def rooms_of(listing: Listing) -> int:
+    """Habitaciones que salen de un piso: una por cada `ROOM_M2` metros."""
+    return max(ROOMS_MIN, min(ROOMS_MAX, listing.m2 // ROOM_M2))
+
+
+def split_problem(listing: Listing, mode: str, *, promotion: bool = False) -> str | None:
+    """Por qué no se puede dividir así un inmueble (`None` si se puede)."""
+    if mode == FLOORS:
+        if listing.kind not in FLOOR_KINDS:
+            return (
+                "Por plantas solo se dividen los edificios, las casonas, los chalés y los dúplex."
+            )
+        if promotion:
+            return "La obra nueva se vende tal como la entrega el promotor."
+        return None
+    if listing.kind not in ROOM_PARENT_KINDS:
+        return (
+            "Por habitaciones se alquilan los pisos de tres dormitorios, los áticos, los dúplex, "
+            "las casas terreras, los chalés y las casonas."
+        )
+    return None
+
+
+def _floor_plan(parent: Listing, units: int) -> list[tuple[str, str]]:
+    """`(tipo, planta)` de cada planta de un inmueble, de abajo arriba."""
+    m2 = parent.m2 // units
+    middle = "piso3" if m2 >= 90 else "piso2" if m2 >= 50 else "estudio"
+    if parent.kind == "edificio":
+        labels = ["Bajo", *(f"{i}.º" for i in range(1, units - 1)), "Ático"]
+        return list(zip(["bajo", *([middle] * (units - 2)), "atico"], labels, strict=True))
+    if parent.kind == "duplex":
+        parts = parent.floor.split(" y ")
+        labels = parts if len(parts) == 2 else ["Planta de abajo", "Planta de arriba"]
+        return list(zip([middle, "atico"], labels, strict=True))
+    return [("bajo", "Planta baja"), (middle, "Planta alta")]
+
+
+def split_units(parent: Listing, mode: str, units: int, cost: int) -> tuple[Listing, ...]:
+    """Las plantas o habitaciones de un inmueble dividido, con su renta y su valor.
+
+    `parent` va sin reformas: las suyas se copian a cada planta al dividir y suman aparte
+    (`improved`). Las plantas piden juntas `FLOOR_RENT_GAIN` más que el entero, repartido
+    por metros con `FLOOR_WEIGHTS`, y valen lo que él más `REFORM_VALUE_SHARE` de la obra
+    (`cost`). Las habitaciones piden `ROOM_RENT_GAIN` más a partes iguales y valen lo que el
+    piso (los muebles no hacen más caro el piso). Cada una lleva en `rent_bonus` y
+    `value_bonus` lo que le falta a su tipo para llegar ahí.
+    """
+    barrio = BARRIO_BY_KEY[parent.barrio]
+    if mode == FLOORS:
+        plan = _floor_plan(parent, units)
+        gain, value = FLOOR_RENT_GAIN, base_price(parent) + REFORM_VALUE_SHARE * cost
+    else:
+        plan = [(ROOM_KIND, f"Habitación {n}") for n in range(1, units + 1)]
+        gain, value = ROOM_RENT_GAIN[barrio.theme], base_price(parent)
+    m2 = parent.m2 // units
+    sizes = [parent.m2 - m2 * (units - 1)] + [m2] * (units - 1)
+    pairs = zip(plan, sizes, strict=True)
+    weights = [FLOOR_WEIGHTS.get(kind, 1.0) * size for (kind, _label), size in pairs]
+    total = sum(weights)
+    rent_eur = (
+        _m2(parent) * barrio.rent_m2 * KINDS[parent.kind].rent_factor
+        * (1 + parent.rent_bonus) * (1 + gain)
+    )  # fmt: skip
+    out = []
+    for number, ((kind, label), size, weight) in enumerate(
+        zip(plan, sizes, weights, strict=True), start=1
+    ):
+        unit = Listing(
+            key=unit_key(parent.key, mode, number),
+            barrio=parent.barrio,
+            kind=kind,
+            m2=size,
+            title=f"{label} · {parent.title}",
+            blurb=parent.blurb,
+            floor=label,
+            energy=parent.energy,
+        )
+        share = weight / total
+        raw = _m2(unit) * barrio.rent_m2 * KINDS[kind].rent_factor
+        out.append(
+            replace(
+                unit,
+                rent_bonus=rent_eur * share / raw - 1,
+                value_bonus=value * share / catalog_price(unit) - 1,
+            )
+        )
+    return tuple(out)
+
+
+@dataclass(frozen=True, slots=True)
+class SplitQuote:
+    """Las cuentas de dividir un inmueble.
+
+    Attributes:
+        mode: `FLOORS` o `ROOMS`.
+        units: Plantas o habitaciones que salen.
+        cost: La obra o los muebles (desaparece).
+        igic: Su IGIC, al general (al Estado).
+        icio: El ICIO de la obra (al Estado; 0 en las habitaciones).
+        license: La tasa de la licencia de obra (al Estado; 0 en las habitaciones).
+        ajd: El AJD de la escritura de división horizontal (al Estado; 0 en las habitaciones).
+        days: Meses (días del bot) sin alquilar mientras se prepara.
+    """
+
+    mode: str
+    units: int
+    cost: int
+    igic: int
+    icio: int
+    license: int
+    ajd: int
+    days: int
+
+    @property
+    def total(self) -> int:
+        """Todo lo que sale del bolsillo."""
+        return self.cost + self.igic + self.icio + self.license + self.ajd
+
+
+def split_quote(listing: Listing, mode: str, index: float = 1.0) -> SplitQuote:
+    """La cuenta de dividir un inmueble por plantas o de alquilarlo por habitaciones."""
+    if mode == FLOORS:
+        units = floors_of(listing)
+        cost = int(round(_euros(FLOOR_UNIT_EUR * units + FLOOR_M2_EUR * listing.m2), -2))
+        return SplitQuote(
+            mode, units, cost, igic(cost, SERVICES_IGIC), round(cost * ICIO_RATE),
+            WORKS_LICENSE_FEE, round(price(listing, index) * SPLIT_AJD_RATE), FLOOR_DAYS,
+        )  # fmt: skip
+    units = rooms_of(listing)
+    cost = int(round(_euros(ROOM_EUR * units), -2))
+    return SplitQuote(mode, units, cost, igic(cost, SERVICES_IGIC), 0, 0, 0, ROOM_DAYS)

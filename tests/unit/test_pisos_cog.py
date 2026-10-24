@@ -1097,3 +1097,113 @@ async def test_proponer_y_votar_en_la_junta_desde_el_panel(tmp_path: Path) -> No
     await panel._divide(clicked(ana, [], custom_id="pisos:division:si"))
     assert (await cog.service.market(GUILD)).division_of("taco_bajo") is not None
     assert "pisos:proponer" not in ids(panel)
+
+
+# -- Plantas y habitaciones (9.12.0) ----------------------------------------------------
+
+
+async def test_dividir_por_plantas_desde_el_panel_y_abrir_cada_planta(tmp_path: Path) -> None:
+    from bot.cogs.pisos import DIVIDIR, PLANTAS
+
+    cog, _scene, _clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(10_000_000, "prueba")])
+    await cog.service.buy(GUILD, ana.id, "canteras_duplex", rules.SHARES)
+    panel = await open_panel(cog, ana, guild_with(ana))
+    panel.barrio, panel.listing = "canteras", "canteras_duplex"
+    await panel._go_gestion(clicked(ana, []))
+    assert "pisos:dividir" in ids(panel)
+    await panel._go_split(clicked(ana, []))
+    assert panel.screen == DIVIDIR
+    assert {"pisos:dividir:plantas", "pisos:dividir:habitaciones"} <= set(ids(panel))
+    await panel._arm(clicked(ana, [], custom_id="pisos:dividir:plantas"))
+    assert "pisos:dividir:plantas:si" in ids(panel)
+    events: list[str] = []
+    await panel._split(clicked(ana, events, custom_id="pisos:dividir:plantas:si"))
+    assert events[0] == "response.defer"  # contesta antes de tocar la base de datos
+    market = await cog.service.market(GUILD)
+    assert market.split_mode("canteras_duplex") == rules.FLOORS
+    assert panel.screen == PLANTAS and {"pisos:unidad:0", "pisos:unidad:1"} <= set(ids(panel))
+    # Desde el barrio, la tarjeta del dúplex abre sus plantas, y cada planta su ficha.
+    await panel._go_barrio(clicked(ana, []))
+    slot = [i.key for i in market.listings_of("canteras")].index("canteras_duplex")
+    await panel._open_listing(clicked(ana, [], custom_id=f"pisos:ver:{slot}"))
+    assert panel.screen == PLANTAS and panel.listing == "canteras_duplex"
+    await panel._open_unit(clicked(ana, [], custom_id="pisos:unidad:1"))
+    assert panel.screen == FICHA and panel.listing == "canteras_duplex~2"
+    assert "pisos:vender" in ids(panel)  # cada planta se vende sola
+    await panel._go_parent(clicked(ana, []))
+    assert panel.screen == PLANTAS and panel.listing == "canteras_duplex"
+
+
+async def test_por_habitaciones_la_ficha_lleva_a_ellas_y_no_se_venden_sueltas(
+    tmp_path: Path,
+) -> None:
+    from bot.cogs.pisos import PLANTAS
+
+    cog, _scene, _clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(10_000_000, "prueba")])
+    await cog.service.buy(GUILD, ana.id, "isleta_piso3", rules.SHARES)
+    await cog.service.split(GUILD, ana.id, "isleta_piso3", rules.ROOMS)
+    panel = await open_panel(cog, ana, guild_with(ana))
+    panel.barrio, panel.listing = "isleta", "isleta_piso3"
+    await panel._back_to_listing(clicked(ana, []))
+    assert "pisos:plantas" in ids(panel) and "pisos:renta" not in ids(panel)
+    await panel._go_units(clicked(ana, []))
+    assert panel.screen == PLANTAS and "pisos:juntar" in ids(panel)
+    await panel._open_unit(clicked(ana, [], custom_id="pisos:unidad:0"))
+    assert panel.listing == "isleta_piso3~h1"
+    assert "pisos:comprar" not in ids(panel) and "pisos:vender" not in ids(panel)
+    assert "pisos:renta" in ids(panel)  # la renta se pide en cada habitación
+    await panel._go_gestion(clicked(ana, []))
+    assert "pisos:elegir" in ids(panel) and "pisos:junta" not in ids(panel)
+    # Juntarlas con dos clics: el piso vuelve a alquilarse entero.
+    await panel._go_parent(clicked(ana, []))
+    await panel._arm(clicked(ana, [], custom_id="pisos:juntar"))
+    await panel._join_rooms(clicked(ana, [], custom_id="pisos:juntar:si"))
+    market = await cog.service.market(GUILD)
+    assert market.split_mode("isleta_piso3") is None and panel.screen == FICHA
+
+
+async def test_el_boton_verde_lleva_a_los_candidatos_de_un_sitio_y_al_siguiente(
+    tmp_path: Path,
+) -> None:
+    cog, _scene, _clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(10_000_000, "prueba")])
+    await cog.service.buy(GUILD, ana.id, "taco_bajo", rules.SHARES)
+    await cog.service.buy(GUILD, ana.id, "isleta_piso3", rules.SHARES)
+    await cog.service.split(GUILD, ana.id, "isleta_piso3", rules.ROOMS)
+    panel = await open_panel(cog, ana, guild_with(ana))
+    await panel.refresh()
+    panel.rebuild()
+    assert "pisos:candidatos_todos" not in ids(panel)  # nadie espera: no sale
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute("UPDATE housing_leases SET status = 'vacio', pick = 'yo' "
+                           "WHERE listing IN ('taco_bajo', 'isleta_piso3~h2')")  # fmt: skip
+        for key, tenant in (("taco_bajo", "medico"), ("isleta_piso3~h2", "coliving"),
+                            ("isleta_piso3~h2", "astrofisica")):  # fmt: skip
+            connection.execute(
+                "INSERT INTO housing_candidates (guild_id, listing, tenant, until) "
+                "VALUES (?, ?, ?, '2026-12-31')",
+                (GUILD, key, tenant),
+            )
+    await panel._go_map(clicked(ana, []))
+    button = next(
+        i for i in panel.children if getattr(i, "custom_id", "") == "pisos:candidatos_todos"
+    )
+    assert button.label == "👥 Candidatos (3)" and button.style == discord.ButtonStyle.success
+    await panel._go_portfolio(clicked(ana, []))
+    assert "pisos:candidatos_todos" in ids(panel)
+    await panel._go_waiting(clicked(ana, []))
+    assert panel.screen == CANDIDATOS and panel.listing == "taco_bajo"
+    assert "pisos:candidatos_siguiente" in ids(panel)
+    # Firmar con el único candidato del bajo lleva a los de la habitación.
+    await panel._sign(clicked(ana, [], custom_id="pisos:firmar:1"))
+    assert panel.screen == CANDIDATOS and panel.listing == "isleta_piso3~h2"
+    assert "pisos:candidatos_siguiente" not in ids(panel)
+    await panel._sign(clicked(ana, [], custom_id="pisos:firmar:1"))
+    market = await cog.service.market(GUILD)
+    assert market.leases["isleta_piso3~h2"].tenant == "coliving"
+    assert panel.screen == FICHA  # ya no espera nadie más

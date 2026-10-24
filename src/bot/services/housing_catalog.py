@@ -97,12 +97,18 @@ KINDS: dict[str, Kind] = {
         Kind("bungalow", "Bungalow", 0.9, 1.2, None, 60),
         Kind("duplex", "Dúplex", 1.1, 1.0, None, 90),
         Kind("loft", "Loft", 1.05, 1.2, None, 50),
+        # Una habitación de un piso alquilado por habitaciones (9.12.0). Su «comunidad» lleva
+        # la parte de la comunidad y los suministros que paga el casero (luz, agua e internet).
+        Kind("habitacion", "Habitación", 1.0, 1.0, None, 60),
     )
 }
 
 #: Los que no son vivienda ni trastero: los alquilan negocios, no personas
 #: (`Tenant.business`).
 BUSINESS_KINDS = frozenset({"local", "nave", "amarre"})
+#: La habitación de un piso alquilado por habitaciones: solo la alquila quien la lleva en
+#: `Tenant.kinds` (una familia no se mete en una habitación).
+ROOM_KIND = "habitacion"
 
 
 @dataclass(frozen=True, slots=True)
@@ -2316,8 +2322,9 @@ class Tenant:
         levels: Rentas que acepta (claves de `RENT_LEVELS`).
         line: Lo que dice al firmar.
         kinds: Si no está vacío, solo alquila estos tipos de inmueble. Los negocios
-            (`BUSINESS_KINDS`) solo los alquila quien los lleva en `kinds`, y una persona
-            (sin `kinds`) no se mete a vivir en un local, una nave o un amarre.
+            (`BUSINESS_KINDS`) y las habitaciones (`ROOM_KIND`) solo los alquila quien los
+            lleva en `kinds`, y una persona (sin `kinds`) no se mete a vivir en un local,
+            una nave, un amarre ni una habitación.
         age: Años (0 en un negocio o un grupo de turistas). De 18 a 35 da la reducción
             del 70 % en zona tensionada si el piso se alquila por primera vez (art. 23.2
             LIRPF).
@@ -2353,13 +2360,14 @@ class Tenant:
             return False
         if self.kinds:
             return kind in self.kinds
-        return kind not in BUSINESS_KINDS
+        return kind not in BUSINESS_KINDS and kind != ROOM_KIND
 
 
 _SOCIAL_REF = ("social", "referencia")
 _LOW_MID = ("social", "referencia", "mercado")
 _MID = ("referencia", "mercado")
 _NOMAD = ("mercado", "nomadas")
+_ROOM = frozenset({ROOM_KIND})
 
 TENANTS: tuple[Tenant, ...] = (
     # -- Personas: vivienda habitual ----------------------------------------------------
@@ -2661,6 +2669,107 @@ TENANTS: tuple[Tenant, ...] = (
         leave="He terminado la novela. Sales en el capítulo doce.",
         unpaid="La editorial no ha pagado el adelanto.",
         complaint="El vecino del tercero ensaya con la batería y no me deja escribir.",
+    ),
+    # -- Personas: una habitación (9.12.0) ----------------------------------------------
+    Tenant(
+        "universitaria", "Estudiante de la universidad", "🎒", _LOW_MID,
+        "Vengo de La Gomera para la carrera. ¿El escritorio entra en el precio?",
+        kinds=_ROOM, age=19, risk=1.3, stay=1.4, wear=1.3,
+        traits=("Pagan sus padres", "Exámenes en junio"),
+        renew="Me quedo otro curso: ya sé qué balda de la nevera es la mía.",
+        leave="Termino la carrera y me vuelvo a mi isla.",
+        unpaid="La beca llega en diciembre. Hasta entonces, voy justa.",
+        complaint="La silla del escritorio ha cedido en plena época de exámenes.",
+    ),
+    Tenant(
+        "residente_mir", "Residente de primer año", "🩻", _MID,
+        "Solo necesito una cama y silencio después de las guardias.",
+        kinds=_ROOM, age=26, risk=0.6, stay=0.9, wear=0.6,
+        traits=("Nómina fija", "Guardias de 24 horas"),
+        renew="Renuevo. Me quedan cuatro años de residencia.",
+        leave="Me han dado la plaza en otro hospital.",
+        unpaid="Han pagado tarde las guardias de este mes.",
+        complaint="La persiana no baja del todo y duermo de día.",
+    ),
+    Tenant(
+        "temporada", "Camarera de temporada en un hotel", "🛎️", _SOCIAL_REF,
+        "Vengo a hacer la temporada de invierno. Si renuevan el contrato, me quedo.",
+        kinds=_ROOM, age=24, risk=1.1, stay=1.6, wear=0.9,
+        traits=("Contrato de temporada", "Turno de noche"),
+        renew="Me han hecho fija discontinua: me quedo.",
+        leave="Se acaba la temporada y vuelvo con mi familia a la península.",
+        unpaid="El hotel ha cerrado por obras dos semanas y no he cobrado.",
+        complaint="El termo da agua fría justo cuando llego del turno.",
+    ),
+    Tenant(
+        "opositora_bombera", "Opositora a bombera", "🧗", _SOCIAL_REF,
+        "Entreno por la mañana y estudio por la tarde. Ruido, el mínimo.",
+        kinds=_ROOM, age=27, risk=0.9, stay=0.8, wear=0.8,
+        traits=("Estudia en casa", "Madruga"),
+        renew="Me quedo hasta el examen. Esta vez sí.",
+        leave="¡He sacado la plaza! Me destinan a Lanzarote.",
+        unpaid="Las clases de la academia se han comido lo del alquiler.",
+        complaint="La barra de dominadas ha arrancado el marco de la puerta.",
+    ),
+    Tenant(
+        "coliving", "Nómada de coliving", "🧳", _NOMAD,
+        "Busco cocina compartida, fibra y gente con la que ir a surfear.",
+        kinds=_ROOM, age=32, risk=1.1, stay=1.6, wear=0.8,
+        traits=("Teletrabaja", "Habla tres idiomas"),
+        renew="Alargo la estancia: aquí el invierno no existe.",
+        leave="Me voy a Madeira a probar otro coliving.",
+        unpaid="El cliente de Berlín me paga a sesenta días.",
+        complaint="El router se cuelga en cada videollamada con el cliente.",
+    ),
+    Tenant(
+        "astrofisica", "Becaria de astrofísica", "🔭", _MID,
+        "Hago la tesis en el observatorio. Paso más noches en el Teide que aquí.",
+        kinds=_ROOM, age=25, risk=0.8, stay=1.0, wear=0.6,
+        traits=("Beca de investigación", "Casi nunca está"),
+        renew="Me renuevan la beca: me quedo otro año.",
+        leave="Me voy de posdoc a Chile. Allí también hay buenos cielos.",
+        unpaid="La beca va con retraso por un problema de la convocatoria.",
+        complaint="El telescopio que tengo en la ventana no cierra con la humedad.",
+    ),
+    Tenant(
+        "repartidor", "Repartidor recién llegado a la isla", "📦", _SOCIAL_REF,
+        "Acabo de llegar y empiezo el lunes. Con una habitación me apaño.",
+        kinds=_ROOM, age=29, risk=1.3, stay=1.2, wear=1.0,
+        traits=("Contrato de prueba", "Sale temprano"),
+        renew="Me han hecho el contrato fijo. Me quedo.",
+        leave="Ya tengo para un piso para mí solo.",
+        unpaid="No he pasado el periodo de prueba. Busco otra cosa.",
+        complaint="Se ha roto la cerradura de mi cuarto y la bici duerme fuera.",
+    ),
+    Tenant(
+        "cocinero", "Cocinero de un restaurante", "👨‍🍳", _MID,
+        "Trabajo partido: llego tarde, pero la cocina la dejo como un espejo.",
+        kinds=_ROOM, age=30, risk=1.0, stay=1.1, wear=1.1,
+        traits=("Horario partido", "Cocina para todos"),
+        renew="Renuevo, que aquí los compañeros ya cuentan con mis potajes.",
+        leave="Abro mi propio restaurante en el norte.",
+        unpaid="El restaurante paga la nómina a trozos este mes.",
+        complaint="El horno ya no pasa de 150 grados y así no hay quien haga un cochino negro.",
+    ),
+    Tenant(
+        "jubilado_hab", "Jubilado que no quiere vivir solo", "🧓", _SOCIAL_REF,
+        "Desde que enviudé, la casa se me caía encima. Aquí por lo menos hay conversación.",
+        kinds=_ROOM, age=68, risk=0.6, stay=0.5, wear=0.6,
+        traits=("Pensión fija", "Siempre en casa"),
+        renew="Me quedo. Los chicos ya me llaman para el dominó.",
+        leave="Mi hija me ha convencido para irme con ella a Tenerife.",
+        unpaid="Me han cobrado dos veces el seguro de decesos y no llego.",
+        complaint="La puerta del baño se atasca y uno ya no tiene edad para empujar.",
+    ),
+    Tenant(
+        "teleco", "Técnica de telecomunicaciones desplazada", "📡", _MID,
+        "Me mandan seis meses a montar las antenas nuevas. El alquiler me lo paga la empresa.",
+        kinds=_ROOM, age=34, risk=0.8, stay=1.3, wear=0.8,
+        traits=("Paga la empresa", "Viaja entre islas"),
+        renew="Alargan la obra de las antenas: me quedo.",
+        leave="Proyecto terminado. Me mandan a Galicia.",
+        unpaid="La empresa tarda en devolverme las dietas.",
+        complaint="Aquí dentro el móvil no tiene cobertura. Lo sé: es irónico.",
     ),
     # -- Turistas (vivienda vacacional) -------------------------------------------------
     Tenant(

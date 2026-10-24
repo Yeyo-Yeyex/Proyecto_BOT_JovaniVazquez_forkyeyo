@@ -76,6 +76,7 @@ from bot.services.achievements import (
     PISOS_NEWS_STAT,
     PISOS_REFORM_KINDS_STAT,
     PISOS_REFORM_PREFIX,
+    PISOS_ROOM_TENANTS_STAT,
     PISOS_TENANT_PREFIX,
     PISOS_TENANTS_STAT,
     PISOS_THEMES_STAT,
@@ -89,6 +90,7 @@ from bot.services.achievements import (
     REACT_PREFIX,
     REACTED_PREFIX,
     REACTION_EMOJIS,
+    ROOM_TENANTS,
     ROULETTE_FAVOURITE_STAT,
     ROULETTE_HIT_PREFIX,
     ROULETTE_NUMBERS_STAT,
@@ -122,7 +124,10 @@ from bot.services.achievements import (
     casino_record_stats,
     casino_stats,
     group_sections,
+    housing_action_stats,
+    housing_panel_stats,
     housing_purchase_stats,
+    housing_sale_stats,
     is_laugh,
     menu_entries,
     message_stats,
@@ -241,6 +246,15 @@ PRODUCED_STATS = {
     "staff_fired_disciplinario", "staff_fired_objetivo", "staff_fired_improcedente",
     "staff_fired_b", "staff_severance", "staff_bonus_refund", "staff_raises",
     "staff_permanent", "staff_courses", "staff_course_spent", "staff_fundae", "staff_skill_max",
+    # Las cadenas (fase 5): locales, nave, importar, gerentes y vender la sociedad.
+    "biz_locales_max", "biz_chain_sectors_max", "biz_chain_islands_max", "biz_chain_brand_max",
+    "biz_nave_size_max", "biz_nave_fill_max", "biz_managers_max", "biz_sale_price_max",
+    "biz_sale_locales_max", "biz_sl_chain_max", "biz_chain_opened", "biz_branch_closed",
+    "biz_nave_opened", "biz_nave_own", "biz_nave_closed", "biz_nave_lost", "biz_imports",
+    "biz_import_spent", "biz_aiem_paid", "biz_import_saved", "biz_import_aiem_free",
+    "biz_containers", "biz_from_nave", "biz_managers_hired", "biz_manager_restocks",
+    "biz_manager_nave", "biz_manager_hires", "biz_manager_absent", "biz_company_sold",
+    "biz_sale_gain", "biz_sale_tax", "biz_sale_loss",
     # cogs/achievements.py: mensajes, voz, reacciones y la siembra del historial
     *message_stats("x", when=datetime(2026, 1, 1, tzinfo=TIMEZONE)).keys(),
     "msg_night", "msg_morning", "msg_long", "msg_short", "msg_caps", "msg_questions",
@@ -393,6 +407,9 @@ PRODUCED_STATS = {
     "pisos_reviews", "pisos_five_stars", "pisos_one_star",
     # Fase 6 (housing_action_stats de la junta aprobada sin más votos)
     "pisos_silence",
+    # 9.12.0 (plantas, habitaciones y el atajo de candidatos)
+    "pisos_split_spent", "pisos_split_units", "pisos_shortcut", "pisos_rooms_rushed",
+    "pisos_split_mortgaged", "pisos_floor_sold", PISOS_ROOM_TENANTS_STAT,
     PISOS_REFORM_KINDS_STAT, *(f"{PISOS_REFORM_PREFIX}{r.key}" for r in HOUSING_REFORM_LIST),
     *(f"{PISOS_TENANT_PREFIX}{t.key}" for t in HOUSING_TENANT_LIST),
     *(f"{PISOS_NEWS_PREFIX}{n.key}" for n in HOUSING_NEWS_LIST),
@@ -1909,6 +1926,48 @@ def test_pisos_cuenta_los_tipos_de_barrio_la_zona_tensionada_y_el_barrio_entero(
     )  # fmt: skip
     assert delta.add["pisos_tensed"] == delta.add["pisos_barrio_whole"] == 1
     assert delta.add[f"{PISOS_KIND_PREFIX}cueva"] == 1
+
+
+def test_pisos_cuenta_plantas_habitaciones_y_el_atajo() -> None:
+    plantas = housing_action_stats("plantas", amount=1_200_000, units=5, mortgaged=True)
+    assert plantas.add == {
+        "pisos_floor_splits": 1, "pisos_split_spent": 1_200_000, "pisos_split_mortgaged": 1,
+    }  # fmt: skip
+    assert plantas.peak == {"pisos_split_units": 5}
+    habitaciones = housing_action_stats("habitaciones", amount=30_000, units=6, mortgaged=True)
+    assert "pisos_split_mortgaged" not in habitaciones.add  # solo cuenta por plantas
+    assert habitaciones.add["pisos_room_splits"] == 1
+    assert habitaciones.peak == {"pisos_split_units": 6}
+    assert housing_action_stats("juntar").add == {"pisos_rooms_joined": 1}
+    assert housing_action_stats("juntar", rushed=True).add["pisos_rooms_rushed"] == 1
+    assert housing_panel_stats(screen="atajo").add == {"pisos_shortcut": 1}
+    sale = {"shares": 100, "received": 1, "gain": 0, "arrears": 0, "held_days": 3}
+    assert housing_sale_stats(**sale, holdings_left=1, floor=True).add["pisos_floor_sold"] == 1
+    assert "pisos_floor_sold" not in housing_sale_stats(**sale, holdings_left=1).add
+    member = housing_action_stats("vende_miembro", amount=1, floor_unit=True)
+    assert member.add["pisos_floor_sold"] == 1
+    # Los 10 inquilinos de habitación, firmados con candidato o con la noche
+    assert len(ROOM_TENANTS) == 10 and "universitaria" in ROOM_TENANTS
+    signed = housing_action_stats("firma_candidato", tenant="astrofisica").add
+    assert signed[f"{PISOS_TENANT_PREFIX}astrofisica"] == 1
+    every = {f"{PISOS_TENANT_PREFIX}{key}": 1 for key in ROOM_TENANTS}
+    assert with_derived(every)[PISOS_ROOM_TENANTS_STAT] == 10
+    assert with_derived({f"{PISOS_TENANT_PREFIX}abuela": 1})[PISOS_ROOM_TENANTS_STAT] == 0
+    stats = with_derived({
+        **every, "pisos_floor_splits": 6, "pisos_room_splits": 20, "pisos_rooms_joined": 5,
+        "pisos_split_spent": 10_000_000, "pisos_split_units": 6, "pisos_shortcut": 50,
+        "pisos_rooms_rushed": 1, "pisos_split_mortgaged": 1, "pisos_floor_sold": 1,
+    })  # fmt: skip
+    new = {
+        "pisos_floors_1", "pisos_floors_3", "pisos_floors_6", "pisos_rooms_1", "pisos_rooms_5",
+        "pisos_rooms_20", "pisos_joined_1", "pisos_joined_5", "pisos_split_1m",
+        "pisos_split_10m", "pisos_units_5", "pisos_units_6", "pisos_room_tenants_1",
+        "pisos_room_tenants_5", "pisos_room_tenants_all", "pisos_tenant_astrofisica",
+        "pisos_tenant_jubilado_hab", "pisos_shortcut_1", "pisos_shortcut_50", "pisos_rushed_1",
+        "pisos_split_mortgaged_1", "pisos_floor_sold_1",
+    }  # fmt: skip
+    assert new <= set(newly_unlocked(stats, ()))
+    assert {a.category for a in CATALOG if a.id in new} == {"pisos"}
 
 
 def test_cualquier_jugada_del_casino_cuenta_el_juego_y_la_fecha() -> None:

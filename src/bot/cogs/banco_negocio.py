@@ -117,7 +117,12 @@ async def _desk(panel: BankPanel) -> tuple[Business, BusinessLoanDesk] | None:
     service = panel.cog.negocio
     if service is None:
         return None
-    return await service.loan_desk(panel.guild_id, panel.owner.id)
+    found = await service.loan_desk(panel.guild_id, panel.owner.id, panel.business_id)
+    if found is None and panel.business_id is not None:
+        # Ese local ya cerró: el primero que quede.
+        panel.business_id = None
+        found = await service.loan_desk(panel.guild_id, panel.owner.id)
+    return found
 
 
 async def screen(panel: BankPanel) -> discord.Embed:
@@ -134,6 +139,7 @@ async def screen(panel: BankPanel) -> discord.Embed:
             ),
         )
     business, desk = found
+    panel.business_id = business.id
     if panel.business_offer is not None:
         panel.add_item(SignButton())
         panel.add_item(BackButton())
@@ -211,6 +217,13 @@ async def screen(panel: BankPanel) -> discord.Embed:
     )
     panel.asnef = desk.owner.asnef
     _items(panel, desk)
+    service = panel.cog.negocio
+    owned = await service.owned(panel.guild_id, panel.owner.id) if service is not None else []
+    if len(owned) > 1:
+        # Una cadena: cada local tiene sus préstamos (dos como mucho).
+        ids = [b.id for b in owned]
+        nxt = owned[(ids.index(business.id) + 1) % len(owned)] if business.id in ids else owned[0]
+        panel.add_item(NextLocalButton(nxt.id, nxt.name))
     return embed
 
 
@@ -267,8 +280,9 @@ async def sign(panel: BankPanel, interaction: discord.Interaction) -> tuple[str,
     guild_id, user = panel.guild_id, interaction.user
     try:
         business, loan, signed, paid = await service.take_loan(
-            guild_id, user.id, principal=quote.principal, months=quote.months, rate=quote.rate
-        )
+            guild_id, user.id, principal=quote.principal, months=quote.months, rate=quote.rate,
+            biz=panel.business_id,
+        )  # fmt: skip
     except BusinessError as error:
         return str(error), None
     where = (
@@ -302,7 +316,9 @@ async def repay(
         return "El banco está cerrado ahora mismo.", None
     guild_id, user = panel.guild_id, interaction.user
     try:
-        business, loan, fee, paid = await service.repay_loan(guild_id, user.id, loan_id)
+        business, loan, fee, paid = await service.repay_loan(
+            guild_id, user.id, loan_id, biz=panel.business_id
+        )
     except BusinessError as error:
         return str(error), None
     left = (
@@ -383,6 +399,26 @@ class AskButton(ui.Button["BankPanel"]):
             )
             return
         await interaction.response.send_modal(AmountForm(panel, most))
+
+
+class NextLocalButton(ui.Button["BankPanel"]):
+    """🏪 Pasa al siguiente local de la cadena (cada uno pide sus préstamos)."""
+
+    def __init__(self, business_id: int, name: str) -> None:
+        super().__init__(
+            label=f"Ir a {name}"[:80], emoji="🏪", style=discord.ButtonStyle.secondary,
+            custom_id="banco:negocio_local", row=2,
+        )  # fmt: skip
+        self.business_id = business_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        panel = self.view
+        assert panel is not None
+        await ack(interaction)
+        panel.business_id = self.business_id
+        panel.business_offer = None
+        panel.selected_business_loan = None
+        await panel.refresh(interaction)
 
 
 class SignButton(ui.Button["BankPanel"]):

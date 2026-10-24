@@ -26,6 +26,13 @@ tienen derecho preferente unos minutos) o se saca a subasta un día. La pantalla
 enseña las abiertas y se puja con un formulario. Las ejecuciones hipotecarias salen antes a
 subasta judicial. La tarea de cada 10 minutos cierra las que acaban y lo anuncia.
 
+Plantas y habitaciones (9.12.0): desde 🧰 Gestionar, la pantalla 🏢 Dividir enseña lo que
+cuesta y da dividir el inmueble por plantas (cada planta pasa a ser un inmueble, que se
+vende por separado) o alquilarlo por habitaciones (cada una con su inquilino; el piso se
+vende entero y se puede volver a juntar). La pantalla de plantas o habitaciones tiene un
+botón por cada una. El botón verde 👥 Candidatos (del mapa, el barrio, Mis pisos y esa
+pantalla) solo sale si alguien espera en algo en que decides tú, y lleva de uno a otro.
+
 Dinero (todo por `EconomyService.housing`, impuestos en su docstring): comprar
 participaciones (ITP del 6,5 % al Estado, notaría que desaparece), venderlas al
 mercado (agencia, deudas del piso e IRPF de la ganancia) y, cada noche, la renta de
@@ -148,6 +155,7 @@ MAX_OPTIONS = 25
 MAPA, BARRIO, FICHA, CARTERA, CAJA, VPO = "mapa", "barrio", "ficha", "cartera", "caja", "vpo"
 GESTION, CANDIDATOS, SUBASTAS = "gestion", "candidatos", "subastas"
 REFORMAS, IMPREVISTOS, RESENAS, JUNTA = "reformas", "imprevistos", "resenas", "junta"
+PLANTAS, DIVIDIR = "plantas", "dividir"
 #: Minutos que tienen el inquilino que es miembro y los copropietarios para quedarse lo que
 #: se vende a otro (tanteo del art. 25 LAU y retracto de comuneros del art. 1522 CC).
 PREFERENCE_SECONDS = 10 * 60
@@ -566,6 +574,10 @@ class Panel(ui.View):
             return view.candidates_state(market, listing or self.listing, today)
         if screen == REFORMAS:
             return view.reforms_state(market, listing or self.listing, me)
+        if screen == PLANTAS:
+            return view.units_state(market, listing or self.listing, me, names, today)
+        if screen == DIVIDIR:
+            return view.split_state(market, listing or self.listing, me)
         if screen == IMPREVISTOS:
             return view.decisions_state(market, listing or self.listing, me)
         if screen == RESENAS:
@@ -728,7 +740,15 @@ class Panel(ui.View):
             barrio = self._at(self.listing).barrio
             mine = me in self.market.shares_of(self.listing)
             extra = [(GESTION, {"listing": self.listing})] if mine else []
+            if (parent := rules.parent_key(self.listing)) is not None:
+                extra.append((PLANTAS, {"listing": parent}))
             return [*extra, (BARRIO, {"barrio": barrio}), (CARTERA, {}), (MAPA, {})]
+        if self.screen == PLANTAS:
+            units = [(FICHA, {"listing": u.key}) for u in self.market.units_of(self.listing)]
+            back = (FICHA if self._rooms() else BARRIO, {"listing": self.listing})
+            return [*units, back, (MAPA, {})]
+        if self.screen == DIVIDIR:
+            return [(GESTION, {"listing": self.listing}), (FICHA, {"listing": self.listing})]
         if self.screen == GESTION:
             return [
                 (CANDIDATOS, {"listing": self.listing}),
@@ -858,6 +878,8 @@ class Panel(ui.View):
             items = self.market.listings_of(self.barrio)
             for slot, item in enumerate(items):
                 new = "🏗️ " if item.key in self.market.promotions else ""
+                if self.market.split_mode(item.key) == rules.FLOORS:
+                    new = "🏢 "
                 self._button(
                     f"{new}{slot + 1} · {KINDS[item.kind].name}",
                     f"ver:{slot}",
@@ -876,6 +898,7 @@ class Panel(ui.View):
                 )
             self._button("🗺️ Mapa", "mapa", self._go_map, row=3)
             self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=3)
+            self._waiting_button(row=3)
         elif self.screen == FICHA:
             self._ficha_buttons()
         elif self.screen == CARTERA:
@@ -890,7 +913,7 @@ class Panel(ui.View):
                             label=self._at(h.listing).title[:100],
                             value=h.listing,
                             description=f"{BARRIO_BY_KEY[self._at(h.listing).barrio].name}"
-                            f" · {h.shares} %",
+                            f" · {h.shares} %{self._waiting_note(h.listing)}",
                         )
                         for h in mine
                     ],
@@ -900,6 +923,7 @@ class Panel(ui.View):
             self._button("🗺️ Mapa", "mapa", self._go_map, row=2)
             self._button("🏛️ VPO", "vpo", self._go_vpo, row=2)
             self._auctions_button(row=2)
+            self._waiting_button(row=2)
             self._portfolio_buttons()
         elif self.screen == VPO:
             self._vpo_buttons()
@@ -911,6 +935,10 @@ class Panel(ui.View):
             self._auction_buttons()
         elif self.screen == REFORMAS:
             self._reform_buttons()
+        elif self.screen == PLANTAS:
+            self._units_buttons()
+        elif self.screen == DIVIDIR:
+            self._split_buttons()
         elif self.screen == IMPREVISTOS:
             self._decision_buttons()
         elif self.screen == JUNTA:
@@ -923,6 +951,7 @@ class Panel(ui.View):
             self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=1)
             self._button("🏛️ VPO", "vpo", self._go_vpo, row=1)
             self._auctions_button(row=1)
+            self._waiting_button(row=1)
 
     def _confirmable(
         self,
@@ -977,7 +1006,7 @@ class Panel(ui.View):
         listing = self._at(key)
         holders = market.shares_of(key)
         lease = market.leases.get(key)
-        if not holders.get(me) or lease is None:
+        if not holders.get(me) or lease is None or lease.status == rules.BY_ROOMS:
             return
         if self.confirm == "miembro":
             pick: ui.UserSelect = ui.UserSelect(
@@ -1014,16 +1043,21 @@ class Panel(ui.View):
         mine = holders.get(self.owner.id, 0)
         free = self.market.free_shares(key)
         lease = self.market.leases.get(key)
-        if free:
+        room = rules.is_room(key)
+        if free and not room:
             label = "🛒 Comprar entero" if free == rules.SHARES else f"🛒 Comprar (quedan {free})"
             self._button(label, "comprar", self._buy, row=1, style=discord.ButtonStyle.success)
-        if mine:
+        if mine and not room:
             self._button("💰 Vender", "vender", self._sell, row=1, style=discord.ButtonStyle.danger)
+        if self._rooms():
+            count = len(self.market.units_of(key))
+            self._button(f"🛏️ Habitaciones ({count})", "plantas", self._go_units, row=1,
+                         style=discord.ButtonStyle.primary)  # fmt: skip
         boss = self.market.manager(key)
         can_decide = mine and (boss is None or boss == self.owner.id)
         if can_decide and lease is not None and lease.status in (rules.DEFAULTING, rules.SQUATTED):
             self._button("⚖️ Desahuciar", "desahuciar", self._evict, row=1)
-        if boss == self.owner.id and lease is not None:
+        if boss == self.owner.id and lease is not None and lease.status != rules.BY_ROOMS:
             listing = self._at(key)
             index = self.market.index(listing.barrio)
             levels: ui.Select = ui.Select(
@@ -1046,8 +1080,12 @@ class Panel(ui.View):
             )
             levels.callback = self._pick_level  # type: ignore[method-assign]
             self.add_item(levels)
-        barrio = BARRIO_BY_KEY[self._at(key).barrio].name
-        self._button(f"◀ {barrio}"[:80], "volver", self._go_barrio, row=3)
+        if rules.parent_key(key) is not None:
+            back = "◀ Habitaciones" if room else "◀ Plantas"
+            self._button(back, "volver", self._go_parent, row=3)
+        else:
+            barrio = BARRIO_BY_KEY[self._at(key).barrio].name
+            self._button(f"◀ {barrio}"[:80], "volver", self._go_barrio, row=3)
         self._button("🗺️ Mapa", "mapa", self._go_map, row=3)
         self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=3)
         if mine:
@@ -1067,7 +1105,8 @@ class Panel(ui.View):
         listing = self._at(key)
         lease = market.leases.get(key)
         boss = market.manager(key) == me
-        if boss and lease is not None:
+        by_rooms = lease is not None and lease.status == rules.BY_ROOMS
+        if boss and lease is not None and not by_rooms:
             if lease.pick == rules.PICK_SELF:
                 self._button("🤖 Que elija la gestora", "elegir", self._toggle_pick, row=1)
             else:
@@ -1082,7 +1121,12 @@ class Panel(ui.View):
                     self._confirmable(
                         "🛡️ Contratar seguro de impago", "seguro", self._toggle_insurance, row=1
                     )
-        if lease is not None and lease.pick == rules.PICK_SELF:
+        if me in market.shares_of(key) and not rules.is_room(key) and (
+            by_rooms or any(rules.split_problem(market.base(key) or listing, mode) is None
+                            for mode in rules.SPLIT_MODES) and key not in market.splits
+        ):  # fmt: skip
+            self._button("🏢 Dividir", "dividir", self._go_split, row=1)
+        if lease is not None and lease.pick == rules.PICK_SELF and not by_rooms:
             waiting = len(market.candidates_of(key, self.cog.service.today()))
             self._button(
                 f"👥 Candidatos ({waiting})", "candidatos", self._go_candidates, row=1,
@@ -1093,7 +1137,7 @@ class Panel(ui.View):
         self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=2)
         if lease is not None and (lease.license or market.reviews.get(key)):
             self._button("⭐ Reseñas", "resenas", self._go_reviews, row=2)
-        if len(market.shares_of(key)) > 1:
+        if len(market.shares_of(key)) > 1 and not rules.is_room(key):
             count = len(market.votes_of(key))
             self._button(
                 f"🗳️ Junta ({count})" if count else "🗳️ Junta", "junta", self._go_junta, row=2,
@@ -1213,6 +1257,88 @@ class Panel(ui.View):
         self._button("◀ Gestionar", "gestion", self._go_gestion, row=3)
         self._button("🏠 La ficha", "ficha", self._back_to_listing, row=3)
         self._button("🗺️ Mapa", "mapa", self._go_map, row=3)
+        others = [k for k in self._waiting_keys() if k != key]
+        if others:
+            self._button(
+                f"⏭️ Siguiente ({len(others)})", "candidatos_siguiente", self._go_waiting, row=3,
+                style=discord.ButtonStyle.success,
+            )  # fmt: skip
+
+    def _waiting_keys(self) -> list[str]:
+        """Dónde decides tú y esperan candidatos (pisos, plantas y habitaciones). Solo memoria."""
+        today, me, market = self.cog.service.today(), self.owner.id, self.market
+        return [
+            key
+            for key in market.candidates
+            if market.candidates_of(key, today) and market.manager(key) == me
+        ]
+
+    def _waiting_button(self, *, row: int) -> None:
+        """👥 Candidatos (N), en verde: solo sale si alguien espera a que elijas."""
+        today = self.cog.service.today()
+        count = sum(len(self.market.candidates_of(k, today)) for k in self._waiting_keys())
+        if count:
+            self._button(
+                f"👥 Candidatos ({count})", "candidatos_todos", self._go_waiting, row=row,
+                style=discord.ButtonStyle.success,
+            )  # fmt: skip
+
+    def _waiting_note(self, key: str) -> str:
+        """« · 👥 2» si esperan candidatos en un inmueble (o en sus habitaciones)."""
+        today = self.cog.service.today()
+        keys = [key, *(u.key for u in self.market.units_of(key))]
+        count = sum(len(self.market.candidates_of(k, today)) for k in keys)
+        return f" · 👥 {count}" if count else ""
+
+    def _rooms(self) -> bool:
+        """Si el inmueble de la pantalla se alquila por habitaciones."""
+        return self.market.split_mode(self.listing) == rules.ROOMS
+
+    def _units_buttons(self) -> None:
+        """🏢 Plantas o 🛏️ habitaciones: un botón por cada una, en el orden de la imagen."""
+        key, me, market = self.listing, self.owner.id, self.market
+        for slot, unit in enumerate(market.units_of(key)):
+            self._button(
+                f"{slot + 1} · {unit.floor}", f"unidad:{slot}", self._open_unit,
+                row=1 + slot // BARRIO_COLS, style=discord.ButtonStyle.primary,
+            )  # fmt: skip
+        if self._rooms():
+            self._button("◀ La ficha", "ficha", self._back_to_listing, row=3)
+            if market.manager(key) == me:
+                self._confirmable("🔀 Juntar las habitaciones", "juntar", self._join_rooms, row=3)
+        else:
+            barrio = BARRIO_BY_KEY[self._at(key).barrio].name
+            self._button(f"◀ {barrio}"[:80], "volver", self._go_barrio, row=3)
+        self._button("🗺️ Mapa", "mapa", self._go_map, row=3)
+        self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=3)
+        self._waiting_button(row=3)
+
+    def _split_buttons(self) -> None:
+        """🏢 Dividir: por plantas o por habitaciones (dos clics, porque cuesta dinero).
+
+        Con varios dueños se propone en la junta; si ya se alquila por habitaciones, aquí se
+        juntan.
+        """
+        key, me, market = self.listing, self.owner.id, self.market
+        holders = market.shares_of(key)
+        state = view.split_state(market, key, me)
+        for option in state["options"]:
+            if option["problem"]:
+                continue
+            if len(holders) > 1:
+                self._button("🗳️ Proponerlo a la junta", "junta", self._go_junta, row=1)
+                break
+            self._confirmable(
+                f"{option['emoji']} {option['name']} ({option['total']})",
+                f"dividir:{option['mode']}", self._split, row=1,
+            )  # fmt: skip
+        if state["rooms"]:
+            self._button("🛏️ Habitaciones", "plantas", self._go_units, row=1)
+            if market.manager(key) == me:
+                self._confirmable("🔀 Juntar las habitaciones", "juntar", self._join_rooms, row=1)
+        self._button("◀ Gestionar", "gestion", self._go_gestion, row=2)
+        self._button("◀ La ficha", "ficha", self._back_to_listing, row=2)
+        self._button("🗺️ Mapa", "mapa", self._go_map, row=2)
 
     def _caja_buttons(self) -> None:
         if self.done is not None:
@@ -1316,6 +1442,42 @@ class Panel(ui.View):
     async def _go_reforms(self, interaction: discord.Interaction) -> None:
         await self._go(interaction, REFORMAS)
 
+    async def _go_split(self, interaction: discord.Interaction) -> None:
+        await self._go(interaction, DIVIDIR)
+
+    async def _go_units(self, interaction: discord.Interaction) -> None:
+        await self._go(interaction, PLANTAS)
+
+    async def _go_parent(self, interaction: discord.Interaction) -> None:
+        """De la ficha de una planta o habitación a la pantalla de todas."""
+        self.listing = rules.parent_key(self.listing) or self.listing
+        await self._go(interaction, PLANTAS)
+
+    async def _open_unit(self, interaction: discord.Interaction) -> None:
+        custom_id = interaction.data.get("custom_id", "") if interaction.data else ""
+        slot = custom_id.rsplit(":", 1)[-1]
+        units = self.market.units_of(self.listing)
+        if not slot.isdigit() or int(slot) >= len(units):
+            await ack(interaction)
+            return
+        self.listing = units[int(slot)].key
+        await self._go(interaction, FICHA)
+
+    async def _go_waiting(self, interaction: discord.Interaction) -> None:
+        """👥 Candidatos: el siguiente sitio donde esperan (o el primero). Solo memoria antes."""
+        keys = self._waiting_keys()
+        if not keys:
+            await ack(interaction)
+            await notify(interaction, "Ya no espera nadie: los candidatos se han ido.")
+            await self.show(interaction)
+            return
+        here = keys.index(self.listing) if self.listing in keys else -1
+        self.listing = keys[(here + 1) % len(keys)] if self.screen == CANDIDATOS else keys[0]
+        self.barrio = self._at(self.listing).barrio
+        await self._go(interaction, CANDIDATOS)
+        logros.note(self.cog.bot, self.guild.id, self.owner.id,
+                    housing_panel_stats(screen="atajo"))  # fmt: skip
+
     async def _remortgage(self, interaction: discord.Interaction) -> None:
         """🏦 Rehipotecar: abre `banco` en 🔐 Garantías con este inmueble, en privado."""
         if not await banco.open_guarantees(self.cog.bot, interaction, self.listing):
@@ -1386,7 +1548,8 @@ class Panel(ui.View):
                 )
             )
 
-        if "renta" not in busy:
+        rooms = lease.status == rules.BY_ROOMS
+        if "renta" not in busy and not rooms:
             for level in RENT_LEVELS.values():
                 if level.key == lease.level or (
                     level.key == rules.VACATION_LEVEL and not lease.license
@@ -1394,12 +1557,12 @@ class Panel(ui.View):
                     continue
                 add(f"renta:{level.key}", f"Renta: {level.name}", level.emoji,
                     "Mayoría de participaciones (art. 398 CC)")  # fmt: skip
-        if "seguro" not in busy and listing.kind in rules.HOME_KINDS:
+        if "seguro" not in busy and listing.kind in rules.HOME_KINDS and not rooms:
             on = not lease.insured
             add(f"seguro:{int(on)}",
                 "Contratar el seguro de impago" if on else "Quitar el seguro de impago", "🛡️",
                 "Mayoría de participaciones")  # fmt: skip
-        if "eleccion" not in busy:
+        if "eleccion" not in busy and not rooms:
             other = rules.PICK_AGENCY if lease.pick == rules.PICK_SELF else rules.PICK_SELF
             label = (
                 "Elegir nosotros al inquilino"
@@ -1419,12 +1582,24 @@ class Panel(ui.View):
                     label = view.motion_text("reforma", reform.key, 0, {})
                     add(f"reforma:{reform.key}", label, reform.emoji,
                         "3/5 de participaciones (art. 17.4 LPH)")  # fmt: skip
-        if "licencia" not in busy and listing.kind in rules.HOME_KINDS and not lease.license:
+        if (
+            "licencia" not in busy and listing.kind in rules.HOME_KINDS and not lease.license
+            and not rooms
+        ):  # fmt: skip
             add("licencia", f"Licencia vacacional ({format_amount(rules.LICENSE_FEE)})", "🏖️",
                 "3/5 de participaciones (art. 17.12 LPH)")  # fmt: skip
         if "venta" not in busy:
             add("venta", "Vender el inmueble entero al mercado", "🤝",
                 "Unanimidad (art. 397 CC)")  # fmt: skip
+        base = market.base(key)
+        for mode in rules.SPLIT_MODES:
+            motion = rules.MOTION_BY_KEY[mode]
+            if mode in busy or key in market.splits or base is None:
+                continue
+            if rules.split_problem(base, mode, promotion=key in market.promotions) is None:
+                total = rules.split_quote(listing, mode, market.index(listing.barrio)).total
+                add(mode, f"{motion.name} ({format_amount(total)})", motion.emoji,
+                    f"{view.THRESHOLD_TEXT[motion.threshold]} ({motion.law})")  # fmt: skip
         return options[:MAX_OPTIONS]
 
     async def _propose(self, interaction: discord.Interaction) -> None:
@@ -1541,6 +1716,65 @@ class Panel(ui.View):
             + (" Cuenta como rehabilitación: los contratos de los dos años siguientes tienen el "
                "60 % de reducción." if quote.rehab else ""),
         )  # fmt: skip
+
+    async def _split(self, interaction: discord.Interaction) -> None:
+        """Divide por plantas o por habitaciones (segundo clic): paga y entra en obras."""
+        custom_id = interaction.data.get("custom_id", "") if interaction.data else ""
+        parts = custom_id.split(":")
+        mode = parts[2] if len(parts) > 2 else ""
+        mortgaged = bool(self.market.mortgages_of(self.owner.id, self.listing))
+
+        async def run() -> Any:
+            return await self.cog.service.split(self.guild.id, self.owner.id, self.listing, mode)
+
+        result = await self._money(interaction, run)
+        if result is None:
+            return
+        done, _balance = result
+        quote = done.quote
+        self.screen = PLANTAS
+        await self._done(interaction, Event.BUY, housing_action_stats(
+            mode, amount=quote.total, units=quote.units, mortgaged=mortgaged,
+        ))  # fmt: skip
+        if mode == rules.FLOORS:
+            text = (
+                f"🏢 Obras hasta el {done.until:%d/%m}: {quote.units} plantas por "
+                f"{format_amount(quote.cost)} de obra, {format_amount(quote.igic)} de IGIC, "
+                f"{format_amount(quote.icio)} de ICIO, {format_amount(quote.license)} de "
+                f"licencia y {format_amount(quote.ajd)} de AJD de la escritura. Cada planta es ya "
+                "un inmueble: con su inquilino, su hipoteca y su precio, y se vende por separado."
+            )
+        else:
+            text = (
+                f"🛏️ {quote.units} habitaciones amuebladas por {format_amount(quote.cost)} "
+                f"(más {format_amount(quote.igic)} de IGIC). Desde el {done.until:%d/%m} cada "
+                "una busca su inquilino; cuando estén todas vacías se pueden volver a juntar."
+            )
+        await notify(interaction, text)
+
+    async def _join_rooms(self, interaction: discord.Interaction) -> None:
+        """Junta las habitaciones (segundo clic): el piso vuelve a alquilarse entero."""
+        await ack(interaction)
+        self.confirm = None
+        rushed = any(
+            self.market.leases.get(unit.key, rules.Lease()).status == rules.OBRAS
+            for unit in self.market.units_of(self.listing)
+        )
+        try:
+            await self.cog.service.join_rooms(self.guild.id, self.owner.id, self.listing)
+        except HousingError as error:
+            await notify(interaction, str(error))
+            await self.show(interaction)
+            return
+        except (OSError, sqlite3.Error):
+            logger.exception("No se pudieron juntar las habitaciones de un piso")
+            await notify(interaction, "Se ha caído el cerrajero. Prueba otra vez en un momento.")
+            return
+        self.screen = FICHA
+        await self.show(interaction)
+        await notify(interaction, "🔀 Habitaciones juntadas: el piso vuelve a alquilarse entero.")
+        await logros.track(self.cog.bot, self.guild.id, self.owner, interaction.channel,
+                           housing_action_stats("juntar", rushed=rushed))  # fmt: skip
 
     async def _decide(self, interaction: discord.Interaction) -> None:
         """Elige cómo arreglar un imprevisto. No mueve dinero: se paga con la noche."""
@@ -1730,7 +1964,8 @@ class Panel(ui.View):
             await ack(interaction)
             return
         self.listing = items[int(slot)].key
-        await self._go(interaction, FICHA)
+        floors = self.market.split_mode(self.listing) == rules.FLOORS
+        await self._go(interaction, PLANTAS if floors else FICHA)
 
     async def _pick_mine(self, interaction: discord.Interaction) -> None:
         values = interaction.data.get("values", []) if interaction.data else []
@@ -2202,7 +2437,8 @@ class Panel(ui.View):
             await notify(interaction, str(error))
             await self.show(interaction)
             return
-        self.screen = FICHA
+        self.market = await self.cog.service.market(self.guild.id)
+        self._next_waiting(FICHA)
         line = await mascotas.cameo(self.cog.bot, self.guild.id, self.owner.id, Moment(Event.HOME))
         await self.show(interaction, content=line)
         person = TENANT_BY_KEY[tenant]
@@ -2221,6 +2457,16 @@ class Panel(ui.View):
             ),
         )  # fmt: skip
 
+    def _next_waiting(self, otherwise: str) -> None:
+        """Tras firmar o vaciar los candidatos de un sitio: al siguiente donde esperan, o a
+        `otherwise` si no queda ninguno."""
+        keys = self._waiting_keys()
+        if keys:
+            self.listing, self.screen = keys[0], CANDIDATOS
+            self.barrio = self._at(self.listing).barrio
+        else:
+            self.screen = otherwise
+
     async def _discard(self, interaction: discord.Interaction) -> None:
         """Descarta a un candidato."""
         tenant = self._slot_tenant(interaction)
@@ -2235,7 +2481,8 @@ class Panel(ui.View):
             await notify(interaction, str(error))
             return
         if not self.market.candidates_of(self.listing, self.cog.service.today())[1:]:
-            self.screen = GESTION
+            self.market = await self.cog.service.market(self.guild.id)
+            self._next_waiting(GESTION)
         await self.show(interaction)
         logros.note(
             self.cog.bot, self.guild.id, self.owner.id, housing_action_stats("descarta"),
@@ -2995,8 +3242,9 @@ class Pisos(commands.Cog):
     ) -> None:
         """Logros de una venta entre miembros (de los dos). Nunca lanza."""
         quote = sale.quote
+        floor = rules.parent_key(sale.listing) is not None and not rules.is_room(sale.listing)
         await logros.track(self.bot, guild_id, seller, channel, housing_action_stats(
-            "vende_miembro", amount=quote.price, gift=quote.gift > 0,
+            "vende_miembro", amount=quote.price, gift=quote.gift > 0, floor_unit=floor,
         ))  # fmt: skip
         await logros.track(self.bot, guild_id, buyer, channel, housing_action_stats(
             "compra_miembro", amount=quote.price, preference=preference,
@@ -3115,6 +3363,8 @@ class Pisos(commands.Cog):
                 arrears=deal.quote.arrears,
                 held_days=deal.held_days,
                 holdings_left=len(mine),
+                floor=rules.parent_key(deal.listing) is not None
+                and not rules.is_room(deal.listing),
             )
         if isinstance(deal, Purchase) and deal.loan:
             euribor = deal.rate - rules.MORTGAGE_SPREAD

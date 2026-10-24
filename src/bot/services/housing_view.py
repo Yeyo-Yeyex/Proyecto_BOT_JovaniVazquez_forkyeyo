@@ -24,6 +24,7 @@ nueva se añade aquí y en la escena a la vez.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
@@ -69,6 +70,7 @@ STATUS_TEXT = {
     rules.HABITUAL: "Vive su dueño",
     rules.OWN_BUSINESS: "Su dueño tiene aquí su negocio",
     rules.OBRAS: "En obras",
+    rules.BY_ROOMS: "Se alquila por habitaciones",
 }
 
 #: Qué pasa en una noticia, en una línea. `{tenant}` y `{amount}` se rellenan.
@@ -134,6 +136,9 @@ NEWS_TEXT = {
     "division": "{who} pide la división: subasta desde {amount}",
     "division_adjudicada": "{who} se queda el inmueble entero por {amount}",
     "division_mercado": "Nadie puja en la división: se vende al mercado",
+    "plantas": "{who} lo divide por plantas: obra de {amount}",
+    "habitaciones": "{who} lo prepara para alquilar por habitaciones: {amount} en muebles",
+    "juntadas": "{who} junta las habitaciones: vuelve a alquilarse entero",
 }
 
 #: Cómo se llama cada noticia de las VPO (su `listing` es `vpo:<clave>`).
@@ -349,6 +354,8 @@ def map_state(
 
 
 def _card(market: Market, listing: Listing, user_id: int, names: dict[int, str]) -> State:
+    if market.split_mode(listing.key) == rules.FLOORS:
+        return _floors_card(market, listing, user_id, names)
     index = market.index(listing.barrio)
     status, status_kind = listing_status(market, listing.key, user_id)
     lease = market.leases.get(listing.key)
@@ -379,6 +386,55 @@ def _card(market: Market, listing: Listing, user_id: int, names: dict[int, str])
         ],
         "lease": STATUS_TEXT.get(lease.status, "") if lease else "",
         "lease_kind": lease.status if lease else "",
+    }
+
+
+def _floors_card(market: Market, listing: Listing, user_id: int, names: dict[int, str]) -> State:
+    """La tarjeta de un inmueble dividido por plantas: lo que valen y piden todas juntas, y de
+    quién son (las participaciones de cada dueño, en tanto por ciento del total)."""
+    units = [market.listing(u.key) or u for u in market.units_of(listing.key)]
+    index = market.index(listing.barrio)
+    value = sum(rules.price(u, index) for u in units)
+    rent = sum(rules.reference_rent(u, index) for u in units)
+    owned: dict[int, int] = {}
+    for unit in units:
+        for member, shares in market.shares_of(unit.key).items():
+            owned[member] = owned.get(member, 0) + shares
+    free_units = sum(1 for u in units if not market.shares_of(u.key))
+    mine = sum(1 for u in units if user_id in market.shares_of(u.key))
+    if mine:
+        status = f"Tienes {mine} de {len(units)}"
+        kind = "compartido" if mine < len(units) else "tuyo"
+    elif free_units:
+        status, kind = f"{free_units} de {len(units)} en venta", "venta"
+    else:
+        status, kind = "Vendidas", "ajeno"
+    total = rules.SHARES * len(units)
+    return {
+        "key": listing.key,
+        "barrio_key": listing.barrio,
+        "theme": BARRIO_BY_KEY[listing.barrio].theme,
+        "kind": listing.kind,
+        "kind_name": KINDS[listing.kind].name,
+        "title": listing.title,
+        "m2": f"{listing.m2} m²",
+        "floor": listing.floor,
+        "energy": listing.energy,
+        "price": format_amount(value),
+        "share_price": format_amount(value // total),
+        "rent": format_amount(rent) + "/mes",
+        "yield": _pct(rent * 12 / value),
+        "badges": [],
+        "status": status,
+        "status_kind": kind,
+        "free": sum(market.free_shares(u.key) for u in units) * rules.SHARES // total,
+        "owners": [
+            {"name": _name(names, m), "shares": s * rules.SHARES // total, "mine": m == user_id}
+            for m, s in sorted(owned.items(), key=lambda kv: -kv[1])
+        ],
+        "lease": f"{len(units)} plantas",
+        "lease_kind": rules.FLOORS,
+        "split": len(units),
     }
 
 
@@ -1129,6 +1185,186 @@ def reforms_state(market: Market, key: str, user_id: int) -> State:
     return state
 
 
+def units_state(
+    market: Market, key: str, user_id: int, names: dict[int, str], today: date | None = None
+) -> State:
+    """🏢 Las plantas (o 🛏️ las habitaciones) de un inmueble dividido, como las tarjetas de un
+    barrio: cada tarjeta corresponde a un botón, en el mismo orden."""
+    listing = market.listing(key)
+    mode = market.split_mode(key)
+    if listing is None or mode is None:
+        raise KeyError(key)
+    units = [market.listing(u.key) or u for u in market.units_of(key)]
+    cards = [_card(market, unit, user_id, names) for unit in units]
+    leases = [market.leases.get(u.key, rules.Lease()) for u in units]
+    rented = sum(1 for lease in leases if lease.status in (rules.RENTED, rules.DEFAULTING))
+    asking = sum(rules.reference_rent(u, market.index(listing.barrio)) for u in units)
+    waiting = sum(len(market.candidates_of(u.key, today)) for u in units) if today else 0
+    if mode == rules.FLOORS:
+        word = "plantas"
+        summary = (
+            f"Dividido en {len(units)} plantas: cada una tiene sus dueños y su inquilino, y se "
+            "compra y se vende por separado."
+        )
+        free = sum(1 for u in units if not market.shares_of(u.key))
+        third = {"label": "En venta", "value": str(free)}
+    else:
+        word = "habitaciones"
+        summary = (
+            f"Se alquila por habitaciones: {len(units)}, cada una con su inquilino. El piso se "
+            "compra y se vende entero."
+        )
+        third = {"label": "Candidatos", "value": str(waiting)}
+    state: State = {
+        "screen": "plantas",
+        "key": listing.key,
+        "barrio_key": listing.barrio,
+        "theme": BARRIO_BY_KEY[listing.barrio].theme,
+        "kind": listing.kind,
+        "title": listing.title,
+        "barrio": BARRIO_BY_KEY[listing.barrio].name,
+        "mode": mode,
+        "mode_name": "Dividido por plantas" if mode == rules.FLOORS else "Por habitaciones",
+        "summary": summary,
+        "stats": [
+            {"label": "Alquiladas", "value": f"{rented} de {len(units)}"},
+            {"label": "Renta de referencia", "value": format_amount(asking) + "/mes"},
+            third,
+        ],
+        "cards": cards,
+        "footer": f"Toca una de las {word} para ver su ficha",
+    }
+    state["fallback"] = [
+        f"{listing.title} ({state['barrio']}): {state['mode_name'].lower()}",
+        summary,
+        *(f"{c['title']}: {c['rent']} · {c['lease'] or c['status']}" for c in cards),
+    ]
+    return state
+
+
+def split_state(market: Market, key: str, user_id: int) -> State:
+    """🏢 Dividir: lo que cuesta y lo que da dividir un inmueble por plantas o alquilarlo por
+    habitaciones, y por qué no se puede ahora si no se puede."""
+    listing = market.listing(key)
+    base = market.base(key)
+    if listing is None or base is None:
+        raise KeyError(key)
+    index = market.index(listing.barrio)
+    lease = market.leases.get(key, rules.Lease())
+    holders = market.shares_of(key)
+    rent = rules.reference_rent(listing, index)
+    value = rules.price(listing, index)
+    options = []
+    for mode in rules.SPLIT_MODES:
+        if rules.split_problem(base, mode, promotion=key in market.promotions) is not None:
+            continue
+        quote = rules.split_quote(listing, mode, index)
+        parent = base if mode == rules.FLOORS else listing
+        units = rules.split_units(parent, mode, quote.units, quote.cost)
+        if mode == rules.FLOORS:
+            # Las reformas hechas se copian a cada planta y le suman lo mismo (`improved`).
+            units = tuple(
+                replace(
+                    u,
+                    rent_bonus=u.rent_bonus + listing.rent_bonus,
+                    value_bonus=u.value_bonus + listing.value_bonus,
+                )
+                for u in units
+            )
+        after = sum(rules.reference_rent(u, index) for u in units)
+        worth = sum(rules.price(u, index) for u in units) if mode == rules.FLOORS else value
+        if lease.status == rules.BY_ROOMS:
+            problem = "Ya se alquila por habitaciones."
+        elif key in market.splits or rules.is_room(key):
+            problem = "Ya está dividido."
+        elif sum(holders.values()) != rules.SHARES:
+            problem = "Hay participaciones sin dueño: tiene que ser todo de miembros."
+        elif user_id not in holders:
+            problem = "No es tuyo."
+        elif lease.status != rules.VACANT or lease.member is not None:
+            problem = "Tiene que estar vacío."
+        elif market.decisions.get(key):
+            problem = "Antes decide los imprevistos que tiene pendientes."
+        else:
+            problem = ""
+        floors = mode == rules.FLOORS
+        options.append(
+            {
+                "mode": mode,
+                "emoji": "🏢" if floors else "🛏️",
+                "name": "Dividir por plantas" if floors else "Alquilar por habitaciones",
+                "blurb": (
+                    f"{quote.units} viviendas independientes: cada una con su inquilino, sus "
+                    "dueños y su hipoteca, y se venden por separado."
+                    if floors
+                    else f"{quote.units} habitaciones amuebladas con cerradura, cada una con su "
+                    "inquilino. El piso se sigue vendiendo entero."
+                ),
+                "units": [
+                    {
+                        "label": u.floor,
+                        "kind": u.kind,
+                        "kind_name": KINDS[u.kind].name,
+                        "m2": f"{u.m2} m²",
+                        "rent": format_amount(rules.reference_rent(u, index)) + "/mes",
+                    }
+                    for u in units
+                ],
+                "cost": format_amount(quote.cost),
+                "taxes": format_amount(quote.total - quote.cost),
+                "total": format_amount(quote.total),
+                "days": f"{quote.days} días sin alquilar",
+                "rent_after": format_amount(after) + "/mes",
+                "rent_change": f"{after / rent - 1:+.0%}".replace("%", " %") if rent else "",
+                "value_after": format_amount(worth),
+                "notes": (
+                    [
+                        "Para siempre: no se puede deshacer",
+                        "Cada planta cuenta como una vivienda (gran tenedor desde 5)",
+                        "Con varios dueños, la junta lo aprueba por unanimidad",
+                    ]
+                    if floors
+                    else [
+                        "Se deshace cuando estén todas vacías",
+                        "Cada habitación paga 60 € al mes de comunidad y suministros",
+                        "Contratos de un año, sin seguro de impago ni vacacional",
+                    ]
+                ),
+                "problem": problem,
+            }
+        )
+    state: State = {
+        "screen": "dividir",
+        "key": listing.key,
+        "barrio_key": listing.barrio,
+        "theme": BARRIO_BY_KEY[listing.barrio].theme,
+        "kind": listing.kind,
+        "title": listing.title,
+        "barrio": BARRIO_BY_KEY[listing.barrio].name,
+        "rent": format_amount(rent) + "/mes",
+        "value": format_amount(value),
+        "rooms": lease.status == rules.BY_ROOMS,
+        "options": options,
+        "footer": (
+            "IGIC 7 % · ICIO 4 % · licencia de obra · AJD 0,75 % de la escritura"
+            if any(o["mode"] == rules.FLOORS for o in options)
+            else "Los muebles llevan IGIC del 7 %: no es obra, ni ICIO ni licencia"
+            if options
+            else ""
+        ),
+    }
+    state["fallback"] = [
+        f"Dividir: {listing.title} ({state['barrio']})",
+        f"Entero pide {state['rent']} y vale {state['value']}",
+        *(
+            f"{o['name']}: {o['total']} · {o['days']} · {o['rent_after']} ({o['rent_change']})"
+            + (f" · {o['problem']}" if o["problem"] else "")
+            for o in options
+        ),
+    ]
+    return state
+
+
 def decisions_state(market: Market, key: str, user_id: int) -> State:
     """⚠️ Imprevistos: los que esperan decisión en un inmueble, con sus formas de arreglarlo."""
     listing = market.listing(key)
@@ -1303,6 +1539,8 @@ def motion_text(kind: str, value: str, amount: int, names: dict[int, str]) -> st
         )
     if kind == "licencia":
         return f"Pedir la licencia vacacional ({format_amount(rules.LICENSE_FEE)})"
+    if kind in rules.SPLIT_MODES:
+        return rules.MOTION_BY_KEY[kind].name
     return "Vender el inmueble entero al mercado"
 
 

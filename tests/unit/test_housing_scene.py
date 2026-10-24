@@ -22,7 +22,7 @@ import pytest_asyncio
 from PIL import Image, ImageChops, ImageStat
 from test_node_scene import LOCAL_CHROMIUM, needs_node, node_ready, own_node
 
-from bot.repositories.housing import Decision, Holding, Market, MemberDay, News, Review
+from bot.repositories.housing import Decision, Holding, Market, MemberDay, News, Review, Split
 from bot.repositories.housing_finance import Mortgage, Promotion, VpoOwner
 from bot.repositories.housing_junta import Vote
 from bot.repositories.housing_trade import Auction
@@ -247,7 +247,7 @@ THEME_BARRIO = {
     "lujo": "mogan",
     "rural": "tafira",
 }
-#: Los 19 tipos de inmueble y el solar de la obra nueva.
+#: Los 20 tipos (con la habitación de 9.12.0) de inmueble y el solar de la obra nueva.
 FACADE_KINDS = (*KINDS, "solar")
 #: Dónde pinta la ficha la fachada (columna A): (izquierda, arriba, derecha, abajo).
 FACADE_BOX = (16, 100, 16 + 296, 100 + 168)
@@ -667,12 +667,61 @@ def phase6_samples() -> dict[str, dict[str, Any]]:
     }
 
 
+#: Los inmuebles divididos de las muestras de 9.12.0: un edificio por plantas y dos pisos que se
+#: alquilan por habitaciones (uno con seis, las que más caben).
+EDIFICIO, PISO3, CASONA = "triana_edificio", "isleta_piso3", "vegueta_casona"
+
+
+def split_market() -> Market:
+    """Un edificio en 4 plantas (dos con dueño, una alquilada) y dos pisos por habitaciones."""
+    floor = [rules.unit_key(EDIFICIO, rules.FLOORS, n) for n in (1, 2, 3)]
+    room = rules.unit_key(PISO3, rules.ROOMS, 1)
+    return Market(
+        splits={
+            EDIFICIO: Split(rules.FLOORS, 4, 1_200_000),
+            PISO3: Split(rules.ROOMS, 3, 120_000),
+            CASONA: Split(rules.ROOMS, 6, 300_000),
+        },
+        holdings={
+            floor[0]: {10: Holding(floor[0], 10, 100, 1, 1, 0)},
+            floor[1]: {m: Holding(floor[1], m, s, 1, 1, 0) for m, s in ((20, 60), (10, 40))},
+            PISO3: {10: Holding(PISO3, 10, 100, 1, 1, 0)},
+            CASONA: {10: Holding(CASONA, 10, 100, 1, 1, 0)},
+        },
+        leases={
+            floor[0]: rules.Lease(status="alquilado", tenant="familia", rent=21000),
+            floor[2]: rules.Lease(status="okupa"),
+            PISO3: rules.Lease(status=rules.BY_ROOMS),
+            CASONA: rules.Lease(status=rules.BY_ROOMS),
+            room: rules.Lease(status="alquilado", tenant="universitaria", rent=4100),
+        },
+    )
+
+
+def split_samples() -> dict[str, dict[str, Any]]:
+    """🏢 Las plantas y 🛏️ las habitaciones, y dividir: con dos opciones, con aviso y sin ninguna."""
+    market = split_market()
+    whole = Market(holdings={CASONA: {10: Holding(CASONA, 10, 100, 1, 1, 0)}})
+    trastero = BY_KIND["trastero"]
+    return {
+        "plantas_edificio": view.units_state(market, EDIFICIO, 10, NAMES),
+        "plantas_habitaciones": view.units_state(market, PISO3, 10, NAMES, TODAY),
+        "plantas_seis_habitaciones": view.units_state(market, CASONA, 10, NAMES),
+        "barrio_dividido": view.barrio_state(market, "triana", 10, NAMES),
+        "barrio_por_habitaciones": view.barrio_state(market, "isleta", 10, NAMES),
+        "dividir_dos": view.split_state(whole, CASONA, 10),
+        "dividir_sin_dueno": view.split_state(Market(), EDIFICIO, 10),
+        "dividir_por_habitaciones": view.split_state(market, PISO3, 10),
+        "dividir_no_se_puede": view.split_state(Market(), trastero, 10),
+    }
+
+
 def checkout(key: str, **kwargs: Any) -> dict[str, Any]:
     return view.checkout_state(LISTING_BY_KEY[key], **kwargs)
 
 
 def samples() -> dict[str, dict[str, Any]]:
-    """Las pantallas de muestra: las once, con casos largos, vacíos y de todos los tipos."""
+    """Las pantallas de muestra: las quince, con casos largos, vacíos y de todos los tipos."""
     m = market()
     week = MemberDay(30000, 1200, 4000)
     out: dict[str, dict[str, Any]] = {
@@ -759,6 +808,7 @@ def samples() -> dict[str, dict[str, Any]]:
     out.update(phase34_samples())
     out.update(phase5_samples())
     out.update(phase6_samples())
+    out.update(split_samples())
     return out
 
 
@@ -805,6 +855,10 @@ CORE = [
         "junta_duenos_largos",
         "junta_division",
         "subastas_division",
+        "plantas_edificio",
+        "plantas_habitaciones",
+        "dividir_dos",
+        "dividir_no_se_puede",
     }
 ]
 
@@ -875,18 +929,27 @@ def test_cada_barrio_lleva_diez_tarjetas_con_la_obra_nueva_o_el_solar_la_ultima(
     assert sin_obra[9]["sign"] and not {"price", "status", "owners"} & sin_obra[9].keys()
 
 
-def test_solo_el_barrio_mide_mas_que_el_resto() -> None:
-    """1000 × 760 para el barrio (10 tarjetas) y 1000 × 640 para las demás pantallas."""
-    assert (W, H) == (1000, 640) and SCREEN_H == {"barrio": 760}
-    assert size_of({"screen": "barrio"}) == (1000, 760)
-    assert {size_of(s) for s in samples().values() if s["screen"] != "barrio"} == {(1000, 640)}
+def test_solo_el_barrio_las_plantas_y_dividir_miden_mas_que_el_resto() -> None:
+    """1000 × 760 para el barrio y las plantas (tarjetas en dos filas), 1000 × 700 para dividir
+    (seis habitaciones y las cuentas) y 1000 × 640 para las demás pantallas."""
+    assert (W, H) == (1000, 640)
+    assert SCREEN_H == {"barrio": 760, "plantas": 760, "dividir": 700}
+    assert size_of({"screen": "plantas"}) == (1000, 760)
+    tall = set(SCREEN_H)
+    assert {size_of(s) for s in samples().values() if s["screen"] not in tall} == {(1000, 640)}
 
 
-def test_las_muestras_cubren_las_trece_pantallas_y_las_claves_de_las_fases_2_a_6() -> None:
+@needs_node
+@module_loop
+async def test_la_escena_y_la_reserva_saben_el_alto_de_cada_pantalla(scene: HousingScene) -> None:
+    assert await scene.painter.evaluate("SCREEN_H") == SCREEN_H
+
+
+def test_las_muestras_cubren_las_quince_pantallas_y_las_claves_de_las_fases_2_a_6() -> None:
     states = samples()
     assert {s["screen"] for s in states.values()} == {
         "mapa", "barrio", "ficha", "cartera", "caja", "vpo", "gestion", "candidatos",
-        "subastas", "reformas", "imprevistos", "resenas", "junta",
+        "subastas", "reformas", "imprevistos", "resenas", "junta", "plantas", "dividir",
     }  # fmt: skip
     assert [len(states[k]["cards"]) for k in ("candidatos_tres", "candidatos_uno")] == [3, 1]
     assert states["candidatos_vacia"]["empty"] and not states["candidatos_vacia"]["cards"]
@@ -951,6 +1014,30 @@ def test_las_muestras_cubren_las_trece_pantallas_y_las_claves_de_las_fases_2_a_6
     assert not states["junta_division_sin_pujas"]["division"]["best_bid"]
     items = states["subastas_division"]["items"]
     assert [i["division"] for i in items] == [True, False, False] and items[1]["judicial"]
+
+
+def test_las_muestras_de_dividir_traen_lo_que_pinta_la_escena() -> None:
+    """Plantas y habitaciones (9.12.0): una tarjeta por botón, y dividir con 0, 1 y 2 opciones."""
+    states = samples()
+    floors, rooms = states["plantas_edificio"], states["plantas_seis_habitaciones"]
+    assert floors["mode"] == rules.FLOORS and len(floors["cards"]) == 4
+    assert [c["kind"] for c in floors["cards"]] == ["bajo", "piso3", "piso3", "atico"]
+    assert {c["lease_kind"] for c in floors["cards"]} >= {"alquilado", "okupa", ""}
+    assert rooms["mode"] == rules.ROOMS and len(rooms["cards"]) == 6  # lo más que pinta
+    assert {c["kind"] for c in rooms["cards"]} == {"habitacion"}
+    assert all(len(s["stats"]) == 3 for s in (floors, rooms))
+    edificio = next(c for c in states["barrio_dividido"]["cards"] if c["key"] == EDIFICIO)
+    assert edificio["split"] == 4 and edificio["lease_kind"] == "plantas"
+    piso = next(c for c in states["barrio_por_habitaciones"]["cards"] if c["key"] == PISO3)
+    assert piso["lease_kind"] == rules.BY_ROOMS
+    two = states["dividir_dos"]["options"]
+    assert [o["mode"] for o in two] == [rules.FLOORS, rules.ROOMS] and not any(
+        o["problem"] for o in two
+    )
+    assert len(two[1]["units"]) == 6 and all(len(o["notes"]) == 3 for o in two)
+    assert states["dividir_sin_dueno"]["options"][0]["problem"]
+    assert states["dividir_por_habitaciones"]["rooms"]
+    assert states["dividir_no_se_puede"]["options"] == []
 
 
 # -- Reserva con Pillow ------------------------------------------------------------------
@@ -1080,7 +1167,7 @@ MIN_KIND_DIFF, MIN_THEME_DIFF, MIN_SEED_DIFF = 5.0, 4.0, 5.0
 
 
 def test_los_tipos_y_los_temas_son_los_del_catalogo() -> None:
-    assert len(KINDS) == 19 and len(FACADE_KINDS) == 20
+    assert len(KINDS) == 20 and len(FACADE_KINDS) == 21 and "habitacion" in KINDS
     assert set(THEME_BARRIO) == set(THEMES) and len(THEMES) == 7
     for theme, barrio in THEME_BARRIO.items():
         assert BARRIO_BY_KEY[barrio].theme == theme
@@ -1099,7 +1186,7 @@ def test_los_tipos_y_los_temas_son_los_del_catalogo() -> None:
 @needs_node
 @module_loop
 async def test_cada_tipo_se_pinta_en_cada_tema_y_ninguno_sale_igual(looks: HousingScene) -> None:
-    """Los 19 tipos y el solar en los 7 temas: 140 fachadas sin error y todas distintas."""
+    """Los 20 tipos y el solar en los 7 temas: 147 fachadas sin error y todas distintas."""
     combos = [(theme, kind) for theme in THEME_BARRIO for kind in FACADE_KINDS]
     states = [facade_state(kind, THEME_BARRIO[theme]) for theme, kind in combos]
     patches = await looks.painter.render(META, states, gif=False)
@@ -1220,6 +1307,67 @@ async def test_cada_chincheta_del_mapa_enseña_el_tema_de_su_barrio(looks: Housi
         want = tuple(int(color[i : i + 2], 16) for i in (1, 3, 5))
         near = sum(1 for px in strip if max(abs(p - w) for p, w in zip(px, want, strict=True)) < 12)
         assert near > 20, theme
+
+
+def changed(state: dict[str, Any], edit: Any) -> dict[str, Any]:
+    """Una copia de `state` con `edit` aplicado (para ver qué parte de la imagen depende de qué)."""
+    other = copy.deepcopy(state)
+    edit(other)
+    return other
+
+
+def box_difference(a: Image.Image, b: Image.Image, box: tuple[int, int, int, int]) -> float:
+    return difference(a.crop(box), b.crop(box))
+
+
+@needs_node
+@module_loop
+async def test_las_habitaciones_enseñan_lo_que_piden_y_no_el_precio(looks: HousingScene) -> None:
+    """El piso se vende entero: en sus habitaciones el precio no dice nada y no se pinta."""
+    rooms, floors = samples()["plantas_habitaciones"], samples()["plantas_edificio"]
+
+    def price(state: dict[str, Any]) -> None:
+        for c in state["cards"]:
+            c["price"] = "99.999.999 Y$"
+
+    def rent(state: dict[str, Any]) -> None:
+        for c in state["cards"]:
+            c["rent"] = "99.999 Y$/mes"
+
+    states = [rooms, changed(rooms, price), changed(rooms, rent), floors, changed(floors, price)]
+    patches = await looks.painter.render(META, states, gif=False)
+    assert patches is not None
+    room, room_price, room_rent, floor, floor_price = (p["image"].convert("RGB") for p in patches)
+    assert room.tobytes() == room_price.tobytes()
+    assert difference(room, room_rent) > 0.05
+    assert difference(floor, floor_price) > 0.05  # las plantas sí se venden por separado
+
+
+@needs_node
+@module_loop
+async def test_dividir_pinta_cada_opcion_en_su_tarjeta(looks: HousingScene) -> None:
+    """Las dos opciones, una al lado de otra: cambiar una solo cambia su mitad, y el aviso sale."""
+    two, rooms = samples()["dividir_dos"], samples()["dividir_por_habitaciones"]
+
+    def total(n: int) -> Any:
+        return lambda s: s["options"][n].update(total="99.999.999 Y$")
+
+    def problem(s: dict[str, Any]) -> None:
+        s["options"][1]["problem"] = "Tiene que estar vacío."
+
+    def whole(s: dict[str, Any]) -> None:
+        s["rooms"] = False
+
+    states = [two, changed(two, total(0)), changed(two, total(1)), changed(two, problem)]
+    states += [rooms, changed(rooms, whole)]
+    patches = await looks.painter.render(META, states, gif=False)
+    assert patches is not None
+    base, first, second, warned, by_rooms, by_whole = (p["image"].convert("RGB") for p in patches)
+    left, right, bottom = (0, 170, 500, 660), (500, 170, 1000, 660), (500, 600, 1000, 660)
+    assert box_difference(base, first, left) > 0.05 and box_difference(base, first, right) == 0
+    assert box_difference(base, second, right) > 0.05 and box_difference(base, second, left) == 0
+    assert box_difference(base, warned, bottom) > 1  # el aviso ámbar al pie de la tarjeta
+    assert box_difference(by_rooms, by_whole, (480, 100, 860, 164)) > 1  # la nota de juntarlas
 
 
 @needs_node

@@ -572,6 +572,8 @@ class BankPanel(ui.View):
         self.business_most: int | None = None
         self.business_offer: lending.Quote | None = None
         self.selected_business_loan: int | None = None
+        #: El local del dueño que se mira (fase 5: una cadena tiene varios; `None`, el primero).
+        self.business_id: int | None = None
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.owner.id:
@@ -988,8 +990,10 @@ async def open_advances(bot: commands.Bot, interaction: discord.Interaction, key
     return True
 
 
-async def open_business(bot: commands.Bot, interaction: discord.Interaction) -> bool:
-    """Abre el banco en 🏪 Negocio, en un mensaje privado nuevo.
+async def open_business(
+    bot: commands.Bot, interaction: discord.Interaction, biz: int | None = None
+) -> bool:
+    """Abre el banco en 🏪 Negocio, en un mensaje privado nuevo, con el local `biz`.
 
     Lo usa 🏦 Banco de la portada del negocio (`pala`). Devuelve `False` sin el cog (sin
     contestar al clic).
@@ -999,6 +1003,7 @@ async def open_business(bot: commands.Bot, interaction: discord.Interaction) -> 
         return False
     await ack(interaction, new_message=True)
     panel = BankPanel(cog, interaction.guild.id, interaction.user, negocio_tab.TAB)
+    panel.business_id = biz
     try:
         kwargs = await panel.screen()
     except (OSError, sqlite3.Error):

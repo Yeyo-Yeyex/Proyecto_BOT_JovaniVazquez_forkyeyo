@@ -1,7 +1,7 @@
 # Negocios: tu propia empresa dentro de `pala`
 
 Diseño del sistema de negocios. Se acordó con el usuario el 20/10/2026, inspirado en *Big Ambitions*.
-Este documento recoge el sistema entero, sus cinco fases y la fase 1 al detalle; la fase 1 es la versión 8.14.0.
+Este documento recoge el sistema entero, sus cinco fases y cada una al detalle; la fase 1 es la versión 8.14.0 y la 5, la 9.11.0.
 
 ## La idea
 
@@ -25,7 +25,7 @@ Este documento recoge el sistema entero, sus cinco fases y la fase 1 al detalle;
 | 2 | Crecer el local: mejoras que se amortizan, traslado a un local mayor o a uno tuyo de `pisos`, campañas de publicidad, reseñas, dos sectores más, precio por producto, traspasar o liquidar al cerrar | 9.5.0 |
 | 3 | Sociedad limitada: caja propia, Impuesto sobre Sociedades, sueldo de administrador o dividendos, quiebra limitada, compatibilidades por oficio, pluriactividad | 9.6.0 |
 | 4 | Empleados artificiales estilo inquilinos (rasgos, habilidades, formación, humor, contrato y despido), turnos pasivos, nómina completa con la cotización de la empresa, B con Inspección, bonificaciones, RIC y ZEC | 9.8.0 |
-| 5 | Cadenas: varios locales, importar con nave, gerentes que automatizan, vender la empresa | 8.x |
+| 5 | Cadenas: hasta 4 locales (con una sola sociedad para todos), una nave para importar de la Península con el AIEM y el IGIC de importación, gerentes que reponen y cubren las bajas, vender la sociedad | 9.11.0 |
 
 Dónde engancha cada fase con lo de la 1:
 
@@ -38,8 +38,9 @@ Dónde engancha cada fase con lo de la 1:
 - **Fase 4 (hecha).** Un turno pasivo es el mismo `TurnGame` jugado por el empleado con sus habilidades
   (`business_staff.play_turn`), y su nómina lleva por fin la cotización de la empresa. No usa `compute_payslip`
   (que mira la renta de un miembro): la retención es la de su propio sueldo. Detalle en «Fase 4 al detalle».
-- **Fase 5.** La clave primaria del negocio ya es `(guild_id, user_id, id)`, así que un miembro puede tener
-  varios cambiando solo la comprobación de «uno por persona».
+- **Fase 5 (hecha).** Cada local es un `Business` que se busca por su `id` (`biz`); los de una sociedad llevan
+  su `company_id` y una copia de su estado. La nave es aparte (`business_nave`) y las noches van dueño a
+  dueño. Detalle en «Fase 5 al detalle».
 
 ## Fase 1 al detalle
 
@@ -296,6 +297,9 @@ Salen de las estadísticas de `business_stats` y de las de la jornada. Familias:
   Sociedades y lo pagado; las semanas en pérdidas (ocultas); el mejor beneficio de una semana;
   liquidarla, hundirse y pagar sus deudas (oculto) y la gran cuota de liquidación; lo devuelto
   por la pluriactividad;
+- fase 5, las cadenas: los locales, sectores e islas a la vez, la marca repetida, la sociedad con varios
+  locales, la nave, las importaciones con su AIEM y lo ahorrado, los gerentes y vender la sociedad («Fase 5
+  al detalle»);
 - fechas: madrugada, domingo, Día de Canarias;
 - rachas de días abriendo;
 - las 8 franjas usadas;
@@ -1196,3 +1200,253 @@ Sin comprobar o simplificado:
 - La Inspección al 4 % por noche.
 - Que se vaya con 2 noches sin cobrar.
 - El recargo del 20 % a todo lo que no se paga.
+
+
+## Fase 5 al detalle: las cadenas (9.11.0)
+
+Pedida el 24/10/2026 con «implementa la siguiente fase de los negocios». Reglas puras en `business_chain.py`
+(la nave, importar, reponer y el precio de venta) y en `business_staff.py` (el gerente); casos de uso en
+`negocio.py`; la nave se guarda en `business_nave`; las pantallas `cadena`, `nave` y `venta` en
+`business_view.py`; y en el panel, 🗺️ **Cadena**, 🏭 **Nave** y 💼 **Vender la sociedad** (`cogs/business.py`).
+Normas comprobadas en el BOE consolidado el 24/10/2026 (tabla al final).
+
+### Varios locales (`MAX_LOCALES`)
+
+- **Hasta 4 locales por persona**, cada uno un `Business` con su sector, su barrio, su tamaño, su stock, su
+  plantilla, sus reseñas y sus cuentas. Cada uno se busca por su número (`biz`); sin él, el más antiguo.
+- **Lo que es de la persona** no se multiplica:
+  - las franjas (los turnos de todos los locales gastan las mismas, `franjas_today`) y la batería;
+  - la cuota de autónomo, una por persona (la tarifa plana es de la primera alta, no de cada local);
+  - la pluriactividad, una vez por semana.
+- **Dos del mismo sector en el mismo barrio, no:** se repartirían el cupo.
+- **➕ Otro local** (en 🗺️ Cadena) abre el montaje con el rótulo del local de ahora: una cadena suele llevar la
+  misma marca.
+- **Cerrar un local** de autónomo deja los demás como estaban.
+
+### La sociedad lleva toda la cadena
+
+Una persona lleva todos sus locales como autónomo o todos en su sociedad, nunca mezclados. Así lo que va de
+la nave a un local no es una venta entre dos personas.
+
+- **Constituirla** convierte todos los locales a la vez (`company_id`: el `id` del local con el que se
+  constituye, que da su caja aunque ese local cierre).
+  - Ninguno puede estar en un local propio (operación vinculada, art. 18 LIS), y la nave tampoco.
+  - El curro no puede ser incompatible con ninguno de los sectores.
+  - Lo de esta semana antes de constituirla (de todos los locales y de la nave) va al `offset`.
+- **Abrir otro local** siendo sociedad lo abre la sociedad: lo paga su caja y tributa con ella. Si está en la
+  ZEC, solo talleres (el anexo).
+- **El estado de la sociedad** (`company`) es uno, y cada local guarda una copia. `save_in` copia el de uno
+  a los demás de la misma sociedad.
+- **Cada noche** se cierran los locales de cada dueño del más antiguo al más nuevo (`_close_owner_nights`).
+  El último de la sociedad que cierra esa noche:
+  - paga **una gestoría** (no una por local);
+  - el domingo, **un solo Impuesto sobre Sociedades** con lo de todos (los demás ya han apuntado su noche), lo
+    de la nave y lo de los locales que cerraron esa semana (`company["carry"]`);
+  - mira la causa de disolución con el patrimonio de todos.
+- **Microempresa:** la cifra de negocios es la de todos los locales. Es la sociedad la que factura, y el art.
+  29.1 LIS remite al art. 101.3, que suma las entidades de una misma persona.
+- **El patrimonio neto** y su valor en el Patrimonio (`companies_in`) suman todos los locales y la nave, con la
+  caja una vez.
+- **La ZEC** cuenta los empleos de todos los locales, pide que todos sean talleres y aplica el mínimo de empleos
+  de la isla que más pide.
+- **Cerrar un local de una sociedad que tiene más** no la liquida:
+  - lo cobrado (stock, mejoras o traspaso) y la fianza entran en su caja;
+  - la deuda con el casero y los finiquitos salen de ella;
+  - a su plantilla se la despide como en un cierre (despido objetivo: cerrar un centro con 6 personas o menos no
+    llega a los umbrales del colectivo del art. 51.1 ET);
+  - sus préstamos pasan a otro local de la sociedad (`move_business_loans_in`): la deudora es la sociedad;
+  - lo de su semana entra en el Sociedades del domingo (`carry`).
+- **Cerrar el último** sí la liquida, como en la fase 3, y con ella la nave.
+
+### La nave (`Nave`, `open_nave`)
+
+- **Alquilada** en cualquier barrio, o en una **nave entera tuya de `pisos`** (no siendo sociedad).
+- **Tres tamaños:**
+
+| Tamaño | Metros | Lotes que caben | Suministros (noche) | Alquiler en un barrio obrero (Telde) |
+|---|---|---|---|---|
+| Pequeña | 100 m² | 50 | 300 Y$ | 6.300 Y$ + IGIC |
+| Mediana | 200 m² | 110 | 500 Y$ | 12.600 Y$ + IGIC |
+| Grande | 400 m² | 240 | 800 Y$ | 25.200 Y$ + IGIC |
+
+- **El alquiler** sale de los metros, el barrio y el `rent_factor` de una nave industrial de `pisos`, a la misma
+  escala que los locales. Va con su IGIC y la retención del 19 % del casero.
+- **Abrirla:**
+  - la tasa de la declaración responsable (5.000 Y$). Un almacén sin mercancía peligrosa es actividad inocua y
+    la Ley 7/2011 de Canarias no le pide comunicación previa (art. 2.3.c), pero las ordenanzas suelen pedir la
+    declaración, que tiene su tasa (art. 20.4.i TRLRHL);
+  - la fianza de dos mensualidades (art. 36.1 LAU).
+- **Reparte a los locales de su isla**, y solo a esos.
+- **Cada noche,** antes que los locales:
+  - llegan los contenedores;
+  - se paga lo de la nave;
+  - con 3 noches sin pagar (o si la nave propia deja de ser tuya), se cierra: lo de dentro se liquida a la
+    mitad y lo que venía en camino se pierde.
+- **Dejarla:** el mayorista recompra lo de dentro a la mitad (venta de la actividad) y vuelve la fianza. Con
+  contenedores en camino, no se puede.
+- **Las cuentas de la nave** (sus compras y su alquiler) van en la propia nave y, de una sociedad, a su
+  Sociedades. Sus avisos salen en el panel con los del local.
+
+### Importar (`import_quote`, `import_container`)
+
+- **Un contenedor** son 20 lotes de un producto, directo del fabricante de la Península:
+  - el 70 % de lo que cobra el mayorista;
+  - el flete (4.000 Y$);
+  - el **AIEM** de lo que está en su anexo, sobre el valor en aduana (mercancía y flete);
+  - el **IGIC de la importación**, al tipo del producto, sobre el valor en aduana más el AIEM;
+  - el agente de aduanas (1.000 Y$ más IGIC).
+- **Llega en dos noches:** la mañana del día siguiente a la segunda.
+- **Solo lo que no caduca:** un contenedor dura semanas y en la nave se estropearía. Se quedan fuera el pan, la
+  leche, la fruta, los zumos, los bocadillos, los dulces, los helados y los batidos.
+- **Cabe lo que cabe:** lo que hay y lo que viene no pueden pasar de los lotes de la nave.
+- **Solo lo que vende algún local de la isla.**
+- **Impuestos:**
+  - entrar desde la Península es una importación para el IGIC (art. 8.1 de la Ley 20/1991: la Península es
+    territorio tercero), al tipo de la entrega del mismo bien (art. 32.4 del DL 1/2025);
+  - el pequeño empresario no repercute IGIC en sus ventas, pero paga el de sus importaciones (art. 91.b) y no lo
+    deduce: es coste;
+  - el AIEM (arts. 92 y 94 y anexo 2.º), al tipo de cada producto: café tostado 15 %; refrescos 5 %; detergentes
+    5 %; pinturas al agua 10 %. Los recambios, la tornillería, las bombillas, las herramientas y las conservas de
+    pescado no están en el anexo, y el aceite de motor salió en 2026 (Ley 9/2025);
+  - interpretaciones del proyecto: el cortado y el barraquito, como el café; el granizado, como un refresco; la
+    pintura, al agua; la fontanería y las cerraduras, fuera del anexo;
+  - todo es gasto de la actividad el día que se paga (compras), como lo del mayorista, y `hacienda` cuenta el
+    AIEM aparte.
+- **🏭 Traer de la nave** (en el almacén de cada local): 1, 5 o todos los lotes de ese producto, sin pagar (ya
+  se pagaron). Simplificación: el reparto en la isla no cuesta.
+
+### El gerente (`business_staff.MANAGER`, `_manage`)
+
+- **Se contrata entre los candidatos** con el contrato «Gerente»:
+  - uno por local, indefinido y a jornada completa, con alta (compra en nombre del negocio: en B, no);
+  - pide lo de un dependiente que sepa lo mismo, un 20 % más (`manager_ask`);
+  - no ocupa sitio en el mostrador (`STAFF_CAP` cuenta a los demás) y no atiende franjas;
+  - cobra su nómina como los demás: humor, faltas (decididas la noche, antes de la nómina) y despidos.
+- **Cada noche, después de la del local:**
+  - **repone** hasta día y medio de lo que se vendió ese día (`Business.sold_days`), y al menos un lote de cada
+    producto. Trae primero de la nave de su isla (gratis) y compra lo que falte al mayorista con lo que haya en
+    la caja, de lo que más se vende a lo que menos;
+  - **cubre las bajas:** a quien acaba su temporal, dimite o se va sin cobrar le sustituye el mejor candidato
+    del día siguiente, indefinido, con lo que pide y en el mismo turno. Los despidos del dueño no son bajas.
+- **La noche que falta,** ni repone ni cubre.
+
+### Vender la sociedad (`sale_offer`, `sell_company`)
+
+- **Desde 🏢 Sociedad.** Hacen falta 3 semanas cerradas en Sociedades (los «tres ejercicios») y no deber nada a
+  Hacienda, a los caseros ni a la plantilla.
+- **El precio** es el mayor entre el patrimonio neto y la media de los resultados de esas tres semanas por
+  cinco (capitalizar al 20 %, art. 37.1.b LIRPF). El comprador del juego paga justo eso. Además paga el
+  préstamo del socio por su valor.
+- **Se va todo:** la caja, los locales, la nave y la plantilla, que sigue con sus contratos (no cambia el
+  empleador: vender participaciones no es la sucesión del art. 44 ET). Los locales se apuntan como cerrados con
+  el motivo `venta`.
+- **Los préstamos del banco** los cancela el comprador. Simplificación: en la vida real el socio seguiría
+  avalando salvo que el banco le libere (arts. 1205 y 1847 CC).
+- **Impuestos:**
+  - la venta de participaciones está exenta de IVA e ITP (art. 338 de la Ley 6/2023);
+  - para el socio es una ganancia patrimonial de la base del ahorro (arts. 33 y 46.b LIRPF): el precio menos lo
+    que metió, capital y aportaciones (que integran su valor de adquisición, art. 35.1 LIRPF y consulta V1583-24
+    de la DGT);
+  - paga el 19 % en el momento, como los dividendos. Simplificación: la escala real del ahorro va del 19 al 30 %;
+  - una pérdida no se compensa.
+- **El dinero:** lo que paga el comprador se crea, y la caja de la sociedad sale del juego con él
+  (`BusinessMove.sale`).
+
+### El banco
+
+Cada local de una cadena pide sus préstamos (2 como mucho cada uno). El mostrador 🏪 Negocio de `banco` se
+abre con el local de la portada, y con varios locales lleva un botón para pasar al siguiente.
+
+### Equilibrio
+
+`python docs/negocio_sim.py --cadena` (barrio del medio de cada sector, con el cupo, días 15 a 28 y 6 semillas).
+Lo que gasta un local al día en el mayorista y lo que se ahorraría importando lo que no caduca:
+
+| Sector | Gasto en el mayorista (dueño 4 turnos / plantilla mañana y tarde) | Ahorro al importar | Locales para pagar una nave pequeña en Telde (7.062 Y$ la noche) |
+|---|---|---|---|
+| Cafetería | 15.400 / 20.400 | 360 / 470 | 15-20 |
+| Tienda | 47.700 / 56.900 | 7.700 / 9.200 | 1 |
+| Taller | 14.700 / 21.600 | 3.300 / 4.800 | 2-3 |
+| Heladería | 7.500 / 8.800 | 30 | nunca |
+| Ferretería | 33.700 / 44.100 | 8.200 / 10.800 | 1 |
+
+- **La nave es del comercio y del taller:**
+  - la tienda y la ferretería la pagan con un local y sacan dinero con dos;
+  - el taller, con dos o tres;
+  - la cafetería y la heladería casi no tienen qué importar: su café paga un 15 % de AIEM y lo demás caduca.
+    Como en la vida real, el café y el helado se tuestan y se hacen en las islas.
+- **Un contenedor** ahorra de unos 4.000 Y$ (café) a 76.000 (bebidas) frente al mayorista.
+- **Un gerente** con todo a 50 cuesta unos 9.300 Y$ la noche, bruto y cuota de la empresa. Es lo que cuesta no
+  estar: un local llevado por la plantilla deja de 0 a 14.000 Y$ al día (fase 4), así que el gerente solo
+  compensa en los que más venden, o cuando no vas a reponer tú.
+- **Vender:** con 100.000, 250.000 o 500.000 Y$ de beneficio a la semana, el comprador paga 500.000, 1.250.000 o
+  2.500.000 Y$. Es poco más de un mes de beneficios: vender es para quien se va, no un atajo.
+
+### Pantallas
+
+| `screen` | Para qué |
+|---|---|
+| `cadena` | Hasta 4 tarjetas de local (rótulo, sector, barrio e isla, estrellas, caja de hoy, turnos, plantilla, gerente y aviso) y la de la nave |
+| `nave` | Sin nave, los tres tamaños para alquilarla; con ella, lo que hay dentro, lo lleno que está, lo que viene y el desglose del contenedor del producto elegido |
+| `venta` | Los resultados de las tres semanas, su media por cinco, el patrimonio, el precio, la ganancia, su IRPF y lo que te llevas |
+
+- **El inicio** dice cuántos locales más tienes.
+- **La portada** lleva la chapa de la cadena y el gerente.
+- **La plantilla** marca al gerente, y la oferta de los candidatos, el sello de gerente.
+
+### Logros (67, 4 secretos)
+
+- **Locales:** 2, 3 y 4 a la vez; 2, 3 y 4 sectores a la vez; las dos islas; 2 y 4 locales con el mismo nombre;
+  1, 3 y 10 locales abiertos teniendo ya otro.
+- **La sociedad:** cerrar un local sin liquidarla; constituirla con 2 y con 4 locales.
+- **La nave:** abrirla (con su historia) y 3 naves; una propia; la mediana y la grande; llenarla; dejarla; y
+  perderla (secreto).
+- **Importar:** 1 (con su historia), 10, 50 y 250 contenedores; lo pagado, el AIEM y lo ahorrado por escalones;
+  contenedores sin AIEM; los que llegan; los lotes traídos a mano.
+- **Gerentes:** contratar 1 y 10; 2 y 4 a la vez; las noches que repone, las que trae de la nave y las bajas
+  que cubre; las que falta (secretos).
+- **Vender:** 1 (con su historia) y 3; el precio, los locales, la ganancia y el IRPF por escalones; y vender con
+  pérdida (secreto).
+
+### Normas de la fase 5 comprobadas (24/10/2026)
+
+En el BOE consolidado:
+
+| Norma | Qué dice | Uso |
+|---|---|---|
+| Art. 37.1.b LIRPF | Valor de las participaciones que no cotizan: no menos que el mayor entre el patrimonio neto del último balance y la media de los resultados de tres ejercicios capitalizada al 20 % (los dividendos y las reservas cuentan como beneficio) | El precio de venta |
+| Art. 35.1 LIRPF; consulta V1583-24 de la DGT | El valor de adquisición; las aportaciones a fondos propios lo integran | La ganancia de la venta |
+| Arts. 46.b, 66 y 76 LIRPF | Ganancias de transmisiones en la base del ahorro; escala del 19, 21, 23, 27 y 30 % | Simplificación: el 19 % |
+| Art. 338 Ley 6/2023 | La transmisión de valores está exenta de IVA e ITP (salvo sociedades inmobiliarias) | Sin ITP en la venta |
+| Arts. 29.1, 101.3 y DT 44.ª LIS | Microempresa en 2026: 19 % hasta 50.000 € y 21 % el resto; la cifra de negocios cuenta las entidades de una misma persona | La sociedad de la cadena |
+| Art. 8.1 Ley 20/1991 | La Península es territorio tercero: la entrada de bienes es importación | El IGIC de importar |
+| DL 1/2025 de Canarias, arts. 32.4, 89, 90.1 y 91.b | Importación al tipo de la entrega; el pequeño empresario paga el IGIC de sus importaciones | El IGIC de importar |
+| DL 1/2025 de Canarias, arts. 92 y 94 y anexo 2.º | El AIEM, al mismo tipo en la importación y en la entrega, por producto | Los tipos del AIEM |
+| Ley 9/2025, DF 9.ª.18 | Saca del AIEM los productos del petróleo desde 2026 | El aceite de motor, sin AIEM |
+| Ley 7/2011 de Canarias, art. 2.3.c; art. 20.4.i TRLRHL | La actividad inocua no pide intervención previa; la tasa municipal vale también para la declaración responsable | La tasa de la nave |
+| Arts. 51.1, 52.c y 53.1.b ET | Colectivo con 10 trabajadores en empresas de menos de 100 o el cierre total con más de 5; si no, objetivo con 20 días por año | Cerrar un local de la cadena |
+| Art. 44 ET | La subrogación es por cambio de titular | Vender participaciones no la activa |
+| Arts. 1205, 1847 y 1156 CC | Cambiar de deudor pide el consentimiento del acreedor; vender participaciones no extingue el aval | Simplificación: el comprador cancela los préstamos |
+
+Sin comprobar:
+
+- la Decisión (UE) 2020/1792 del Consejo, que autoriza el AIEM hasta 2027 (EUR-Lex no cargó);
+- una sentencia que diga que vender participaciones no es sucesión de empresa (el razonamiento sí);
+- las ordenanzas de cada ayuntamiento sobre la declaración responsable de un almacén.
+
+### Decidido por Claude (cambiable)
+
+- Hasta 4 locales; todos de autónomo o todos de la sociedad.
+- Una gestoría y un Sociedades por sociedad, en la noche de su último local.
+- La nave: tres tamaños, solo para su isla; contenedores de 20 lotes al 70 % del mayorista, con 4.000 Y$ de
+  flete, 1.000 de aduanas y dos noches de viaje; solo lo que no caduca.
+- El gerente: uno por local, un 20 % más que un dependiente, repone día y medio y cubre las bajas con el mejor
+  candidato.
+- El comprador paga justo el valor del art. 37.1.b y cancela los préstamos de la sociedad.
+
+### Simplificaciones
+
+- Si se cierra un local en el que se invirtió la RIC, no se mira que lo invertido se mantuviera 5 años.
+- Las importaciones vienen de la Península: sin el arancel de la UE de lo que llega de fuera.
+- El reparto de la nave a los locales no cuesta.
+- La pérdida de vender la sociedad por debajo de lo que metiste no se compensa.
