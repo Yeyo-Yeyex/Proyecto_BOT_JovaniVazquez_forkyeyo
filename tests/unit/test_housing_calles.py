@@ -209,3 +209,44 @@ async def test_las_calles_y_lo_comprado_en_ellas_cuentan_para_los_logros(
     await cog.track_trade(GUILD, ana, None, trade.deal, trade.balance)
     assert tracked[-1]["pisos_street_units_max"] == 1
     assert tracked[-1]["pisos_buildings_max"] == 1
+
+
+def discord_problems(panel) -> list[str]:  # noqa: ANN001
+    """Lo que Discord rechazaría de los componentes de un panel (400 Invalid Form Body)."""
+    problems = []
+    ids = [getattr(i, "custom_id", None) for i in panel.children]
+    repeated = {i for i in ids if i and ids.count(i) > 1}
+    if repeated:
+        problems.append(f"custom_id repetido: {sorted(repeated)}")
+    rows: dict[int, int] = {}
+    for item in panel.children:
+        rows[item.row or 0] = rows.get(item.row or 0, 0) + (
+            5 if isinstance(item, discord.ui.Select) else 1
+        )
+        if isinstance(item, discord.ui.Button) and not 0 < len(item.label or "") <= 80:
+            problems.append(f"etiqueta: {item.label!r}")
+        if isinstance(item, discord.ui.Select) and not 1 <= len(item.options) <= 25:
+            problems.append(f"opciones: {len(item.options)}")
+    if len(panel.children) > 25 or max(rows, default=0) > 4 or max(rows.values()) > 5:
+        problems.append(f"filas: {rows}")
+    return problems
+
+
+async def test_ninguna_pantalla_de_calles_repite_un_custom_id(tmp_path: Path) -> None:
+    """Revisión 9.15.1: el botón ⭐ Destacados y «◀ barrio» del edificio tenían el `custom_id` del
+    desplegable de barrios (`pisos:barrio`) y Discord rechazaba el plano al elegir un barrio."""
+    from bot.cogs.pisos import CALLES, EDIFICIO
+    from tests.unit.test_pisos_cog import guild_with, member, open_panel
+    from tests.unit.test_pisos_cog import make as make_cog
+
+    cog, _scene, _clock = await make_cog(tmp_path)
+    ana = member(10, "Ana")
+    panel = await open_panel(cog, ana, guild_with(ana))
+    for barrio in BARRIOS:
+        panel.screen, panel.barrio = CALLES, barrio.key
+        panel.rebuild()
+        assert not discord_problems(panel), (barrio.key, discord_problems(panel))
+    for building in streets.BUILDINGS:
+        panel.screen, panel.building, panel.barrio = EDIFICIO, building.key, building.barrio
+        panel.rebuild()
+        assert not discord_problems(panel), (building.key, discord_problems(panel))

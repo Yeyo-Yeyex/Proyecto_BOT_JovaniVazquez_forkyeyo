@@ -556,7 +556,8 @@ async def test_todas_las_pantallas_respetan_los_limites_de_discord(tmp_path: Pat
                             (CAJA, (False, 10)), (CAJA, (True, 10)), (VPO, None),
                             (GESTION, None), (CANDIDATOS, None), ("subastas", None),
                             ("reformas", None), ("imprevistos", None), ("resenas", None),
-                            ("junta", None)):  # fmt: skip
+                            ("junta", None), ("calles", None), ("dividir", None),
+                            ("edificio", None)):  # fmt: skip
         panel.screen, panel.pending, panel.done = screen, pending, None
         panel.barrio, panel.listing = "vegueta", "vegueta_edificio"
         panel.rebuild()
@@ -576,6 +577,9 @@ async def test_todas_las_pantallas_respetan_los_limites_de_discord(tmp_path: Pat
                     assert len(option.description or "") <= 100
         assert len(panel.children) <= 25 and max(rows) <= 4
         assert all(width <= 5 for width in rows.values()), (screen, rows)
+        # Discord rechaza el mensaje entero si dos componentes repiten `custom_id` (9.15.1).
+        ids = [getattr(item, "custom_id", None) for item in panel.children]
+        assert len(ids) == len(set(ids)), (screen, sorted(i for i in ids if ids.count(i) > 1))
     for selling, most in ((False, 100), (True, 60)):
         modal = SharesModal(panel, selling=selling, most=most)
         assert len(modal.title) <= 45
