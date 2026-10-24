@@ -8,7 +8,8 @@ persistencia en `bot.repositories.business` y los casos de uso (y el dinero) en
 En resumen:
 
 - **Un negocio por miembro** (fase 1), de autónomo: no tiene caja propia, todo sale y
-  entra del monedero de su dueño («respondes con lo tuyo»).
+  entra del monedero de su dueño («respondes con lo tuyo»). Desde la fase 5, hasta
+  `MAX_LOCALES` (una cadena), cada uno en su local.
 - **El local** se alquila en un barrio de `pisos`: su alquiler de cada noche sale de los
   metros del sector, el `rent_m2` del barrio y el `rent_factor` del tipo de inmueble, a la
   misma escala que la renta de un local en `pisos` (`rent`). La fianza son dos
@@ -149,6 +150,9 @@ LIQUIDATION_EQUIPMENT = 0.4
 #: Al cambiar de barrio, la reputación se acerca a la de partida a la mitad y los habituales
 #: pierden la mitad de su fidelidad: te conocen, pero les pilla lejos.
 MOVE_KEEP = 0.5
+#: Fase 5, las cadenas: locales que puede llevar un miembro a la vez (cada uno es un
+#: `Business`). Si es una sociedad, la sociedad los lleva todos.
+MAX_LOCALES = 4
 
 
 def stars(reputation: float) -> float:
@@ -231,6 +235,9 @@ class Business:
             más probable.
         fundae_week: Semana (lunes ISO) de `fundae_used`.
         fundae_used: Lo gastado esa semana del crédito de formación de FUNDAE.
+        company_id: La sociedad del local (fase 5: una sociedad lleva todos los locales de su
+            dueño): el `id` del local con el que se constituyó, que da su caja
+            (`economy.company_account`) aunque ese local cierre. 0 si es de autónomo.
     """
 
     user_id: int
@@ -283,6 +290,7 @@ class Business:
     tipoff: str = ""
     fundae_week: str = ""
     fundae_used: int = 0
+    company_id: int = 0
     id: int = 0
 
     @property

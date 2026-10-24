@@ -5,9 +5,11 @@ El dinero no pasa por aquí: va por `bot.services.economy` (`EconomyService.busi
 funciones `*_in` reciben la conexión de esa misma transacción, así el negocio y su dinero
 se guardan juntos o no se guarda nada. Tablas:
 
-- `business`: el negocio abierto de cada miembro (`bot.services.business.Business`). Casi
-  todo va en JSON (`data`), así un campo nuevo no necesita migración. La clave lleva un
-  `id` propio para que un miembro pueda tener varios en la fase 5.
+- `business`: los negocios abiertos de cada miembro (`bot.services.business.Business`), uno
+  por local. Casi todo va en JSON (`data`), así un campo nuevo no necesita migración. Desde
+  la fase 5 (las cadenas) un miembro puede tener varios: cada uno se busca por su `id`. Los
+  locales de una misma sociedad llevan su `company_id` y una copia de su estado
+  (`Business.company`), que `save_in` mantiene igual en todos.
 - `business_demand`: clientes que ya se han llevado los negocios de un sector en un barrio
   un día (el cupo de la demanda, `business.daily_pool`). Se borra lo de hace más de
   `DEMAND_RETENTION_DAYS`.
@@ -45,7 +47,14 @@ def _load(row: sqlite3.Row) -> Business:
     business = Business(**{k: v for k, v in data.items() if k in _FIELDS and k != "id"})
     business.id = int(row["id"])
     business.user_id = int(row["user_id"])
+    if business.is_company and not business.company_id:
+        # Las sociedades de antes de la fase 5 tenían un solo local: su caja es la de su id.
+        business.company_id = business.id
     return business
+
+
+#: Lo que se lee de cada negocio.
+_COLUMNS = "SELECT id, user_id, data FROM business"
 
 
 class BusinessRepository:
@@ -122,18 +131,42 @@ class BusinessRepository:
     # -- Dentro de una transacción ----------------------------------------------------
 
     @staticmethod
-    def business_in(connection: sqlite3.Connection, guild_id: int, user_id: int) -> Business | None:
-        """El negocio de un miembro, leído en la conexión de la transacción."""
-        row = connection.execute(
-            "SELECT id, user_id, data FROM business WHERE guild_id = ? AND user_id = ? "
-            "ORDER BY id LIMIT 1",
-            (guild_id, user_id),
-        ).fetchone()
+    def business_in(
+        connection: sqlite3.Connection, guild_id: int, user_id: int, business_id: int | None = None
+    ) -> Business | None:
+        """Un negocio de un miembro, leído en la conexión de la transacción.
+
+        Args:
+            business_id: Cuál (`None`: el más antiguo, el único si solo tiene uno).
+        """
+        if business_id is None:
+            row = connection.execute(
+                f"{_COLUMNS} WHERE guild_id = ? AND user_id = ? ORDER BY id LIMIT 1",  # noqa: S608
+                (guild_id, user_id),
+            ).fetchone()
+        else:
+            row = connection.execute(
+                f"{_COLUMNS} WHERE guild_id = ? AND user_id = ? AND id = ?",  # noqa: S608
+                (guild_id, user_id, business_id),
+            ).fetchone()
         return _load(row) if row is not None else None
 
     @staticmethod
+    def owned_in(connection: sqlite3.Connection, guild_id: int, user_id: int) -> list[Business]:
+        """Los negocios (locales) de un miembro, del más antiguo al más nuevo."""
+        rows = connection.execute(
+            f"{_COLUMNS} WHERE guild_id = ? AND user_id = ? ORDER BY id",  # noqa: S608
+            (guild_id, user_id),
+        ).fetchall()
+        return [_load(row) for row in rows]
+
+    @staticmethod
     def save_in(connection: sqlite3.Connection, guild_id: int, business: Business) -> Business:
-        """Guarda el negocio (lo crea si `id` es 0) y lo devuelve con su `id`."""
+        """Guarda el negocio (lo crea si `id` es 0) y lo devuelve con su `id`.
+
+        Si es de una sociedad con más locales, les copia su estado (`company`): la sociedad es
+        una sola y cada local lleva una copia, así cualquiera la lee sin más consultas.
+        """
         data = asdict(business)
         data.pop("id")
         text = json.dumps(data, ensure_ascii=False)
@@ -145,6 +178,16 @@ class BusinessRepository:
                 (guild_id, business.user_id, text),
             )
             business.id = int(cursor.lastrowid or 0)
+        if business.company_id and business.company:
+            connection.execute(
+                "UPDATE business SET data = json_set(data, '$.company', json(?)) "
+                "WHERE guild_id = ? AND user_id = ? AND id != ? "
+                "AND json_extract(data, '$.company_id') = ?",
+                (
+                    json.dumps(business.company, ensure_ascii=False), guild_id,
+                    business.user_id, business.id, business.company_id,
+                ),
+            )  # fmt: skip
         return business
 
     @staticmethod
@@ -202,14 +245,29 @@ class BusinessRepository:
 
     # -- Lecturas ---------------------------------------------------------------------
 
-    async def business(self, guild_id: int, user_id: int) -> Business | None:
-        """El negocio abierto de un miembro, o `None`."""
-        return await self._run(self._business_sync, guild_id, user_id)
+    async def business(
+        self, guild_id: int, user_id: int, business_id: int | None = None
+    ) -> Business | None:
+        """Un negocio abierto de un miembro (`None`: el más antiguo), o `None` si no lo hay."""
+        return await self._run(self._business_sync, guild_id, user_id, business_id)
 
-    def _business_sync(self, guild_id: int, user_id: int) -> Business | None:
+    def _business_sync(
+        self, guild_id: int, user_id: int, business_id: int | None
+    ) -> Business | None:
         connection = self._connect()
         try:
-            return self.business_in(connection, guild_id, user_id)
+            return self.business_in(connection, guild_id, user_id, business_id)
+        finally:
+            connection.close()
+
+    async def owned(self, guild_id: int, user_id: int) -> list[Business]:
+        """Los negocios abiertos de un miembro, del más antiguo al más nuevo."""
+        return await self._run(self._owned_sync, guild_id, user_id)
+
+    def _owned_sync(self, guild_id: int, user_id: int) -> list[Business]:
+        connection = self._connect()
+        try:
+            return self.owned_in(connection, guild_id, user_id)
         finally:
             connection.close()
 
@@ -221,7 +279,7 @@ class BusinessRepository:
         connection = self._connect()
         try:
             rows = connection.execute(
-                "SELECT id, user_id, data FROM business WHERE guild_id = ? ORDER BY id",
+                f"{_COLUMNS} WHERE guild_id = ? ORDER BY id",  # noqa: S608
                 (guild_id,),
             ).fetchall()
         finally:
@@ -309,7 +367,8 @@ def companies_in(connection: sqlite3.Connection, guild_id: int) -> dict[int, int
     Es el valor teórico de sus participaciones (art. 16.Uno de la Ley 19/1991): la caja, el
     stock y lo que queda por amortizar, menos lo que debe la sociedad al casero, a Hacienda, a
     su plantilla y al banco (sus préstamos, que su dueño solo avala). Lo que le debe al socio no
-    se resta: es un crédito del propio dueño y se anulan.
+    se resta: es un crédito del propio dueño y se anulan. Una sociedad con varios locales (fase
+    5) suma los de todos y su caja una vez.
     """
     out: dict[int, int] = {}
     tables = {
@@ -329,22 +388,25 @@ def companies_in(connection: sqlite3.Connection, guild_id: int) -> dict[int, int
             (guild_id, LOAN_COMPANY),
         ):
             bank[str(listing)] = int(owed)
-    for row in connection.execute("SELECT * FROM business WHERE guild_id = ?", (guild_id,)):
+    groups: dict[int, list[Business]] = {}
+    for row in connection.execute(f"{_COLUMNS} WHERE guild_id = ?", (guild_id,)):  # noqa: S608
         business = _load(row)
-        if not business.is_company:
-            continue
+        if business.is_company:
+            groups.setdefault(business.company_id, []).append(business)
+    for company_id, locales in groups.items():
         cash = connection.execute(
             "SELECT balance FROM economy_wallets WHERE guild_id = ? AND user_id = ?",
-            (guild_id, company_account(business.id)),
+            (guild_id, company_account(company_id)),
         ).fetchone()
         value = (
             (int(cash[0]) if cash else 0)
-            + stock_value(business)
-            + book_value(business)
-            - business.rent_debt
-            - business.company.get("tax_debt", 0)
-            - business.wage_debt
-            - bank.get(str(business.id), 0)
-        )
-        out[business.user_id] = out.get(business.user_id, 0) + value
+            - locales[0].company.get("tax_debt", 0)
+            + sum(
+                stock_value(b) + book_value(b) - b.rent_debt - b.wage_debt
+                - bank.get(str(b.id), 0)
+                for b in locales
+            )
+        )  # fmt: skip
+        owner = locales[0].user_id
+        out[owner] = out.get(owner, 0) + value
     return out

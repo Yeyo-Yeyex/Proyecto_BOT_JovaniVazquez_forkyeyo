@@ -2615,6 +2615,23 @@ class HousingRepository:
             )
         return cancelled, moved
 
+    @staticmethod
+    def move_business_loans_in(
+        connection: sqlite3.Connection, guild_id: int, business_id: int, to_id: int
+    ) -> int:
+        """Pasa los préstamos vivos de un local de una sociedad que cierra a otro de sus locales
+        (fase 5 de los negocios): la deudora es la sociedad, que sigue, así que no cambian.
+
+        Returns:
+            Cuántos préstamos ha pasado.
+        """
+        cursor = connection.execute(
+            "UPDATE housing_loans SET listing = ? WHERE guild_id = ? AND status = 'activo' "
+            "AND kind = ? AND listing = ?",
+            (str(to_id), guild_id, finance.LOAN_COMPANY, str(business_id)),
+        )
+        return cursor.rowcount
+
     # -- Rehipotecar (`banco`, 🔐 Garantías) --------------------------------------------
 
     async def remortgage_desk(self, guild_id: int, user_id: int) -> RemortgageDesk:
