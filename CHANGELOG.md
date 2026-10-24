@@ -8,6 +8,10 @@ criterio.
 
 ## 9.x
 
+### 9.10.2 · 2026-10-24
+
+- Tienda: las ediciones limitadas dicen cuántas quedan en la lista y en el desplegable, sin tener que abrir la ficha
+
 ### 9.10.1 · 2026-10-24
 
 - Logros: los de 🎸 Robuso ya no dicen «Solo Robuso:», así no se sabe cuáles son solo suyos
