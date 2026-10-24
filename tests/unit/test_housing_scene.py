@@ -793,6 +793,53 @@ def street_samples() -> dict[str, dict[str, Any]]:
     return out
 
 
+#: Un bloque de cada tema (con su sobreático `_sa` o su ático con vistas `_va` si lo tiene) y dos
+#: del mismo barrio que se parecen en todo (plantas y unidades) salvo en la clave.
+THEME_BLOCKS = {
+    "centro": "triana_e7",
+    "historico": "vegueta_e6",
+    "obrero": "schamann_e2",
+    "playa": "canteras_e1",
+    "marinero": "isleta_e2",
+    "lujo": "mogan_e2",
+    "rural": "arucas_e9",
+}
+TWIN_BLOCKS = ("schamann_e2", "schamann_e3")
+#: Las de un bloque de Schamann, una en cada uso: lo que se hace en ella se ve en su dibujo.
+STATUS_BLOCK = "schamann_e4"
+STATUSES = (
+    "alquilado", "vacio", "obras", "okupa", "habitual", "por_habitaciones", "impago",
+    "desahucio", "venta", "alquilado", "negocio", "vacio", "alquilado",
+)  # fmt: skip
+
+
+def status_market() -> Market:
+    """El bloque de `STATUS_BLOCK` con una unidad en cada uso de `STATUSES`, por orden."""
+    units = [u.key for u in view.building_units(Market(), streets.BUILDING_BY_KEY[STATUS_BLOCK])]
+    holdings, leases = {}, {}
+    for key, status in zip(units, STATUSES, strict=True):
+        if status == "venta":
+            continue
+        holdings[key] = {10: Holding(key, 10, 100, 1, 1, 0)}
+        if status != "vacio" or key != units[1]:  # una vacía sin contrato y otra con él
+            tenant = "familia" if status in ("alquilado", "impago") else None
+            leases[key] = rules.Lease(status=status, tenant=tenant, rent=9000)
+    return Market(holdings=holdings, leases=leases)
+
+
+def edificio_samples() -> dict[str, dict[str, Any]]:
+    """🏢 Un corte de cada tema, dos gemelos del mismo barrio y uno con cada uso."""
+    empty = Market()
+    out = {
+        f"edificio_tema_{theme}": view.building_state(empty, key, 10, NAMES)
+        for theme, key in THEME_BLOCKS.items()
+    }
+    out["edificio_gemelo"] = view.building_state(empty, TWIN_BLOCKS[1], 10, NAMES)
+    out["edificio_usos"] = view.building_state(status_market(), STATUS_BLOCK, 10, NAMES)
+    out["edificio_va_laguna"] = view.building_state(empty, "laguna_e9", 10, NAMES)
+    return out
+
+
 def checkout(key: str, **kwargs: Any) -> dict[str, Any]:
     return view.checkout_state(LISTING_BY_KEY[key], **kwargs)
 
@@ -887,6 +934,7 @@ def samples() -> dict[str, dict[str, Any]]:
     out.update(phase6_samples())
     out.update(split_samples())
     out.update(street_samples())
+    out.update(edificio_samples())
     return out
 
 
@@ -1337,6 +1385,47 @@ async def test_dos_inmuebles_del_mismo_tipo_en_un_barrio_no_salen_clavados(
     for group in pairs:
         for a, b in itertools.combinations(group, 2):
             assert difference(crops[a], crops[b]) > MIN_SEED_DIFF, (a, b)
+
+
+#: Lo mínimo que se diferencian (sobre 255, en el recuadro del corte) dos bloques del mismo
+#: barrio con las mismas plantas y unidades. Lo medido en Schamann: antes de darles aspecto
+#: propio, desde 3,3; después, desde 13.
+MIN_BLOCK_DIFF = 8.0
+SECTION_BOX = (16, 166, 984, 960)
+
+
+def test_las_muestras_de_edificios_traen_cada_tema_cada_uso_y_los_aticos_caros() -> None:
+    states = edificio_samples()
+    assert {states[f"edificio_tema_{t}"]["theme"] for t in THEME_BLOCKS} == set(THEMES)
+    premium = [u["key"] for s in states.values() for f in s["floors"] for u in f["units"]]
+    premium = [k for k in premium if streets.is_penthouse(k)]
+    assert any(k.endswith("_sa") for k in premium) and any(k.endswith("_va") for k in premium)
+    usos = [u for f in states["edificio_usos"]["floors"] for u in f["units"]]
+    assert {u["use_kind"] for u in usos} == set(STATUSES)
+    assert all(u["premium"] == streets.is_penthouse(u["key"]) for u in usos)
+
+
+@needs_node
+@module_loop
+async def test_dos_bloques_iguales_de_un_barrio_no_salen_clavados_y_uno_sale_igual_dos_veces(
+    looks: HousingScene,
+) -> None:
+    """Cada bloque tiene su fachada, su cielo, su azotea y sus pisos amueblados a su manera: dos
+    con las mismas plantas y unidades se distinguen a simple vista, y el mismo sale igual."""
+    blocks = [b for b in streets.BUILDINGS if b.barrio == "schamann" and b.kind == "bloque"]
+    states = [view.building_state(Market(), b.key, 10, NAMES) for b in blocks]
+    shapes = [tuple(len(f["units"]) for f in s["floors"]) for s in states]
+    patches = await looks.painter.render(META, [*states, states[0]], gif=False)
+    assert patches is not None
+    crops = [p["image"].convert("RGB").crop(SECTION_BOX) for p in patches]
+    assert crops[0].tobytes() == crops[-1].tobytes()
+    pairs = [
+        (i, j) for i, j in itertools.combinations(range(len(states)), 2) if shapes[i] == shapes[j]
+    ]
+    assert len(pairs) > 10
+    assert any({blocks[i].key, blocks[j].key} == set(TWIN_BLOCKS) for i, j in pairs)
+    for i, j in pairs:
+        assert difference(crops[i], crops[j]) > MIN_BLOCK_DIFF, (blocks[i].key, blocks[j].key)
 
 
 @needs_node
