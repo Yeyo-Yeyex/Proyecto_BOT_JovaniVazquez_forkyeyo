@@ -8,6 +8,11 @@ criterio.
 
 ## 9.x
 
+### 9.15.1 · 2026-10-24
+
+- Pisos: elegir un barrio ya abre su plano de calles; daba error porque dos botones del plano y del edificio repetían el identificador del desplegable de barrios y Discord rechazaba la pantalla
+- Pisos: en el edificio por dentro, ⭐ Destacados en lugar de un segundo botón que llevaba también a las calles
+
 ### 9.15.0 · 2026-10-24
 
 - Pisos: al elegir un barrio se ve directamente su plano de calles, con el índice y la noticia del barrio; los nueve de siempre, en ⭐ Destacados

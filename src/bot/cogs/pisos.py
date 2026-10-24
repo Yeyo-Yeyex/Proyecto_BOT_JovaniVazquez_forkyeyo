@@ -1326,7 +1326,7 @@ class Panel(ui.View):
                     self._open_building, row=row,
                     style=discord.ButtonStyle.success if mine else discord.ButtonStyle.primary,
                 )  # fmt: skip
-        self._button("⭐ Destacados", "barrio", self._back_to_barrio, row=4)
+        self._button("⭐ Destacados", "destacados", self._back_to_barrio, row=4)
         self._button("🗺️ Mapa", "mapa", self._go_map, row=4)
         self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=4)
         self._waiting_button(row=4)
@@ -1352,8 +1352,7 @@ class Panel(ui.View):
         pick.callback = self._pick_unit  # type: ignore[method-assign]
         self.add_item(pick)
         self._button("◀ Calles", "calles", self._go_streets, row=2)
-        barrio = BARRIO_BY_KEY[building.barrio].name
-        self._button(f"◀ {barrio}"[:80], "barrio", self._back_to_barrio, row=2)
+        self._button("⭐ Destacados", "destacados", self._back_to_barrio, row=2)
         self._button("🗺️ Mapa", "mapa", self._go_map, row=2)
         self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=2)
         self._waiting_button(row=2)
