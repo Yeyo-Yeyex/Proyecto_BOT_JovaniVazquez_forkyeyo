@@ -484,7 +484,7 @@ def compact_line(
     if item.sold_out:
         tags.append("❌ agotado")
     elif item.remaining is not None:
-        tags.append(f"📦 {item.remaining}")
+        tags.append(f"📦 quedan {item.remaining} de {item.stock}")
     if item.min_level:
         tags.append(f"🔒 nv. {item.min_level}")
     if best_seller:
@@ -498,8 +498,7 @@ def compact_line(
 
 #: Qué quiere decir cada etiqueta de `compact_line`, para el pie del escaparate.
 LEGEND = (
-    "✅ lo tienes · ⭐ en tu lista · 🛒 en el carrito · 📦 quedan · 🔒 nivel · "
-    "🔥 lo más vendido · 🆕 nuevo"
+    "✅ lo tienes · ⭐ en tu lista · 🛒 en el carrito · 🔒 nivel · 🔥 lo más vendido · 🆕 nuevo"
 )
 
 
