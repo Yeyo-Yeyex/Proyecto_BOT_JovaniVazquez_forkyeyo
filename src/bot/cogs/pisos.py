@@ -1471,12 +1471,12 @@ class Panel(ui.View):
             await notify(interaction, "Ya no espera nadie: los candidatos se han ido.")
             await self.show(interaction)
             return
-        logros.note(self.cog.bot, self.guild.id, self.owner.id,
-                    housing_panel_stats(screen="atajo"))  # fmt: skip
         here = keys.index(self.listing) if self.listing in keys else -1
         self.listing = keys[(here + 1) % len(keys)] if self.screen == CANDIDATOS else keys[0]
         self.barrio = self._at(self.listing).barrio
         await self._go(interaction, CANDIDATOS)
+        logros.note(self.cog.bot, self.guild.id, self.owner.id,
+                    housing_panel_stats(screen="atajo"))  # fmt: skip
 
     async def _remortgage(self, interaction: discord.Interaction) -> None:
         """🏦 Rehipotecar: abre `banco` en 🔐 Garantías con este inmueble, en privado."""

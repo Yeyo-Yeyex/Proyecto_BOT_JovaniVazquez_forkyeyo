@@ -8454,7 +8454,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("pisos", "pisos_floor_splits", [
         (1, "pisos_floors_1", "Propiedad horizontal, ambición vertical",
          "Divide un inmueble por plantas.", R),
-        (3, "pisos_floors_3", "Comunidad Montepinar", "Divide 3 inmuebles por plantas.", E),
+        (3, "pisos_floors_3", "Divide y alquilarás", "Divide 3 inmuebles por plantas.", E),
         (6, "pisos_floors_6", "Aquí no hay quien viva", "Divide 6 inmuebles por plantas.", L),
     ])  # fmt: skip
     a += _tiers("pisos", "pisos_room_splits", [
@@ -8485,9 +8485,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("pisos", PISOS_ROOM_TENANTS_STAT, [
         (1, "pisos_room_tenants_1", "Acuerdo de compañeros de piso",
          "Ten contrato con un inquilino de habitación.", C),
-        (5, "pisos_room_tenants_5", "Friends con fianza",
+        (5, "pisos_room_tenants_5", "Potaje para cinco",
          "Ten contrato con 5 inquilinos de habitación distintos.", R),
-        (len(ROOM_TENANTS), "pisos_room_tenants_all", "Una casa de locos",
+        (len(ROOM_TENANTS), "pisos_room_tenants_all", "Los Sims: modo compis",
          f"Ten contrato con los {len(ROOM_TENANTS)} inquilinos de habitación del catálogo.", E),
     ])  # fmt: skip
     a += _tiers("pisos", f"{PISOS_TENANT_PREFIX}astrofisica", [
@@ -8495,7 +8495,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Alquila una habitación a la becaria de astrofísica.", R, True),
     ])  # fmt: skip
     a += _tiers("pisos", f"{PISOS_TENANT_PREFIX}jubilado_hab", [
-        (1, "pisos_tenant_jubilado_hab", "Los chicos de oro",
+        (1, "pisos_tenant_jubilado_hab", "El abuelo Cebolleta",
          "Alquila una habitación al jubilado que no quiere vivir solo.", R, True),
     ])  # fmt: skip
     a += _tiers("pisos", "pisos_shortcut", [
