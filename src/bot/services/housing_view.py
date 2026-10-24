@@ -1273,7 +1273,9 @@ def split_state(market: Market, key: str, user_id: int) -> State:
             )
         after = sum(rules.reference_rent(u, index) for u in units)
         worth = sum(rules.price(u, index) for u in units) if mode == rules.FLOORS else value
-        if key in market.splits or rules.is_room(key):
+        if lease.status == rules.BY_ROOMS:
+            problem = "Ya se alquila por habitaciones."
+        elif key in market.splits or rules.is_room(key):
             problem = "Ya está dividido."
         elif sum(holders.values()) != rules.SHARES:
             problem = "Hay participaciones sin dueño: tiene que ser todo de miembros."
@@ -1313,7 +1315,7 @@ def split_state(market: Market, key: str, user_id: int) -> State:
                 "total": format_amount(quote.total),
                 "days": f"{quote.days} días sin alquilar",
                 "rent_after": format_amount(after) + "/mes",
-                "rent_change": f"{after / rent - 1:+.0%}".replace(".", ",") if rent else "",
+                "rent_change": f"{after / rent - 1:+.0%}".replace("%", " %") if rent else "",
                 "value_after": format_amount(worth),
                 "notes": (
                     [
@@ -1343,7 +1345,13 @@ def split_state(market: Market, key: str, user_id: int) -> State:
         "value": format_amount(value),
         "rooms": lease.status == rules.BY_ROOMS,
         "options": options,
-        "footer": "IGIC 7 % · ICIO 4 % · licencia de obra · AJD 0,75 % de la escritura",
+        "footer": (
+            "IGIC 7 % · ICIO 4 % · licencia de obra · AJD 0,75 % de la escritura"
+            if any(o["mode"] == rules.FLOORS for o in options)
+            else "Los muebles llevan IGIC del 7 %: no es obra, ni ICIO ni licencia"
+            if options
+            else ""
+        ),
     }
     state["fallback"] = [
         f"Dividir: {listing.title} ({state['barrio']})",
