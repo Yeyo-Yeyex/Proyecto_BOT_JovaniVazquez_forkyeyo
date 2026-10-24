@@ -27,6 +27,11 @@ debajo, que también sirve de reserva si no hay Node ni Chromium. Pantallas:
 - **Fase 4:** 👥 **Plantilla**: los empleados, con su subida de sueldo, su curso, hacerle fijo
   y despedirle (con lo que cuesta cada forma), y los **candidatos** de hoy con el contrato,
   la jornada y el turno que se les ofrece.
+- **Fase 5, la cadena:** cada panel mira un local (`biz`). 🗺️ **Cadena** enseña todos, deja
+  ir a otro y montar uno más (➕ Otro local, con el rótulo del de ahora), y abre la 🏭 **Nave**:
+  alquilarla (o llevarla a una nave tuya de `pisos`), importar contenedores y dejarla. El
+  almacén trae lotes de la nave; los candidatos se pueden contratar de gerente; y 🏢 Sociedad
+  deja 💼 **Vender la sociedad** con toda la cadena.
 
 Una tarea cada 10 minutos juega las franjas de la plantilla que ya han acabado
 (`BusinessService.staff_turns`) y, cada noche, cobra el local de cada negocio y las nóminas
@@ -63,6 +68,7 @@ from discord.ext import commands, tasks
 from bot.cogs import achievements as logros
 from bot.cogs import banco, renta
 from bot.repositories.business import companies_in
+from bot.services import business_chain as chain
 from bot.services import business_sl as sl
 from bot.services import business_staff as staff
 from bot.services.achievements import (
@@ -78,6 +84,7 @@ from bot.services.achievements import (
     staff_turns_stats,
 )
 from bot.services.business import (
+    MAX_LOCALES,
     Business,
     move_quote,
     nightly_bill,
@@ -99,11 +106,13 @@ from bot.services.business_catalog import (
     SIZES,
     equipment_for,
 )
+from bot.services.business_chain import Nave, SaleOffer
 from bot.services.business_games import COINS, QUOTES, TurnGame
 from bot.services.business_scene import BusinessScene
 from bot.services.business_view import (
     CONTRACT_NAMES,
     almacen_state,
+    cadena_state,
     campaign_state,
     candidatos_state,
     cierre_state,
@@ -111,6 +120,7 @@ from bot.services.business_view import (
     cuentas_state,
     mejoras_state,
     montar_state,
+    nave_state,
     negocio_state,
     plantilla_state,
     preview_state,
@@ -121,6 +131,7 @@ from bot.services.business_view import (
     sociedad_state,
     traslado_state,
     turn_lines,
+    venta_state,
     zec_text,
 )
 from bot.services.economy import format_amount, next_daily_at, parse_amount
@@ -197,6 +208,9 @@ SOCIEDAD = "sociedad"
 PLANTILLA = "plantilla"
 CANDIDATOS = "candidatos"
 DESPIDO = "despido"
+CADENA = "cadena"
+NAVE = "nave"
+VENTA = "venta"
 #: Horas de cada turno y jornada de la plantilla, para los desplegables.
 SHIFT_HOURS = {
     ("manana", staff.FULL_DAY): "8:00-16:00", ("manana", staff.HALF_DAY): "10:00-14:00",
@@ -207,6 +221,7 @@ CONTRACTS: tuple[tuple[str, str, str], ...] = (
     ("indefinido", "Indefinido", "Con período de prueba; al parado de larga duración, bonificado"),
     ("temporal", "Temporal (6 meses)", "Se acaba solo y cotiza algo más de desempleo"),
     ("b", "En B, sin alta", "Ni cotiza ni contrato. Si pasa la Inspección, multa de 3.750 €"),
+    ("gerente", "Gerente (indefinido)", "No atiende: repone el almacén y cubre las bajas"),
 )
 
 
@@ -302,6 +317,26 @@ def _stars_text(value: float) -> str:
     return f"{value:.1f}".replace(".", ",").replace(",0", "") + " ⭐"
 
 
+def plural_locales(count: int) -> str:
+    """`1 local`, `3 locales`."""
+    return f"{count} local" if count == 1 else f"{count} locales"
+
+
+def chain_peaks(locales: list[Business]) -> dict[str, int]:
+    """Los picos de la cadena para los logros: locales, sectores, islas y la marca repetida."""
+    if not locales:
+        return {}
+    names: dict[str, int] = {}
+    for business in locales:
+        names[business.name] = names.get(business.name, 0) + 1
+    return {
+        "biz_locales_max": len(locales),
+        "biz_chain_sectors_max": len({b.sector for b in locales}),
+        "biz_chain_islands_max": len({b.barrio_info.island for b in locales}),
+        "biz_chain_brand_max": max(names.values()),
+    }
+
+
 class NegocioPanel(ui.LayoutView):
     """El panel del negocio de un miembro (solo lo toca su dueño).
 
@@ -346,8 +381,19 @@ class NegocioPanel(ui.LayoutView):
         self.employee: int | None = None
         self.candidate: int | None = None
         self.offer: dict[str, Any] = {
-            "contract": "indefinido", "jornada": staff.FULL_DAY, "shift": "manana",
+            "contract": "indefinido", "jornada": staff.FULL_DAY, "shift": "manana", "role": "",
         }  # fmt: skip
+        #: Fase 5: el local que se mira (`None`: el primero), la cadena entera y su nave.
+        self.biz: int | None = None
+        self.chain: list[Business] = []
+        self.nave: Nave | None = None
+        #: 🏭 Nave: el barrio y el tamaño que se miran para alquilarla, la nave propia elegida,
+        #: el producto del contenedor y si se ha pedido dejarla (el segundo clic la deja).
+        self.nave_pick: dict[str, Any] = {"barrio": "", "size": 0, "own": "", "product": ""}
+        self.own_naves: list[OwnLocal] = []
+        self.leaving_nave = False
+        #: 💼 Lo que paga el comprador por la sociedad.
+        self.sale: SaleOffer | None = None
         self.token = cog.new_token()
         self._shown = ""
         self._lock = TimedLock("negocio:NegocioPanel._lock")
@@ -367,6 +413,40 @@ class NegocioPanel(ui.LayoutView):
             return blocker
         free = status.agenda.free
         return f"Abrir gasta 1 franja. Te quedan {free}."
+
+    def _portada_state(self, business: Business) -> dict[str, Any]:
+        """La portada del local que se mira."""
+        return negocio_state(
+            business,
+            foot=self._foot(),
+            rivals=self.status.rivals if self.status else 0,
+            chain_count=len(self.chain),
+        )
+
+    def _nave_products(self) -> list[str]:
+        """Lo que venden sus locales de la isla de la nave (todos, si aún no tiene nave)."""
+        island = self.nave.island if self.nave is not None else None
+        keys: list[str] = []
+        for business in self.chain:
+            if island is not None and business.barrio_info.island != island:
+                continue
+            keys += [p.key for p in business.sector_info.products if p.key not in keys]
+        return keys
+
+    def _nave_barrio(self) -> str:
+        """El barrio que se mira para alquilar la nave (de entrada, el del local)."""
+        if self.nave_pick["barrio"]:
+            return str(self.nave_pick["barrio"])
+        return self.chain[0].barrio if self.chain else BARRIOS[0].key
+
+    def _nave_screen(self) -> dict[str, Any]:
+        own = next((o for o in self.own_naves if o.listing.key == self.nave_pick["own"]), None)
+        barrio = own.listing.barrio if own is not None else self._nave_barrio()
+        size = own.size if own is not None and own.size is not None else self.nave_pick["size"]
+        return nave_state(
+            self.nave, self._today(), products=self._nave_products(),
+            selected=self.nave_pick["product"], barrio=barrio, size=size,
+        )  # fmt: skip
 
     def scene_state(self) -> dict[str, Any] | None:
         """El estado de la escena de la pantalla de ahora (`None` si no tiene imagen)."""
@@ -408,9 +488,13 @@ class NegocioPanel(ui.LayoutView):
             return cliente_state(self.turn.business, self.turn.game)
         if self.screen == CIERRE and self.result is not None:
             return cierre_state(self.result.business, self.result)
-        return negocio_state(
-            business, foot=self._foot(), rivals=self.status.rivals if self.status else 0
-        )
+        if self.screen == CADENA:
+            return cadena_state(self.chain, self.nave, selected=self.biz)
+        if self.screen == NAVE:
+            return self._nave_screen()
+        if self.screen == VENTA and self.company is not None and self.sale is not None:
+            return venta_state(self.company, self.sale)
+        return self._portada_state(business)
 
     def _neighbours(self) -> list[dict[str, Any]]:
         """Pantallas a las que se puede ir desde esta (para pintarlas antes del clic)."""
@@ -429,23 +513,22 @@ class NegocioPanel(ui.LayoutView):
             out.append(cuentas_state(business))
             out.append(resenas_state(business, self._today()))
             out.append(plantilla_state(business, self._today(), selected=self.employee))
+            out.append(cadena_state(self.chain, self.nave, selected=self.biz))
+        elif self.screen == CADENA:
+            out = [self._nave_screen(), self._portada_state(business)]
+        elif self.screen == NAVE:
+            out = [cadena_state(self.chain, self.nave, selected=self.biz)]
         elif self.screen == PLANTILLA:
             out = [
                 candidatos_state(business, self.service.candidates(business), self._today()),
-                negocio_state(
-                    business, foot=self._foot(), rivals=self.status.rivals if self.status else 0
-                ),
+                self._portada_state(business),
             ]
         elif self.screen in (CANDIDATOS, DESPIDO):
             out = [plantilla_state(business, self._today(), selected=self.employee)]
         elif self.screen in (
             ALMACEN, CUENTAS, ROTULO, CERRAR, MEJORAS, RESENAS, TRASLADO, SOCIEDAD,
         ):  # fmt: skip
-            out = [
-                negocio_state(
-                    business, foot=self._foot(), rivals=self.status.rivals if self.status else 0
-                )
-            ]
+            out = [self._portada_state(business)]
         return out
 
     def _today(self) -> Any:
@@ -470,7 +553,7 @@ class NegocioPanel(ui.LayoutView):
         candidate = self._candidate(business)
         if candidate is None:
             return None
-        if candidate["part_time"]:
+        if candidate["part_time"] and not self.offer["role"]:
             self.offer["jornada"] = staff.HALF_DAY
         return dict(self.offer)
 
@@ -513,12 +596,22 @@ class NegocioPanel(ui.LayoutView):
         status = self.status
         lines: list[str] = []
         if self.screen == MONTAR:
-            lines.append("## 🏪 Monta tu negocio")
+            lines.append("## 🏪 Monta tu negocio" if not self.chain else "## ➕ Otro local")
             for sector in SECTORS:
                 lines.append(f"{sector.emoji} **{sector.name}** · {sector.blurb}")
-            lines.append(
-                "-# Eres autónomo: respondes con lo tuyo y el alquiler corre aunque no abras."
-            )
+            if self.chain and self.chain[0].is_company:
+                lines.append(
+                    f"-# Lo abre {self.chain[0].name}, S.L.: lo paga su caja y tributa con ella."
+                )
+            elif self.chain:
+                lines.append(
+                    f"-# Llevas {len(self.chain)} de {MAX_LOCALES} locales. Las franjas y la "
+                    "cuota de autónomo son tuyas: no pagas otra."
+                )
+            else:
+                lines.append(
+                    "-# Eres autónomo: respondes con lo tuyo y el alquiler corre aunque no abras."
+                )
         elif self.screen in (PREVIA, CONFIRMAR):
             draft = self.draft
             sector = SECTOR_BY_KEY[draft["sector"]]
@@ -543,6 +636,12 @@ class NegocioPanel(ui.LayoutView):
             )
             if self.screen == CONFIRMAR:
                 lines.append("\n**¿Lo montas?** La fianza vuelve al cerrar; lo demás, no.")
+        elif status is not None and self.screen == CADENA:
+            lines.extend(self._cadena_lines())
+        elif status is not None and self.screen == NAVE:
+            lines.extend(self._nave_lines())
+        elif status is not None and self.screen == VENTA:
+            lines.extend(self._venta_lines())
         elif status is not None:
             business = status.business
             sector = business.sector_info
@@ -617,6 +716,96 @@ class NegocioPanel(ui.LayoutView):
         notes, self.notes = self.notes, []
         lines.extend(notes)
         return "\n".join(lines)[:3900]
+
+    def _cadena_lines(self) -> list[str]:
+        lines = [f"## 🗺️ Tu cadena · {len(self.chain)} de {MAX_LOCALES} locales"]
+        for business in self.chain:
+            mark = "▶ " if business.id == self.biz else ""
+            boss = " · 🧑‍💼 gerente" if staff.manager(business) is not None else ""
+            lines.append(
+                f"{mark}{business.sector_info.emoji} **{business.name}** · "
+                f"{business.barrio_info.name} ({ISLANDS[business.barrio_info.island]}) · "
+                f"{_stars_text(business.stars)} · {signed(business.sales_today)} hoy{boss}"
+            )
+        if self.nave is not None:
+            nave = self.nave
+            lines.append(
+                f"🏭 Nave {nave.size_info.name.lower()} en {nave.barrio_info.name}: "
+                f"{chain.used_lots(nave)} de {nave.size_info.lots} lotes"
+                + (f" · {len(nave.orders)} contenedores en camino" if nave.orders else "")
+            )
+        else:
+            lines.append("-# 🏭 Sin nave: con una, importas contenedores más baratos.")
+        return lines
+
+    def _nave_lines(self) -> list[str]:
+        nave = self.nave
+        if nave is None:
+            barrio = BARRIO_BY_KEY[self._nave_barrio()]
+            size = chain.NAVE_SIZES[self.nave_pick["size"]]
+            quote = chain.nave_quote(barrio, self.nave_pick["size"])
+            return [
+                f"## 🏭 Alquilar una nave en {barrio.name}",
+                f"Nave {size.name.lower()}: {size.m2} m², caben **{size.lots} lotes**. Alquiler "
+                f"**{format_amount(quote.rent)}** cada noche, más IGIC y la luz.",
+                f"Abrirla: tasa {format_amount(quote.license)} y fianza (2 meses) "
+                f"{format_amount(quote.deposit)}.",
+                "-# Reparte a tus locales de su isla. Un contenedor son "
+                f"{chain.CONTAINER_LOTS} lotes de un producto y llega en "
+                f"{chain.IMPORT_NIGHTS} noches.",
+            ]
+        lines = [
+            f"## 🏭 Nave {nave.size_info.name.lower()} · {nave.barrio_info.name} · "
+            f"{chain.used_lots(nave)} de {nave.size_info.lots} lotes"
+        ]
+        stock = [
+            f"{PRODUCT_EMOJI.get(k, '📦')} {item.name} {units}"
+            for k, units in sorted(nave.stock.items())
+            if (item := chain.product_by_key(k)) is not None and units > 0
+        ]
+        lines.append("Dentro: " + (" · ".join(stock) if stock else "nada aún"))
+        for order in nave.orders:
+            item = chain.product_by_key(order["product"])
+            lines.append(
+                f"🚢 En camino: {order['units']} de {item.name.lower() if item else '?'} "
+                "(llega a la mañana siguiente a su noche)"
+            )
+        product = chain.product_by_key(self.nave_pick["product"])
+        if product is not None:
+            quote = chain.import_quote(product)
+            lines.append(
+                f"📦 Contenedor de {product.name.lower()} ({quote.units} unidades): fábrica "
+                f"{format_amount(quote.goods)} + flete {format_amount(quote.freight)} + AIEM "
+                f"{format_amount(quote.aiem)} + IGIC {format_amount(quote.igic)} + aduanas "
+                f"{format_amount(quote.customs + quote.customs_igic)} = "
+                f"**{format_amount(quote.total)}** (al mayorista, "
+                f"{format_amount(quote.wholesale)}: {signed(quote.saving)})"
+            )
+        if self.leaving_nave:
+            lines.append(
+                "⚠️ **¿Dejas la nave?** El mayorista te recompra lo de dentro a la mitad y la "
+                "fianza vuelve. Pulsa otra vez para confirmarlo."
+            )
+        return lines
+
+    def _venta_lines(self) -> list[str]:
+        offer = self.sale
+        if offer is None:
+            return ["## 💼 Vender la sociedad", "Solo se venden sociedades."]
+        lines = [
+            "## 💼 Vender la sociedad",
+            "Resultados de las últimas semanas: "
+            + (" · ".join(signed(r) for r in offer.results) or "ninguno"),
+            f"Su media por cinco: {format_amount(offer.capitalized)} · Patrimonio neto: "
+            f"{signed(offer.equity)}",
+            f"💶 **El comprador paga {format_amount(offer.price)}** (el mayor de los dos, art. "
+            f"37.1.b LIRPF) y te devuelve {format_amount(offer.loan)} de tu préstamo.",
+            f"-# Ganancia: {signed(offer.gain)} sobre lo que metiste "
+            f"({format_amount(offer.basis)}); paga el 19 % ({TAX_COLLECTOR}).",
+        ]
+        if offer.blocker:
+            lines.append(f"⚠️ {offer.blocker}")
+        return lines
 
     @staticmethod
     def _stock_lines(business: Business) -> list[str]:
@@ -1004,11 +1193,14 @@ class NegocioPanel(ui.LayoutView):
                 )
                 for s in SECTORS
             ]
+            bottom = ui.ActionRow(home)
+            if self.chain:
+                bottom = ui.ActionRow(self._button("⬅️ Cadena", self._cadena, "a-cadena"), home)
             return [
                 ui.ActionRow(
                     self._select("Elige qué negocio montas", options, "sector", self._pick_sector)
                 ),
-                ui.ActionRow(home),
+                bottom,
             ]
         if self.screen == PREVIA:
             return self._draft_rows(home)
@@ -1032,6 +1224,20 @@ class NegocioPanel(ui.LayoutView):
         if self.status is None:
             return [ui.ActionRow(home)]
         business = self.status.business
+        if self.screen == CADENA:
+            return self._cadena_rows(back, home)
+        if self.screen == NAVE:
+            return self._nave_rows()
+        if self.screen == VENTA:
+            offer = self.sale
+            sell = self._button(
+                f"💼 Vender · {format_amount(offer.price if offer else 0)}",
+                self._sell,
+                "vender-si",
+                style=green,
+                disabled=offer is None or offer.blocker is not None,
+            )
+            return [ui.ActionRow(sell, self._button("⬅️ Sociedad", self._sociedad, "a-sociedad"))]
         if self.screen == ALMACEN:
             options = [
                 discord.SelectOption(
@@ -1078,6 +1284,8 @@ class NegocioPanel(ui.LayoutView):
                         )
                     )
                 rows.append(buy)
+                if fetch := self._fetch_row(business):
+                    rows.append(fetch)
             rows.append(ui.ActionRow(back, home))
             return rows
         if self.screen == CUENTAS:
@@ -1165,7 +1373,182 @@ class NegocioPanel(ui.LayoutView):
         ]
         price_row = ui.ActionRow(self._select("🏷️ Precios", prices, "precio", self._set_price))
         team = self._button("👥 Plantilla", self._plantilla, "plantilla", style=blue)
-        return [main, more, price_row, ui.ActionRow(team, home)]
+        chain_ = self._button("🗺️ Cadena", self._cadena, "cadena", style=blue)
+        return [main, more, price_row, ui.ActionRow(team, chain_, home)]
+
+    def _fetch_row(self, business: Business) -> ui.ActionRow | None:
+        """🏭 Traer lotes de la nave al almacén, si la nave es de su isla y tiene de eso."""
+        nave = self.nave
+        item = business.sector_info.product(self.product)
+        if nave is None or item is None or nave.island != business.barrio_info.island:
+            return None
+        units = nave.stock.get(item.key, 0)
+        if units <= 0:
+            return None
+        whole = -(-units // item.pack)
+        row = ui.ActionRow()
+        for lots in sorted({1, min(5, whole), whole}):
+            label = (
+                f"🏭 Todo de la nave ({whole})"
+                if lots == whole and lots > 1
+                else (f"🏭 {lots} lote{'s' if lots > 1 else ''} de la nave")
+            )
+            row.add_item(self._button(label, self._fetch(lots), f"nave-traer:{lots}"))
+        return row
+
+    def _cadena_rows(self, back: ui.Button, home: ui.Button) -> list[ui.ActionRow]:
+        green, blue = discord.ButtonStyle.success, discord.ButtonStyle.primary
+        rows = []
+        if len(self.chain) > 1:
+            options = [
+                discord.SelectOption(
+                    label=f"{b.name} · {b.barrio_info.name}"[:100],
+                    value=str(b.id),
+                    emoji=b.sector_info.emoji,
+                    description=f"{b.sector_info.name} · {signed(b.sales_today)} hoy"[:100],
+                    default=b.id == self.biz,
+                )
+                for b in self.chain
+            ]
+            rows.append(
+                ui.ActionRow(self._select("🏪 Ir a un local", options, "local", self._pick_local))
+            )
+        rows.append(
+            ui.ActionRow(
+                self._button(
+                    "➕ Otro local", self._new_local, "otro-local", style=green,
+                    disabled=len(self.chain) >= MAX_LOCALES or self.turn is not None,
+                ),
+                self._button("🏭 Nave", self._nave, "nave", style=blue),
+                back,
+                home,
+            )
+        )  # fmt: skip
+        return rows
+
+    def _nave_rows(self) -> list[ui.ActionRow]:
+        green, red = discord.ButtonStyle.success, discord.ButtonStyle.danger
+        to_chain = self._button("⬅️ Cadena", self._cadena, "a-cadena")
+        if self.nave is None:
+            barrio = self._nave_barrio()
+            own = self.nave_pick["own"]
+            barrios = [
+                discord.SelectOption(
+                    label=f"{b.name} ({ISLANDS[b.island]})"[:100],
+                    value=b.key,
+                    description=(
+                        f"{THEMES[b.theme]} · la pequeña, "
+                        f"{format_amount(chain.nave_rent(b, chain.NAVE_SIZES[0]))}/día"
+                    )[:100],
+                    default=b.key == barrio and not own,
+                )
+                for b in BARRIOS
+            ]
+            sizes = [
+                discord.SelectOption(
+                    label=f"Nave {size.name.lower()} · {size.m2} m²",
+                    value=str(i),
+                    description=f"Caben {size.lots} lotes",
+                    default=i == self.nave_pick["size"] and not own,
+                )
+                for i, size in enumerate(chain.NAVE_SIZES)
+            ]
+            rows = [
+                ui.ActionRow(
+                    self._select(
+                        "📍 Barrio de la nave", barrios, "nave-barrio", self._pick_nave_barrio
+                    )
+                ),
+                ui.ActionRow(self._select("📐 Tamaño", sizes, "nave-tamano", self._pick_nave_size)),
+            ]
+            fit = [o for o in self.own_naves if o.fits]
+            if fit:
+                naves = [
+                    discord.SelectOption(
+                        label=o.listing.title[:100],
+                        value=o.listing.key,
+                        description=(
+                            f"{BARRIO_BY_KEY[o.listing.barrio].name} · {o.listing.m2} m² · nave "
+                            f"{chain.NAVE_SIZES[o.size or 0].name.lower()}"
+                        )[:100],
+                        default=o.listing.key == own,
+                    )
+                    for o in fit
+                ]
+                rows.append(
+                    ui.ActionRow(
+                        self._select(
+                            "🏠 Una nave tuya de pisos", naves, "nave-propia", self._pick_own_nave
+                        )
+                    )
+                )
+            quote = (
+                chain.nave_quote(BARRIO_BY_KEY[barrio], 0, own=True)
+                if own
+                else chain.nave_quote(BARRIO_BY_KEY[barrio], self.nave_pick["size"])
+            )
+            rows.append(
+                ui.ActionRow(
+                    self._button(
+                        f"🏭 Abrir la nave · {format_amount(quote.total)}",
+                        self._open_nave,
+                        "nave-abrir",
+                        style=green,
+                    ),
+                    to_chain,
+                )
+            )
+            return rows
+        options = []
+        for key in self._nave_products():
+            item = chain.product_by_key(key)
+            if item is None:
+                continue
+            quote = chain.import_quote(item)
+            options.append(
+                discord.SelectOption(
+                    label=item.name[:100],
+                    value=key,
+                    emoji=PRODUCT_EMOJI.get(key),
+                    description=(
+                        "Se estropea en el barco: al mayorista"
+                        if not chain.can_import(item)
+                        else f"Contenedor {format_amount(quote.total)} · {signed(quote.saving)}"
+                    )[:100],
+                    default=key == self.nave_pick["product"],
+                )
+            )
+        rows = []
+        if options:
+            rows.append(
+                ui.ActionRow(
+                    self._select(
+                        "🚢 Elige qué importar", options, "nave-producto", self._pick_import
+                    )
+                )
+            )
+        product = chain.product_by_key(self.nave_pick["product"])
+        state = self._nave_screen().get("quote") or {}
+        rows.append(
+            ui.ActionRow(
+                self._button(
+                    f"🚢 Importar · {state.get('total', '…')}",
+                    self._import,
+                    "nave-importar",
+                    style=green,
+                    disabled=product is None or bool(state.get("blocked")),
+                ),
+                self._button(
+                    "⚠️ Sí, dejar la nave" if self.leaving_nave else "🚪 Dejar la nave",
+                    self._leave_nave,
+                    "nave-dejar",
+                    style=red,
+                    disabled=bool(self.nave.orders),
+                ),
+                to_chain,
+            )
+        )
+        return rows
 
     def _plantilla_rows(
         self, business: Business, back: ui.Button, home: ui.Button
@@ -1183,8 +1566,8 @@ class NegocioPanel(ui.LayoutView):
                     label=f"{e['name']} · {CONTRACT_NAMES[e['contract']]}"[:100],
                     value=str(e["id"]),
                     description=(
-                        f"{shift_text(e['shift'], e['jornada'])} · "
-                        f"{format_amount(e['wage'])} la noche"
+                        ("Gerente" if staff.is_manager(e) else shift_text(e["shift"], e["jornada"]))
+                        + f" · {format_amount(e['wage'])} la noche"
                     )[:100],
                     default=e["id"] == self.employee,
                 )
@@ -1234,7 +1617,10 @@ class NegocioPanel(ui.LayoutView):
                 )
             actions.add_item(self._button("🚪 Despedir", self._to_dismiss, "despedir", style=red))
             rows.append(actions)
-        room = len(business.staff) < staff.cap(business.size)
+        room = (
+            len(staff.counter_staff(business)) < staff.cap(business.size)
+            or staff.manager(business) is None
+        )
         rows.append(
             ui.ActionRow(
                 self._button(
@@ -1275,15 +1661,17 @@ class NegocioPanel(ui.LayoutView):
         if candidate is None or offer is None:
             rows.append(ui.ActionRow(to_staff, home))
             return rows
+        picked = offer["role"] or offer["contract"]
         contracts = [
             discord.SelectOption(
-                label=name, value=key, description=text[:100], default=key == offer["contract"]
+                label=name, value=key, description=text[:100], default=key == picked
             )
             for key, name, text in CONTRACTS
         ]
         rows.append(
             ui.ActionRow(self._select("Contrato", contracts, "contrato", self._pick_contract))
         )
+        manager = offer["role"] == staff.MANAGER
         shifts = [
             discord.SelectOption(
                 label=f"{shift_text(shift, jornada)} ({SHIFT_HOURS[shift, jornada]})",
@@ -1294,11 +1682,20 @@ class NegocioPanel(ui.LayoutView):
             for jornada in (staff.FULL_DAY, staff.HALF_DAY)
             if not (candidate["part_time"] and jornada == staff.FULL_DAY)
         ]
-        rows.append(
-            ui.ActionRow(self._select("Jornada y turno", shifts, "turno", self._pick_shift))
+        if not manager:
+            rows.append(
+                ui.ActionRow(self._select("Jornada y turno", shifts, "turno", self._pick_shift))
+            )
+        wage = (
+            staff.manager_ask(candidate["skills"], candidate["traits"])
+            if manager
+            else staff.ask(candidate["skills"], candidate["traits"], offer["jornada"])
         )
-        wage = staff.ask(candidate["skills"], candidate["traits"], offer["jornada"])
-        room = len(business.staff) < staff.cap(business.size)
+        room = (
+            staff.manager(business) is None
+            if manager
+            else len(staff.counter_staff(business)) < staff.cap(business.size)
+        )
         rows.append(
             ui.ActionRow(
                 self._button(
@@ -1453,10 +1850,11 @@ class NegocioPanel(ui.LayoutView):
             self._zec,
             "zec",
         )
+        sell = self._button("💼 Vender la sociedad", self._to_sale, "vender")
         return [
             actions,
             ui.ActionRow(self._select("🌴 Reserva para Inversiones", shares, "ric", self._ric)),
-            ui.ActionRow(zec, back, home),
+            ui.ActionRow(zec, sell, back, home),
         ]
 
     def _traslado_rows(self, business: Business, back: ui.Button) -> list[ui.ActionRow]:
@@ -1616,12 +2014,24 @@ class NegocioPanel(ui.LayoutView):
     # -- Enseñar ----------------------------------------------------------------------
 
     async def refresh(self) -> None:
-        """Vuelve a leer el negocio (y su sociedad, si se está mirando)."""
-        self.status = await self.service.status(self.guild_id, self.owner.id)
+        """Vuelve a leer la cadena y el local que se mira (y su sociedad, su nave o su venta)."""
+        self.chain = await self.service.owned(self.guild_id, self.owner.id)
+        if self.biz is not None and all(b.id != self.biz for b in self.chain):
+            self.biz = None
+        if self.biz is None and self.chain:
+            self.biz = self.chain[0].id
+        self.status = (
+            await self.service.status(self.guild_id, self.owner.id, self.biz)
+            if self.chain
+            else None
+        )
+        self.nave = await self.service.nave(self.guild_id, self.owner.id) if self.chain else None
         if self.status is None and self.screen not in (MONTAR, PREVIA, CONFIRMAR):
             self.screen = MONTAR
-        if self.screen == SOCIEDAD:
-            self.company = await self.service.company_view(self.guild_id, self.owner.id)
+        if self.screen in (SOCIEDAD, VENTA):
+            self.company = await self.service.company_view(self.guild_id, self.owner.id, self.biz)
+        if self.screen == VENTA:
+            self.sale = await self.service.sale_offer(self.guild_id, self.owner.id, self.biz)
 
     def _where(self) -> tuple[Any, ...]:
         game = self.turn.game if self.turn else None
@@ -1710,7 +2120,7 @@ class NegocioPanel(ui.LayoutView):
 
     async def _traslado(self, interaction: discord.Interaction) -> None:
         await ack(interaction)
-        self.own_locals = await self.service.own_locals(self.guild_id, self.owner.id)
+        self.own_locals = await self.service.own_locals(self.guild_id, self.owner.id, self.biz)
         business = self.status.business if self.status else None
         if business is not None and not self.move["barrio"]:
             self.move = {
@@ -1742,8 +2152,10 @@ class NegocioPanel(ui.LayoutView):
         await self._go(interaction, CANDIDATOS)
 
     async def _pick_contract(self, interaction: discord.Interaction, value: str) -> None:
-        if any(key == value for key, _name, _text in CONTRACTS):
-            self.offer["contract"] = value
+        if value == staff.MANAGER:
+            self.offer.update(contract="indefinido", role=staff.MANAGER, jornada=staff.FULL_DAY)
+        elif any(key == value for key, _name, _text in CONTRACTS):
+            self.offer.update(contract=value, role="")
         await self._go(interaction, CANDIDATOS)
 
     async def _pick_shift(self, interaction: discord.Interaction, value: str) -> None:
@@ -1761,19 +2173,27 @@ class NegocioPanel(ui.LayoutView):
         try:
             business, employee = await self.service.hire(
                 self.guild_id, self.owner.id, self.candidate, contract=offer["contract"],
-                jornada=offer["jornada"], shift=offer["shift"],
+                jornada=offer["jornada"], shift=offer["shift"], biz=self.biz,
+                role=offer["role"],
             )  # fmt: skip
         except BusinessError as error:
             await notify(interaction, str(error))
             return
-        hours = SHIFT_HOURS[employee["shift"], employee["jornada"]]
         contract = CONTRACT_NAMES[employee["contract"]].lower()
-        self.notes.append(
-            f"✍️ **{employee['name']} empieza a trabajar contigo**: {contract}, "
-            f"{shift_text(employee['shift'], employee['jornada']).lower()} ({hours}), "
-            f"{format_amount(employee['wage'])} brutos cada noche. Hoy trabaja las franjas de "
-            "su turno que quedan."
-        )
+        if staff.is_manager(employee):
+            self.notes.append(
+                f"✍️ **{employee['name']} es tu gerente**: {contract}, "
+                f"{format_amount(employee['wage'])} brutos cada noche. Desde esta noche repone el "
+                "almacén (de la nave primero) y cubre las bajas de la plantilla."
+            )
+        else:
+            hours = SHIFT_HOURS[employee["shift"], employee["jornada"]]
+            self.notes.append(
+                f"✍️ **{employee['name']} empieza a trabajar contigo**: {contract}, "
+                f"{shift_text(employee['shift'], employee['jornada']).lower()} ({hours}), "
+                f"{format_amount(employee['wage'])} brutos cada noche. Hoy trabaja las franjas de "
+                "su turno que quedan."
+            )
         if employee["bonus"]:
             self.notes.append(
                 f"-# Bonificado (RDL 1/2023): la cuota de la empresa baja "
@@ -1787,17 +2207,23 @@ class NegocioPanel(ui.LayoutView):
                 "con recargo."
             )
         self.candidate, self.employee = None, employee["id"]
+        self.offer["role"] = ""
         self.screen = PLANTILLA
         await self._pet_note()
         await self.show(interaction)
-        await self._track(staff_hire_stats(business, employee))
+        delta = staff_hire_stats(business, employee)
+        if staff.is_manager(employee):
+            delta.add["biz_managers_hired"] = delta.add.get("biz_managers_hired", 0) + 1
+            led = sum(1 for b in self.chain if staff.manager(b) is not None)
+            delta.peak["biz_managers_max"] = max(delta.peak.get("biz_managers_max", 0), led)
+        await self._track(delta)
 
     async def _raise(self, interaction: discord.Interaction, value: str) -> None:
         await ack(interaction)
         try:
             share = float(value)
             _business, employee = await self.service.raise_wage(
-                self.guild_id, self.owner.id, self.employee or 0, share
+                self.guild_id, self.owner.id, self.employee or 0, share, biz=self.biz
             )
         except (BusinessError, ValueError) as error:
             await notify(interaction, str(error))
@@ -1813,7 +2239,7 @@ class NegocioPanel(ui.LayoutView):
         await ack(interaction)
         try:
             _business, employee, paid, credit = await self.service.train(
-                self.guild_id, self.owner.id, self.employee or 0, value
+                self.guild_id, self.owner.id, self.employee or 0, value, biz=self.biz
             )
         except BusinessError as error:
             await notify(interaction, str(error))
@@ -1832,7 +2258,7 @@ class NegocioPanel(ui.LayoutView):
         await ack(interaction)
         try:
             _business, employee = await self.service.make_permanent(
-                self.guild_id, self.owner.id, self.employee or 0
+                self.guild_id, self.owner.id, self.employee or 0, biz=self.biz
             )
         except BusinessError as error:
             await notify(interaction, str(error))
@@ -1849,7 +2275,7 @@ class NegocioPanel(ui.LayoutView):
             await ack(interaction)
             try:
                 _business, employee, choice, refund = await self.service.dismiss(
-                    self.guild_id, self.owner.id, self.employee or 0, kind
+                    self.guild_id, self.owner.id, self.employee or 0, kind, biz=self.biz
                 )
             except BusinessError as error:
                 await notify(interaction, str(error))
@@ -1873,7 +2299,7 @@ class NegocioPanel(ui.LayoutView):
 
     async def _bank(self, interaction: discord.Interaction) -> None:
         # El banco contesta él (un mensaje privado nuevo): este panel no cambia.
-        if not await banco.open_business(self.cog.bot, interaction):
+        if not await banco.open_business(self.cog.bot, interaction, self.biz):
             await notify(interaction, "El banco está cerrado ahora mismo.")
 
     async def _pick_capital(self, interaction: discord.Interaction, value: str) -> None:
@@ -1888,27 +2314,33 @@ class NegocioPanel(ui.LayoutView):
             return
         try:
             business, total = await self.service.constitute(
-                self.guild_id, self.owner.id, self.capital
+                self.guild_id, self.owner.id, self.capital, biz=self.biz
             )
         except BusinessError as error:
             await notify(interaction, str(error))
             return
+        count = len(self.chain)
         self.notes.append(
-            f"🏢 **{business.name} ya es una sociedad limitada.** Pusiste {format_amount(total)}: "
-            "el capital y la notaría. Desde hoy, el negocio cobra y paga desde su caja."
+            f"🏢 **{business.name}, S.L. ya es una sociedad limitada.** Pusiste "
+            f"{format_amount(total)}: el capital y la notaría. Desde hoy, "
+            + (f"tus {count} locales cobran y pagan" if count > 1 else "el negocio cobra y paga")
+            + " desde su caja."
         )
         await self._pet_note(Mood.GOOD)
         await self.show(interaction)
         await renta.remind(self.cog.bot, interaction)
         await self._track(
-            StatDelta(add={"biz_sl_founded": 1}, peak={"biz_sl_capital_max": self.capital})
+            StatDelta(
+                add={"biz_sl_founded": 1},
+                peak={"biz_sl_capital_max": self.capital, "biz_sl_chain_max": count},
+            )
         )
 
     async def _ric(self, interaction: discord.Interaction, value: str) -> None:
         await ack(interaction)
         try:
             share = float(value)
-            await self.service.set_ric(self.guild_id, self.owner.id, share)
+            await self.service.set_ric(self.guild_id, self.owner.id, share, biz=self.biz)
         except (BusinessError, ValueError) as error:
             await notify(interaction, str(error))
             return
@@ -1927,7 +2359,7 @@ class NegocioPanel(ui.LayoutView):
         view = self.company
         join = not (view is not None and view.business.company.get("zec"))
         try:
-            await self.service.zec(self.guild_id, self.owner.id, join=join)
+            await self.service.zec(self.guild_id, self.owner.id, join=join, biz=self.biz)
         except BusinessError as error:
             await notify(interaction, str(error))
             return
@@ -1980,7 +2412,9 @@ class NegocioPanel(ui.LayoutView):
             "dividendo": self.service.pay_dividend,
         }
         try:
-            _business, paid = await calls[action](self.guild_id, self.owner.id, amount)
+            _business, paid = await calls[action](
+                self.guild_id, self.owner.id, amount, biz=self.biz
+            )
         except BusinessError as error:
             await notify(interaction, str(error))
             return
@@ -2029,6 +2463,215 @@ class NegocioPanel(ui.LayoutView):
         if any(o.listing.key == value for o in self.own_locals):
             self.move["own"] = value
         await self._go(interaction, TRASLADO)
+
+    # -- Fase 5: la cadena, la nave y vender ----------------------------------------------
+
+    async def _cadena(self, interaction: discord.Interaction) -> None:
+        await self._go(interaction, CADENA)
+
+    async def _pick_local(self, interaction: discord.Interaction, value: str) -> None:
+        await ack(interaction)
+        if self.turn is not None:
+            await notify(interaction, "Acaba el turno antes de cambiar de local.")
+            return
+        if value.isdigit() and any(b.id == int(value) for b in self.chain):
+            self.biz = int(value)
+            # Lo elegido era del otro local.
+            self.plan, self.product, self.employee, self.candidate = None, "", None, None
+            self.equipment = self.campaign = ""
+            self.move = {"barrio": "", "size": 0, "own": ""}
+            self.notes.extend(await self.service.take_news(self.guild_id, self.owner.id, self.biz))
+        self.screen = PORTADA
+        await self.show(interaction)
+
+    async def _new_local(self, interaction: discord.Interaction) -> None:
+        # Con el rótulo del local de ahora: una cadena suele llevar la misma marca.
+        if self.status is not None:
+            business = self.status.business
+            self.draft.update(
+                sector="", barrio="", name=business.name, palette=business.palette,
+                emblem=business.emblem,
+            )  # fmt: skip
+        await self._go(interaction, MONTAR)
+
+    async def _nave(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
+        self.own_naves = await self.service.own_naves(self.guild_id, self.owner.id)
+        self.leaving_nave = False
+        self.screen = NAVE
+        await self.show(interaction)
+
+    async def _pick_nave_barrio(self, interaction: discord.Interaction, value: str) -> None:
+        if value in BARRIO_BY_KEY:
+            self.nave_pick.update(barrio=value, own="")
+        await self._go(interaction, NAVE)
+
+    async def _pick_nave_size(self, interaction: discord.Interaction, value: str) -> None:
+        if value.isdigit() and int(value) < len(chain.NAVE_SIZES):
+            self.nave_pick.update(size=int(value), own="")
+        await self._go(interaction, NAVE)
+
+    async def _pick_own_nave(self, interaction: discord.Interaction, value: str) -> None:
+        if any(o.listing.key == value for o in self.own_naves):
+            self.nave_pick["own"] = value
+        await self._go(interaction, NAVE)
+
+    async def _pick_import(self, interaction: discord.Interaction, value: str) -> None:
+        self.nave_pick["product"] = value
+        self.leaving_nave = False
+        await self._go(interaction, NAVE)
+
+    async def _open_nave(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
+        pick = self.nave_pick
+        try:
+            nave, quote, _balance = await self.service.open_nave(
+                self.guild_id, self.owner.id, barrio=self._nave_barrio(), size=pick["size"],
+                own=pick["own"],
+            )  # fmt: skip
+        except BusinessError as error:
+            await notify(interaction, str(error))
+            return
+        self.notes.append(
+            f"🏭 **Nave abierta en {nave.barrio_info.name}**: caben {nave.size_info.lots} lotes. "
+            f"Has pagado {format_amount(quote.total)} (tasa y fianza)"
+            + (
+                f"; el alquiler, {format_amount(quote.rent)} cada noche con su IGIC."
+                if quote.rent
+                else "; es tuya: no paga alquiler."
+            )
+        )
+        await self._pet_note()
+        await self.show(interaction)
+        await renta.remind(self.cog.bot, interaction)
+        await self._track(
+            StatDelta(
+                add={"biz_nave_opened": 1, "biz_nave_own": int(bool(pick["own"]))},
+                peak={"biz_nave_size_max": nave.size + 1},
+            )
+        )
+
+    async def _import(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
+        try:
+            nave, quote, _balance = await self.service.import_container(
+                self.guild_id, self.owner.id, self.nave_pick["product"]
+            )
+        except BusinessError as error:
+            await notify(interaction, str(error))
+            return
+        self.notes.append(
+            f"🚢 **Contenedor de {quote.product.name.lower()} en camino**: {quote.units} unidades "
+            f"por {format_amount(quote.total)} ({signed(quote.saving)} frente al mayorista). "
+            f"Llega a la nave en {chain.IMPORT_NIGHTS} noches."
+        )
+        self.notes.append(
+            f"-# 🐶 IGIC de la importación {format_amount(quote.igic + quote.customs_igic)}"
+            + (f" y AIEM {format_amount(quote.aiem)}" if quote.aiem else " (sin AIEM)")
+            + f" ({TAX_COLLECTOR})"
+        )
+        await self._pet_note()
+        await self.show(interaction)
+        await renta.remind(self.cog.bot, interaction)
+        fill = round(100 * chain.used_lots(nave) / nave.size_info.lots)
+        await self._track(
+            StatDelta(
+                add={
+                    "biz_imports": 1,
+                    "biz_import_spent": quote.total,
+                    "biz_aiem_paid": quote.aiem,
+                    "biz_import_saved": max(0, quote.saving),
+                    "biz_import_aiem_free": int(quote.aiem == 0),
+                },
+                peak={"biz_nave_fill_max": min(100, fill)},
+            )
+        )
+
+    async def _leave_nave(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
+        if not self.leaving_nave:
+            self.leaving_nave = True
+            await self.show(interaction, reload=False)
+            return
+        self.leaving_nave = False
+        try:
+            got, refund, _balance = await self.service.close_nave(self.guild_id, self.owner.id)
+        except BusinessError as error:
+            await notify(interaction, str(error))
+            return
+        self.notes.append(
+            f"🏭 **Has dejado la nave.** El mayorista paga {format_amount(got)} por lo que había "
+            f"dentro y vuelven {format_amount(refund)} de la fianza."
+        )
+        self.screen = CADENA
+        await self.show(interaction)
+        await renta.remind(self.cog.bot, interaction)
+        await self._track(StatDelta(add={"biz_nave_closed": 1}))
+
+    def _fetch(self, lots: int) -> Callable[[discord.Interaction], Awaitable[None]]:
+        async def callback(interaction: discord.Interaction) -> None:
+            await ack(interaction)
+            try:
+                _business, units = await self.service.from_nave(
+                    self.guild_id, self.owner.id, self.product, lots, biz=self.biz
+                )
+            except BusinessError as error:
+                await notify(interaction, str(error))
+                return
+            self.notes.append(f"🏭 Traes {units} unidades de la nave. Ya estaban pagadas.")
+            await self.show(interaction)
+            await self._track(StatDelta(add={"biz_from_nave": lots}))
+
+        return callback
+
+    async def _to_sale(self, interaction: discord.Interaction) -> None:
+        await self._go(interaction, VENTA)
+
+    async def _sell(self, interaction: discord.Interaction) -> None:
+        await ack(interaction)
+        if self.turn is not None:
+            await notify(interaction, "Acaba el turno antes de vender.")
+            return
+        offer = self.sale
+        if offer is None:
+            return
+        try:
+            sale = await self.service.sell_company(
+                self.guild_id, self.owner.id, price=offer.price, biz=self.biz
+            )
+        except BusinessError as error:
+            await notify(interaction, str(error))
+            return
+        self.notes.append(
+            f"💼 **Has vendido {sale.name}, S.L.** con {plural_locales(sale.locales)}: te pagan "
+            f"{format_amount(offer.price)}"
+            + (f" y {format_amount(offer.loan)} de tu préstamo" if offer.loan else "")
+            + "."
+        )
+        if sale.gain_tax:
+            self.notes.append(
+                f"-# 🐶 IRPF de la ganancia (19 %): −{format_amount(sale.gain_tax)} "
+                f"({TAX_COLLECTOR})"
+            )
+        if sale.staff:
+            self.notes.append(
+                f"-# 👥 Tu plantilla ({sale.staff}) sigue en la sociedad con el comprador."
+            )
+        self.screen = MONTAR
+        await self._pet_note(Mood.GOOD if offer.gain >= 0 else Mood.BAD)
+        await self.show(interaction)
+        await renta.remind(self.cog.bot, interaction)
+        await self._track(
+            StatDelta(
+                add={
+                    "biz_company_sold": 1,
+                    "biz_sale_gain": max(0, offer.gain),
+                    "biz_sale_tax": sale.gain_tax,
+                    "biz_sale_loss": int(offer.gain < 0),
+                },
+                peak={"biz_sale_price_max": offer.price, "biz_sale_locales_max": sale.locales},
+            )
+        )
 
     async def _rotulo(self, interaction: discord.Interaction) -> None:
         if self.status is not None:
@@ -2098,6 +2741,8 @@ class NegocioPanel(ui.LayoutView):
         except BusinessError as error:
             await notify(interaction, str(error))
             return
+        before = len(self.chain)
+        self.biz, self.plan, self.product, self.employee = business.id, None, "", None
         quote = opening_quote(business.sector_info, business.barrio_info)
         self.notes.append(
             f"🎉 **¡{business.name} abre sus puertas!** Has pagado {format_amount(quote.total)} "
@@ -2114,8 +2759,9 @@ class NegocioPanel(ui.LayoutView):
             f"biz_opened_{business.sector}": 1,
             f"biz_theme_{barrio.theme}": 1,
             f"biz_island_{barrio.island}": 1,
+            "biz_chain_opened": int(before > 0),
         }
-        await self._track(StatDelta(add=opened))
+        await self._track(StatDelta(add=opened, peak=chain_peaks(self.chain)))
 
     # -- Rótulo, precios, almacén y cerrar --------------------------------------------
 
@@ -2124,7 +2770,7 @@ class NegocioPanel(ui.LayoutView):
         try:
             await self.service.restyle(
                 self.guild_id, self.owner.id, name=self.draft["name"],
-                palette=self.draft["palette"], emblem=self.draft["emblem"],
+                palette=self.draft["palette"], emblem=self.draft["emblem"], biz=self.biz,
             )  # fmt: skip
         except BusinessError as error:
             await notify(interaction, str(error))
@@ -2132,12 +2778,12 @@ class NegocioPanel(ui.LayoutView):
         self.notes.append("🎨 Rótulo nuevo colgado.")
         self.screen = PORTADA
         await self.show(interaction)
-        await self._track(StatDelta(add={"biz_restyled": 1}))
+        await self._track(StatDelta(add={"biz_restyled": 1}, peak=chain_peaks(self.chain)))
 
     async def _set_price(self, interaction: discord.Interaction, value: str) -> None:
         await ack(interaction)
         try:
-            await self.service.restyle(self.guild_id, self.owner.id, price=value)
+            await self.service.restyle(self.guild_id, self.owner.id, price=value, biz=self.biz)
         except BusinessError as error:
             await notify(interaction, str(error))
             return
@@ -2148,7 +2794,9 @@ class NegocioPanel(ui.LayoutView):
         await ack(interaction)
         level = None if value == "general" else value
         try:
-            await self.service.set_price(self.guild_id, self.owner.id, self.product, level)
+            await self.service.set_price(
+                self.guild_id, self.owner.id, self.product, level, biz=self.biz
+            )
         except BusinessError as error:
             await notify(interaction, str(error))
             return
@@ -2161,7 +2809,7 @@ class NegocioPanel(ui.LayoutView):
         key = self.equipment
         try:
             business, base, tax, _balance = await self.service.buy_equipment(
-                self.guild_id, self.owner.id, key
+                self.guild_id, self.owner.id, key, biz=self.biz
             )
         except BusinessError as error:
             await notify(interaction, str(error))
@@ -2187,7 +2835,7 @@ class NegocioPanel(ui.LayoutView):
         key = self.campaign
         try:
             _business, base, tax, _balance = await self.service.start_campaign(
-                self.guild_id, self.owner.id, key
+                self.guild_id, self.owner.id, key, biz=self.biz
             )
         except BusinessError as error:
             await notify(interaction, str(error))
@@ -2223,11 +2871,11 @@ class NegocioPanel(ui.LayoutView):
         try:
             if own:
                 business, quote, _balance = await self.service.move_to_own(
-                    self.guild_id, self.owner.id, self.move["own"]
+                    self.guild_id, self.owner.id, self.move["own"], biz=self.biz
                 )
             else:
                 business, quote, _balance = await self.service.move(
-                    self.guild_id, self.owner.id, barrio, size
+                    self.guild_id, self.owner.id, barrio, size, biz=self.biz
                 )
         except BusinessError as error:
             await notify(interaction, str(error))
@@ -2264,7 +2912,7 @@ class NegocioPanel(ui.LayoutView):
             await ack(interaction)
             try:
                 _business, base, tax, _balance = await self.service.buy(
-                    self.guild_id, self.owner.id, self.product, lots
+                    self.guild_id, self.owner.id, self.product, lots, biz=self.biz
                 )
             except BusinessError as error:
                 await notify(interaction, str(error))
@@ -2292,13 +2940,24 @@ class NegocioPanel(ui.LayoutView):
             await notify(interaction, "Acaba el turno antes de cerrar.")
             return
         try:
-            closing = await self.service.close(self.guild_id, self.owner.id, traspaso=traspaso)
+            closing = await self.service.close(
+                self.guild_id, self.owner.id, traspaso=traspaso, biz=self.biz
+            )
         except BusinessError as error:
             await notify(interaction, str(error))
             return
         verb = "traspasado" if traspaso else "cerrado"
         got = closing.stock + closing.proceeds
-        if closing.company:
+        left = [b for b in self.chain if b.id != closing.business.id]
+        branch = closing.company and bool(left)
+        self.biz = None
+        if branch:
+            self.notes.append(
+                f"🚪 **{closing.business.name} se ha {verb}.** Tu sociedad sigue con "
+                f"{plural_locales(len(left))}: lo cobrado ({format_amount(got)}) y la fianza "
+                f"({format_amount(closing.refund)}) entran en su caja."
+            )
+        elif closing.company:
             self.notes.append(
                 f"🚪 **{closing.business.name} se ha {verb} y la sociedad, liquidado.** Te "
                 f"llegan {format_amount(closing.liquidated)} de cuota de liquidación"
@@ -2362,7 +3021,7 @@ class NegocioPanel(ui.LayoutView):
             self.notes.append(
                 f"-# 🏦 La caja canceló sus préstamos: {format_amount(closing.bank_paid)}."
             )
-        self.screen = MONTAR
+        self.screen = PORTADA if left else MONTAR
         await self._pet_note(Mood.GOOD if traspaso else None)
         await self.show(interaction)
         await renta.remind(self.cog.bot, interaction)
@@ -2375,7 +3034,8 @@ class NegocioPanel(ui.LayoutView):
                     "biz_closed_red": int(week < 0),
                     "biz_traspasos": int(traspaso),
                     "biz_traspaso_money": got if traspaso else 0,
-                    "biz_sl_liquidated": int(closing.company),
+                    "biz_sl_liquidated": int(closing.company and not branch),
+                    "biz_branch_closed": int(branch),
                     "biz_sl_sunk": int(sunk),
                     "biz_loan_assumed": int(closing.company and closing.bank_moved > 0),
                 },
@@ -2400,7 +3060,9 @@ class NegocioPanel(ui.LayoutView):
                 await notify(interaction, "Ya estás currando en otro panel. Una cosa cada vez.")
                 return
             try:
-                turn = await self.service.start_turn(self.guild_id, self.owner.id, self.plan)
+                turn = await self.service.start_turn(
+                    self.guild_id, self.owner.id, self.plan, biz=self.biz
+                )
             except BusinessError as error:
                 await notify(interaction, str(error))
                 return
@@ -2648,6 +3310,14 @@ class Negocio(commands.Cog, name="Negocio"):
                 if run.refund:
                     delta.add["biz_pluri_refund"] = run.refund
                 delta.add.update(business_loan_night_stats(run.loans))
+                delta.add.update(
+                    biz_containers=run.nave.count("contenedor"),
+                    biz_nave_lost=run.nave.count("desahucio"),
+                    biz_manager_restocks=int("repuso" in run.manager),
+                    biz_manager_nave=int("nave" in run.manager),
+                    biz_manager_hires=run.manager.count("contrato"),
+                    biz_manager_absent=int("falta" in run.manager),
+                )
                 night = staff_night_stats(run)
                 for stat, value in night.add.items():
                     delta.add[stat] = delta.add.get(stat, 0) + value
@@ -2761,6 +3431,18 @@ async def business_of(bot: commands.Bot, guild_id: int, user_id: int) -> Busines
         return None
 
 
+async def chain_of(bot: commands.Bot, guild_id: int, user_id: int) -> list[Business]:
+    """Todos los locales de un miembro, del más antiguo al más nuevo (vacío sin el cog)."""
+    cog = find_cog(bot, Negocio)
+    if cog is None:
+        return []
+    try:
+        return await cog.service.owned(guild_id, user_id)
+    except (OSError, sqlite3.Error):
+        logger.exception("No se pudieron leer los negocios de %s", user_id)
+        return []
+
+
 def busy(bot: commands.Bot, guild_id: int, user_id: int) -> bool:
     """Si el miembro está atendiendo su negocio ahora mismo (solo memoria)."""
     cog = find_cog(bot, Negocio)
@@ -2773,16 +3455,18 @@ async def business_line(bot: commands.Bot, guild_id: int, user_id: int) -> str |
     if cog is None:
         return None
     try:
-        business = await cog.service.business(guild_id, user_id)
+        owned = await cog.service.owned(guild_id, user_id)
     except (OSError, sqlite3.Error):
         logger.exception("No se pudo leer el negocio de %s", user_id)
         return None
-    if business is None:
+    if not owned:
         return None
+    business = owned[0]
     sector = business.sector_info
+    more = f" · y {plural_locales(len(owned) - 1)} más" if len(owned) > 1 else ""
     return (
         f"{sector.emoji} **{business.name}** · {sector.name} en {business.barrio_info.name} · "
-        f"{_stars_text(business.stars)}"
+        f"{_stars_text(business.stars)}{more}"
     )
 
 
