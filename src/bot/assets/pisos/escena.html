@@ -3915,7 +3915,7 @@ function streetBuilding(bd, b, x, y, w, h) {
   const fw = 112, tx = x + fw + 12, tw = w - fw - 20;
   card(x, y, w, h, { r: 12, ...(bd.mine > 0 ? { stroke: C.blue } : {}) });
   g.save(); rr(x, y, w, h, 12); g.clip();
-  facade(bd.featured_kind || "bajo", x, y, fw, h, { key: bd.key, barrio: b.key, theme: b.theme });
+  facade(bd.featured_kind || "bajo", x, y, fw, h, { key: bd.featured || bd.key, barrio: b.key, theme: b.theme });
   rect(x + fw, y, 2, h, "rgba(0,0,0,0.12)");
   g.restore();
   bigSlot(bd.slot, x + 26, y + 26);
@@ -4249,7 +4249,7 @@ function paintEdificio(st) {
   const theme = SKY[st.theme] ? st.theme : "centro", sty = styleOf(st.key, st.barrio_key, theme);
   header(st.title, `${st.barrio} · ${st.kind_name}`, { size: 30, wordmark: false });
   const floors = st.floors || [], units = floors.reduce((a, f) => a + f.units.length, 0);
-  fitText(`${floors.length} ${floors.length === 1 ? "planta" : "plantas"} · ${units} ${units === 1 ? "unidad" : "unidades"}`, 20, 114, 440, F.d, 22, 15, { color: C.ink });
+  fitText(st.summary || `${floors.length} ${floors.length === 1 ? "planta" : "plantas"} · ${units} ${units === 1 ? "unidad" : "unidades"}`, 20, 114, 440, F.d, 22, 15, { color: C.ink });
   // la leyenda: la estrellita es el destacado y la etiqueta verde, los candidatos que esperan
   starPath(30, 141, 10, "#a86f00"); starPath(30, 141, 7.5, C.gold);
   T("de la tarjeta del barrio", 46, 141, { font: F.m(17), color: C.mute });

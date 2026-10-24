@@ -38,6 +38,7 @@ from bot.services.housing_catalog import (
     BARRIOS,
     ISLANDS,
     KINDS,
+    LISTING_BY_KEY,
     REFORMS,
     RENT_LEVELS,
     REVIEW_LINES,
@@ -1472,14 +1473,40 @@ def _owner(market: Market, key: str, user_id: int, names: dict[int, str]) -> str
 
 
 def _level_name(level: int, building: Building) -> str:
-    """Cómo se llama una planta en el corte: «Sótano», «Bajo», «2.ª planta», «Pantalán»…"""
+    """Cómo se llama una planta en el corte: «Sótano» (o «2.º sótano» si hay más de uno),
+    «Bajo», «2.ª planta», «Pantalán»…"""
     if level < 0:
-        return "Sótano" if level == -1 else f"Sótano {level}"
+        deep = any(u.level < -1 for u in building.units)
+        return f"{-level}.º sótano" if deep else "Sótano"
     if building.kind == PANTALAN:
         return "Pantalán"
     if level == 0:
         return "Bajo" if building.floors > 1 else "Planta"
     return f"{level}.ª planta"
+
+
+def _building_summary(building: Building, units: int) -> str:
+    """La línea de arriba del corte: «4 plantas y sótano · 9 unidades», «5 amarres»…"""
+    things = {
+        PANTALAN: ("amarre", "amarres"),
+        "aparcamiento": ("plaza", "plazas"),
+        "guardamuebles": ("trastero", "trasteros"),
+        "complejo": ("bungalow", "bungalows"),
+        "poligono": ("nave", "naves"),
+    }
+    if building.kind in things:
+        one, many = things[building.kind]
+        return f"{units} {one if units == 1 else many}"
+    if building.kind == "edificio":
+        listing = LISTING_BY_KEY.get(building.featured)
+        return f"Edificio entero ({listing.floor if listing else ''})" + (
+            f" · dividido en {units}" if units > 1 else " · sin dividir"
+        )
+    if building.kind == "casa":
+        return "Casa de una vivienda"
+    floors = f"{building.floors} {'planta' if building.floors == 1 else 'plantas'}"
+    basement = " y sótano" if any(u.level < 0 for u in building.units) else ""
+    return f"{floors}{basement} · {units} unidades"
 
 
 def streets_state(
@@ -1500,6 +1527,7 @@ def streets_state(
             buildings.append(
                 {
                     "key": building.key,
+                    "featured": building.featured,
                     "slot": int(building.key.rsplit("_e", 1)[1]),
                     "number": building.number,
                     "kind": building.kind,
@@ -1592,6 +1620,7 @@ def building_state(
         "title": f"{street.name}, {building.number}",
         "barrio": BARRIO_BY_KEY[building.barrio].name,
         "featured": building.featured,
+        "summary": _building_summary(building, len(units)),
         "floors": floors,
         "stats": [
             {"label": "Unidades", "value": str(len(units))},
