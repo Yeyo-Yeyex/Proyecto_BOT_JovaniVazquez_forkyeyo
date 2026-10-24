@@ -1575,7 +1575,7 @@ def streets_state(
         },
         "news": news_box(market.news_of(barrio_key, today)) if today else None,
         "streets": streets,
-        "footer": "Toca un edificio para verlo por dentro · ⭐ Destacados, los nueve de siempre",
+        "footer": "Toca un edificio para verlo por dentro · Destacados: los nueve de siempre",
     }
     state["fallback"] = [
         f"{barrio.name}: sus calles",
