@@ -74,3 +74,15 @@ Juego por etapas: **early** trasteros y garajes (~100.000-300.000 Y$), **mid** p
   (`barrio_weight`, `index_level`) pesa todas las unidades del barrio.
 - Pantallas: `calles` (`housing_view.streets_state`) y `edificio`
   (`housing_view.building_state`), con un botón por edificio y un desplegable de unidades.
+
+## Lo que salió de la fase 1 (9.14.0)
+
+- 866 unidades nuevas (221 pisos de 2, 178 de 3, 179 plazas, 135 trasteros, 64 locales, 39
+  áticos, 24 amarres, 18 bungalows, 4 bajos y 4 naves): de ~10 en Tafira a ~80 en Santa Cruz.
+- **Índice:** los nueve destacados pesan como antes (juntos, 1) y las unidades de las calles,
+  juntas, `STREETS_WEIGHT` = 1. Repartir el peso entre todo el barrio dejaba a los nueve en un
+  11 %: los barrios tensionados de hoy se habrían destensado solos.
+- **Falcon** (`docs/economia_sim.py --calles`): con el generador primero salía el día 342,
+  porque los bloques de un estudio eran todos estudios (lo que más renta por lo que cuesta). Con
+  vecinos del tamaño del barrio y plazas y trasteros nuevos un 25 % más baratos de alquilar,
+  sale el día 356-361 (sin calles, 363-367): dentro de los 350-390 de `CLAUDE.md`.

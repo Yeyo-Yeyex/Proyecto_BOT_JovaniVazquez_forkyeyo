@@ -8,6 +8,11 @@ criterio.
 
 ## 9.x
 
+### 9.14.0 · 2026-10-24
+
+- Pisos: 🗺️ Calles en cada barrio: tres calles reales con tres edificios cada una, y cada edificio se ve por dentro, partido por la mitad, con lo que hay en cada planta, qué se hace y de quién es
+- Pisos: 866 inmuebles nuevos alrededor de los de siempre (pisos, locales, plazas de garaje, trasteros, amarres, bungalows y naves), para empezar con poco dinero y acabar juntando edificios
+
 ### 9.13.0 · 2026-10-24
 
 - Pisos: al dividir un edificio por plantas, el bajo es un local comercial (se puede montar ahí tu negocio) y sale un trastero por vivienda; los edificios que ya se dividieron siguen como estaban
