@@ -2404,7 +2404,9 @@ function listingCard(c, n, x, y, o = {}) {
   if (c.owners.length) ownersBar(px, y + h - 22, pw, 9, c.owners, c.free);
 }
 
-function paintBarrio(st) {
+// Lo de arriba del barrio (y de su plano, que lo sustituye): el índice en la cabecera, la descripción o la noticia,
+// el precio medio y la pegatina.
+function barrioTop(st) {
   const b = st.barrio;
   header(b.name, [b.town, b.island, b.theme_name].filter(Boolean).join(" · "), { rightW: 250, right() {
     fillRR(W - 270, 14, 250, 60, 12, "rgba(255,255,255,0.14)"); rr(W - 270, 14, 250, 60, 12); g.strokeStyle = "rgba(255,255,255,0.3)"; g.lineWidth = 1.2; g.stroke();
@@ -2419,7 +2421,9 @@ function paintBarrio(st) {
   T("Precio medio", 694, 114, { font: F.m(19), color: C.mute });
   fitText(b.price_m2, 694, 138, 280, F.d, 28, 22, { color: C.ink });
   if (b.badge) sticker(b.badge, b.badge === "buitre" ? 626 : 634, 126, -0.1, 0.85);
-  const x0 = (W - BARRIO_COLS * CARD_W - (BARRIO_COLS - 1) * CARD_GAP) / 2;
+}
+function paintBarrio(st) {
+  barrioTop(st);
   cardGrid(st.cards);
 }
 function cardGrid(cards, o) {
@@ -3875,10 +3879,13 @@ function paintJunta(st) {
 
 // CALLES ----------------------------------------------------------------------------------
 
-// El plano del barrio: sus tres calles en bandas, cada una con su placa de azulejo, su descripción y sus tres
-// edificios (la fachada del destacado y el número de su botón, el de la tarjeta del destacado en el barrio).
+// El plano del barrio: arriba lo del barrio (como en la de barrio, a la que sustituye) y sus tres calles en
+// bandas, cada una con su placa de azulejo, su descripción y sus edificios, de 3 a 5 (la fachada y el número de su
+// botón: del 1 al 9, el de la tarjeta del destacado en el barrio).
 const AZULEJO = "#1d4f9c";
-const CALLE_TOP = 98, CALLE_H = 204, CALLE_GAP = 10, CALLE_ROAD = 22, CALLE_PROP = 28;
+const CALLE_TOP = 164, CALLE_H = 182, CALLE_GAP = 8, CALLE_ROAD = 20, CALLE_SKY = 50;
+// Según cuántos edificios tenga la calle: el margen, el hueco entre ellos (con su palmera o farola) y la fachada.
+const CALLE_FIT = { 3: { pad: 16, prop: 28, fw: 112 }, 4: { pad: 14, prop: 22, fw: 86 }, 5: { pad: 10, prop: 16, fw: 64 } };
 
 // Una placa de calle canaria: azulejo blanco con su doble filete azul y los rombos en las esquinas. Devuelve su ancho.
 function streetPlate(text, x, y, maxW, h = 40) {
@@ -3910,22 +3917,24 @@ function bigSlot(n, x, y, r = 21) {
   T(String(n), x, y + 0.5, { font: F.d(Math.round(n > 9 ? r * 0.95 : r * 1.15)), color: "#fff", align: "center" });
 }
 // Lo que no cabe en la tarjeta del plano se dice más corto.
-const BUILDING_SHORT = { complejo: "Bungalows", poligono: "Naves" };
-function streetBuilding(bd, b, x, y, w, h) {
-  const fw = 112, tx = x + fw + 12, tw = w - fw - 20;
+const BUILDING_SHORT = { bloque: "Bloque", aparcamiento: "Garajes", guardamuebles: "Trasteros", complejo: "Bungalows", poligono: "Naves", edificio: "Edificio" };
+function streetBuilding(bd, b, x, y, w, h, fw) {
+  const tx = x + fw + 10, tw = w - fw - 16, slim = fw < 100;
   card(x, y, w, h, { r: 12, ...(bd.mine > 0 ? { stroke: C.blue } : {}) });
   g.save(); rr(x, y, w, h, 12); g.clip();
-  facade(bd.featured_kind || "bajo", x, y, fw, h, { key: bd.featured || bd.key, barrio: b.key, theme: b.theme });
+  facade(bd.featured_kind || "bajo", x, y, fw, h, { key: bd.face || bd.featured || bd.key, barrio: b.key, theme: b.theme });
   rect(x + fw, y, 2, h, "rgba(0,0,0,0.12)");
   g.restore();
-  bigSlot(bd.slot, x + 26, y + 26);
+  bigSlot(bd.slot, x + (slim ? 19 : 26), y + (slim ? 19 : 26), slim ? 15 : 21);
   const name = width(bd.kind_name, F.d(16)) > tw ? BUILDING_SHORT[bd.kind] || bd.kind_name : bd.kind_name;
-  fitText(name, tx, y + 17, tw, F.d, 19, 13, { color: C.ink });
-  fitText(`Portal ${bd.number}` + (bd.floors > 1 ? ` · ${bd.floors} plantas` : ""), tx, y + 39, tw, F.m, 17, 13, { color: C.mute });
-  fitText(`${bd.units} ${bd.units === 1 ? "unidad" : "unidades"}`, tx, y + 62, tw, F.d, 20, 14, { color: C.ink });
-  fitText(`${bd.free} en venta`, tx, y + 84, tw, F.d, 18, 13, { color: bd.free ? C.greenDk : C.mute });
-  if (bd.mine > 0) tag(`${bd.mine} ${bd.mine === 1 ? "tuya" : "tuyas"}`, tx, y + h - 30, "blue", "house", 16, tw);
-  else T("Ninguna tuya", tx, y + h - 17, { font: F.m(17), color: C.mute });
+  fitText(name, tx, y + 16, tw, F.d, 19, 13, { color: C.ink });
+  const long = `Portal ${bd.number}` + (bd.floors > 1 ? ` · ${bd.floors} plantas` : "");
+  const where = width(long, F.m(15)) > tw ? `N.º ${bd.number}` + (bd.floors > 1 ? ` · ${bd.floors} pl.` : "") : long;
+  fitText(where, tx, y + 36, tw, F.m, 17, 13, { color: C.mute });
+  fitText(`${bd.units} ${bd.units === 1 ? "unidad" : "unidades"}`, tx, y + 57, tw, F.d, 20, 14, { color: C.ink });
+  fitText(`${bd.free} en venta`, tx, y + 77, tw, F.d, 18, 13, { color: bd.free ? C.greenDk : C.mute });
+  if (bd.mine > 0) tag(`${bd.mine} ${bd.mine === 1 ? "tuya" : "tuyas"}`, tx, y + h - 26, "blue", "house", slim ? 14 : 16, tw);
+  else fitText("Ninguna tuya", tx, y + h - 14, tw, F.m, 16, 12, { color: C.mute });
 }
 function streetBand(s, b, theme, y) {
   const x = 16, w = W - 32, h = CALLE_H, gy = y + h - CALLE_ROAD, [sky1, sky2] = SKY[theme], seed = hash(s.key || s.name);
@@ -3936,16 +3945,16 @@ function streetBand(s, b, theme, y) {
   rect(x, gy, w, 7, GROUND[theme]); rect(x, gy + 7, w, CALLE_ROAD - 7, "#565b63");
   for (let k = x + 10; k < x + w; k += 34) rect(k, gy + 13, 16, 2.4, "rgba(255,255,255,0.75)");
   g.restore();
-  const cw = (w - 32 - 2 * CALLE_PROP) / 3;
-  for (let j = 1; j < 3; j++) streetProp(theme, x + 16 + j * cw + (j - 0.5) * CALLE_PROP, gy, seed + j);
-  const pw = streetPlate(s.name, x + 14, y + 8, 470), bw = w - pw - 44, lines = wrap(s.blurb || "", bw, F.m(17), 2);
-  lines.forEach((l, i) => T(l, x + pw + 28, y + (lines.length === 1 ? 28 : 19) + i * 19, { font: F.m(17), color: C.ink }));
-  (s.buildings || []).slice(0, 3).forEach((bd, j) => streetBuilding(bd, b, x + 16 + j * (cw + CALLE_PROP), y + 56, cw, gy - y - 56));
+  const bds = (s.buildings || []).slice(0, 5), n = clamp(bds.length, 3, 5), { pad, prop, fw } = CALLE_FIT[n];
+  const cw = (w - 2 * pad - (n - 1) * prop) / n;
+  for (let j = 1; j < n; j++) streetProp(theme, x + pad + j * cw + (j - 0.5) * prop, gy, seed + j);
+  const pw = streetPlate(s.name, x + 14, y + 6, 470), bw = w - pw - 44, lines = wrap(s.blurb || "", bw, F.m(17), 2);
+  lines.forEach((l, i) => T(l, x + pw + 28, y + (lines.length === 1 ? 26 : 17) + i * 19, { font: F.m(17), color: C.ink }));
+  bds.forEach((bd, j) => streetBuilding(bd, b, x + pad + j * (cw + prop), y + CALLE_SKY, cw, gy - y - CALLE_SKY, fw));
 }
 function paintCalles(st) {
   const b = st.barrio, theme = SKY[b.theme] ? b.theme : "centro";
-  header(b.name, [b.town, b.island, b.theme_name].filter(Boolean).join(" · "), { size: 34, wordmark: false });
-  themeBadge(theme, W - 46, 45, 22);
+  barrioTop(st);
   (st.streets || []).slice(0, 3).forEach((s, i) => streetBand(s, b, theme, CALLE_TOP + i * (CALLE_H + CALLE_GAP)));
 }
 
