@@ -21,8 +21,6 @@ from datetime import date, datetime, timedelta
 from functools import partial
 from typing import TypeVar
 
-import discord
-
 from bot.repositories.economy import (
     HK_ACCOUNT_ID,
     MARKET_ACCOUNT_ID,
@@ -97,7 +95,6 @@ from bot.services.taxes import (
     PAY_DAYS,
     PROJECTION_WINDOW_SECONDS,
     SECOND_INSTALLMENT_DAYS,
-    TAX_COLLECTOR,
     WAGE_YAPDOLLARS_PER_EURO,
     WEALTH_MINIMUM,
     YAPDOLLARS_PER_EURO,
@@ -186,7 +183,7 @@ __all__ = [
     "parse_amount",
     "tax_tag",
     "tax_line",
-    "treasury_embed",
+    "treasury_rules",
 ]
 
 T = TypeVar("T")
@@ -277,59 +274,29 @@ def gambling_tax_line(settlement: BetSettlement) -> str | None:
     return None
 
 
-def treasury_embed(treasury: Treasury, *, year: int, names: dict[int, str]) -> discord.Embed:
-    """Tarjeta pública de la cuenta del Estado.
-
-    Args:
-        names: Nombre a mostrar de cada `user_id` de `top_contributors`.
-    """
-    debt = (
-        f"\nDeuda pública (premios de lotería sin fondos): {format_amount(treasury.debt)}"
-        if treasury.debt
-        else ""
-    )
-    embed = discord.Embed(
-        title="🏛️ Hacienda",
-        description=(
-            f"Saldo de la cuenta del Estado: **{format_amount(treasury.balance)}**\n"
-            f"Recaudado en {year}: **{format_amount(treasury.collected_since)}**\n"
-            f"Recaudado desde siempre: {format_amount(treasury.collected_total)}{debt}"
-        ),
-        color=discord.Color.from_rgb(170, 21, 27),
-    )
-    if treasury.top_contributors:
-        medals = ("🥇", "🥈", "🥉")
-        lines = [
-            f"{medals[i] if i < len(medals) else f'{i + 1}.'} {names[user_id]} · "
-            f"{format_amount(paid)}"
-            for i, (user_id, paid) in enumerate(treasury.top_contributors)
-        ]
-        embed.add_field(name="Quién más ha pagado", value="\n".join(lines), inline=False)
-    embed.add_field(
-        name="Qué se cobra",
-        value=(
-            "IRPF con una sola vara para toda la renta: retención con tu tipo de la semana "
-            "en nóminas, premios y alquileres, el 19 % de lo ganado cada día en el casino "
-            f"(si pasa de {format_amount(GAMBLING_EXEMPT)}) y "
-            "declaración cada lunes con la Renta (a pagar, entera o en dos plazos; a "
-            "devolver, al presentarla) · Quien debe a Hacienda paga el 30 % de lo que cobra · "
-            "Patrimonio cada lunes por lo que pase "
-            f"de {format_amount(WEALTH_MINIMUM)} entre efectivo y pisos · ITP (6,5%), IBI e "
-            "IRPF de los alquileres en `pisos` · IGIC en las compras de la `tienda` "
-            f"(general del {IGIC_GENERAL_RATE:.0%}) · Los donativos a ONGs desgravan en la renta"
-            " · Los `bizum` entre miembros, exentos de Donaciones"
-            f" · Gravamen especial del 20% en los premios de `loteria` que pasen de "
-            f"{format_amount(LOTTERY_EXEMPT)}"
-            " · Nóminas de la `pala`: IRPF y Seguridad Social del trabajador y de la empresa"
-            " (se apunta a quien cobra) · Multas de la Inspección"
-            " · Intereses diarios del monedero: retención del 19% en cada pago (con el tope"
-            f" de {format_amount(INTEREST_DAILY_MAX)} brutos al día, nunca se sale de ese"
-            " tramo del ahorro)"
-        ).replace("%", " %"),
-        inline=False,
-    )
-    embed.set_footer(text=f"Dinero en manos de {TAX_COLLECTOR}. Ya veremos qué hace con él.")
-    return embed
+def treasury_rules() -> str:
+    """Qué se cobra en el servidor, para la pestaña 📜 Impuestos de `hacienda`."""
+    return (
+        "IRPF con una sola vara para toda la renta: retención con tu tipo de la semana "
+        "en nóminas, premios y alquileres, el 19% de lo ganado cada día en el casino "
+        f"(si pasa de {format_amount(GAMBLING_EXEMPT)}) y "
+        "declaración cada lunes con la Renta (a pagar, entera o en dos plazos; a "
+        "devolver, al presentarla) · Quien debe a Hacienda paga el 30% de lo que cobra · "
+        "Patrimonio cada lunes por lo que pase "
+        f"de {format_amount(WEALTH_MINIMUM)} entre efectivo y pisos · ITP (6,5%), IBI e "
+        "IRPF de los alquileres en `pisos` · IGIC en las compras de la `tienda` "
+        f"(general del {IGIC_GENERAL_RATE:.0%}) · Los donativos a ONGs desgravan en la renta"
+        " · Los `bizum` entre miembros, exentos de Donaciones"
+        f" · Gravamen especial del 20% en los premios de `loteria` que pasen de "
+        f"{format_amount(LOTTERY_EXEMPT)}"
+        " · Nóminas de la `pala`: IRPF y Seguridad Social del trabajador y de la empresa"
+        " (se apunta a quien cobra) · Negocios de la `pala`: IGIC de lo que compran,"
+        " Seguridad Social e IRPF de su plantilla, IRPF del dueño y Sociedades"
+        " · Multas de la Inspección"
+        " · Intereses diarios del monedero: retención del 19% en cada pago (con el tope"
+        f" de {format_amount(INTEREST_DAILY_MAX)} brutos al día, nunca se sale de ese"
+        " tramo del ahorro)"
+    ).replace("%", " %")
 
 
 _ALL_IN_WORDS = {"all", "allin", "all-in", "todo", "max"}
@@ -1972,6 +1939,10 @@ class EconomyService:
     async def housing_tax_breakdown(self, guild_id: int) -> dict[int, dict[str, int]]:
         """Lo que cada miembro ha pagado por sus pisos (ver `EconomyRepository`)."""
         return await self.repository.housing_tax_breakdown(guild_id)
+
+    async def business_tax_breakdown(self, guild_id: int) -> dict[int, dict[str, int]]:
+        """Lo que cada dueño ha pagado por sus negocios (ver `EconomyRepository`)."""
+        return await self.repository.business_tax_breakdown(guild_id)
 
     async def treasury(self, guild_id: int, *, since: float, top: int = 5) -> Treasury:
         """Cuenta del Estado: saldo, recaudación total y desde `since`, y quién más paga."""

@@ -169,8 +169,9 @@ python -m bot
   `src/bot/services/taxes.py`. Cada cobro
   muestra una línea pequeña con lo que se lleva Perro Sanxe. Todo lo
   retenido entra en la cuenta del Estado (`user_id = 0` en
-  `economy_wallets`), y `hacienda` muestra a cualquiera su saldo, lo
-  recaudado este año y desde siempre, y quién más ha pagado. Todo movimiento queda en
+  `economy_wallets`), y `hacienda` muestra a cualquiera, en un panel con pestañas, su
+  saldo, lo recaudado este año y desde siempre, lo que deja cada impuesto y quién más
+  paga: cada miembro, los caseros y los empresarios. Todo movimiento queda en
   un libro (`economy_ledger`) y se aplica de forma atómica: dos clics a la
   vez no pueden gastar dos veces el mismo dinero.
 - **Impuesto sobre el Patrimonio:** cada lunes se cobra lo que pase de

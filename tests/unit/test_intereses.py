@@ -25,7 +25,7 @@ from bot.services.economy import (
     STARTING_BALANCE,
     EconomyService,
     day_bounds,
-    treasury_embed,
+    treasury_rules,
 )
 from bot.services.interest import (
     INTEREST_DAILY_MAX,
@@ -353,12 +353,8 @@ async def test_saldo_proyecta_hoy_y_recuerda_lo_de_ayer(tmp_path: Path) -> None:
     assert preview.to_top == INTEREST_TOP - preview.average
 
 
-async def test_hacienda_cabe_en_un_campo_de_discord() -> None:
-    from bot.repositories.economy import Treasury
-
-    embed = treasury_embed(Treasury(0, 0, 0, ()), year=2026, names={})
-    assert all(len(field.value or "") <= 1024 for field in embed.fields)
-    assert "Intereses" in (embed.fields[-1].value or "")
+def test_hacienda_explica_los_intereses() -> None:
+    assert "Intereses" in treasury_rules()
 
 
 # -- Avisos y logros ---------------------------------------------------------------------

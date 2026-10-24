@@ -54,12 +54,12 @@ import random
 import secrets
 from collections import deque
 from collections.abc import Awaitable, Callable, Iterable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import discord
-from discord import app_commands
+from discord import app_commands, ui
 from discord.ext import commands
 
 from bot.cogs import achievements as logros
@@ -68,6 +68,7 @@ from bot.cogs import business as negocio
 from bot.cogs import pets as mascotas
 from bot.cogs import shop as tienda
 from bot.cogs import work as curro
+from bot.cogs.hacienda_panel import HaciendaPanel, bill_card
 from bot.services import skins
 from bot.services.achievements import (
     StatDelta,
@@ -92,7 +93,6 @@ from bot.services.economy import (
     monday_epoch,
     next_daily_at,
     parse_amount,
-    treasury_embed,
 )
 from bot.services.levels import TIMEZONE, local_day
 from bot.services.pending import Pending, Side, pending_fields
@@ -117,14 +117,7 @@ from bot.services.roulette import (
 )
 from bot.services.roulette_scene import GAME as GAME_SKIN
 from bot.services.roulette_scene import Media, RouletteScene
-from bot.services.tax_report import (
-    add_bill_fields,
-    add_housing_fields,
-    housing_lines,
-    member_bill_embed,
-    server_bill,
-    solidarity_line,
-)
+from bot.services.tax_report import Snapshot, TaxBill, member_page, server_bill
 from bot.services.tax_report import bills as tax_bills
 from bot.services.taxes import TAX_COLLECTOR, WEALTH_MINIMUM
 from bot.utils.interactions import ack, edit, notify
@@ -1472,72 +1465,82 @@ class Casino(commands.Cog):
 
     # -- Hacienda ------------------------------------------------------------------
 
-    async def _hacienda_impl(
-        self, responder: CommandResponder, member: discord.abc.User | None = None
-    ) -> None:
-        """Sin miembro: la cuenta del Estado y lo que paga cada uno. Con miembro: su factura."""
-        guild = responder.guild
-        if guild is None:
-            await responder.send_error("La economía solo funciona dentro de un servidor.")
-            return
+    async def _hacienda_view(
+        self, guild: discord.Guild, author: discord.abc.User, member: discord.abc.User | None
+    ) -> tuple[ui.LayoutView, list[TaxBill]]:
+        """Sin miembro: el panel de la cuenta del Estado. Con miembro: su factura.
+
+        Lee todas las cifras de una vez (las pestañas no vuelven a la base de datos).
+
+        Returns:
+            `(la vista, las facturas de todos)`, estas para los logros.
+        """
         now = datetime.now(TIMEZONE)
         year_start = datetime(now.year, 1, 1, tzinfo=TIMEZONE).timestamp()
-        all_bills = tax_bills(await self.economy.tax_breakdown(guild.id))
-        server = server_bill(all_bills)
-        names = {bill.user_id: self._display_name(guild, bill.user_id) for bill in all_bills}
-        if member is None:
-            treasury = await self.economy.treasury(guild.id, since=year_start)
-            embed = treasury_embed(replace(treasury, top_contributors=()), year=now.year, names={})
-            # Las cifras primero; la explicación de qué se cobra, al final.
-            explained = [(f.name, f.value) for f in embed.fields]
-            embed.clear_fields()
-            add_bill_fields(embed, all_bills, server, names)
-            housing = await self.economy.housing_tax_breakdown(guild.id)
-            add_housing_fields(embed, housing, {m: self._display_name(guild, m) for m in housing})
-            filed, people, paid = await self.economy.solidarity_summary(guild.id)
-            if filed:
-                embed.add_field(
-                    name="💎 Grandes Fortunas",
-                    value=solidarity_line(filed, people, paid),
-                    inline=False,
-                )
-            for name, value in explained:
-                embed.add_field(name=name, value=value, inline=False)
-        else:
-            year_bills = tax_bills(await self.economy.tax_breakdown(guild.id, since=year_start))
-            embed = member_bill_embed(
+        if member is not None:
+            everything, this_year, housing, business = await asyncio.gather(
+                self.economy.tax_breakdown(guild.id),
+                self.economy.tax_breakdown(guild.id, since=year_start),
+                self.economy.housing_tax_breakdown(guild.id),
+                self.economy.business_tax_breakdown(guild.id),
+            )
+            all_bills = tax_bills(everything)
+            text = member_page(
                 member_name=discord.utils.escape_markdown(member.display_name),
                 all_bills=all_bills,
-                year_bills=year_bills,
-                server=server,
+                year_bills=tax_bills(this_year),
                 user_id=member.id,
                 year=now.year,
+                homes=housing.get(member.id, {}),
+                business=business.get(member.id, {}),
             )
-            homes = (await self.economy.housing_tax_breakdown(guild.id)).get(member.id, {})
-            if lines := housing_lines(homes):
-                embed.add_field(
-                    name=f"🏠 Por sus pisos · {format_amount(sum(homes.values()))}",
-                    value="\n".join(lines)
-                    + "\n-# Ya está dentro de los directos e indirectos de arriba.",
-                    inline=False,
-                )
-        await responder.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
-        author = getattr(responder, "member", None)
-        if author is not None and not author.bot:
-            mine = next((b for b in all_bills if b.user_id == author.id), None)
-            share = (mine.total / server.total) if mine and server.total > 0 else 0.0
-            await logros.track(
-                self.bot,
-                guild.id,
-                author,
-                responder.channel,
-                hacienda_stats(
-                    own=member is not None and member.id == author.id,
-                    snooping=member is not None and member.id != author.id,
-                    share=share,
-                    indirect_over_direct=bool(mine and mine.indirect > mine.direct > 0),
-                ),
-            )
+            return bill_card(text), all_bills
+        everything, treasury, housing, business, solidarity = await asyncio.gather(
+            self.economy.tax_breakdown(guild.id),
+            self.economy.treasury(guild.id, since=year_start),
+            self.economy.housing_tax_breakdown(guild.id),
+            self.economy.business_tax_breakdown(guild.id),
+            self.economy.solidarity_summary(guild.id),
+        )
+        all_bills = tax_bills(everything)
+        people = {bill.user_id for bill in all_bills} | set(housing) | set(business)
+        snapshot = Snapshot(
+            guild_id=guild.id,
+            year=now.year,
+            treasury=treasury,
+            bills=all_bills,
+            housing=housing,
+            business=business,
+            solidarity=solidarity,
+            names={user_id: self._display_name(guild, user_id) for user_id in people},
+        )
+        return HaciendaPanel(self.bot, snapshot, author), all_bills
+
+    async def _hacienda_logros(
+        self,
+        guild: discord.Guild,
+        author: discord.abc.User,
+        channel: object,
+        all_bills: list[TaxBill],
+        member: discord.abc.User | None,
+    ) -> None:
+        if author.bot:
+            return
+        server = server_bill(all_bills)
+        mine = next((b for b in all_bills if b.user_id == author.id), None)
+        share = (mine.total / server.total) if mine and server.total > 0 else 0.0
+        await logros.track(
+            self.bot,
+            guild.id,
+            author,
+            channel,
+            hacienda_stats(
+                own=member is not None and member.id == author.id,
+                snooping=member is not None and member.id != author.id,
+                share=share,
+                indirect_over_direct=bool(mine and mine.indirect > mine.direct > 0),
+            ),
+        )
 
     @staticmethod
     def _display_name(guild: discord.Guild, user_id: int) -> str:
@@ -1556,7 +1559,16 @@ class Casino(commands.Cog):
         self, interaction: discord.Interaction, miembro: discord.Member | None = None
     ) -> None:
         """La cuenta del Estado con lo que paga cada miembro, o la factura de `miembro`."""
-        await self._hacienda_impl(InteractionResponder(interaction), miembro)
+        assert interaction.guild is not None  # guild_only
+        # Las cifras salen de varias consultas grandes: se acepta el comando antes.
+        await ack(interaction)
+        view, all_bills = await self._hacienda_view(interaction.guild, interaction.user, miembro)
+        await edit(interaction, view=view, allowed_mentions=discord.AllowedMentions.none())
+        if isinstance(view, HaciendaPanel):
+            view.interaction = interaction
+        await self._hacienda_logros(
+            interaction.guild, interaction.user, interaction.channel, all_bills, miembro
+        )
 
     @commands.command(name="hacienda")
     @commands.guild_only()
@@ -1564,7 +1576,12 @@ class Casino(commands.Cog):
         self, ctx: commands.Context, miembro: discord.Member | None = None
     ) -> None:
         """Versión de texto (`.hacienda [miembro]`) de `/hacienda`."""
-        await self._hacienda_impl(ContextResponder(ctx), miembro)
+        assert ctx.guild is not None  # guild_only
+        view, all_bills = await self._hacienda_view(ctx.guild, ctx.author, miembro)
+        message = await ctx.send(view=view, allowed_mentions=discord.AllowedMentions.none())
+        if isinstance(view, HaciendaPanel):
+            view.message = message
+        await self._hacienda_logros(ctx.guild, ctx.author, ctx.channel, all_bills, miembro)
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.Guild) -> None:
