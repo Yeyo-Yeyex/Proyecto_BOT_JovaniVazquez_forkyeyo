@@ -750,7 +750,7 @@ def street_samples() -> dict[str, dict[str, Any]]:
     casa = next(
         b.key
         for b in streets.BUILDINGS
-        if b.kind == streets.CASA and empty.listing(b.featured).kind == "chalet"
+        if b.kind == streets.CASA and b.featured and empty.listing(b.featured).kind == "chalet"
     )
     corte = {
         "bloque": "triana_e2",
@@ -767,7 +767,20 @@ def street_samples() -> dict[str, dict[str, Any]]:
     out = {
         "calles_triana": view.streets_state(street_market(), "triana", 10),
         "calles_rural": view.streets_state(empty, "tafira", 10),
+        "calles_vegueta": view.streets_state(empty, "vegueta", 10),
         "calles_playa": view.streets_state(empty, "mogan", 10),
+        # cinco por calle, la noticia más larga y la pegatina del índice disparado
+        "calles_noticia": view.streets_state(
+            Market(
+                indexes={"schamann": 1.2},
+                barrio_news={
+                    "schamann": (LONGEST_NEWS.key, date(2026, 10, 12), date(2026, 10, 20))
+                },
+            ),
+            "schamann",
+            10,
+            TODAY,
+        ),
         "edificio_tuyas": view.building_state(street_market(), "triana_e2", 10, NAMES, TODAY),
         "edificio_plaza_tuya": view.building_state(street_market(), "triana_e1", 10, NAMES, TODAY),
     }
@@ -1110,13 +1123,26 @@ def test_las_muestras_de_dividir_traen_lo_que_pinta_la_escena() -> None:
 
 
 def test_las_muestras_de_calles_y_edificios_traen_lo_que_pinta_la_escena() -> None:
-    """El plano (tres calles de tres edificios) y cortes de cada tipo, del más bajo al más alto."""
+    """El plano (tres calles de 5, 4 o 3 edificios) y cortes de cada tipo, del más bajo al más
+    alto."""
     states = samples()
     plano = states["calles_triana"]
-    assert [len(s["buildings"]) for s in plano["streets"]] == [3, 3, 3]
-    assert [b["slot"] for s in plano["streets"] for b in s["buildings"]] == list(range(1, 10))
-    assert {b["kind"] for s in plano["streets"] for b in s["buildings"]} >= {"bloque", "edificio"}
-    assert plano["streets"][0]["buildings"][1]["mine"] == 2  # la alquilada y la de los candidatos
+    per_street = {
+        k: [len(s["buildings"]) for s in states[k]["streets"]]
+        for k in ("calles_triana", "calles_vegueta", "calles_rural", "calles_noticia")
+    }
+    assert per_street == {
+        "calles_triana": [5, 5, 5],
+        "calles_vegueta": [4, 4, 4],
+        "calles_rural": [3, 3, 3],
+        "calles_noticia": [5, 5, 5],
+    }
+    assert sorted(b["slot"] for s in plano["streets"] for b in s["buildings"]) == list(range(1, 16))
+    assert {b["kind"] for s in plano["streets"] for b in s["buildings"]} >= {"bloque", "casa"}
+    assert all(b["face"] for s in plano["streets"] for b in s["buildings"])
+    assert sum(b["mine"] for s in plano["streets"] for b in s["buildings"]) == 3
+    assert not states["calles_triana"]["news"] and states["calles_noticia"]["news"]
+    assert states["calles_noticia"]["barrio"]["badge"]
     assert states["calles_rural"]["barrio"]["theme"] == "rural"
     alto = states["edificio_alto"]
     assert sum(len(f["units"]) for f in alto["floors"]) >= 19 and len(alto["floors"]) >= 10
