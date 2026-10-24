@@ -135,6 +135,7 @@ from bot.services.housing_streets import (
     BUILDING_BY_KEY,
     building_of,
     buildings_of,
+    map_order,
     streets_of,
 )
 from bot.services.levels import TIMEZONE
@@ -1312,17 +1313,19 @@ class Panel(ui.View):
             )  # fmt: skip
 
     def _streets_buttons(self) -> None:
-        """🗺️ Calles: un botón por edificio, una fila por calle (de 3 a 5), con su número (del 1
-        al 9, el de la tarjeta de su destacado; del 10 en adelante, los de más)."""
+        """🗺️ Calles: un botón por edificio, una fila por calle (de 3 a 5), numerados en el orden
+        en que se leen en el plano (`map_order`), igual que en la imagen."""
+        place = {b.key: n for n, b in enumerate(map_order(self.barrio), start=1)}
         for row, street in enumerate(streets_of(self.barrio), start=1):
             for building in buildings_of(street.key):
+                # El número, el de su sitio en el plano; el custom_id, el del edificio (fijo).
                 slot = building.key.rsplit("_e", 1)[1]
                 mine = any(
                     self.owner.id in self.market.shares_of(u.key)
                     for u in view.building_units(self.market, building)
                 )
                 self._button(
-                    f"{slot} · {SHORT_BUILDING[building.kind]}", f"edificio:{slot}",
+                    f"{place[building.key]} · {SHORT_BUILDING[building.kind]}", f"edificio:{slot}",
                     self._open_building, row=row,
                     style=discord.ButtonStyle.success if mine else discord.ButtonStyle.primary,
                 )  # fmt: skip

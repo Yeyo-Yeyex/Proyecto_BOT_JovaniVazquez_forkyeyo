@@ -8,6 +8,10 @@ criterio.
 
 ## 9.x
 
+### 9.15.2 · 2026-10-24
+
+- Pisos: en el plano de calles los edificios y sus botones van numerados en orden (1, 2, 3… calle a calle y de izquierda a derecha), no por el número de su tarjeta
+
 ### 9.15.1 · 2026-10-24
 
 - Pisos: elegir un barrio ya abre su plano de calles; daba error porque dos botones del plano y del edificio repetían el identificador del desplegable de barrios y Discord rechazaba la pantalla

@@ -250,3 +250,29 @@ async def test_ninguna_pantalla_de_calles_repite_un_custom_id(tmp_path: Path) ->
         panel.screen, panel.building, panel.barrio = EDIFICIO, building.key, building.barrio
         panel.rebuild()
         assert not discord_problems(panel), (building.key, discord_problems(panel))
+
+
+async def test_el_plano_y_sus_botones_van_en_orden_de_lectura(tmp_path: Path) -> None:
+    """Revisión 9.15.2: los números iban por la tarjeta del destacado (14, 3, 15…) y parecían al
+    azar. Ahora el plano y los botones van 1, 2, 3… calle a calle y de izquierda a derecha."""
+    from bot.cogs.pisos import CALLES
+    from tests.unit.test_pisos_cog import guild_with, member, open_panel
+    from tests.unit.test_pisos_cog import make as make_cog
+
+    cog, _scene, _clock = await make_cog(tmp_path)
+    ana = member(10, "Ana")
+    panel = await open_panel(cog, ana, guild_with(ana))
+    for barrio in BARRIOS:
+        state = view.streets_state(Market(), barrio.key, ANA)
+        drawn = [b["slot"] for street in state["streets"] for b in street["buildings"]]
+        assert drawn == list(range(1, len(drawn) + 1)), barrio.key
+        panel.screen, panel.barrio = CALLES, barrio.key
+        panel.rebuild()
+        buttons = sorted(
+            (b for b in panel.children if (b.custom_id or "").startswith("pisos:edificio:")),
+            key=lambda b: (b.row, panel.children.index(b)),
+        )
+        assert [int(b.label.split(" · ")[0]) for b in buttons] == drawn, barrio.key
+        # Cada botón abre el edificio que se ve con su número.
+        keys = [b["key"] for street in state["streets"] for b in street["buildings"]]
+        assert [f"{barrio.key}_e{b.custom_id.rsplit(':', 1)[1]}" for b in buttons] == keys

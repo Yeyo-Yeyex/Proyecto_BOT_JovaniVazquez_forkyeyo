@@ -441,6 +441,13 @@ def buildings_of(street: str) -> tuple[Building, ...]:
     return tuple(sorted((b for b in BUILDINGS if b.street == street), key=lambda b: b.number))
 
 
+def map_order(barrio: str) -> tuple[Building, ...]:
+    """Los edificios de un barrio en el orden en que se leen en su plano: calle a calle y, en
+    cada una, de izquierda a derecha (por su número de portal). Su número en el plano y en los
+    botones es su puesto aquí, desde 1 (9.15.2)."""
+    return tuple(b for street in streets_of(barrio) for b in buildings_of(street.key))
+
+
 def units_of_barrio(barrio: str) -> tuple[Listing, ...]:
     """Las unidades nuevas de las calles de un barrio (sin los destacados)."""
     return tuple(u for u in STREET_UNITS if u.barrio == barrio)

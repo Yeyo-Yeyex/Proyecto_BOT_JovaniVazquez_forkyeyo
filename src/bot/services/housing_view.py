@@ -55,6 +55,7 @@ from bot.services.housing_streets import (
     PANTALAN,
     Building,
     buildings_of,
+    map_order,
     streets_of,
 )
 from bot.services.levels import TIMEZONE
@@ -1515,12 +1516,13 @@ def streets_state(
     """🗺️ Calles: el plano del barrio con sus tres calles y los edificios de cada una (de 3 a
     5 por calle: el centro, más denso que el campo). Es lo que se ve al elegir un barrio.
 
-    Cada edificio lleva su número y un botón con el mismo: del 1 al 9, el de la tarjeta de su
-    destacado (el 3 es el edificio de la tarjeta 3); del 10 en adelante, los de más, que no
-    tienen. Arriba va lo del barrio: su índice, el precio medio y la noticia, si hay.
+    Cada edificio lleva su número y un botón con el mismo, en el orden en que se lee el plano:
+    calle a calle y de izquierda a derecha (`map_order`). Arriba va lo del barrio: su índice,
+    el precio medio y la noticia, si hay.
     """
     barrio = BARRIO_BY_KEY[barrio_key]
     index = market.index(barrio_key)
+    place = {b.key: n for n, b in enumerate(map_order(barrio_key), start=1)}
     streets = []
     for street in streets_of(barrio_key):
         buildings = []
@@ -1535,7 +1537,7 @@ def streets_state(
                 {
                     "key": building.key,
                     "featured": building.featured,
-                    "slot": int(building.key.rsplit("_e", 1)[1]),
+                    "slot": place[building.key],
                     "number": building.number,
                     "kind": building.kind,
                     "kind_name": building.name,
