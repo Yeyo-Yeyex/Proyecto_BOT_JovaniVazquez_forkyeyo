@@ -68,9 +68,9 @@ SLOGANS = (
     "Cuotas cómodas para quien no mira el total.",
 )
 
-#: `Deal.buy`: compra con el dinero ya en el monedero y dice si ha comprado. No contesta al
-#: clic (la oferta ya lo ha aceptado y se encarga de enseñar el resultado).
-Buy = Callable[[discord.Interaction], Awaitable[bool]]
+#: `Deal.buy`: compra con el dinero ya en el monedero y devuelve `None` si ha comprado o por
+#: qué no. No contesta al clic (la oferta ya lo ha aceptado y enseña el resultado).
+Buy = Callable[[discord.Interaction], Awaitable[str | None]]
 
 
 @dataclass
@@ -438,20 +438,19 @@ class FinanceView(ui.LayoutView):
             self.notice = "⛔ El banco no responde ahora mismo. Prueba en un rato."
             return False, offer
         try:
-            bought = await self.deal.buy(interaction)
+            error = await self.deal.buy(interaction)
         except Exception:
             # Sin esto quedaría un préstamo vivo por una compra que no se hizo.
             logger.exception("La compra financiada de %s falló", self.owner.id)
-            bought = False
-        if bought:
+            error = "La compra no ha salido."
+        if error is None:
             await service.refresh_ipc(self.guild_id)
-        else:
-            await service.unfinance(self.guild_id, self.owner.id, signed.loan.id)
-            self.notice = (
-                "⛔ La compra no salió (¿se agotó o cambió el precio?). La financiación se ha "
-                "deshecho: no debes nada."
-            )
-        return bought, offer
+            return True, offer
+        await service.unfinance(self.guild_id, self.owner.id, signed.loan.id)
+        self.notice = (
+            f"⛔ {error.removeprefix('❌ ')} La financiación se ha deshecho: no debes nada."
+        )
+        return False, offer
 
     async def _receipt(self, offer: credit.Offer) -> str:
         purchase = self.deal.purchase

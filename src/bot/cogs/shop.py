@@ -795,14 +795,14 @@ class Checkout(ui.LayoutView):
                 "El banco está cerrado ahora mismo.", ephemeral=True
             )
 
-    async def _buy_financed(self, interaction: discord.Interaction) -> bool:
+    async def _buy_financed(self, interaction: discord.Interaction) -> str | None:
         async with self._lock:
             if self.done or self.failed:
-                return False
+                return "Esta caja ya está cerrada."
             self.paid = await self.cog.complete_purchase(self, interaction)
             self.rebuild()
             self.stop()
-        return self.paid is not None
+        return None if self.paid is not None else self.result or "La compra no ha salido."
 
     async def _after_financed(self, interaction: discord.Interaction) -> None:
         if self.paid is not None:

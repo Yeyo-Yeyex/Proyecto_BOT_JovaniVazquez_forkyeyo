@@ -1264,12 +1264,12 @@ class ItemSheet(ui.LayoutView):
             return
         paid: list[Outcome] = []
 
-        async def buy_it(_interaction: discord.Interaction) -> bool:
+        async def buy_it(_interaction: discord.Interaction) -> str | None:
             async with self._lock:
                 if self.done:
-                    return False
+                    return "Ya lo has comprado."
                 paid.append(await self._purchase())
-            return paid[-1].error is None
+            return paid[-1].error
 
         async def after(after_interaction: discord.Interaction) -> None:
             await self._after_paid(after_interaction, paid[-1])
@@ -1526,12 +1526,12 @@ class CartPanel(ui.LayoutView):
             return
         paid: list[Outcome] = []
 
-        async def buy_it(_interaction: discord.Interaction) -> bool:
+        async def buy_it(_interaction: discord.Interaction) -> str | None:
             async with self._lock:
                 if self.done or not self.lines:
-                    return False
+                    return "El carrito ya está pagado o vacío."
                 paid.append(await self._purchase())
-            return paid[-1].error is None
+            return paid[-1].error
 
         async def after(after_interaction: discord.Interaction) -> None:
             await self._after_paid(after_interaction, paid[-1])

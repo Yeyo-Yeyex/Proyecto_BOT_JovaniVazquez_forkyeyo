@@ -80,6 +80,7 @@ from discord.ext import commands, tasks
 
 from bot.cogs import achievements as logros
 from bot.cogs import banco, renta
+from bot.cogs import banco_compras as financiar
 from bot.cogs import pets as mascotas
 from bot.cogs import shop as tienda
 from bot.cogs import work as curro
@@ -99,6 +100,7 @@ from bot.repositories.housing import (
     VoteResult,
 )
 from bot.repositories.housing_finance import HOME_OWN, HOME_RENTED, vpo_ref
+from bot.services import credit
 from bot.services import housing as rules
 from bot.services import housing_view as view
 from bot.services.achievements import (
@@ -123,6 +125,7 @@ from bot.services.housing_catalog import (
     ISLANDS,
     KINDS,
     LISTING_BY_KEY,
+    REFORM_BY_KEY,
     REFORMS,
     RENT_LEVELS,
     TENANT_BY_KEY,
@@ -1218,6 +1221,7 @@ class Panel(ui.View):
         can = market.shares_of(key).get(me, 0) == rules.SHARES and lease.status == rules.VACANT
         done = market.reforms.get(key, {})
         slot = 0
+        financed: list[discord.SelectOption] = []
         for reform in REFORMS:
             if listing.kind not in reform.kinds or reform.key in done or not can:
                 continue
@@ -1228,10 +1232,27 @@ class Panel(ui.View):
                 f"{reform.emoji} {reform.name} ({format_amount(total)})",
                 f"reforma:{reform.key}", self._reform, row=1 + slot // 3,
             )  # fmt: skip
+            if credit.refusal(total) is None:
+                financed.append(
+                    discord.SelectOption(
+                        label=f"{reform.name} ({format_amount(total)})"[:100],
+                        value=reform.key,
+                        emoji=reform.emoji,
+                    )
+                )
             slot += 1
         self._button("◀ La ficha", "ficha", self._back_to_listing, row=3)
         self._button("🧰 Gestionar", "gestion", self._go_gestion, row=3)
         self._button("🗺️ Mapa", "mapa", self._go_map, row=3)
+        if financed:
+            pick: ui.Select = ui.Select(
+                placeholder=f"{financiar.LABEL} una obra a plazos…",
+                options=financed[:25],
+                custom_id=f"{GAME}:financiar_obra",
+                row=4,
+            )
+            pick.callback = self._finance_reform  # type: ignore[method-assign]
+            self.add_item(pick)
 
     def _decision_buttons(self) -> None:
         """⚠️ Imprevistos: una fila por imprevisto con sus formas de arreglarlo."""
@@ -1432,6 +1453,10 @@ class Panel(ui.View):
             self._confirmable(
                 f"{option['emoji']} {option['name']} ({option['total']})",
                 f"dividir:{option['mode']}", self._split, row=1,
+            )  # fmt: skip
+            self._button(
+                f"{financiar.LABEL}: {option['name']}", f"financiar_dividir:{option['mode']}",
+                self._finance_split, row=3,
             )  # fmt: skip
         if state["rooms"]:
             self._button("🛏️ Habitaciones", "plantas", self._go_units, row=1)
@@ -1851,6 +1876,93 @@ class Panel(ui.View):
             + (" Cuenta como rehabilitación: los contratos de los dos años siguientes tienen el "
                "60 % de reducción." if quote.rehab else ""),
         )  # fmt: skip
+
+    async def _finance_reform(self, interaction: discord.Interaction) -> None:
+        """💳 Financiar una obra: la oferta del banco, en privado; al firmar, empieza la obra."""
+        values = interaction.data.get("values", []) if interaction.data else []
+        reform = REFORM_BY_KEY.get(str(values[0])) if values else None
+        listing = self.market.listing(self.listing)
+        if reform is None or listing is None:
+            await ack(interaction)
+            return
+        key, ipc = self.listing, self.market.ipc
+        quote = rules.reform_quote(listing, reform, self.market.index(listing.barrio), ipc)
+
+        async def buy(_interaction: discord.Interaction) -> str | None:
+            try:
+                await self.cog.service.start_reform(self.guild.id, self.owner.id, key, reform.key)
+            except (HousingError, InsufficientFundsError, BalanceLimitError) as error:
+                return str(error) or "No se ha podido empezar la obra."
+            return None
+
+        async def after(after_interaction: discord.Interaction) -> None:
+            await self.repaint()
+            await logros.track(
+                self.cog.bot, self.guild.id, self.owner, after_interaction.channel,
+                housing_action_stats(
+                    "reforma", reform=reform.key, amount=quote.total, rehab=quote.rehab
+                ),
+            )  # fmt: skip
+
+        purchase = credit.Purchase(
+            f"{reform.emoji} {reform.name} en {listing.title}", quote.total, "obras", works=True
+        )
+        if not await financiar.open_finance(
+            self.cog.bot, interaction, financiar.Deal(purchase, buy, after=after)
+        ):
+            await interaction.response.send_message(
+                "El banco está cerrado ahora mismo.", ephemeral=True
+            )
+
+    async def _finance_split(self, interaction: discord.Interaction) -> None:
+        """💳 Financiar dividir: la oferta del banco, en privado; al firmar, empiezan las obras."""
+        custom_id = interaction.data.get("custom_id", "") if interaction.data else ""
+        mode = custom_id.rsplit(":", 1)[-1]
+        listing = self.market.listing(self.listing)
+        if mode not in rules.SPLIT_MODES or listing is None:
+            await ack(interaction)
+            return
+        key = self.listing
+        quote = rules.split_quote(listing, mode, self.market.index(listing.barrio), self.market.ipc)
+        mortgaged = bool(self.market.mortgages_of(self.owner.id, key))
+        storage = rules.storage_of(listing) if mode == rules.FLOORS else 0
+
+        async def buy(_interaction: discord.Interaction) -> str | None:
+            try:
+                await self.cog.service.split(self.guild.id, self.owner.id, key, mode)
+            except (HousingError, InsufficientFundsError, BalanceLimitError) as error:
+                return str(error) or "No se ha podido dividir."
+            return None
+
+        async def after(after_interaction: discord.Interaction) -> None:
+            self.screen = PLANTAS
+            await self.repaint()
+            await logros.track(
+                self.cog.bot, self.guild.id, self.owner, after_interaction.channel,
+                housing_action_stats(
+                    mode, amount=quote.total, units=quote.units - storage, mortgaged=mortgaged
+                ),
+            )  # fmt: skip
+
+        motion = rules.MOTION_BY_KEY[mode]
+        purchase = credit.Purchase(
+            f"{motion.emoji} {motion.name} en {listing.title}", quote.total, "obras", works=True
+        )
+        if not await financiar.open_finance(
+            self.cog.bot, interaction, financiar.Deal(purchase, buy, after=after)
+        ):
+            await interaction.response.send_message(
+                "El banco está cerrado ahora mismo.", ephemeral=True
+            )
+
+    async def repaint(self) -> None:
+        """Repinta el panel sin un clic suyo (tras comprar desde otro mensaje, 💳 Financiar)."""
+        if self._last is None:
+            return
+        try:
+            await self.show(self._last)
+        except (discord.HTTPException, OSError, sqlite3.Error):
+            logger.debug("No se pudo repintar el panel de pisos", exc_info=True)
 
     async def _split(self, interaction: discord.Interaction) -> None:
         """Divide por plantas o por habitaciones (segundo clic): paga y entra en obras."""
