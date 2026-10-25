@@ -513,6 +513,32 @@ class LotteryRepository:
 
         return await self._run(self._read, read)
 
+    async def last_drawn(self, guild_id: int, user_id: int) -> tuple[Draw, list[Ticket]] | None:
+        """El último sorteo ya celebrado en el que jugó un miembro, con sus boletos en él."""
+
+        def read(connection: sqlite3.Connection) -> tuple[Draw, list[Ticket]] | None:
+            row = connection.execute(
+                """
+                SELECT d.* FROM lottery_draws d
+                WHERE d.guild_id = ? AND d.status = 'drawn' AND EXISTS (
+                    SELECT 1 FROM lottery_tickets t WHERE t.draw_id = d.id AND t.user_id = ?
+                )
+                ORDER BY d.draw_at DESC, d.id DESC LIMIT 1
+                """,
+                (guild_id, user_id),
+            ).fetchone()
+            if row is None:
+                return None
+            draw = _draw(row)
+            rows = connection.execute(
+                "SELECT id, draw_id, user_id, pick, quantity, cost, prize, tax, detail "
+                "FROM lottery_tickets WHERE draw_id = ? AND user_id = ? ORDER BY id",
+                (draw.id, user_id),
+            ).fetchall()
+            return draw, [Ticket(**dict(r)) for r in rows]
+
+        return await self._run(self._read, read)
+
     async def history(self, guild_id: int, user_id: int, *, limit: int) -> list[TicketRecord]:
         """Boletos recientes de un miembro: primero los pendientes, luego los últimos."""
 

@@ -161,7 +161,9 @@ from bot.services.loans import MAX_LOANS as LOAN_MAX_LOANS
 from bot.services.loans import MAX_PRINCIPAL as LOAN_MAX_PRINCIPAL
 from bot.services.loans import TERMS as LOAN_TERMS
 from bot.services.lootboxes import COLLECTIONS as LOOTBOX_COLLECTIONS
+from bot.services.lottery import GAME_BY_KEY as LOTTERY_GAME_BY_KEY
 from bot.services.lottery import MAX_PER_DRAW as MAX_LOTTERY_PER_DRAW
+from bot.services.lottery import POOL_MAX_PER_DRAW
 from bot.services.mines import MAX_MINES as MINES_MAX
 from bot.services.mines import MinesGame, multiplier_cents
 from bot.services.mines import Status as MinesStatus
@@ -531,6 +533,13 @@ SALDO_DAYS_STAT = "saldo_days"
 SALDO_STREAK_STAT = "saldo_streak_max"
 SALDO_KIND_PREFIX = "saldo_kind_"
 SALDO_KINDS_STAT = "saldo_kinds"
+#: Loterías: un contador por día en que se compra o se rasca (`lottery_day_AAAAMMDD`), de
+#: donde sale la racha más larga, y otro por día en que se comprueba el último boleto
+#: sorteado (`lottery_check_day_AAAAMMDD`), de donde salen los días distintos.
+LOTTERY_DAY_PREFIX = "lottery_day_"
+LOTTERY_STREAK_STAT = "lottery_streak_max"
+LOTTERY_CHECK_DAY_PREFIX = "lottery_check_day_"
+LOTTERY_CHECK_DAYS_STAT = "lottery_check_days"
 #: Saldo a partir del cual mirarlo sin nada por pagar es «Libre de cargas».
 SALDO_CLEAN_MIN = 100_000
 #: Veces más que tú que tiene que tener alguien para «Ojos que ven, corazón que siente».
@@ -9932,6 +9941,69 @@ def _build_catalog() -> tuple[Achievement, ...]:
             ),  # fmt: skip
         )
     )
+
+    # 🎟️ Loterías: el rasca dibujado, los botes que crecen y comprobar el boleto (9.25.0).
+    a += _tiers("lottery", "lottery_scratch_near", [
+        (1, "rasca_casi", "Me quedo a una uña",
+         "Saca dos casillas del premio más alto de un rasca sin la tercera.", C),
+        (25, "rasca_casi_25", "El síndrome del casi",
+         "Saca dos casillas del premio más alto sin la tercera 25 veces.", R),
+        (100, "rasca_casi_100", "Doctorado en casi",
+         "Saca dos casillas del premio más alto sin la tercera 100 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("lottery", "lottery_jackpot_seen", [
+        (25_000, "bote_25k", "Huele a bote",
+         "Juega a un juego de bote cuando el bote pasa de 25.000 Y$.", R),
+        (50_000, "bote_50k", "Se está poniendo gordo",
+         "Juega a un juego de bote cuando el bote pasa de 50.000 Y$.", E),
+        (100_000, "bote_100k", "El bote ya no cabe en el bote",
+         "Juega a un juego de bote cuando el bote pasa de 100.000 Y$.", L),
+    ], unit="money")  # fmt: skip
+    a += _tiers("lottery", "lottery_pool_bets_max", [
+        (POOL_MAX_PER_DRAW, "pool_full", "Taco de boletos",
+         f"Juega {POOL_MAX_PER_DRAW} apuestas en un mismo sorteo de Primitiva, Bonoloto, Gordo "
+         "o Euromillones.", C),
+    ])  # fmt: skip
+    a += _tiers("lottery", "lottery_capicua", [
+        (1, "decimo_capicua", "Dábale arroz a la zorra",
+         "Compra un décimo capicúa (se lee igual al revés).", C, True),
+    ])  # fmt: skip
+    a += _tiers("lottery", "lottery_zeros", [
+        (1, "decimo_00000", "Ceros a la izquierda", "Compra el décimo 00000.", C, True),
+    ])  # fmt: skip
+    a += _tiers("lottery", "lottery_666", [
+        (1, "decimo_666", "Bombo infernal", "Compra un décimo terminado en 666.", C, True),
+    ])  # fmt: skip
+    a += _tiers("lottery", "lottery_123456", [
+        (1, "lotto_123456", "La combinación del cuñado",
+         "Juega 1 2 3 4 5 6 en la Primitiva o la Bonoloto.", C, True),
+    ])  # fmt: skip
+    a += _tiers("lottery", "lottery_scratch_night", [
+        (1, "rasca_noche", "Insomnio de látex", "Rasca un boleto de madrugada (de 2 a 6).", C),
+    ])  # fmt: skip
+    a += _tiers("lottery", "lottery_scratch_friday13", [
+        (1, "rasca_viernes13", "Jason también rasca", "Rasca un boleto un viernes 13.", C, True),
+    ])  # fmt: skip
+    a += _tiers("lottery", "lottery_xmas_last", [
+        (1, "xmas_last", "Al filo del bombo",
+         "Compra un décimo de Navidad el 21 o el 22 de diciembre.", R),
+    ])  # fmt: skip
+    a += _tiers("lottery", LOTTERY_STREAK_STAT, [
+        (7, "lottery_streak_7", "Fiel a la administración",
+         "Juega a la lotería (comprar o rascar) 7 días seguidos.", R),
+        (30, "lottery_streak_30", "Abonado al bombo",
+         "Juega a la lotería 30 días seguidos.", E),
+        (100, "lottery_streak_100", "Doña Manolita te guarda sitio",
+         "Juega a la lotería 100 días seguidos.", L),
+    ])  # fmt: skip
+    a += _tiers("lottery", LOTTERY_CHECK_DAYS_STAT, [
+        (1, "lottery_check_1", "La lista de la tele",
+         "Comprueba tu último boleto sorteado en 🎟️ Mis boletos.", C),
+        (30, "lottery_check_30", "Lupa de lotero",
+         "Comprueba tu último boleto sorteado en 30 días distintos.", R),
+        (100, "lottery_check_100", "Notario del bombo",
+         "Comprueba tu último boleto sorteado en 100 días distintos.", E),
+    ])  # fmt: skip
 
     # 🛍️ Tienda ---------------------------------------------------------------------------
     a += _tiers("shop", "shop_purchases", [
@@ -21397,6 +21469,8 @@ def with_derived(stats: Mapping[str, int]) -> dict[str, int]:
     ]
     full[SALDO_DAYS_STAT] = len(saldo_days)
     full[SALDO_STREAK_STAT] = _longest_run(saldo_days)
+    full[LOTTERY_STREAK_STAT] = _longest_run(_days(stats, LOTTERY_DAY_PREFIX))
+    full[LOTTERY_CHECK_DAYS_STAT] = len(_days(stats, LOTTERY_CHECK_DAY_PREFIX))
     full[SALDO_KINDS_STAT] = sum(
         1 for stat, value in stats.items() if stat.startswith(SALDO_KIND_PREFIX) and value > 0
     )
@@ -22293,6 +22367,18 @@ def voice_minute_stats(
     if spotify:
         add["voice_spotify"] = 1
     return add
+
+
+def _days(stats: Mapping[str, int], prefix: str) -> list[str]:
+    """Fechas `AAAAMMDD` de los contadores por día `prefix + fecha` que están a más de 0."""
+    return [
+        day
+        for stat, value in stats.items()
+        if stat.startswith(prefix)
+        and value > 0
+        and len(day := stat[len(prefix) :]) == 8
+        and day.isdigit()
+    ]
 
 
 def _longest_run(days: Iterable[str]) -> int:
@@ -26668,7 +26754,15 @@ LOTTERY_TAGS = frozenset({"reintegro", "pedrea", "gordo_navidad", "jackpot", "lo
 
 
 def lottery_buy_stats(
-    *, game: str, units: int, cost: int, owned_in_draw: int, balance_after: int
+    *,
+    game: str,
+    units: int,
+    cost: int,
+    owned_in_draw: int,
+    balance_after: int,
+    jackpot: int = 0,
+    picks: Iterable[Sequence[int]] = (),
+    when: datetime | None = None,
 ) -> StatDelta:
     """Estadísticas de una compra de décimos o apuestas.
 
@@ -26678,6 +26772,9 @@ def lottery_buy_stats(
         cost: Lo pagado.
         owned_in_draw: Décimos o apuestas del miembro en ese sorteo tras comprar.
         balance_after: Saldo tras pagar.
+        jackpot: Bote del sorteo al comprar (juegos de bote).
+        picks: Los números de cada apuesta o el de cada décimo, para los números con guasa.
+        when: Hora local de la compra (la racha de días y las fechas).
     """
     delta = StatDelta(
         add={"lottery_bets": units, "lottery_spent": cost},
@@ -26693,6 +26790,29 @@ def lottery_buy_stats(
     delta.add[f"lottery_game_{game}"] = units
     if balance_after == 0:
         delta.add["lottery_broke_buy"] = 1
+    lottery_game = LOTTERY_GAME_BY_KEY.get(game)
+    if lottery_game is not None and lottery_game.categories:
+        delta.peak["lottery_pool_bets_max"] = owned_in_draw
+        if jackpot:
+            delta.peak["lottery_jackpot_seen"] = jackpot
+    for numbers in picks:
+        if lottery_game is not None and lottery_game.categories:
+            if tuple(numbers) == (1, 2, 3, 4, 5, 6):
+                delta.add["lottery_123456"] = 1
+            continue
+        if len(numbers) != 1:
+            continue
+        number = f"{numbers[0]:05d}"
+        if number == number[::-1]:
+            delta.add["lottery_capicua"] = 1
+        if number == "00000":
+            delta.add["lottery_zeros"] = 1
+        if number.endswith("666"):
+            delta.add["lottery_666"] = 1
+    if when is not None:
+        delta.add[f"{LOTTERY_DAY_PREFIX}{when:%Y%m%d}"] = 1
+        if game == "navidad" and (when.month, when.day) in ((12, 21), (12, 22)):
+            delta.add["lottery_xmas_last"] = 1
     return delta
 
 
@@ -26719,7 +26839,16 @@ def lottery_prize_stats(prizes: Iterable[tuple[int, int, frozenset[str]]]) -> St
     return delta
 
 
-def scratch_stats(*, cost: int, prize: int, tax: int, top: bool, balance_after: int) -> StatDelta:
+def scratch_stats(
+    *,
+    cost: int,
+    prize: int,
+    tax: int,
+    top: bool,
+    balance_after: int,
+    near: bool = False,
+    when: datetime | None = None,
+) -> StatDelta:
     """Estadísticas de un rasca.
 
     Args:
@@ -26728,6 +26857,8 @@ def scratch_stats(*, cost: int, prize: int, tax: int, top: bool, balance_after: 
         tax: Gravamen especial pagado.
         top: Si es el premio más alto de su tabla.
         balance_after: Saldo tras cobrar el premio.
+        near: Si, sin premio, enseñaba dos casillas del premio más alto.
+        when: Hora local (la racha de días y las fechas).
     """
     delta = StatDelta(add={"lottery_scratches": 1, "lottery_spent": cost})
     if balance_after == 0:
@@ -26736,7 +26867,24 @@ def scratch_stats(*, cost: int, prize: int, tax: int, top: bool, balance_after: 
         delta.merge(lottery_prize_stats([(prize, tax, frozenset())]))
     if top:
         delta.add["lottery_scratch_top"] = 1
+    if near:
+        delta.add["lottery_scratch_near"] = 1
+    if when is not None:
+        delta.add[f"{LOTTERY_DAY_PREFIX}{when:%Y%m%d}"] = 1
+        if 2 <= when.hour < 6:
+            delta.add["lottery_scratch_night"] = 1
+        if when.weekday() == 4 and when.day == 13:
+            delta.add["lottery_scratch_friday13"] = 1
     return delta
+
+
+def lottery_check_stats(*, when: datetime) -> StatDelta:
+    """Comprobar el último boleto sorteado en 🎟️ Mis boletos: cuenta una vez al día.
+
+    Args:
+        when: Hora local.
+    """
+    return StatDelta(peak={f"{LOTTERY_CHECK_DAY_PREFIX}{when:%Y%m%d}": 1})
 
 
 # -- Trabajo (`pala`) --------------------------------------------------------------------

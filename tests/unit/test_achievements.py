@@ -456,6 +456,11 @@ PRODUCED_STATS = {
     "lottery_gordo_navidad", "lottery_euro_bets", "lottery_lotto4", "lottery_lotto5",
     "lottery_jackpot", "lottery_scratches", "lottery_scratch_top", "lottery_draw_bets_max",
     "lottery_broke_buy", "lottery_gravamen",
+    # Loterías 9.25.0: el rasca dibujado, los botes que crecen, los números con guasa,
+    # las fechas, la racha de días y comprobar el boleto (las dos últimas, derivadas).
+    "lottery_scratch_near", "lottery_jackpot_seen", "lottery_pool_bets_max", "lottery_capicua",
+    "lottery_zeros", "lottery_666", "lottery_123456", "lottery_scratch_night",
+    "lottery_scratch_friday13", "lottery_xmas_last", "lottery_streak_max", "lottery_check_days",
     # Casino
     "roulette_spins", "roulette_wins", "roulette_straight_wins", "roulette_green_wins",
     "roulette_double_zero_wins", "roulette_color_wins", "roulette_wagers_max",
