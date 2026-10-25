@@ -26,6 +26,7 @@ from bot.services.economy import (
     EconomyService,
     SportsBet,
     SportsBetTakenError,
+    SportsStakeCapError,
 )
 from bot.services.levels import local_day
 from bot.services.sports import GAME, MIN_STAKE, payout
@@ -67,6 +68,7 @@ def make_bet(
     odds: int = ODDS,
     pick: str = "1",
     commence: float = KICKOFF,
+    market: str = "1x2",
 ) -> SportsBet:
     return SportsBet(
         id=0,
@@ -82,6 +84,7 @@ def make_bet(
         odds=odds,
         stake=stake,
         created_at=1_800_000_000.0,
+        market=market,
     )
 
 
@@ -182,7 +185,9 @@ async def test_apostar_deja_los_motivos_deposito_en_el_libro(tmp_path: Path) -> 
     ]
 
 
-async def test_una_segunda_apuesta_al_mismo_partido_no_cobra_nada(tmp_path: Path) -> None:
+async def test_una_segunda_apuesta_al_mismo_mercado_del_partido_no_cobra_nada(
+    tmp_path: Path,
+) -> None:
     service = await make_service(tmp_path)
     await service.sports_bet(make_bet(pick="1"), game=GAME)
     before = (wallet(tmp_path, USER), deposit(tmp_path))
@@ -680,3 +685,84 @@ async def test_borrar_los_datos_del_servidor_borra_sus_apuestas_y_deja_las_de_ot
     assert await service.sports_bets(GUILD, USER, limit=10) == []
     assert wallet(tmp_path, SPORTS_ACCOUNT_ID) == 0
     assert wallet(tmp_path, SPORTS_ACCOUNT_ID, OTHER_GUILD) == kept.stake
+
+
+# -- Mercados y tope por partido (9.22.0) ---------------------------------------------
+
+
+async def test_otro_mercado_del_mismo_partido_si_se_puede_apostar(tmp_path: Path) -> None:
+    service = await make_service(tmp_path)
+    await service.sports_bet(make_bet(pick="1"), game=GAME)
+
+    await service.sports_bet(make_bet(pick="+2.5", market="goles"), game=GAME)
+
+    bets = await service.sports_match_bets(GUILD, USER, "ev1")
+    assert [(b.market, b.pick) for b in bets] == [("1x2", "1"), ("goles", "+2.5")]
+    assert deposit(tmp_path) == 2 * STAKE
+    assert_ledger_balances(tmp_path)
+
+
+async def test_el_tope_suma_todos_los_mercados_del_partido(tmp_path: Path) -> None:
+    service = await make_service(tmp_path)
+    cap = 3 * STAKE
+    await service.sports_bet(make_bet(stake=2 * STAKE), game=GAME, cap=cap)
+    before = (wallet(tmp_path, USER), deposit(tmp_path))
+
+    with pytest.raises(SportsStakeCapError) as raised:
+        await service.sports_bet(
+            make_bet(pick="si", market="ambos", stake=2 * STAKE), game=GAME, cap=cap
+        )
+
+    assert raised.value.room == STAKE
+    assert (wallet(tmp_path, USER), deposit(tmp_path)) == before
+    await service.sports_bet(make_bet(pick="si", market="ambos", stake=STAKE), game=GAME, cap=cap)
+    assert deposit(tmp_path) == cap
+    assert_ledger_balances(tmp_path)
+
+
+async def test_el_tope_es_de_cada_partido_y_de_cada_miembro(tmp_path: Path) -> None:
+    service = await make_service(tmp_path)
+    await service.sports_bet(make_bet(stake=STAKE), game=GAME, cap=STAKE)
+
+    await service.sports_bet(make_bet(event_id="ev2", stake=STAKE), game=GAME, cap=STAKE)
+    await service.sports_bet(make_bet(user=OTHER, stake=STAKE), game=GAME, cap=STAKE)
+
+    assert len(await service.open_sports_bets()) == 3
+
+
+async def test_una_base_de_antes_pasa_a_una_apuesta_por_mercado_sin_perder_nada(
+    tmp_path: Path,
+) -> None:
+    # La tabla de la 8.13.0: sin `market` y con una apuesta por partido.
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute(
+            """
+            CREATE TABLE economy_sports_bets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL, channel_id INTEGER NOT NULL,
+                event_id TEXT NOT NULL, sport TEXT NOT NULL, home TEXT NOT NULL,
+                away TEXT NOT NULL, commence REAL NOT NULL, pick TEXT NOT NULL,
+                odds INTEGER NOT NULL CHECK (odds > 100), stake INTEGER NOT NULL CHECK (stake > 0),
+                created_at REAL NOT NULL, status TEXT NOT NULL DEFAULT 'open',
+                payout INTEGER NOT NULL DEFAULT 0, settled_at REAL,
+                UNIQUE (guild_id, user_id, event_id)
+            )
+            """
+        )
+        connection.execute(
+            "INSERT INTO economy_sports_bets (id, guild_id, user_id, channel_id, event_id, "
+            "sport, home, away, commence, pick, odds, stake, created_at) "
+            "VALUES (7, ?, ?, ?, 'ev1', 'soccer_spain_la_liga', 'A', 'B', ?, 'X', 340, 500, 1)",
+            (GUILD, USER, CHANNEL, KICKOFF),
+        )
+
+    service = await make_service(tmp_path)
+
+    (old,) = await service.sports_match_bets(GUILD, USER, "ev1")
+    assert (old.id, old.market, old.pick, old.stake) == (7, "1x2", "X", 500)
+    with pytest.raises(SportsBetTakenError):
+        await service.sports_bet(make_bet(pick="1"), game=GAME)
+    await service.sports_bet(make_bet(pick="otro", market="exacto"), game=GAME)
+    assert len(await service.open_sports_bets()) == 2
+    indexes = query(tmp_path, "PRAGMA index_list(economy_sports_bets)")
+    assert any(row[1] == "economy_sports_bets_open" for row in indexes)

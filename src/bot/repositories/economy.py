@@ -97,8 +97,9 @@ Modelo de datos:
 - `economy_porra_settled`: porras ya liquidadas, para no pagar dos veces.
 - `economy_wallets` con `user_id = SPORTS_ACCOUNT_ID`: el depósito de las apuestas
   deportivas (`deportes`). Guarda lo apostado a cada partido hasta que se resuelve.
-- `economy_sports_bets`: cada apuesta deportiva (quién, a qué partido y signo, a qué
-  cuota y cuánto) y cómo acabó. Una por partido y persona.
+- `economy_sports_bets`: cada apuesta deportiva (quién, a qué partido, mercado y
+  opción, a qué cuota y cuánto) y cómo acabó. Una por mercado, partido y persona, y lo
+  de todos los mercados de un partido no pasa del tope que diga quien apuesta.
 - `economy_gaming_tax`: el Impuesto sobre Actividades de Juego de cada porra
   (y, con `porra_id = 0`, la comisión de cada bote de la `timba`),
   a nombre de cada apostante (art. 48 de la Ley 13/2011), para `hacienda`.
@@ -465,7 +466,19 @@ class PorraCapError(Exception):
 
 
 class SportsBetTakenError(Exception):
-    """El miembro ya tiene una apuesta a ese partido: una por partido."""
+    """El miembro ya tiene una apuesta a ese mercado del partido: una por mercado."""
+
+
+class SportsStakeCapError(Exception):
+    """La apuesta pasaría el tope de lo apostado a un partido, sumando mercados.
+
+    Attributes:
+        room: Lo que aún se puede apostar a ese partido.
+    """
+
+    def __init__(self, room: int) -> None:
+        super().__init__(f"Solo caben {room}")
+        self.room = room
 
 
 @dataclass(frozen=True, slots=True)
@@ -735,13 +748,16 @@ class SportsBet:
         home: Equipo de casa.
         away: Equipo de fuera.
         commence: Comienzo del partido (epoch).
-        pick: Signo apostado: `1`, `X` o `2`.
+        pick: Opción apostada (`bot.services.sports.MARKET_PICKS`): `1`, `X`, `2`,
+            `+2.5`, `si`, `2-1`…
         odds: Cuota fijada al apostar, en centésimas.
         stake: Lo apostado.
         created_at: Cuándo se apostó (epoch).
         status: `open`, `won`, `lost` o `void` (anulada y devuelta).
         payout: Lo cobrado, apuesta incluida (lo devuelto si se anuló; 0 si falló).
         settled_at: Cuándo se resolvió (epoch), o `None`.
+        market: Mercado de `pick` (`bot.services.sports.Market`): `1x2`, `goles`,
+            `ambos` o `exacto`.
     """
 
     id: int
@@ -760,6 +776,7 @@ class SportsBet:
     status: str = "open"
     payout: int = 0
     settled_at: float | None = None
+    market: str = "1x2"
 
 
 def _sports_bet(row: sqlite3.Row) -> SportsBet:
@@ -781,6 +798,7 @@ def _sports_bet(row: sqlite3.Row) -> SportsBet:
         status=str(row["status"]),
         payout=int(row["payout"]),
         settled_at=None if row["settled_at"] is None else float(row["settled_at"]),
+        market=str(row["market"]),
     )
 
 
@@ -1553,7 +1571,8 @@ class EconomyRepository:
                     status TEXT NOT NULL DEFAULT 'open',
                     payout INTEGER NOT NULL DEFAULT 0,
                     settled_at REAL,
-                    UNIQUE (guild_id, user_id, event_id)
+                    market TEXT NOT NULL DEFAULT '1x2',
+                    UNIQUE (guild_id, user_id, event_id, market)
                 );
 
                 CREATE INDEX IF NOT EXISTS economy_sports_bets_open
@@ -1738,6 +1757,7 @@ class EconomyRepository:
                     "ADD COLUMN mystery INTEGER NOT NULL DEFAULT 0"
                 )
             self._drop_housing_tax_check(connection)
+            self._sports_bets_by_market(connection)
         finally:
             connection.close()
 
@@ -1794,6 +1814,59 @@ class EconomyRepository:
             )
             connection.execute("DROP TABLE economy_housing_tax")
             connection.execute("ALTER TABLE economy_housing_tax_new RENAME TO economy_housing_tax")
+
+    @staticmethod
+    def _sports_bets_by_market(connection: sqlite3.Connection) -> None:
+        """Pasa `economy_sports_bets` de una apuesta por partido a una por mercado (9.22.0).
+
+        La tabla de antes no tiene `market` y su `UNIQUE` es por partido. `CREATE TABLE IF
+        NOT EXISTS` no cambia una tabla que ya existe, así que se rehace con la columna y
+        el `UNIQUE` nuevo, copiando las filas (todas del 1X2), en una sola transacción. Una
+        versión anterior del bot sigue leyéndola: no nombra la columna y su valor por
+        defecto es el 1X2.
+        """
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(economy_sports_bets)")}
+        if not columns or "market" in columns:
+            return
+        with connection:
+            connection.execute(
+                """
+                CREATE TABLE economy_sports_bets_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    channel_id INTEGER NOT NULL,
+                    event_id TEXT NOT NULL,
+                    sport TEXT NOT NULL,
+                    home TEXT NOT NULL,
+                    away TEXT NOT NULL,
+                    commence REAL NOT NULL,
+                    pick TEXT NOT NULL,
+                    odds INTEGER NOT NULL CHECK (odds > 100),
+                    stake INTEGER NOT NULL CHECK (stake > 0),
+                    created_at REAL NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'open',
+                    payout INTEGER NOT NULL DEFAULT 0,
+                    settled_at REAL,
+                    market TEXT NOT NULL DEFAULT '1x2',
+                    UNIQUE (guild_id, user_id, event_id, market)
+                )
+                """
+            )
+            names = (
+                "id, guild_id, user_id, channel_id, event_id, sport, home, away, commence, "
+                "pick, odds, stake, created_at, status, payout, settled_at"
+            )
+            connection.execute(
+                f"INSERT INTO economy_sports_bets_new ({names}) "
+                f"SELECT {names} FROM economy_sports_bets"
+            )
+            connection.execute("DROP TABLE economy_sports_bets")
+            connection.execute("ALTER TABLE economy_sports_bets_new RENAME TO economy_sports_bets")
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS economy_sports_bets_open "
+                "ON economy_sports_bets (status, commence)"
+            )
 
     # -- Monederos -----------------------------------------------------------------
 
@@ -3246,7 +3319,9 @@ class EconomyRepository:
 
     # -- Apuestas deportivas -------------------------------------------------------
 
-    async def sports_bet(self, bet: SportsBet, *, game: str) -> tuple[SportsBet, int]:
+    async def sports_bet(
+        self, bet: SportsBet, *, game: str, cap: int | None = None
+    ) -> tuple[SportsBet, int]:
         """Cobra una apuesta deportiva y la deja en el depósito, todo atómico.
 
         El dinero sale ya del monedero, pero no entra en el día del casino hasta que se
@@ -3256,29 +3331,36 @@ class EconomyRepository:
         Args:
             bet: La apuesta sin guardar (`id` 0).
             game: Prefijo de los motivos del libro (`deportes:deposito`).
+            cap: Lo más que se puede apostar al partido, sumando sus mercados (`None`,
+                sin tope).
 
         Returns:
             La apuesta guardada, con su `id`, y el saldo de quien apuesta.
 
         Raises:
-            SportsBetTakenError: Ya tiene una apuesta a ese partido. No se cobra nada.
+            SportsBetTakenError: Ya tiene una apuesta a ese mercado del partido. No se
+                cobra nada.
+            SportsStakeCapError: Pasaría el tope del partido. No se cobra nada.
             InsufficientFundsError: No le llega.
         """
-        return await self._run(self._sports_bet_sync, bet, game)
+        return await self._run(self._sports_bet_sync, bet, game, cap)
 
-    def _sports_bet_sync(self, bet: SportsBet, game: str) -> tuple[SportsBet, int]:
+    def _sports_bet_sync(self, bet: SportsBet, game: str, cap: int | None) -> tuple[SportsBet, int]:
         if bet.stake <= 0 or bet.odds <= 100:
             raise ValueError("Apuesta deportiva inválida.")
         with self._transaction() as connection:
-            taken = connection.execute(
+            rows = connection.execute(
                 """
-                SELECT 1 FROM economy_sports_bets
+                SELECT market, stake FROM economy_sports_bets
                 WHERE guild_id = ? AND user_id = ? AND event_id = ?
                 """,
                 (bet.guild_id, bet.user_id, bet.event_id),
-            ).fetchone()
-            if taken is not None:
+            ).fetchall()
+            if any(row["market"] == bet.market for row in rows):
                 raise SportsBetTakenError
+            staked = sum(int(row["stake"]) for row in rows)
+            if cap is not None and staked + bet.stake > cap:
+                raise SportsStakeCapError(max(0, cap - staked))
             balance = self._apply_in_transaction(
                 connection,
                 bet.guild_id,
@@ -3302,8 +3384,8 @@ class EconomyRepository:
                 """
                 INSERT INTO economy_sports_bets
                     (guild_id, user_id, channel_id, event_id, sport, home, away, commence,
-                     pick, odds, stake, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     pick, odds, stake, created_at, market)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     bet.guild_id,
@@ -3318,6 +3400,7 @@ class EconomyRepository:
                     bet.odds,
                     bet.stake,
                     bet.created_at,
+                    bet.market,
                 ),
             )
             return replace(bet, id=int(cursor.lastrowid or 0), status="open"), balance
@@ -3467,6 +3550,29 @@ class EconomyRepository:
                 SELECT * FROM economy_sports_bets WHERE status = 'open'
                 ORDER BY commence, id
                 """
+            ).fetchall()
+        finally:
+            connection.close()
+        return [_sports_bet(row) for row in rows]
+
+    async def sports_match_bets(
+        self, guild_id: int, user_id: int, event_id: str
+    ) -> list[SportsBet]:
+        """Las apuestas de alguien a un partido, una por mercado."""
+        return await self._run(self._sports_match_bets_sync, guild_id, user_id, event_id)
+
+    def _sports_match_bets_sync(
+        self, guild_id: int, user_id: int, event_id: str
+    ) -> list[SportsBet]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                SELECT * FROM economy_sports_bets
+                WHERE guild_id = ? AND user_id = ? AND event_id = ?
+                ORDER BY id
+                """,
+                (guild_id, user_id, event_id),
             ).fetchall()
         finally:
             connection.close()
