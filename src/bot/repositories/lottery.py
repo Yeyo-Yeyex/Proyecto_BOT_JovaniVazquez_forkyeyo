@@ -7,7 +7,9 @@ Tablas (en el mismo archivo SQLite que el resto del bot):
   lo recaudado, la combinación ganadora y el reparto, en JSON.
 - `lottery_tickets`: una fila por apuesta (o por compra de décimos de un
   mismo número), con lo que ha cobrado y el gravamen.
-- `lottery_pots`: el bote acumulado de cada juego de bote por servidor.
+- `lottery_pots`: el bote acumulado de cada juego de bote por servidor y desde
+  cuándo no tiene acertante (`since`), que es de donde sale lo que ha subido
+  el mínimo que garantiza el Estado.
 - `lottery_scratches`: cada rasca, con su premio.
 
 El dinero no se toca aquí: las funciones que devuelven un `hook` corren dentro
@@ -99,6 +101,20 @@ class TicketRecord:
     prize: int
     tax: int
     detail: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class Pot:
+    """El bote de un juego en un servidor.
+
+    Attributes:
+        carry: Lo acumulado de las ventas de sorteos sin acertante.
+        since: Desde cuándo no tiene acertante: de ahí sale cuánto ha subido el
+            mínimo que garantiza el Estado.
+    """
+
+    carry: int
+    since: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,6 +213,7 @@ class LotteryRepository:
                     guild_id INTEGER NOT NULL,
                     game TEXT NOT NULL,
                     carry INTEGER NOT NULL DEFAULT 0 CHECK (carry >= 0),
+                    since REAL,
                     PRIMARY KEY (guild_id, game)
                 );
 
@@ -212,6 +229,11 @@ class LotteryRepository:
                 );
                 """
             )
+            # Las bases de antes de los botes que crecen no tenían `since`.
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(lottery_pots)")}
+            if "since" not in columns:
+                connection.execute("ALTER TABLE lottery_pots ADD COLUMN since REAL")
+            connection.commit()
         finally:
             connection.close()
 
@@ -228,12 +250,15 @@ class LotteryRepository:
         price: int,
         channel_id: int | None,
         now: float,
+        limit: int = MAX_PER_DRAW,
     ) -> Callable[[sqlite3.Connection], tuple[int, int]]:
         """Apunta apuestas en el sorteo, creándolo si es la primera.
 
         Args:
             picks: `(apuesta codificada, décimos)`.
             price: Precio de un décimo o apuesta.
+            limit: Apuestas o décimos como máximo por persona en el sorteo
+                (`Game.max_per_draw`).
 
         Returns:
             Función para `EconomyRepository.lottery` que devuelve
@@ -262,10 +287,8 @@ class LotteryRepository:
                 (draw_id, user_id),
             ).fetchone()
             wanted = sum(quantity for _, quantity in picks)
-            if owned + wanted > MAX_PER_DRAW:
-                raise LotteryError(
-                    f"Máximo {MAX_PER_DRAW} por persona y sorteo, y ya llevas {owned}."
-                )
+            if owned + wanted > limit:
+                raise LotteryError(f"Máximo {limit} por persona y sorteo, y ya llevas {owned}.")
             connection.executemany(
                 """
                 INSERT INTO lottery_tickets
@@ -348,6 +371,32 @@ class LotteryRepository:
 
         return await self._run(self._read, read)
 
+    async def open_pots(self, guild_id: int, games: Sequence[str], now: float) -> dict[str, Pot]:
+        """Los botes de `games` en el servidor; el que no existía empieza ahora.
+
+        El mínimo del Estado sube desde `since`: un bote nuevo (o uno de antes de
+        que crecieran) empieza a contar la primera vez que se mira.
+        """
+
+        def write(connection: sqlite3.Connection) -> dict[str, Pot]:
+            with connection:
+                connection.executemany(
+                    "INSERT OR IGNORE INTO lottery_pots (guild_id, game, carry, since) "
+                    "VALUES (?, ?, 0, ?)",
+                    [(guild_id, game, now) for game in games],
+                )
+                connection.execute(
+                    "UPDATE lottery_pots SET since = ? WHERE guild_id = ? AND since IS NULL",
+                    (now, guild_id),
+                )
+                rows = connection.execute(
+                    "SELECT game, carry, since FROM lottery_pots WHERE guild_id = ?",
+                    (guild_id,),
+                ).fetchall()
+            return {str(r["game"]): Pot(int(r["carry"]), float(r["since"])) for r in rows}
+
+        return await self._run(self._read, write)
+
     def close(
         self,
         draw: Draw,
@@ -357,12 +406,15 @@ class LotteryRepository:
         prizes: Mapping[int, tuple[int, int, str]],
         carry: int | None,
         now: float,
+        jackpot_won: bool = False,
     ) -> Callable[[sqlite3.Connection], None]:
         """Cierra un sorteo con su resultado y sus premios.
 
         Args:
             prizes: `id de boleto → (premio, gravamen, detalle)`.
             carry: Bote que pasa al siguiente sorteo (`None` en la Nacional).
+            jackpot_won: Si alguien acertó el bote: el mínimo del Estado vuelve a
+                empezar desde la hora del sorteo.
 
         Returns:
             Función para `EconomyRepository.lottery`. Lanza `DrawChanged` si el
@@ -387,10 +439,12 @@ class LotteryRepository:
             if carry is not None:
                 connection.execute(
                     """
-                    INSERT INTO lottery_pots (guild_id, game, carry) VALUES (?, ?, ?)
-                    ON CONFLICT (guild_id, game) DO UPDATE SET carry = excluded.carry
+                    INSERT INTO lottery_pots (guild_id, game, carry, since) VALUES (?, ?, ?, ?)
+                    ON CONFLICT (guild_id, game) DO UPDATE SET
+                        carry = excluded.carry,
+                        since = CASE WHEN ? OR since IS NULL THEN excluded.since ELSE since END
                     """,
-                    (draw.guild_id, draw.game, carry),
+                    (draw.guild_id, draw.game, carry, draw.draw_at, jackpot_won),
                 )
 
         return run
@@ -423,17 +477,6 @@ class LotteryRepository:
                 (guild_id,),
             ).fetchall()
             return {int(user_id): int(total or 0) for user_id, total in rows}
-
-        return await self._run(self._read, read)
-
-    async def pots(self, guild_id: int) -> dict[str, int]:
-        """Bote acumulado de cada juego en el servidor."""
-
-        def read(connection: sqlite3.Connection) -> dict[str, int]:
-            rows = connection.execute(
-                "SELECT game, carry FROM lottery_pots WHERE guild_id = ?", (guild_id,)
-            ).fetchall()
-            return {str(r["game"]): int(r["carry"]) for r in rows}
 
         return await self._run(self._read, read)
 

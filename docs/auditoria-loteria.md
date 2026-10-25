@@ -1,57 +1,108 @@
-# Auditoría de las loterías (15/10/2026)
+# Auditoría de las loterías (25/10/2026)
 
-Hecha con `docs/auditoria_loteria.py`, que juega los sorteos con el código real del
-bot (`server_odds`, `draw_result`, `settle_pool`, `guarantee_for`) durante diez años
-simulados, en un servidor de 20 y otro de 60 personas donde cada una echa una
-apuesta automática en cada sorteo. `tests/unit/test_auditoria_loteria.py` la pasa
-corta en cada prueba.
+Hecha con el informe de uso del 26/09 al 25/10/2026 (versión 9.21.0) y con
+`docs/auditoria_loteria.py`, que juega un año de sorteos con el código real del bot
+(`server_odds`, `draw_result`, `settle_pool`, `guarantee_for`).
+`tests/unit/test_auditoria_loteria.py` la pasa corta en cada prueba. La anterior, del
+15/10/2026, solo miraba que el reparto cuadrara con las normas; esta mira además si
+alguien juega.
 
-## Retorno y botes
+## Lo que dice el informe
 
-| Juego | Normas | 20 personas | 60 personas | Bote, veces al mes (20 / 60) |
-|---|---:|---:|---:|---:|
-| La Primitiva | 55 % | 56,4 % | 55,3 % | 1,04 / 1,05 |
-| Bonoloto | 55 % | 56,3 % | 54,8 % | 1,12 / 0,93 |
-| El Gordo de la Primitiva | 55 % (44 % sin la reserva) | 47,1 % | 46,1 % | 0,71 / 0,90 |
-| Euromillones | 50 % (47,6 % sin la reserva) | 47,4 % | 47,7 % | 1,06 / 1,06 |
-| Nacional (jueves, sábado, Navidad, Niño) | 70 % | 69,5-70 % | | |
-| Rasca X10 / 7 y Media | 64 % / 59 % | 64,0 % / 59,0 % | | |
+| Juego | Movimientos | Jugado | Cobrado |
+|---|---:|---:|---:|
+| Rasca X10 | 509 | 8.120 Y$ | 4.420 Y$ |
+| Nacional del jueves | 59 | 15.930 Y$ | 12.330 Y$ |
+| Nacional del sábado | 22 | 12.000 Y$ | 3.600 Y$ |
+| Bonoloto | 38 | 1.500 Y$ | 275 Y$ |
+| Rasca 7 y Media | 24 | 200 Y$ | 70 Y$ |
+| Euromillones, Gordo y Primitiva | 6 | 267 Y$ | 87 Y$ |
 
-- **Todo cuadra con las normas.** El Gordo y Euromillones devuelven menos que su
-  `prize_rate` porque la reserva del bote garantizado (la mitad de la 1ª del Gordo y
-  el 4,8 % de Euromillones) se queda en el Estado, que es quien garantiza; lo que pone
-  para llegar al mínimo (0,2-1,2 % de lo vendido) se lo devuelve en parte.
-- **El bote cae una vez al mes**, como pide `JACKPOT_PERIOD_DAYS`. El Gordo se queda
-  algo por debajo con 20 personas, como ya avisa `server_odds`: tiene tantas
-  categorías que el bombo no puede regalarlas todas.
-- **Ninguna categoría cobra más que una superior** en ningún sorteo de los diez años
-  (`_no_inversion` funciona) y el bote que pasa de un sorteo a otro nunca se pierde.
+- Cuatro personas usan la lotería: 552 clics en el panel y 16 aperturas en 30 días.
+  Casi todo son rascas X10 en ráfagas (unos 400, de una o dos personas) y décimos
+  del jueves y el sábado.
+- Los cuatro juegos de bote están muertos: 44 apuestas en 60 días, la mitad en un
+  solo día de septiembre.
+- Para comparar: en el mismo mes se apostaron 6 millones en las minas y 1,1 millones
+  en la tragaperras. La lotería entera movió 38.000 Y$.
 
-## Lo único raro: los premios fijos en servidores pequeños
+## Por qué nadie jugaba a los botes
 
-Con 20 personas, la Primitiva y la Bonoloto reparten un 3 % más de lo que les toca
-(56,4 % en vez de 55 %). Con 60 desaparece (100,5 % y 99,8 % de su parte). No es un
-fallo de cálculo, es el tamaño del sorteo:
+Las probabilidades se ajustaban al servidor (el bote caía una vez al mes si todos
+jugaban), pero el dinero seguía las normas de SELAE: cada categoría se lleva una
+parte del fondo de lo recaudado. Con cinco apuestas de 10 Y$ ese fondo es de unos
+pocos Y$. Simulando cinco jugadores por sorteo en un servidor de 20 personas:
 
-- Los 3 aciertos cobran un premio fijo (8 € en la Primitiva, 80 Y$) que sale del
-  fondo de categorías, el 45 % de lo vendido. Con 20 apuestas de 10 Y$ ese fondo es
-  de 90 Y$: con dos acertantes de 3 (pasa en 1 de cada 20 sorteos) ya no llega.
-- Lo que falta lo pone el Estado, como en la vida real cuando el fondo no alcanza: en
-  ~40 % de los sorteos se paga algo más que la parte de premios de ese sorteo (los
-  reintegros también varían), y en el conjunto queda ese 3 %.
+| | Mediana de lo que cobraba cada acertante |
+|---|---:|
+| Bote de la Primitiva (6 + reintegro) | 6 Y$ (la apuesta cuesta 10) |
+| 5 + complementario de la Primitiva | 1 Y$ |
+| 3 aciertos de la Primitiva (premio fijo) | 80 Y$ |
+| Bote de Euromillones | 208 Y$ |
+| 5 + 1 estrella de Euromillones | 2 Y$ |
 
-No crea dinero (lo paga el Estado, que se lo cobra con los demás impuestos) y es
-pequeño, así que **no se ha cambiado**. Si el Estado anduviera justo, el arreglo sería
-el de algunas loterías reales: si los fijos pasan del fondo, se reparte el fondo entre
-los acertantes en vez de pagar el fijo entero.
+Y el bote que se anunciaba: 0 Y$ en la Primitiva y la Bonoloto (no tienen mínimo) y
+de 70 a 800 Y$ en el Gordo y Euromillones, porque el mínimo real (4,5 y 17 millones
+de euros) se encogía en la misma proporción que las probabilidades.
 
-## También revisado, sin cambios
+## Lo que se ha cambiado (9.25.0)
 
+- **Premios fijos por debajo del bote** (`category_prizes`). Cada categoría devuelve
+  de media la misma parte de la apuesta, y entre todas lo mismo que con las normas
+  reales (`real_shares`): el premio crece con la dificultad. Con 20 personas, la
+  Primitiva paga 40 Y$ por 3 aciertos, 55 por 4, 82 por 5, 120 por 5 + C y 150 por 6.
+  Con las probabilidades reales salen cifras de verdad (740 Y$ por 4 aciertos, 40.000
+  por 5, 1,7 millones por 5 + C). Ninguno baja del precio de la apuesta.
+- **Bote que crece** (`guarantee_for`). El bote es lo que le toca de cada venta,
+  acumulado, o el mínimo que garantiza el Estado si es mayor. Ese mínimo empieza en
+  `jackpot_floor` y sube `jackpot_daily` cada día sin acertante, hasta 90 días:
+
+  | Juego | Empieza en | Sube al día | A los 30 días | Tope (90 días) |
+  |---|---:|---:|---:|---:|
+  | Bonoloto | 2.000 Y$ | 150 Y$ | 6.500 Y$ | 15.500 Y$ |
+  | La Primitiva | 5.000 Y$ | 400 Y$ | 17.000 Y$ | 41.000 Y$ |
+  | El Gordo | 8.000 Y$ | 450 Y$ | 21.500 Y$ | 48.500 Y$ |
+  | Euromillones | 15.000 Y$ | 1.000 Y$ | 45.000 Y$ | 105.000 Y$ |
+
+  El Estado solo paga cuando alguien acierta; entonces el mínimo vuelve a empezar.
+  Nunca compromete más del 25 % de su saldo.
+- **Diez apuestas por persona y sorteo** en estos cuatro juegos (`POOL_MAX_PER_DRAW`).
+  Con cien, una sola persona se compraba el bote. La Nacional sigue en cien décimos.
+
+## Cuánto cuesta (un año simulado)
+
+«Estado/mes» es lo vendido menos lo pagado: negativo, lo que pone el Estado.
+
+| Juego | Escenario (20 personas) | Devuelve | Estado/mes | Bote al mes | Bote mediano |
+|---|---|---:|---:|---:|---:|
+| Primitiva | todos, 1 apuesta | 634 % | −13.706 Y$ | 1,15 | 12.200 Y$ |
+| Primitiva | 1 de cada 4, 3 apuestas | 906 % | −15.504 Y$ | 1,07 | 11.400 Y$ |
+| Primitiva | 1 persona al tope | 1.109 % | −12.938 Y$ | 0,74 | 16.200 Y$ |
+| Bonoloto | todos, 1 apuesta | 249 % | −3.821 Y$ | 0,74 | 6.950 Y$ |
+| Gordo | todos, 1 apuesta | 1.525 % | −18.272 Y$ | 0,90 | 17.450 Y$ |
+| Euromillones | todos, 1 apuesta | 1.235 % | −42.701 Y$ | 1,15 | 36.000 Y$ |
+| Euromillones | 1 persona al tope | 1.298 % | −22.530 Y$ | 0,33 | 92.000 Y$ |
+
+Con 60 personas el Estado pone algo menos (el bote es más difícil y cae menos):
+Primitiva −13.020, Bonoloto −873, Gordo −14.566 y Euromillones −38.003 Y$ al mes con
+todo el servidor jugando.
+
+- **El peor caso son unos 78.500 Y$ al mes** entre los cuatro juegos (20 personas,
+  todas jugando cada sorteo). Es el 1,5 % de lo que recaudó el Estado en el mes del
+  informe (5,1 millones) y un 19 % de la masa monetaria de los miembros (418.000 Y$).
+- **Es dinero nuevo a propósito.** La Biblia pide que cada fuente tenga su sumidero:
+  aquí la fuente es el propio Estado devolviendo parte de lo recaudado, con tope
+  diario (unos 2.000 Y$ entre los cuatro mínimos) y el 25 % de su saldo como límite.
+- **Una sola persona al tope en los cuatro juegos** gasta unos 5.100 Y$ al mes y, de
+  media, se lleva unos 52.000 si nadie más juega: 1,2 veces el IMV máximo. Si juegan
+  más, se reparte. Es un premio de lotería: llega de golpe cada uno o dos meses.
+
+## Lo que no cambia
+
+- La Nacional (jueves, sábado, Navidad y Niño) devuelve su 70 % con las tablas
+  reales (69,5-70 %), y los rascas su 64 % (X10) y 59 % (7 y Media). Son lo que se
+  juega: el reintegro y los premios pequeños caen a menudo y el gordo existe.
+- Ninguna categoría cobra más que una superior en ningún sorteo del año simulado.
 - Compras, rascas y premios pasan por `EconomyService.lottery`, sin IGIC y con el
-  gravamen del 20 % por décimo o apuesta por encima de 40.000 € (DA 33ª LIRPF).
-- Los botones de comprar y rascar hacen `ack` antes de la base de datos y avisan de
-  la Renta después de contestar.
-- El rasca se sortea antes de cobrar, pero si no hay saldo no se enseña nada: no se
-  puede mirar el premio sin pagar.
-- 52 logros (9 comunes, 17 raros, 13 épicos, 9 legendarios, 4 míticos; 8 secretos):
-  pasa de los cuarenta que pide la Biblia para las loterías.
+  gravamen del 20 % por décimo o apuesta por encima de 40.000 € (DA 33ª LIRPF). Si el
+  Estado no llega a un premio, emite deuda pública.

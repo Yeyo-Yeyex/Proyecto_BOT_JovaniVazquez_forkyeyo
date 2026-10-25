@@ -12,7 +12,7 @@ import re
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -29,24 +29,28 @@ from bot.services.economy import (
 from bot.services.lottery import (
     DRAW_TIMEZONE,
     GAME_BY_KEY,
+    JACKPOT_GROWTH_DAYS,
     MAX_PER_DRAW,
+    POOL_MAX_PER_DRAW,
     LotteryError,
     Pick,
     _extra_mass,
     _no_inversion,
+    category_prizes,
     classify,
     draw_result,
     draws_per_period,
     format_pick,
     guarantee_for,
     jackpot_estimate,
-    jackpot_scale,
+    jackpot_rate,
     nacional_expected_return,
     nacional_prizes,
     next_draw,
     parse_pick,
     random_pick,
     real_odds,
+    real_shares,
     result_for,
     scratch,
     scratch_grid,
@@ -232,9 +236,9 @@ def test_clasificacion_de_la_primitiva() -> None:
     assert classify(BONOLOTO, Pick((1, 2, 3, 4, 5, 6), (3,)), LOTTO_RESULT) == ("1", True)
 
 
-def test_categorias_desiertas_bajan_y_el_resto_va_al_bote() -> None:
-    # Solo hay un acertante de 4: la 2ª y la 3ª, desiertas, bajan a la 4ª
-    # (norma 8ª.1.3); la especial y la 1ª pasan al bote (8ª.1.1 y 1.2).
+def test_cada_categoria_cobra_su_premio_fijo_y_la_parte_del_bote_se_acumula() -> None:
+    # Un acertante de 4: cobra el premio fijo de la 4ª; lo del bote de esta venta
+    # se suma a lo que venía.
     settlement = settle_pool(
         PRIMITIVA,
         sales=100_000,
@@ -243,12 +247,12 @@ def test_categorias_desiertas_bajan_y_el_resto_va_al_bote() -> None:
         tickets=[(1, Pick((1, 2, 3, 4, 8, 9), (0,)))],
         result=LOTTO_RESULT,
     )
-    variable = 100_000 * 0.45
-    assert settlement.prizes == {1: 2_700 + 4_950 + 7_200}  # 6 + 11 + 16 % de 45.000
-    assert settlement.carry == int(5_000 + variable * (0.30 + 0.37))
+    assert settlement.prizes == {1: category_prizes(PRIMITIVA, None)["4"]}
+    assert settlement.carry == int(5_000 + 100_000 * jackpot_rate(PRIMITIVA))
+    assert settlement.jackpot == settlement.carry
 
 
-def test_sin_acertantes_de_4_todo_el_fondo_variable_pasa_al_bote() -> None:
+def test_sin_acertantes_solo_crece_el_bote() -> None:
     settlement = settle_pool(
         PRIMITIVA,
         sales=1_000,
@@ -258,7 +262,7 @@ def test_sin_acertantes_de_4_todo_el_fondo_variable_pasa_al_bote() -> None:
         result=LOTTO_RESULT,
     )
     assert settlement.prizes == {}
-    assert settlement.carry == int(1_000 * 0.45)
+    assert settlement.carry == int(1_000 * jackpot_rate(PRIMITIVA))
 
 
 def test_los_tres_aciertos_cobran_su_premio_fijo_y_el_reintegro_aparte() -> None:
@@ -269,9 +273,10 @@ def test_los_tres_aciertos_cobran_su_premio_fijo_y_el_reintegro_aparte() -> None
         guarantee=0,
         tickets=[(1, Pick((1, 2, 3, 10, 11, 12), (3,)))],
         result=LOTTO_RESULT,
+        members=20,
     )
-    # 8 € de la 5ª y 1 € de reintegro, aunque la venta no llegue: paga el Estado.
-    assert settlement.prizes == {1: 80 + 10}
+    # Premio fijo y reintegro, aunque la venta no llegue: paga el Estado.
+    assert settlement.prizes == {1: category_prizes(PRIMITIVA, 20)["5"] + PRIMITIVA.price}
     assert settlement.labels[1] == ["Reintegro", "5ª (3 aciertos)"]
 
 
@@ -299,7 +304,7 @@ def test_el_estado_completa_el_bote_garantizado_si_hay_acertante() -> None:
         EURO, sales=22, carry=0, guarantee=50_000, tickets=winner, result=result
     )
     assert settlement.prizes == {1: 50_000}
-    assert settlement.topup == 50_000 - round(22 * 0.5 * 0.432)
+    assert settlement.topup == 50_000 - round(22 * jackpot_rate(EURO))
 
 
 def test_sin_acertante_el_bote_garantizado_no_se_paga_ni_se_acumula() -> None:
@@ -309,15 +314,66 @@ def test_sin_acertante_el_bote_garantizado_no_se_paga_ni_se_acumula() -> None:
         EURO, sales=2_200, carry=0, guarantee=50_000, tickets=loser, result=result
     )
     assert settlement.topup == 0
-    # Todo el fondo de categorías (sin la reserva del 4,80 %) pasa al bote.
-    assert settlement.carry == int(2_200 * 0.5 * (1 - 0.048))
+    # Solo lo que le toca al bote de las ventas pasa al siguiente; el mínimo no.
+    assert settlement.carry == int(2_200 * jackpot_rate(EURO))
+    assert settlement.jackpot == 50_000
 
 
 def test_el_bote_garantizado_depende_del_saldo_del_estado() -> None:
-    assert guarantee_for(EURO, 1_000) == 250
-    assert guarantee_for(EURO, 10**12) == EURO.guarantee
-    assert guarantee_for(PRIMITIVA, 10**12) == 0
+    assert guarantee_for(EURO, 10**12, 0) == EURO.jackpot_floor
+    assert guarantee_for(EURO, 1_000, 0) == 250
+    assert guarantee_for(GORDO, 10**12, 0) == GORDO.jackpot_floor
+    assert guarantee_for(JUEVES, 10**12, 30) == 0
     assert jackpot_estimate(EURO, sales=0, carry=100, guarantee=250) == 250
+
+
+def test_el_bote_minimo_sube_cada_dia_y_para_a_los_90() -> None:
+    def bote(days: float) -> int:
+        return guarantee_for(PRIMITIVA, 10**12, days)
+
+    assert bote(0.9) == PRIMITIVA.jackpot_floor  # solo cuentan los días enteros
+    assert bote(1) == PRIMITIVA.jackpot_floor + PRIMITIVA.jackpot_daily
+    assert bote(30) == PRIMITIVA.jackpot_floor + 30 * PRIMITIVA.jackpot_daily
+    top = PRIMITIVA.jackpot_floor + JACKPOT_GROWTH_DAYS * PRIMITIVA.jackpot_daily
+    assert bote(JACKPOT_GROWTH_DAYS) == bote(JACKPOT_GROWTH_DAYS * 3) == top
+
+
+def test_los_botes_van_de_menos_a_mas_como_en_la_vida_real() -> None:
+    order = [BONOLOTO, PRIMITIVA, GORDO, EURO]
+    for days in (0, 30, JACKPOT_GROWTH_DAYS):
+        botes = [guarantee_for(game, 10**12, days) for game in order]
+        assert botes == sorted(botes)
+
+
+@pytest.mark.parametrize("game", [PRIMITIVA, BONOLOTO, GORDO, EURO], ids=lambda g: g.key)
+def test_lo_que_devuelve_cada_juego_es_el_de_sus_normas(game) -> None:
+    shares = real_shares(game)
+    official = {"primitiva": 0.45, "bonoloto": 0.45, "gordo": 0.34, "euromillones": 0.476}
+    assert sum(shares.values()) == pytest.approx(official[game.key])
+    assert all(share > 0 for share in shares.values())
+
+
+@pytest.mark.parametrize("game", [PRIMITIVA, BONOLOTO, GORDO, EURO], ids=lambda g: g.key)
+@pytest.mark.parametrize("members", [3, 20, 60, 500, None])
+def test_premios_fijos_en_orden_sin_bajar_del_precio_y_con_lo_de_las_normas(
+    game, members: int | None
+) -> None:
+    prizes = category_prizes(game, members)
+    lower = [c.key for c in game.categories if not c.jackpot]
+    assert list(prizes) == lower
+    values = [prizes[key] for key in lower]
+    assert values == sorted(values, reverse=True)
+    assert min(values) >= game.price
+    # Entre todas devuelven lo de las normas, salvo el redondeo y el suelo del precio,
+    # que en un servidor de tres personas (todas las categorías casi igual de fáciles)
+    # sube lo que se devuelve.
+    odds = server_odds(game, members) if members else real_odds(game)
+    returned = sum(prizes[k] / odds[k] / game.price for k in lower)
+    expected = sum(v for k, v in real_shares(game).items() if k in lower)
+    if members is None or members >= 20:
+        assert returned == pytest.approx(expected, rel=0.12)
+    else:
+        assert expected * 0.88 <= returned <= expected * 2
 
 
 def test_premios_de_la_nacional_por_decimo() -> None:
@@ -439,6 +495,72 @@ async def test_no_se_pueden_pasar_del_maximo_por_sorteo(tmp_path: Path) -> None:
                 price=30, channel_id=None, now=NOW,
             ),
         )  # fmt: skip
+
+
+async def test_en_los_juegos_de_bote_el_tope_es_de_diez_apuestas(tmp_path: Path) -> None:
+    economy, lottery = await make(tmp_path)
+    assert PRIMITIVA.max_per_draw == POOL_MAX_PER_DRAW and JUEVES.max_per_draw == MAX_PER_DRAW
+    draw_at = next_draw(PRIMITIVA, NOW)
+
+    async def bet(count: int) -> int:
+        (_, owned), _ = await economy.lottery(
+            GUILD,
+            charges=[(ALICE, 10 * count, "loteria:primitiva")],
+            hook=lottery.reserve(
+                GUILD, ALICE, game="primitiva", draw_at=draw_at, picks=[("1|1", 1)] * count,
+                price=10, channel_id=None, now=NOW, limit=PRIMITIVA.max_per_draw,
+            ),
+        )  # fmt: skip
+        return owned
+
+    assert await bet(POOL_MAX_PER_DRAW - 1) == POOL_MAX_PER_DRAW - 1
+    with pytest.raises(LotteryError, match="Máximo 10"):
+        await bet(2)
+    assert await bet(1) == POOL_MAX_PER_DRAW
+    assert await economy.balance(GUILD, ALICE) == STARTING_BALANCE - 10 * POOL_MAX_PER_DRAW
+
+
+async def test_el_bote_empieza_a_crecer_al_mirarlo_y_vuelve_a_empezar_al_acertarlo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clock = Clock()
+    economy, lottery = await make(tmp_path, clock)
+    cog = make_cog(economy, lottery, clock)
+    pots = await cog.pots(GUILD)
+    assert {pot.since for pot in pots.values()} == {NOW}
+    clock.now = NOW + 3 * 86_400
+    # Mirarlo otra vez no lo reinicia.
+    assert (await cog.pots(GUILD))["primitiva"].since == NOW
+    # El Estado tiene de sobra para garantizarlo (y si no, emite deuda al pagar).
+    monkeypatch.setattr(economy, "state_balance", AsyncMock(return_value=10**9))
+    assert (await cog.jackpots(GUILD))["primitiva"] == (
+        PRIMITIVA.jackpot_floor + 3 * PRIMITIVA.jackpot_daily
+    )
+    pick = random_pick(PRIMITIVA, random.Random(2))
+    draw_at = next_draw(PRIMITIVA, clock.now)
+    await economy.lottery(
+        GUILD,
+        charges=[(ALICE, 10, "loteria:primitiva")],
+        hook=lottery.reserve(
+            GUILD, ALICE, game="primitiva", draw_at=draw_at, picks=[(pick.encode(), 1)],
+            price=10, channel_id=None, now=clock.now,
+        ),
+    )  # fmt: skip
+    monkeypatch.setattr(cog, "members", lambda guild_id: 3)
+    monkeypatch.setitem(
+        Loteria.settle.__globals__,
+        "server_odds",
+        lambda game, members: {**real_odds(game), "especial": 1.0},
+    )
+    before = await economy.balance(GUILD, ALICE)
+    clock.now = draw_at + 1
+    assert await cog.run_due_draws() == 1
+    days = int((draw_at - NOW) / 86_400)
+    won = PRIMITIVA.jackpot_floor + days * PRIMITIVA.jackpot_daily
+    assert await economy.balance(GUILD, ALICE) - before >= won
+    pot = (await cog.pots(GUILD))["primitiva"]
+    assert (pot.carry, pot.since) == (0, draw_at)
+    assert (await cog.jackpots(GUILD))["primitiva"] == PRIMITIVA.jackpot_floor
 
 
 async def test_premio_gordo_paga_gravamen_al_estado_y_emite_deuda_si_no_llega(
@@ -647,7 +769,6 @@ def test_con_todo_el_servidor_jugando_el_bote_cae_una_vez_al_mes(game) -> None:
 
 def test_en_un_servidor_enorme_las_probabilidades_son_las_reales() -> None:
     assert server_odds(PRIMITIVA, 10**9) == real_odds(PRIMITIVA)
-    assert jackpot_scale(PRIMITIVA, 10**9) == 1
 
 
 @pytest.mark.parametrize("game", POOL, ids=lambda g: g.key)
@@ -682,13 +803,6 @@ def test_sin_apuestas_o_sin_probabilidades_el_sorteo_es_el_real() -> None:
     assert draw_result(PRIMITIVA, random.Random(3), tickets=(), odds={}) == a
     pick = random_pick(PRIMITIVA, random.Random(4))
     assert draw_result(PRIMITIVA, random.Random(3), tickets=[(pick, 1)]) == a
-
-
-def test_el_bote_garantizado_se_encoge_con_el_servidor() -> None:
-    small = guarantee_for(EURO, 10**12, 30)
-    assert small == round(EURO.guarantee * jackpot_scale(EURO, 30))
-    assert 0 < small < EURO.guarantee
-    assert guarantee_for(EURO, 10**12, 10**9) == EURO.guarantee
 
 
 def test_la_tabla_del_servidor_avisa_de_la_probabilidad_real() -> None:

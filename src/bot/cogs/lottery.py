@@ -55,7 +55,7 @@ from discord.ext import commands, tasks
 from bot.cogs import achievements as logros
 from bot.cogs import renta
 from bot.cogs.casino import casino_channel_error
-from bot.repositories.lottery import Draw, DrawChanged, LotteryRepository
+from bot.repositories.lottery import Draw, DrawChanged, LotteryRepository, Pot
 from bot.services.achievements import lottery_buy_stats, lottery_prize_stats, scratch_stats
 from bot.services.economy import (
     CURRENCY_EMOJI,
@@ -66,13 +66,14 @@ from bot.services.economy import (
 )
 from bot.services.lottery import (
     GAME_BY_KEY,
-    MAX_PER_DRAW,
+    JACKPOT_GROWTH_DAYS,
     Game,
     Kind,
     LotteryError,
     Pick,
     Prize,
     Settlement,
+    category_prizes,
     draw_label,
     draw_result,
     format_pick,
@@ -80,6 +81,8 @@ from bot.services.lottery import (
     gravamen,
     guarantee_for,
     jackpot_estimate,
+    jackpot_key,
+    jackpot_minimum,
     next_draw,
     parse_pick,
     random_pick,
@@ -171,17 +174,15 @@ def _when(moment: float) -> str:
 def odds_table(game: Game, members: int | None = None) -> str:
     """Tabla de categorías de un juego de bote: qué acertar, probabilidad y premio.
 
-    Con `members`, las probabilidades son las del servidor (`server_odds`) y
-    una nota debajo da la real del bote.
+    Con `members`, las probabilidades y los premios fijos son los del servidor
+    (`server_odds`, `category_prizes`) y una nota debajo da la probabilidad real
+    del bote.
     """
     odds = server_odds(game, members) if members is not None else real_odds(game)
+    prizes = category_prizes(game, members)
     rows = []
     for cat in game.categories:
-        prize = (
-            format_amount(cat.fixed)
-            if cat.fixed is not None
-            else ("bote" if cat.jackpot else f"{cat.share:.0%} fondo".replace("%", " %"))
-        )
+        prize = "BOTE" if cat.jackpot else format_amount(prizes[cat.key])
         rows.append(
             f"{cat.label:<9} {cat.rule:<18} 1 entre {_thousands(round(odds[cat.key])):>11}  {prize}"
         )
@@ -196,6 +197,21 @@ def odds_table(game: Game, members: int | None = None) -> str:
         f"\n-# Probabilidades a la medida del servidor ({_thousands(members)} personas): si "
         "cada uno juega una apuesta por sorteo, el bote cae más o menos una vez al mes. "
         f"En la vida real, 1 entre {_thousands(jackpot.odds(game.combinations))}."
+    )
+
+
+def growth_line(game: Game, pot: Pot, now: float) -> str:
+    """Cuánto sube el mínimo del bote que pone el Estado y hasta cuándo."""
+    days = (now - pot.since) / 86_400
+    if days >= JACKPOT_GROWTH_DAYS:
+        return (
+            f"El Estado garantiza {format_amount(jackpot_minimum(game, days))}, lo máximo: "
+            f"lleva {JACKPOT_GROWTH_DAYS} días sin acertante."
+        )
+    return (
+        f"El Estado sube el bote mínimo {format_amount(game.jackpot_daily)} cada día sin "
+        f"acertante (empieza en {format_amount(game.jackpot_floor)} y para a los "
+        f"{JACKPOT_GROWTH_DAYS} días)."
     )
 
 
@@ -617,34 +633,37 @@ class Loteria(commands.Cog):
         count = getattr(guild, "member_count", None)
         return count if isinstance(count, int) and count > 0 else None
 
-    async def _jackpot(self, guild_id: int, game: Game, draw: Draw | None) -> int:
-        carry = (await self.repository.pots(guild_id)).get(game.key, 0)
-        guarantee = guarantee_for(
-            game, await self.economy.state_balance(guild_id), self.members(guild_id)
-        )
-        sales = draw.sales if draw is not None else 0
-        return jackpot_estimate(game, sales=sales, carry=carry, guarantee=guarantee)
+    async def pots(self, guild_id: int) -> dict[str, Pot]:
+        """Los botes del servidor; los que aún no existían empiezan a crecer ahora."""
+        return await self.repository.open_pots(guild_id, POOL_GAMES, self.clock())
+
+    async def jackpots(self, guild_id: int) -> dict[str, int]:
+        """Bote que se anuncia para el próximo sorteo de cada juego de bote."""
+        now = self.clock()
+        pots = await self.pots(guild_id)
+        open_draws = await self.repository.open_draws(guild_id)
+        balance = await self.economy.state_balance(guild_id)
+        botes = {}
+        for key in POOL_GAMES:
+            game = GAME_BY_KEY[key]
+            pot = pots[key]
+            draw = open_draws.get((key, next_draw(game, now)))
+            botes[key] = jackpot_estimate(
+                game,
+                sales=draw.sales if draw is not None else 0,
+                carry=pot.carry,
+                guarantee=guarantee_for(game, balance, (now - pot.since) / 86_400),
+            )
+        return botes
 
     async def _home_text(self, guild_id: int, user_id: int) -> str:
         now = self.clock()
-        open_draws = await self.repository.open_draws(guild_id)
-        pots = await self.repository.pots(guild_id)
-        balance = await self.economy.state_balance(guild_id)
+        botes = await self.jackpots(guild_id)
         lines = ["## Próximos sorteos"]
         for key in (*NACIONAL_GAMES, *POOL_GAMES):
             game = GAME_BY_KEY[key]
             at = next_draw(game, now)
-            draw = open_draws.get((key, at))
-            extra = ""
-            if game.categories:
-                guarantee = guarantee_for(game, balance, self.members(guild_id))
-                bote = jackpot_estimate(
-                    game,
-                    sales=draw.sales if draw else 0,
-                    carry=pots.get(key, 0),
-                    guarantee=guarantee,
-                )
-                extra = f" · bote **{format_amount(bote)}**"
+            extra = f" · bote **{format_amount(botes[key])}**" if key in botes else ""
             lines.append(f"{game.emoji} **{game.name}** · <t:{int(at)}:R>{extra}")
         totals = await self.repository.totals(guild_id)
         lines.append(
@@ -653,15 +672,14 @@ class Loteria(commands.Cog):
             f"({_thousands(totals.winners)} boletos premiados)."
         )
         lines.append(
-            "-# Cada semana cae algo: reintegros, premios pequeños y, a quien le toque, "
-            "el gordo. Si el bote no tiene dueño, se acumula y crece pa'l próximo, bebé."
+            "-# Los botes suben cada día que nadie los acierta: el Estado garantiza un "
+            "mínimo que crece hasta que alguien se lo lleva."
         )
         return "\n".join(lines)
 
     async def _game_text(self, guild_id: int, user_id: int, game: Game) -> str:
         now = self.clock()
         at = next_draw(game, now)
-        draw = (await self.repository.open_draws(guild_id)).get((game.key, at))
         lines = [
             f"## {game.emoji} {game.name}",
             game.blurb,
@@ -669,8 +687,10 @@ class Loteria(commands.Cog):
             f"{'el décimo' if game.kind is Kind.NACIONAL else 'la apuesta'}",
         ]
         if game.categories:
-            bote = await self._jackpot(guild_id, game, draw)
+            bote = (await self.jackpots(guild_id))[game.key]
+            pot = (await self.pots(guild_id))[game.key]
             lines.append(f"💰 Bote: **{format_amount(bote)}**")
+            lines.append(f"-# {growth_line(game, pot, now)}")
             lines.append(odds_table(game, self.members(guild_id)))
         else:
             lines.append(nacional_table(game))
@@ -762,6 +782,7 @@ class Loteria(commands.Cog):
                     price=game.price,
                     channel_id=interaction.channel_id,
                     now=now,
+                    limit=game.max_per_draw,
                 ),
             )
         except LotteryError as error:
@@ -779,7 +800,7 @@ class Loteria(commands.Cog):
             lines = [
                 f"✅ **{game.name}**, sorteo del <t:{int(draw_at)}:f>: {shown}",
                 f"-# Pagas {format_amount(cost)}, sin IGIC (la lotería está exenta). "
-                f"Llevas {owned} de {MAX_PER_DRAW} en este sorteo.",
+                f"Llevas {owned} de {game.max_per_draw} en este sorteo.",
             ]
             if hint := await renta.hint(self.bot, guild.id, user.id, Moment(Event.BUY)):
                 lines.append(hint)
@@ -907,6 +928,7 @@ class Loteria(commands.Cog):
         else:
             result = draw_result(game, self.rng)
         carry: int | None = None
+        jackpot_won = False
         if game.kind is Kind.NACIONAL:
             settlement = settle_nacional(
                 game,
@@ -914,18 +936,25 @@ class Loteria(commands.Cog):
                 result=result,
             )
         else:
+            pot = (await self.pots(draw.guild_id))[game.key]
             guarantee = guarantee_for(
-                game, await self.economy.state_balance(draw.guild_id), members
+                game,
+                await self.economy.state_balance(draw.guild_id),
+                (draw.draw_at - pot.since) / 86_400,
             )
             settlement = settle_pool(
                 game,
                 sales=draw.sales,
-                carry=await self.repository.carry(draw.guild_id, game.key),
+                carry=pot.carry,
                 guarantee=guarantee,
                 tickets=[(t.id, Pick.decode(t.pick)) for t in tickets],
                 result=result,
+                members=members,
             )
             carry = settlement.carry
+            jackpot_won = any(
+                c.winners for c in settlement.categories if c.key == jackpot_key(game)
+            )
         by_id = {t.id: t for t in tickets}
         prizes: dict[int, tuple[int, int, str]] = {}
         totals: dict[int, list[int]] = defaultdict(lambda: [0, 0])
@@ -946,6 +975,7 @@ class Loteria(commands.Cog):
             "topup": settlement.topup,
             "sales": draw.sales,
             "paid": settlement.paid,
+            "jackpot": settlement.jackpot,
         }
         try:
             await self.economy.lottery(
@@ -958,6 +988,7 @@ class Loteria(commands.Cog):
                     prizes=prizes,
                     carry=carry,
                     now=self.clock(),
+                    jackpot_won=jackpot_won,
                 ),
             )
         except DrawChanged:
