@@ -8,6 +8,15 @@ criterio.
 
 ## 9.x
 
+### 9.21.0 · 2026-10-25
+
+- Fortunas: `fortunas` estrena panel, con podio, páginas y tu puesto
+- Fortunas: arriba, el patrimonio de todo el servidor, de qué es (pisos, efectivo, sociedades, tienda) y lo que se debe, con el Gini en barra
+- Fortunas: los tres primeros salen con su avatar y su desglose; del cuarto en adelante, una línea por persona, de 10 en 10 con ◀ ▶ (antes solo salían 15)
+- Fortunas: «📍 Tú» dice tu puesto y lo que te falta para el de arriba, y el botón 📍 Yo salta a tu página. Si pulsa otra persona, le sale su copia en privado
+- Fortunas: el desglose cuenta ya la sociedad 🏢, que sumaba en el total pero no se veía
+- Logros: ocho nuevos de `fortunas` en 🏛️ Economía y Hacienda (pasar páginas, llegar al final, buscarte con 📍 Yo, quedarte cuarto…)
+
 ### 9.20.0 · 2026-10-25
 
 - Financiar: cualquier compra a plazos con el banco y el IPC del crédito

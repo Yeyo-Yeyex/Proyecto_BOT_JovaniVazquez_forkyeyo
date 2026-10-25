@@ -15305,6 +15305,32 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "fortunas_last", "La base de la pirámide",
          "Mira `fortunas` siendo el último de la lista (con al menos 3 personas).", C, True),
     ])  # fmt: skip
+    a += _tiers("economy", "fortunas_fourth", [
+        (1, "fortunas_fourth", "Medalla de chocolate",
+         "Mira `fortunas` siendo el cuarto, justo fuera del podio (con al menos 5 personas).",
+         C, True),
+    ])  # fmt: skip
+    a += _tiers("economy", "fortunas_pages", [
+        (1, "fortunas_pages_1", "Pasando página", "Pasa una página de `fortunas`.", C),
+        (50, "fortunas_pages_50", "Hojeando el ¡Hola!", "Pasa 50 páginas de `fortunas`.", R),
+    ])  # fmt: skip
+    a += _tiers("economy", "fortunas_last_page", [
+        (1, "fortunas_last_page", "Al fondo a la derecha",
+         "Llega a la última página de `fortunas`.", C),
+    ])  # fmt: skip
+    a += _tiers("economy", "fortunas_me", [
+        (1, "fortunas_me_1", "Yo, mí, me, conmigo", "Busca tu puesto con 📍 Yo en `fortunas`.", C),
+        (25, "fortunas_me_25", "Mirándose el ombligo",
+         "Busca tu puesto con 📍 Yo en `fortunas` 25 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("economy", "fortunas_far", [
+        (1, "fortunas_far", "Viajando en clase turista",
+         "Busca tu puesto con 📍 Yo en `fortunas` estando del 21.º para abajo.", C, True),
+    ])  # fmt: skip
+    a += _tiers("economy", "fortunas_borrowed", [
+        (1, "fortunas_borrowed", "De gorra",
+         "Pulsa en el `fortunas` que abrió otra persona y llévate tu copia.", C),
+    ])  # fmt: skip
     a += _tiers("economy", "patrimonio_illiquid", [
         (1, "patrimonio_illiquid", "Rico en ladrillo, pobre en liquidez",
          "Mira tu patrimonio con más de la mitad en cosas y no en efectivo.", R, True),
@@ -23243,6 +23269,8 @@ def patrimonio_stats(
             add["fortunas_first"] = 1
         if people >= 3 and rank == people:
             add["fortunas_last"] = 1
+        if people >= 5 and rank == 4:
+            add["fortunas_fourth"] = 1
     else:
         add["patrimonio_views"] = 1
         if snooping:
@@ -23252,6 +23280,32 @@ def patrimonio_stats(
     if net_worth > 0:
         peak["net_worth_max"] = net_worth
     return StatDelta(add=add, peak=peak)
+
+
+def fortunas_click_stats(
+    *, turned: bool, last_page: bool, me: bool, rank: int, borrowed: bool
+) -> StatDelta:
+    """Contadores de los botones del panel de `fortunas`.
+
+    Args:
+        turned: Si pasó de página con ◀ o ▶.
+        last_page: Si acabó en la última página (de una lista con más de una).
+        me: Si pulsó 📍 Yo.
+        rank: Su puesto en la lista (0 si no sale).
+        borrowed: Si pulsó en el panel de otra persona (se lleva su copia).
+    """
+    add: dict[str, int] = {}
+    if turned:
+        add["fortunas_pages"] = 1
+    if last_page:
+        add["fortunas_last_page"] = 1
+    if me:
+        add["fortunas_me"] = 1
+        if rank > 20:
+            add["fortunas_far"] = 1
+    if borrowed:
+        add["fortunas_borrowed"] = 1
+    return StatDelta(add=add)
 
 
 def hacienda_stats(

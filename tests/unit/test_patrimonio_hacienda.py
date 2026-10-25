@@ -2,8 +2,9 @@
 
 Cubren el valor de los bienes de la tienda, los boletos pendientes, las
 cuentas de la riqueza (Gini, parte del más rico), el desglose de impuestos
-por miembro (directos, indirectos, devoluciones y Hong Kong) y que los
-embeds quepan en Discord.
+por miembro (directos, indirectos, devoluciones y Hong Kong), el panel de
+`fortunas` (páginas, botones y su copia para los demás) y que todo quepa en
+Discord.
 """
 
 from __future__ import annotations
@@ -19,14 +20,25 @@ import pytest
 from bot.cogs import hacienda_panel as hacienda_panel_module
 from bot.cogs import patrimonio as patrimonio_cog
 from bot.cogs.hacienda_panel import HaciendaPanel, bill_card
-from bot.cogs.patrimonio import Patrimonio
+from bot.cogs.patrimonio import (
+    FortunasPanel,
+    Fortunes,
+    Patrimonio,
+    fortunes_summary,
+    you_line,
+)
 from bot.repositories.economy import EconomyRepository, Treasury
 from bot.repositories.lottery import LotteryRepository
 from bot.repositories.shop import ShopRepository, wealth_goods_in
-from bot.services.achievements import hacienda_page_stats, hacienda_stats, patrimonio_stats
+from bot.services.achievements import (
+    fortunas_click_stats,
+    hacienda_page_stats,
+    hacienda_stats,
+    patrimonio_stats,
+)
 from bot.services.economy import STARTING_BALANCE, STATE_ACCOUNT_ID, EconomyService
 from bot.services.levels import TIMEZONE
-from bot.services.net_worth import NetWorth, build, gini, top_share
+from bot.services.net_worth import Holding, NetWorth, build, gini, top_share
 from bot.services.shop import Kind, quote
 from bot.services.tax_report import (
     BUSINESS_TAXES,
@@ -389,6 +401,16 @@ def test_logros_de_patrimonio_fortunas_y_hacienda() -> None:
         listing=True, snooping=False, net_worth=0, illiquid=False, rank=3, people=3
     )
     assert listing.add == {"fortunas_views": 1, "fortunas_last": 1}
+    fourth = patrimonio_stats(
+        listing=True, snooping=False, net_worth=0, illiquid=False, rank=4, people=5
+    )
+    assert fourth.add == {"fortunas_views": 1, "fortunas_fourth": 1}
+    assert fortunas_click_stats(
+        turned=True, last_page=True, me=False, rank=30, borrowed=False
+    ).add == {"fortunas_pages": 1, "fortunas_last_page": 1}
+    assert fortunas_click_stats(
+        turned=False, last_page=False, me=True, rank=20, borrowed=True
+    ).add == {"fortunas_me": 1, "fortunas_borrowed": 1}
     tax = hacienda_stats(own=True, snooping=False, share=0.6, indirect_over_direct=True)
     assert tax.add == {
         "hacienda_views": 1,
@@ -409,36 +431,46 @@ def member(user_id: int, name: str) -> MagicMock:
     found.id = user_id
     found.bot = False
     found.display_name = name
+    found.display_avatar.url = f"https://cdn.discordapp.com/avatars/{user_id}/a.png"
     return found
 
 
-async def test_patrimonio_y_fortunas_responden_con_un_embed(tmp_path: Path) -> None:
+def guild_of(*names: tuple[int, str]) -> MagicMock:
+    """Servidor falso: los de `names` con su nombre y cualquier otro como `m<id>`."""
+    known = dict(names)
+    guild = MagicMock(spec=discord.Guild)
+    guild.id = GUILD
+    guild.get_member = MagicMock(side_effect=lambda uid: member(uid, known.get(uid, f"m{uid}")))
+    return guild
+
+
+async def test_patrimonio_responde_con_un_embed_y_fortunas_con_un_panel(tmp_path: Path) -> None:
     economy, shop, lottery = await stores(tmp_path)
     await economy.grant(GUILD, ANA, amount=80_000, reason="prueba")
     await economy.balance(GUILD, BEA)
     cog = Patrimonio(MagicMock(), economy, shop=shop, lottery=lottery)
-    guild = MagicMock(spec=discord.Guild)
-    guild.id = GUILD
-    guild.get_member = MagicMock(side_effect=lambda uid: member(uid, f"m{uid}"))
-    responder = MagicMock()
-    responder.guild = guild
-    responder.member = member(ANA, "Ana")
-    responder.channel = None
-    responder.send = AsyncMock()
+    guild = guild_of()
+    ana = member(ANA, "Ana")
     track = AsyncMock()
-    original = patrimonio_cog.logros.track
-    patrimonio_cog.logros.track = track
-    try:
-        embed = await cog.patrimonio_embed(guild, responder.member, responder.member, None)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(patrimonio_cog.logros, "track", track)
+        embed = await cog.patrimonio_embed(guild, ana, ana, None)
         assert "Ana" in embed.title
         assert "Patrimonio" in embed.fields[-1].value
         check(embed)
-        await cog._fortunas_impl(responder)
-        listing = responder.send.await_args.kwargs["embed"]
-        assert "mANA" not in (listing.description or "")
-        check(listing)
-    finally:
-        patrimonio_cog.logros.track = original
+        panel = await cog.fortunas_panel(guild, ana)
+        await cog._fortunas_logros(ana, None, panel.fortunes)
+    shown = "\n".join(texts(panel))
+    assert f"🥇 📍 m{ANA}" in shown and f"🥈 m{BEA}" in shown
+    assert "📍 Tú: puesto 1 de 2" in shown
+    # Los dos del podio llevan su avatar al lado.
+    thumbs = [c for c in panel.walk_children() if isinstance(c, discord.ui.Thumbnail)]
+    assert [t.media.url for t in thumbs] == [
+        f"https://cdn.discordapp.com/avatars/{ANA}/a.png",
+        f"https://cdn.discordapp.com/avatars/{BEA}/a.png",
+    ]
+    # Con una sola página no hay botones.
+    assert not [c for c in panel.walk_children() if isinstance(c, discord.ui.Button)]
     first = track.await_args_list[0].args[4]
     assert first.peak["net_worth_max"] == STARTING_BALANCE + 80_000
     second = track.await_args_list[1].args[4]
@@ -453,27 +485,141 @@ def test_quien_no_tiene_nada_tiene_patrimonio_cero() -> None:
 async def test_fortunas_enseña_el_titulo_que_luce_cada_uno(tmp_path: Path) -> None:
     economy, shop, lottery = await stores(tmp_path)
     await economy.grant(GUILD, ANA, amount=80_000, reason="prueba")
-    tienda = MagicMock()
-    tienda.title = lambda guild_id, user_id: "🏰 Marquesado de Mogán" if user_id == ANA else None
-    bot = MagicMock()
-    cog = Patrimonio(bot, economy, shop=shop, lottery=lottery)
-    guild = MagicMock(spec=discord.Guild)
-    guild.id = GUILD
-    guild.get_member = MagicMock(side_effect=lambda uid: member(uid, f"m{uid}"))
-    responder = MagicMock()
-    responder.guild = guild
-    responder.member = member(BEA, "Bea")
-    responder.channel = None
-    responder.send = AsyncMock()
-    original = patrimonio_cog.tienda.title_of
-    patrimonio_cog.tienda.title_of = lambda _bot, g, u: tienda.title(g, u)
-    track = patrimonio_cog.logros.track
-    patrimonio_cog.logros.track = AsyncMock()
-    try:
-        await cog._fortunas_impl(responder)
-    finally:
-        patrimonio_cog.tienda.title_of = original
-        patrimonio_cog.logros.track = track
-    listing = responder.send.await_args.kwargs["embed"]
-    text = "\n".join(f.value for f in listing.fields)
-    assert f"m{ANA} · *🏰 Marquesado de Mogán*" in text
+    cog = Patrimonio(MagicMock(), economy, shop=shop, lottery=lottery)
+
+    def title_of(_bot: object, _guild_id: int, user_id: int) -> str | None:
+        return "🏰 Marquesado de Mogán" if user_id == ANA else None
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(patrimonio_cog.tienda, "title_of", title_of)
+        panel = await cog.fortunas_panel(guild_of(), member(BEA, "Bea"))
+    assert f"m{ANA} · *🏰 Marquesado de Mogán*" in "\n".join(texts(panel))
+
+
+def rich(user_id: int, total: int, **parts: int) -> NetWorth:
+    """Alguien con `total` en efectivo (más lo que se pase aparte)."""
+    return NetWorth(user_id=user_id, cash=total, **parts)
+
+
+def fortunes_of(*everyone: NetWorth, names: dict[int, str] | None = None) -> Fortunes:
+    ordered = tuple(sorted(everyone, key=lambda w: -w.total))
+    return Fortunes(
+        guild_id=GUILD,
+        everyone=ordered,
+        names=names or {w.user_id: f"m{w.user_id}" for w in ordered},
+        avatars={
+            w.user_id: f"https://cdn.discordapp.com/avatars/{w.user_id}/a.png" for w in ordered[:3]
+        },
+        read_at=NOW,
+    )
+
+
+def buttons(panel: discord.ui.LayoutView) -> dict[str, discord.ui.Button]:
+    return {
+        c.custom_id: c for c in panel.walk_children() if isinstance(c, discord.ui.Button)
+    }  # fmt: skip
+
+
+def test_las_paginas_de_fortunas_caben_en_discord_con_muchos_miembros() -> None:
+    """35 miembros con nombre y título largos y todo el desglose: 4 páginas que Discord acepta."""
+    everyone = [
+        rich(
+            1_000 + i, 9_876_543_210 - i, homes=1_234_567_890, companies=98_765_432,
+            lottery=12_345, renta=67_890, debts=5_432_100,
+            goods=(Holding("Trono", "👑", Kind.TROPHY.value, 1_000_000, None),),
+        )
+        for i in range(35)
+    ]  # fmt: skip
+    names = {
+        w.user_id: "Nombre_larguísimo_de_32_letras__ · *👑 Grandeza de España*" for w in everyone
+    }
+    fortunes = fortunes_of(*everyone, names=names)
+    owner = MagicMock(spec=discord.Member, id=1_034, bot=False)
+    seen = []
+    for page in range(4):
+        panel = FortunasPanel(MagicMock(), fortunes, owner, page=page)
+        assert panel.pages == 4
+        shown = texts(panel)
+        assert sum(map(len, shown)) <= 4_000, page
+        assert panel.total_children_count <= 40, page
+        ids = list(buttons(panel))
+        assert ids == ["fortunas:anterior", "fortunas:pagina", "fortunas:siguiente", "fortunas:yo"]
+        assert buttons(panel)["fortunas:pagina"].label == f"{page + 1}/4"
+        assert buttons(panel)["fortunas:anterior"].disabled is (page == 0)
+        assert buttons(panel)["fortunas:siguiente"].disabled is (page == 3)
+        panel.to_components()  # lo que se manda a Discord se monta sin errores
+        seen += [line for text in shown for line in text.splitlines() if line.startswith("`")]
+    sections = [c for c in FortunasPanel(MagicMock(), fortunes, owner).walk_children()]
+    assert sum(isinstance(c, discord.ui.Section) for c in sections) == 3
+    # Del 4.º al 35.º, cada uno una vez y en orden; el último es el dueño, marcado.
+    assert [int(line[1 : line.index(".")]) for line in seen] == list(range(4, 36))
+    assert seen[-1].startswith("`35.` 📍 ")
+
+
+def test_la_cabecera_de_fortunas_dice_de_que_es_y_como_se_reparte() -> None:
+    ranked = [
+        rich(ANA, 600, homes=1_200, companies=200, debts=100),
+        rich(BEA, 0, goods=(Holding("Gorra", "🧢", Kind.TROPHY.value, 5, None),)),
+    ]
+    summary = fortunes_summary(ranked)
+    lines = summary.splitlines()
+    assert lines[0] == "## 1.905 Y$"
+    assert lines[1] == "🏠 60 % pisos · 💵 30 % efectivo · 🏢 10 % sociedades · 🛍️ <1 % tienda"
+    assert lines[2] == "🏦 −100 Y$ de deudas"
+    assert lines[3].startswith("▰▰▰▰▰▱▱▱▱▱ Gini **0,50**")
+    assert "el más rico tiene el 100 %" in lines[3]
+
+
+def test_la_linea_de_tu_puesto_en_fortunas() -> None:
+    everyone = fortunes_of(rich(ANA, 900), rich(BEA, 500), rich(30, 500), NetWorth(40, debts=50))
+    assert you_line(everyone.everyone, ANA) == (
+        "📍 Tú: puesto 1 de 3 · **900 Y$** · le sacas 400 Y$ al 2.º"
+    )
+    assert you_line(everyone.everyone, BEA).endswith("te faltan 400 Y$ para el 1.º")
+    assert you_line(everyone.everyone, 30).endswith("empatas con el 2.º")
+    assert you_line(everyone.everyone, 40) == (
+        "📍 Tú: no sales en la lista (patrimonio neto de -50 Y$)"
+    )
+    assert you_line(everyone.everyone, 99).endswith("(patrimonio neto de 0 Y$)")
+    assert you_line(fortunes_of(rich(ANA, 1)).everyone, ANA) == "📍 Tú: puesto 1 de 1 · **1 Y$**"
+    empty = FortunasPanel(MagicMock(), fortunes_of(), member(ANA, "Ana"))
+    assert "Nadie tiene nada" in "\n".join(texts(empty))
+
+
+async def test_los_botones_de_fortunas_pasan_pagina_y_dan_copia_a_los_demas() -> None:
+    from interaction_fakes import fake_interaction
+
+    fortunes = fortunes_of(*(rich(1_000 + i, 10_000 - i) for i in range(25)))
+    owner = member(1_000, "Ana")
+    panel = FortunasPanel(MagicMock(), fortunes, owner)
+    track = AsyncMock()
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(patrimonio_cog.logros, "track", track)
+        mine = fake_interaction(owner)
+        await buttons(panel)["fortunas:siguiente"].callback(mine)
+        assert panel.page == 1
+        assert mine.response.edit_message.await_args.kwargs["view"] is panel
+        assert track.await_args.args[-1].add == {"fortunas_pages": 1}
+        mine = fake_interaction(owner)
+        await buttons(panel)["fortunas:siguiente"].callback(mine)
+        assert panel.page == 2
+        assert track.await_args.args[-1].add == {"fortunas_pages": 1, "fortunas_last_page": 1}
+        # El 23.º pulsa 📍 Yo en el panel de Ana: se lleva su copia en su página.
+        stranger = fake_interaction(member(1_022, "Bea"))
+        await buttons(panel)["fortunas:yo"].callback(stranger)
+        assert panel.page == 2  # el de Ana no se mueve
+        sent = stranger.response.send_message.await_args.kwargs
+        assert sent["ephemeral"] is True and sent["view"].page == 2
+        assert sent["view"].owner.id == 1_022
+        assert "📍 Tú: puesto 23 de 25" in "\n".join(texts(sent["view"]))
+        assert track.await_args.args[-1].add == {
+            "fortunas_last_page": 1, "fortunas_me": 1, "fortunas_far": 1, "fortunas_borrowed": 1,
+        }  # fmt: skip
+        # Ana vuelve a su sitio con 📍 Yo; quien no sale en la lista va a la última.
+        mine = fake_interaction(owner)
+        await buttons(panel)["fortunas:yo"].callback(mine)
+        assert panel.page == 0
+        assert track.await_args.args[-1].add == {"fortunas_me": 1}
+        nobody = fake_interaction(member(5, "Nadie"))
+        await buttons(panel)["fortunas:yo"].callback(nobody)
+        assert nobody.response.send_message.await_args.kwargs["view"].page == 2
