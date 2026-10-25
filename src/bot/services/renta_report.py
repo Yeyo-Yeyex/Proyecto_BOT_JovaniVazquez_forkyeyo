@@ -102,6 +102,8 @@ SPLIT = "FRACCIONADA"
 OWED = "CON DEUDA"
 FILED = "PRESENTADA"
 EXPIRED = "CADUCADA"
+#: Solo en la carta: falta pagarla o presentarla.
+PENDING = "PENDIENTE"
 
 
 def seal_for(statement: IrpfStatement, pending: Collection[date], now: float) -> str:
@@ -666,9 +668,12 @@ def card_state(statement: IrpfStatement, name: str, seal: str = "") -> dict[str,
 
     Args:
         name: Nombre de su dueño, tal cual (la escena quita lo que no sabe pintar).
-        seal: El de `seal_for`: lo que ya se hizo con ella, en un sello encima.
+        seal: El de `seal_for`: lo que ya se hizo con ella, en un sello encima. Sin él,
+            la que falta pagar o presentar lleva `PENDING`.
     """
     filed = statement.filed
+    if not seal and (filed.refund > 0 or filed.result > 0 and filed.payment == PAYMENT_PENDING):
+        seal = PENDING
     rows = concepts(statement)
     general = [c for c in rows if c.key != "beckham"]
     earned = sum(max(0, c.earned) for c in general) if rows else filed.base
