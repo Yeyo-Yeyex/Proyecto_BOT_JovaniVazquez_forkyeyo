@@ -1806,9 +1806,14 @@ class ReformQuote:
         return self.cost + self.igic + self.icio + self.license
 
 
-def reform_quote(listing: Listing, reform: Reform, index: float = 1.0) -> ReformQuote:
-    """La cuenta de una reforma: obra, IGIC, ICIO, licencia y si es rehabilitación."""
+def reform_quote(listing: Listing, reform: Reform, index: float = 1.0, ipc: int = 0) -> ReformQuote:
+    """La cuenta de una reforma: obra, IGIC, ICIO, licencia y si es rehabilitación.
+
+    Args:
+        ipc: El IPC del crédito, en % (`credit`): encarece la obra.
+    """
     cost = reform_cost(listing, reform)
+    cost += cost * ipc // 100
     construction = price(listing, index) * CONSTRUCTION_SHARE
     return ReformQuote(
         cost=cost,
@@ -2381,17 +2386,23 @@ class SplitQuote:
         return self.cost + self.igic + self.icio + self.license + self.ajd
 
 
-def split_quote(listing: Listing, mode: str, index: float = 1.0) -> SplitQuote:
-    """La cuenta de dividir un inmueble por plantas o de alquilarlo por habitaciones."""
+def split_quote(listing: Listing, mode: str, index: float = 1.0, ipc: int = 0) -> SplitQuote:
+    """La cuenta de dividir un inmueble por plantas o de alquilarlo por habitaciones.
+
+    Args:
+        ipc: El IPC del crédito, en % (`credit`): encarece la obra o los muebles.
+    """
     if mode == FLOORS:
         floors, storage = floors_of(listing), storage_of(listing)
         units = floors + storage
         euros = FLOOR_UNIT_EUR * floors + STORAGE_EUR * storage + FLOOR_M2_EUR * listing.m2
         cost = int(round(_euros(euros), -2))
+        cost += cost * ipc // 100
         return SplitQuote(
             mode, units, cost, igic(cost, SERVICES_IGIC), round(cost * ICIO_RATE),
             WORKS_LICENSE_FEE, round(price(listing, index) * SPLIT_AJD_RATE), FLOOR_DAYS,
         )  # fmt: skip
     units = rooms_of(listing)
     cost = int(round(_euros(ROOM_EUR * units), -2))
+    cost += cost * ipc // 100
     return SplitQuote(mode, units, cost, igic(cost, SERVICES_IGIC), 0, 0, 0, ROOM_DAYS)

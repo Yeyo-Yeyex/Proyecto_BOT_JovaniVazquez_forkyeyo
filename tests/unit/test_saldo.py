@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from bot.repositories.economy import EconomyRepository, LedgerEntry
-from bot.repositories.housing import Decision, Holding, Market
+from bot.repositories.housing import Decision, Holding, Market, MemberDay, Split
 from bot.repositories.housing_finance import Deposit, Mortgage
 from bot.repositories.housing_junta import Vote
 from bot.repositories.housing_trade import Auction
@@ -25,7 +25,7 @@ from bot.services.achievements import (
 )
 from bot.services.economy import STARTING_BALANCE, EconomyService, daily_amount
 from bot.services.housing_catalog import LISTING_BY_KEY
-from bot.services.housing_view import pending_items
+from bot.services.housing_view import pending_items, portfolio_state
 from bot.services.levels import TIMEZONE, local_day
 from bot.services.pala import WorkService
 from bot.services.pending import FIELD_LIMIT, SECTION_TITLES, Pending, Side, pending_fields
@@ -123,6 +123,35 @@ def test_los_pendientes_de_pisos_salen_con_su_importe_y_su_plazo() -> None:
 
 def test_sin_nada_en_pisos_no_sale_nada() -> None:
     assert pending_items(Market(), USER, [], TODAY) == []
+
+
+def test_las_rentas_de_saldo_suman_lo_mismo_que_la_cartera_de_pisos() -> None:
+    # Un piso por habitaciones cobra de cada habitación y uno en impago no paga nada.
+    piso = LISTING_BY_KEY["isleta_piso3"]
+    normal, impago = [k for k in LISTING_BY_KEY if k != piso.key][:2]
+    rooms = [f"{piso.key}~h{n}" for n in (1, 2, 3)]
+    market = Market(
+        holdings={
+            key: {USER: Holding(key, USER, shares, 1, 1, 0.0)}
+            for key, shares in ((piso.key, rules.SHARES), (normal, 50), (impago, rules.SHARES))
+        },
+        splits={piso.key: Split(rules.ROOMS, 3, 0)},
+        leases={
+            piso.key: rules.Lease(status=rules.BY_ROOMS),
+            rooms[0]: rules.Lease(status=rules.RENTED, rent=300, arrears=90),
+            rooms[1]: rules.Lease(status=rules.RENTED, rent=300),
+            normal: rules.Lease(status=rules.RENTED, rent=1_000),
+            impago: rules.Lease(status=rules.DEFAULTING, rent=700, unpaid=2),
+        },
+    )
+
+    by_kind = {i.kind: i for i in pending_items(market, USER, [], TODAY)}
+    cartera = portfolio_state(market, USER, "x", 0, MemberDay(), [], {}, today=TODAY)
+
+    assert by_kind["rents"].amount == 600 + 500
+    assert by_kind["arrears"].amount == 90  # los atrasos de una habitación también salen
+    rents = {i["key"]: i["rent"] for i in cartera["items"]}
+    assert rents == {piso.key: "600 Y$/mes", normal: "500 Y$/mes", impago: "—"}
 
 
 def test_la_fianza_de_un_piso_que_ya_dejaste_vuelve_esta_noche() -> None:

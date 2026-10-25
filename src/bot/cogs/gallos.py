@@ -71,10 +71,11 @@ from discord.ext import commands
 
 from bot.cogs import achievements as logros
 from bot.cogs import apuestas, renta
+from bot.cogs import banco_compras as financiar
 from bot.cogs import shop as tienda
 from bot.cogs.casino import casino_channel_error, insufficient_text
 from bot.repositories.gallos import GallosRepository
-from bot.services import skins
+from bot.services import credit, skins
 from bot.services.achievements import (
     StatDelta,
     casino_stats,
@@ -526,6 +527,17 @@ class HousePanel(ui.View):
                 disabled=busy or full or today >= TRAIN_PER_DAY,
             )
         self._button("↩️ Volver al reñidero", "train_back", self._leave_gym, row=1, disabled=busy)
+        for stat in Stat:
+            level = self.record.stat(stat)
+            base = train_price(level)
+            if level < STAT_MAX and credit.refusal(base + igic(base)) is None:
+                self._button(
+                    f"{financiar.LABEL} {stat.emoji} {stat.label}",
+                    f"financiar_{stat.value}",
+                    self._financer(stat),
+                    row=1,
+                    disabled=busy or today >= TRAIN_PER_DAY,
+                )
 
     def rebuild(self, *, busy: bool = False) -> None:
         """Vuelve a montar el desplegable y los botones con el estado actual."""
@@ -757,6 +769,55 @@ class HousePanel(ui.View):
             self._busy = False
         if training is not None:
             await self._after_train(interaction, training)
+
+    def _financer(self, stat: Stat) -> Callable[[discord.Interaction], Awaitable[None]]:
+        async def callback(interaction: discord.Interaction) -> None:
+            await self._finance_train(interaction, stat)
+
+        return callback
+
+    async def _finance_train(self, interaction: discord.Interaction, stat: Stat) -> None:
+        """💳 Financiar un entrenamiento: la oferta del banco, en privado; el panel se repinta."""
+        if self._busy:
+            await interaction.response.send_message(
+                "Espera, que ya se está moviendo.", ephemeral=True
+            )
+            return
+        # El precio de la oferta es el de este panel; si el gallo cambió, `train` ya se queja.
+        base = train_price(self.record.stat(stat))
+        done: list[Training] = []
+
+        async def buy(_interaction: discord.Interaction) -> str | None:
+            outcome = await self.cog.train(self.guild_id, self.owner.id, self.record, stat)
+            if isinstance(outcome, str):
+                return outcome
+            done.append(outcome)
+            return None
+
+        async def after(after_interaction: discord.Interaction) -> None:
+            training = done[0]
+            self.record, self.balance = training.after, training.balance
+            self.result = await self._train_text(training)
+            self.rebuild()
+            try:
+                if self._last_interaction is not None:
+                    await self._last_interaction.edit_original_response(
+                        embed=self.embed(), view=self
+                    )
+                elif self.message is not None:
+                    await self.message.edit(embed=self.embed(), view=self)
+            except discord.HTTPException:
+                logger.warning("No se pudo repintar el reñidero tras financiar", exc_info=True)
+            await self._after_train(after_interaction, training)
+
+        purchase = credit.Purchase(
+            f"🏋️ Entrenar a {self.record.name}: {stat.label}", base + igic(base), "gallos"
+        )
+        deal = financiar.Deal(purchase, buy, after=after)
+        if not await financiar.open_finance(self.cog.bot, interaction, deal):
+            await interaction.response.send_message(
+                "El banco está cerrado ahora mismo.", ephemeral=True
+            )
 
     async def _train_text(self, training: Training) -> str:
         """El resultado del entrenamiento: lo que sube, una frase y la mordida del IGIC."""

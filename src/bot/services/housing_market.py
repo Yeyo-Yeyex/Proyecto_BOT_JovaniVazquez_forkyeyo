@@ -7,8 +7,10 @@ Discord: lo usa `bot.cogs.pisos`.
 
 from __future__ import annotations
 
+import logging
 import random
 import secrets
+import sqlite3
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -45,9 +47,10 @@ from bot.repositories.housing import (
 )
 from bot.repositories.housing_junta import Vote
 from bot.repositories.housing_trade import Auction
+from bot.services import credit
 from bot.services import housing as rules
 from bot.services import loans as lending
-from bot.services.economy import EconomyService
+from bot.services.economy import EconomyService, InsufficientFundsError
 from bot.services.housing import Lease
 from bot.services.levels import local_day
 
@@ -61,6 +64,9 @@ class Trade:
 
     deal: Purchase | Sale
     balance: int
+
+
+logger = logging.getLogger(__name__)
 
 
 class HousingService:
@@ -191,6 +197,65 @@ class HousingService:
         run = self.repository.desist_loan(guild_id, user_id, loan_id, self._clock())
         closed, balances = await self.economy.housing(guild_id, run)
         return closed, balances[user_id]
+
+    async def finance(
+        self,
+        guild_id: int,
+        user_id: int,
+        purchase: credit.Purchase,
+        *,
+        plan: credit.Plan,
+        months: int,
+        insured: bool = False,
+        grace: bool = False,
+        rate: float = 0.0,
+    ) -> tuple[SignedLoan, int]:
+        """Financia una compra (💳 Financiar): al monedero llega lo que cuesta, para pagarla
+        justo después con el camino de siempre. Si esa compra falla, `unfinance`.
+
+        Raises:
+            HousingError: Si debe a Hacienda o el banco no financia (ver `finance` del
+                repositorio).
+        """
+        if await self.economy.tax_debt(guild_id, user_id) > 0:
+            # Lo prestado se embargaría al entrar, como en un préstamo personal.
+            raise HousingError(
+                "Debes dinero a Hacienda y tendrías la cuenta embargada: el banco no financia "
+                "nada. Liquida la deuda en `renta`."
+            )
+        income, payroll = await self.lender_view(guild_id, user_id)
+        now = self._clock()
+        run = self.repository.finance(
+            guild_id, user_id, purchase, plan=plan, months=months, insured=insured,
+            grace=grace, rate=rate, income=income, payroll=payroll, day=local_day(now), now=now,
+        )  # fmt: skip
+        signed, balances = await self.economy.housing(guild_id, run)
+        # El IPC no se recalcula aquí: la compra va justo después y tiene que costar lo que
+        # se ha financiado. Lo recalcula quien compra al terminar (`refresh_ipc`).
+        return signed, balances[user_id]
+
+    async def unfinance(self, guild_id: int, user_id: int, loan_id: int) -> None:
+        """Deshace una financiación cuya compra no salió: devuelve lo prestado y la comisión.
+
+        Nunca lanza: si ya no puede devolverlo (lo gastó entretanto), la financiación sigue
+        viva y se paga como cualquier otra, y queda en el registro.
+        """
+        try:
+            await self.desist_loan(guild_id, user_id, loan_id)
+        except (HousingError, InsufficientFundsError, OSError, sqlite3.Error):
+            logger.exception("No se pudo deshacer la financiación #%s de %s", loan_id, user_id)
+        await self.refresh_ipc(guild_id)
+
+    async def refresh_ipc(self, guild_id: int) -> int:
+        """Recalcula el IPC del crédito de un servidor (`credit.set_ipc`) y lo devuelve.
+
+        Solo en momentos fijos (cada 10 minutos con el cierre de `pisos` y al terminar o
+        deshacer una compra financiada): así un precio enseñado sigue valiendo al pagar.
+        """
+        alive, money = await self.repository.credit_alive(guild_id)
+        pct = credit.ipc_pct(alive, money)
+        credit.set_ipc(guild_id, pct)
+        return pct
 
     async def _guarantor_income(self, guild_id: int, guarantor: int | None) -> int:
         """Lo que ingresa al día un avalista (0 sin avalista).

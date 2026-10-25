@@ -89,10 +89,12 @@ from discord import app_commands, ui
 from discord.ext import commands
 
 from bot.cogs import achievements as logros
+from bot.cogs import banco_compras as financiar
 from bot.cogs import business as negocio
 from bot.cogs import pets as mascotas
 from bot.cogs import renta
 from bot.cogs import shop as tienda
+from bot.services import credit
 from bot.services.achievements import StatDelta, work_stats
 from bot.services.agenda import JORNADA_NAMES, JORNADAS
 from bot.services.business_view import dia_state
@@ -149,6 +151,7 @@ from bot.services.work import (
     FamilyTier,
     Mechanic,
     ShiftKind,
+    Training,
     battery_bar,
     battery_eta,
     battery_state,
@@ -1065,6 +1068,8 @@ class PalaPanel(ui.LayoutView):
         #: Si el mensaje enseña la imagen del inicio, y el cambio de adjuntos de la
         #: próxima edición (`None` = no tocarlos; `[]` = quitar la imagen).
         self.has_image = False
+        #: La formación del puesto siguiente que enseña el panel (💳 Financiar sin leer la base).
+        self._offered_training: Training | None = None
         self._attach: list[discord.File] | None = None
 
     # -- Dibujo -----------------------------------------------------------------------
@@ -1194,6 +1199,17 @@ class PalaPanel(ui.LayoutView):
             )
             for coffee in COFFEES
         ]
+        # Financiar un café (110-200 Y$) solo va en 3 cuotas: de eso va el chiste.
+        options += [
+            discord.SelectOption(
+                label=f"{financiar.LABEL} un {coffee.name.lower()}",
+                value=f"fin:{coffee.key}",
+                emoji=coffee.emoji,
+                description=f"{format_amount(coffee.price + igic(coffee.price))} con IGIC",
+            )
+            for coffee in COFFEES
+            if credit.refusal(coffee.price + igic(coffee.price)) is None
+        ]
         select: ui.Select = ui.Select(
             placeholder=f"☕ Máquina de café ({coffees_today}/{MAX_COFFEES} hoy)",
             options=options,
@@ -1201,7 +1217,11 @@ class PalaPanel(ui.LayoutView):
         )
 
         async def callback(interaction: discord.Interaction) -> None:
-            await self._coffee(interaction, select.values[0])
+            value = select.values[0]
+            if value.startswith("fin:"):
+                await self._finance_coffee(interaction, value[4:])
+            else:
+                await self._coffee(interaction, value)
 
         select.callback = callback  # type: ignore[method-assign]
         return select
@@ -1259,11 +1279,13 @@ class PalaPanel(ui.LayoutView):
                 self._button("📈 Ascender", self._offer, style=discord.ButtonStyle.primary)
             )
         following = status.next_position
+        self._offered_training = None
         if (
             following is not None
             and following.training is not None
             and following.training.key not in status.trainings
         ):
+            self._offered_training = following.training
             price = following.training.price + igic(following.training.price)
             actions.add_item(self._button(f"🎓 Formación · {format_amount(price)}", self._training))
         more: ui.ActionRow = ui.ActionRow()
@@ -1281,13 +1303,31 @@ class PalaPanel(ui.LayoutView):
             more.add_item(self._button(f"✈️ Volver a casa · {flight}", self._go_home))
         more.add_item(self._button("🎁 Regalos", self._gift_shop))
         more.add_item(self._button("🏠 Inicio", self._go_home_screen))
+        finance_row: ui.ActionRow = ui.ActionRow()
+        offered = self._offered_training
+        if offered is not None and credit.refusal(offered.price + igic(offered.price)) is None:
+            finance_row.add_item(
+                self._button(
+                    f"{financiar.LABEL} formación",
+                    self._finance_training,
+                    custom_id="pala-panel:financiar_formacion",
+                )
+            )
+        if status.can_go_abroad and credit.refusal(FLIGHT_PRICE) is None:
+            finance_row.add_item(
+                self._button(
+                    f"{financiar.LABEL} el vuelo",
+                    self._finance_flight,
+                    custom_id="pala-panel:financiar_vuelo",
+                )
+            )
         coffee_row: ui.ActionRow = ui.ActionRow()
         coffee_row.add_item(self._coffee_select(status.contract.coffees))
         family_row: ui.ActionRow = ui.ActionRow()
         family_row.add_item(self._family_select(status))
         jornada_row: ui.ActionRow = ui.ActionRow()
         jornada_row.add_item(self._jornada_select(status))
-        rows = [actions, more, coffee_row, family_row, jornada_row]
+        rows = [actions, more, finance_row, coffee_row, family_row, jornada_row]
         if not status.contract.abroad:
             job_row: ui.ActionRow = ui.ActionRow()
             job_row.add_item(self._job_select(status.contract.job))
@@ -1617,6 +1657,17 @@ class PalaPanel(ui.LayoutView):
         except WorkError as error:
             await notify(interaction, str(error))
             return
+        await self._coffee_done(interaction, interaction, key, battery, coffees)
+
+    async def _coffee_done(
+        self,
+        interaction: discord.Interaction,
+        via: discord.Interaction | None,
+        key: str,
+        battery: float,
+        coffees: int,
+    ) -> None:
+        """Lo de después del café; `via` es el clic que repinta el panel (`None`: el mensaje)."""
         coffee = next(c for c in COFFEES if c.key == key)
         note = (
             f"{coffee.emoji} Te tomas un {coffee.name.lower()}: {battery_bar(battery)} "
@@ -1625,7 +1676,7 @@ class PalaPanel(ui.LayoutView):
         if coffees > MAX_COFFEES:
             note += " Te tiemblan hasta las pestañas."
         self.notes.append(note)
-        await self.refresh(interaction)
+        await self.refresh(via)
         await renta.remind(self.cog.bot, interaction)
         await logros.track(
             self.cog.bot,
@@ -1803,11 +1854,103 @@ class PalaPanel(ui.LayoutView):
         except WorkError as error:
             await notify(interaction, str(error))
             return
+        await self._training_done(interaction, interaction, name, base, tax)
+
+    async def _training_done(
+        self,
+        interaction: discord.Interaction,
+        via: discord.Interaction | None,
+        name: str,
+        base: int,
+        tax: int,
+    ) -> None:
         self.notes.append(
             f"🎓 Consigues {name}: {format_amount(base)} + {format_amount(tax)} de IGIC."
         )
-        await self.refresh(interaction)
+        await self.refresh(via)
         await renta.remind(self.cog.bot, interaction)
+
+    # -- 💳 Financiar: la oferta va en un mensaje privado nuevo y el panel se repinta después --
+
+    async def _finance(
+        self,
+        interaction: discord.Interaction,
+        purchase: credit.Purchase,
+        buy: financiar.Buy,
+        after: Callable[[discord.Interaction], Awaitable[None]],
+    ) -> None:
+        deal = financiar.Deal(purchase, buy, after=after)
+        if not await financiar.open_finance(self.cog.bot, interaction, deal):
+            await interaction.response.send_message(
+                "El banco está cerrado ahora mismo.", ephemeral=True
+            )
+
+    async def _finance_training(self, interaction: discord.Interaction) -> None:
+        training = self._offered_training
+        if training is None:
+            await ack(interaction)
+            await self.refresh(interaction)
+            return
+        done: list[tuple[str, int, int]] = []
+
+        async def buy(_interaction: discord.Interaction) -> str | None:
+            try:
+                name, base, tax, _balance = await self.service.buy_training(
+                    self.guild_id, self.owner.id
+                )
+            except WorkError as error:
+                return str(error)
+            done.append((name, base, tax))
+            return None
+
+        async def after(after_interaction: discord.Interaction) -> None:
+            await self._training_done(after_interaction, None, *done[0])
+
+        purchase = credit.Purchase(
+            f"🎓 {training.name}", training.price + igic(training.price), "pala"
+        )
+        await self._finance(interaction, purchase, buy, after)
+
+    async def _finance_flight(self, interaction: discord.Interaction) -> None:
+        done: list[Status] = []
+
+        async def buy(_interaction: discord.Interaction) -> str | None:
+            try:
+                done.append(await self.service.move_abroad(self.guild_id, self.owner.id))
+            except WorkError as error:
+                return str(error)
+            return None
+
+        async def after(after_interaction: discord.Interaction) -> None:
+            await self._abroad_done(after_interaction, None, done[0])
+
+        purchase = credit.Purchase("✈️ Vuelo a Hong Kong", FLIGHT_PRICE, "pala")
+        await self._finance(interaction, purchase, buy, after)
+
+    async def _finance_coffee(self, interaction: discord.Interaction, key: str) -> None:
+        coffee = next((c for c in COFFEES if c.key == key), None)
+        if coffee is None:
+            await ack(interaction)
+            return
+        done: list[tuple[float, int]] = []
+
+        async def buy(_interaction: discord.Interaction) -> str | None:
+            try:
+                battery, coffees, _balance = await self.service.buy_coffee(
+                    self.guild_id, self.owner.id, key
+                )
+            except WorkError as error:
+                return str(error)
+            done.append((battery, coffees))
+            return None
+
+        async def after(after_interaction: discord.Interaction) -> None:
+            await self._coffee_done(after_interaction, None, key, *done[0])
+
+        purchase = credit.Purchase(
+            f"{coffee.emoji} {coffee.name}", coffee.price + igic(coffee.price), "cafe"
+        )
+        await self._finance(interaction, purchase, buy, after)
 
     async def _career(self, interaction: discord.Interaction) -> None:
         await ack(interaction, new_message=True)
@@ -2082,6 +2225,11 @@ class PalaPanel(ui.LayoutView):
         except WorkError as error:
             await notify(interaction, str(error))
             return
+        await self._abroad_done(interaction, interaction, status)
+
+    async def _abroad_done(
+        self, interaction: discord.Interaction, via: discord.Interaction | None, status: Status
+    ) -> None:
         self.notes.append(
             "✈️ **¡Te vas a Hong Kong!** Doce horas de vuelo, un jet lag que te deja la "
             "batería tiritando y Robuso esperándote en el aeropuerto. Cobrarás el doble "
@@ -2091,7 +2239,7 @@ class PalaPanel(ui.LayoutView):
             "art. 9.1.a LIRPF, a la escala del juego)."
         )
         self.show_status(status)
-        await self._edit(interaction)
+        await self._edit(via)
         await renta.remind(self.cog.bot, interaction)
         await logros.track(
             self.cog.bot,

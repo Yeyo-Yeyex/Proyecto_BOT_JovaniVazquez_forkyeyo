@@ -167,9 +167,12 @@ def _broke(business: Business, total: int) -> str:
     if business.is_company:
         return (
             f"La caja de la sociedad no llega: son {total} Y$. Aporta o préstale dinero desde 🏢 "
-            "Sociedad."
+            "Sociedad. O fináncialo: pide un préstamo al negocio en 🏦 Banco."
         )
-    return f"No te llega: son {total} Y$ con el IGIC."
+    return (
+        f"No te llega: son {total} Y$ con el IGIC. "
+        "O fináncialo: pide un préstamo al negocio en 🏦 Banco."
+    )
 
 
 @dataclass(frozen=True, slots=True)

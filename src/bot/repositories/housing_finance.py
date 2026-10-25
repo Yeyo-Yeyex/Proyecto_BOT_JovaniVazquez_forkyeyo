@@ -246,6 +246,10 @@ LOAN_BUSINESS = "negocio"
 #: El mismo, firmado por su sociedad limitada (o pasado a ella al constituirla), con el aval
 #: de su socio: es deuda de la sociedad, no de su dueño (`user_id`).
 LOAN_COMPANY = "sociedad"
+#: Financiación de una compra (💳 Financiar, `bot.services.credit`): `listing` dice qué se
+#: compró. Las de Paga en 3 van aparte porque llevan recargo si no se pagan.
+LOAN_PURCHASE = "compra"
+LOAN_BNPL = "plazos"
 #: Columnas añadidas después de crear las tablas: `(tabla, columna, DDL)`, para las bases de
 #: datos de antes (las migra `HousingRepository.initialize`).
 LATER_COLUMNS = (
@@ -515,8 +519,9 @@ class Loan:
             desistir.
         status: `activo`, `pagado`, `desistido` o `vencido`.
         kind: `personal`, `rentas` (anticipo de las rentas de `listing`), `negocio` o
-            `sociedad` (préstamo al negocio `listing`).
-        listing: El inmueble de un anticipo de rentas, o el id del negocio.
+            `sociedad` (préstamo al negocio `listing`), `compra` o `plazos` (financiación
+            de la compra `listing`).
+        listing: El inmueble de un anticipo de rentas, el id del negocio o lo comprado.
         aval: Quién lo avala (`miembro:<id>`), o `None`.
     """
 
@@ -562,6 +567,11 @@ class Loan:
     def advance(self) -> bool:
         """Si es un anticipo de rentas (no cuenta en el tope de préstamos personales)."""
         return self.kind == LOAN_ADVANCE
+
+    @property
+    def purchase(self) -> bool:
+        """Si financia una compra (💳 Financiar, también Paga en 3)."""
+        return self.kind in (LOAN_PURCHASE, LOAN_BNPL)
 
     @property
     def business_id(self) -> int | None:
@@ -649,8 +659,14 @@ def add_loan_in(
     now: float,
     kind: str = LOAN_PERSONAL,
     listing: str | None = None,
+    balance: int | None = None,
 ) -> int:
-    """Firma un préstamo (o un anticipo de las rentas de `listing`) y devuelve su id."""
+    """Firma un préstamo (o un anticipo de las rentas de `listing`) y devuelve su id.
+
+    Args:
+        balance: Lo que se debe al empezar, si no es lo prestado (la carencia de una
+            financiación suma los intereses de esos días).
+    """
     cursor = connection.execute(
         """
         INSERT INTO housing_loans
@@ -658,8 +674,9 @@ def add_loan_in(
              premium, premium_tax, covers_left, first_day, created_at, kind, listing)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (guild_id, user_id, principal, principal, rate, payment, months, months, fee,
-         premium, premium_tax, covers, first_day, now, kind, listing),
+        (guild_id, user_id, principal, principal if balance is None else balance, rate,
+         payment, months, months, fee, premium, premium_tax, covers, first_day, now, kind,
+         listing),
     )  # fmt: skip
     return int(cursor.lastrowid or 0)
 

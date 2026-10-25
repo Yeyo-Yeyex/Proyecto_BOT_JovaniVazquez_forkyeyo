@@ -8,6 +8,17 @@ criterio.
 
 ## 9.x
 
+### 9.20.0 · 2026-10-25
+
+- Financiar: cualquier compra a plazos con el banco y el IPC del crédito
+- Financiar: 💳 Financiar en la caja, la ficha y el carrito de la tienda, en las obras y divisiones de `pisos`, en la formación, el vuelo y el café de `pala` y en entrenar el gallo. Firmas y compras de una vez; si la compra falla, se deshace
+- Financiar: plan normal (el tipo personal más 2 puntos, con seguro y carencia de 7 días), 0 % TIN de la semana en dos categorías (con comisión y seguro obligatorio: la TAE no es 0) y Paga en 3 para lo de 100 a 999 Y$ (sin intereses, con recargo si no pagas)
+- Financiar: no se financia lo numerado ni los títulos, ni el juego, impuestos, pujas o compras entre miembros
+- Financiar: lo financiado sin devolver sube los precios de la tienda y las obras hasta un 20 % (IPC del crédito), y la caja lo dice
+- Financiar: las cuotas salen en `saldo` y en `banco`, donde se amortizan o se desiste
+- Saldo: las rentas de esta noche cuentan las habitaciones de los pisos por habitaciones (y sus atrasos e imprevistos), y la cartera de `pisos` ya no enseña la renta de un inquilino que no paga: las dos dicen lo mismo
+- Logros: quince nuevos de financiar compras en 🏦 Banco
+
 ### 9.19.0 · 2026-10-25
 
 - Pala: 4 franjas de noche para trasnochar y el café vale 8 veces más

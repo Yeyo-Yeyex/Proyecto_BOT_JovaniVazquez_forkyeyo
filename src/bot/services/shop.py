@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
+from bot.services import credit
 from bot.services.levels import TIMEZONE
 from bot.services.pets_catalog import species_of
 from bot.services.taxes import IGIC_BY_KEY, IGIC_DEFAULT, IgicRate, igic
@@ -202,12 +203,13 @@ class Quote:
     """Lo que cuesta un artículo ahora mismo, desglosado como en un ticket.
 
     Attributes:
-        price: Precio de catálogo.
+        price: Precio de catálogo, con el IPC del crédito encima.
         discount_pct: Rebaja aplicada en % (0 si no hay).
         discount: Lo que se descuenta, en Y$.
         base: Base imponible: precio menos rebaja.
         rate: Tipo de IGIC.
         tax: IGIC sobre la base.
+        ipc: Lo que el IPC del crédito ha subido el precio, en % (`credit`).
     """
 
     price: int
@@ -216,6 +218,7 @@ class Quote:
     base: int
     rate: IgicRate
     tax: int
+    ipc: int = 0
 
     @property
     def total(self) -> int:
@@ -227,20 +230,31 @@ def quote(item: ShopItem, now: float) -> Quote:
     """Desglose de la compra de `item` en el momento `now`.
 
     La rebaja se resta antes del IGIC: los descuentos de la propia venta no
-    forman parte de la base imponible (art. 22 de la Ley 20/1991).
+    forman parte de la base imponible (art. 22 de la Ley 20/1991). El IPC del crédito del
+    servidor (`credit.ipc`) sube el precio de catálogo antes de todo.
     """
+    ipc = credit.ipc(item.guild_id)
+    price = credit.inflate(item.price, ipc)
     pct = item.discount if item.on_sale(now) else 0
-    discount = item.price * pct // 100
-    base = item.price - discount
+    discount = price * pct // 100
+    base = price - discount
     rate = item.igic_rate
     return Quote(
-        price=item.price,
+        price=price,
         discount_pct=pct,
         discount=discount,
         base=base,
         rate=rate,
         tax=igic(base, rate.rate),
+        ipc=ipc,
     )
+
+
+def emblematic(item: ShopItem) -> bool:
+    """Si un artículo es emblemático y no se financia: lo numerado y los títulos."""
+    from bot.services.shop_catalog import is_title  # shop_catalog importa este módulo
+
+    return item.stock is not None or is_title(item.catalog_key)
 
 
 def ineligibility(

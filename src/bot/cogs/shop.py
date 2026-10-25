@@ -89,9 +89,11 @@ from discord import app_commands, ui
 from discord.ext import commands, tasks
 
 from bot.cogs import achievements as logros
+from bot.cogs import banco_compras as financiar
 from bot.cogs import pets as mascotas
 from bot.cogs import renta
 from bot.repositories.shop import InventoryEntry, ShopRepository
+from bot.services import credit
 from bot.services import skins as skins_registry
 from bot.services.achievements import (
     StatDelta,
@@ -143,6 +145,7 @@ from bot.services.shop import (
     TicketLine,
     active_multiplier,
     cart_receipt,
+    emblematic,
     format_multiplier,
     format_span,
     ineligibility,
@@ -508,6 +511,21 @@ def fold(text: str) -> str:
     return "".join(c for c in decomposed if not unicodedata.combining(c)).strip()
 
 
+def financed_purchase(lines: Sequence[TicketLine]) -> credit.Purchase | None:
+    """Lo que se financia de unas líneas del ticket (💳 Financiar), o `None` si no se puede:
+    algo emblemático (numerado o un título) o un importe que el banco no financia."""
+    if not lines or any(emblematic(line.item) for line in lines):
+        return None
+    total = sum(line.total for line in lines)
+    if credit.refusal(total) is not None:
+        return None
+    top = max(lines, key=lambda line: line.total)
+    label = f"{top.item.emoji} {top.item.name}" + (f" × {top.qty}" if top.qty > 1 else "")
+    if len(lines) > 1:
+        label += f" y {len(lines) - 1} más"
+    return credit.Purchase(label, total, f"tienda:{aisle_of(top.item.catalog_key).key}")
+
+
 def ticket_preview(price: Quote) -> str:
     """El desglose de la caja, antes de pagar."""
     width = 26
@@ -516,6 +534,8 @@ def ticket_preview(price: Quote) -> str:
         return f"{left:<{width - len(right) - 1}} {right}"
 
     lines = [row("Precio", money(price.price))]
+    if price.ipc:
+        lines[0] = row(f"Precio (IPC +{price.ipc} %)", money(price.price))
     if price.discount:
         lines.append(row(f"Rebaja -{price.discount_pct} %", f"-{money(price.discount)}"))
     lines += [
@@ -528,15 +548,25 @@ def ticket_preview(price: Quote) -> str:
 
 
 def igic_line(price: Quote) -> str:
-    """La mordida del IGIC, en subtexto."""
+    """La mordida del IGIC, en subtexto (y lo que ha subido el IPC del crédito, si algo)."""
     if not price.tax:
-        return (
+        line = (
             f"-# 🐶 {TAX_COLLECTOR} no cobra nada: este artículo va al tipo cero "
             f"({price.rate.law})."
         )
+    else:
+        line = (
+            f"-# 🐶 {TAX_COLLECTOR} se lleva {format_amount(price.tax)} de {price.rate.tax} "
+            f"({price.rate.label.lower()}, {rate_label(price.rate.rate)}, {price.rate.law})."
+        )
+    return f"{line}\n{ipc_line(price.ipc)}" if price.ipc else line
+
+
+def ipc_line(pct: int) -> str:
+    """Lo que ha subido los precios el IPC del crédito, en subtexto."""
     return (
-        f"-# 🐶 {TAX_COLLECTOR} se lleva {format_amount(price.tax)} de {price.rate.tax} "
-        f"({price.rate.label.lower()}, {rate_label(price.rate.rate)}, {price.rate.law})."
+        f"-# 📈 IPC del crédito: los precios suben un {pct} % por lo que hay financiado en el "
+        "servidor sin devolver. Baja cuando se devuelve."
     )
 
 
@@ -698,6 +728,8 @@ class Checkout(ui.LayoutView):
         self.result: str | None = None
         self.failed = False
         self.done = False
+        #: Lo pagado al financiarlo (💳 Financiar), para lo de después de enseñarlo.
+        self.paid: tuple[ShopItem, Sale, int] | None = None
         self._lock = TimedLock("shop:Checkout._lock")
         self.rebuild()
 
@@ -742,12 +774,39 @@ class Checkout(ui.LayoutView):
                 disabled=missing > 0,
             )
         )
+        if financed_purchase([TicketLine(item, 1, price)]) is not None:
+            row.add_item(_button(financiar.LABEL, self._finance, custom_id="caja:financiar"))
         row.add_item(_button("Cancelar", self._cancel, custom_id="caja:cancelar"))
         self.add_item(row)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         """La caja es solo de quien la abrió (en la práctica ya es efímera)."""
         return interaction.user.id == self.buyer.id
+
+    async def _finance(self, interaction: discord.Interaction) -> None:
+        """💳 Financiar: la oferta del banco sustituye a la caja (↩️ Volver la devuelve)."""
+        purchase = financed_purchase([TicketLine(self.item, 1, self.price)])
+        if purchase is None or self.done or self.failed:
+            await interaction.response.edit_message(view=self)
+            return
+        deal = financiar.Deal(purchase, self._buy_financed, host=self, after=self._after_financed)
+        if not await financiar.open_finance(self.cog.bot, interaction, deal):
+            await interaction.response.send_message(
+                "El banco está cerrado ahora mismo.", ephemeral=True
+            )
+
+    async def _buy_financed(self, interaction: discord.Interaction) -> str | None:
+        async with self._lock:
+            if self.done or self.failed:
+                return "Esta caja ya está cerrada."
+            self.paid = await self.cog.complete_purchase(self, interaction)
+            self.rebuild()
+            self.stop()
+        return None if self.paid is not None else self.result or "La compra no ha salido."
+
+    async def _after_financed(self, interaction: discord.Interaction) -> None:
+        if self.paid is not None:
+            await self.cog.after_purchase(interaction, self, self.paid)
 
     async def _cancel(self, interaction: discord.Interaction) -> None:
         self.failed, self.result = True, "Compra cancelada. Aquí no ha pasado nada."
