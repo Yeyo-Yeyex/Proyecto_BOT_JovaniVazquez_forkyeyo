@@ -24,11 +24,13 @@ Consultas (no mueven dinero; ver `bot.services.net_worth`):
   participaciones (`home_lines`), con su valor, su puesto y el Patrimonio que le
   tocaría pagar el lunes (`quote`, la misma cuenta que usa `saldo` con
   `wealth_due`).
-- `fortunas`: la lista de todos los miembros por patrimonio, con el reparto
-  de la riqueza del servidor (Gini y lo que tiene el más rico) y el título
-  que luce cada uno (`shop.title_of`).
+- `fortunas` (`FortunasPanel`): el patrimonio de todo el servidor, de qué es y cómo
+  de repartido está (Gini y lo que tiene el más rico), el podio con su avatar y el
+  desglose de cada uno, la lista por páginas de 10 con el título que luce cada uno
+  (`shop.title_of`) y tu puesto, con ◀ ▶ y 📍 Yo.
 
-Logros de las dos: `patrimonio_stats` (Economía y Hacienda).
+Logros de las dos: `patrimonio_stats`, y de los botones de `fortunas`,
+`fortunas_click_stats` (Economía y Hacienda).
 
 Permisos: enviar mensajes e insertar enlaces en el canal del anuncio.
 """
@@ -38,11 +40,13 @@ from __future__ import annotations
 import logging
 import sqlite3
 import time
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
 import discord
-from discord import app_commands
+from discord import app_commands, ui
 from discord.ext import commands, tasks
 
 from bot.cogs import achievements as logros
@@ -53,7 +57,7 @@ from bot.repositories.business import companies_in
 from bot.repositories.housing import assets_in as housing_assets_in
 from bot.repositories.shop import wealth_goods_in
 from bot.services import housing as rules
-from bot.services.achievements import StatDelta, patrimonio_stats
+from bot.services.achievements import StatDelta, fortunas_click_stats, patrimonio_stats
 from bot.services.economy import (
     EconomyService,
     WealthCharge,
@@ -82,6 +86,7 @@ from bot.services.taxes import (
     wealth_quote,
 )
 from bot.utils.cogs import find_cog
+from bot.utils.interactions import ack, edit
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
@@ -96,8 +101,14 @@ ANNOUNCE_CHANNEL_NAME = "chat-general"
 #: Cuántos contribuyentes se nombran en el anuncio.
 ANNOUNCE_TOP = 5
 COLOR = discord.Color.from_rgb(170, 21, 27)
-#: Cuántos miembros salen con nombre en `fortunas`.
-FORTUNES_TOP = 15
+#: Miembros por página en `fortunas` (en la primera, los 3 del podio y 7 más).
+FORTUNES_PAGE = 10
+#: Segundos que el panel de `fortunas` atiende sus botones.
+FORTUNES_TIMEOUT = 600
+_NO_MENTIONS = discord.AllowedMentions.none()
+
+
+_MEDALS = ("🥇", "🥈", "🥉")
 
 
 def _decimal(value: float, digits: int) -> str:
@@ -110,9 +121,8 @@ def wealth_embed(
 ) -> discord.Embed:
     """Anuncio público del cobro semanal del Patrimonio."""
     total = sum(c.tax + c.debt for c in charges)
-    medals = ("🥇", "🥈", "🥉")
     lines = [
-        f"{medals[i] if i < len(medals) else '▫️'} **{names[c.user_id]}** paga "
+        f"{_MEDALS[i] if i < len(_MEDALS) else '▫️'} **{names[c.user_id]}** paga "
         f"{format_amount(c.tax)} (tenía {format_amount(c.balance)})"
         + (
             f" y le embargan {format_amount(c.debt)} de sus alquileres: todo en ladrillo"
@@ -153,6 +163,252 @@ def wealth_embed(
         )
     )
     return embed
+
+
+def _share(part: int, whole: int) -> str:
+    """`part` en tanto por ciento entero de `whole`, o «<1 %» si hay algo pero no llega."""
+    percent = part * 100 / whole if whole else 0.0
+    return "<1 %" if 0 < percent < 1 else f"{percent:.0f} %"
+
+
+def _breakdown(worth: NetWorth) -> str:
+    """De qué es el patrimonio de alguien, en una línea de subtexto."""
+    return (
+        f"-# 💵 {format_amount(worth.cash)}"
+        + (f" · 🛍️ {format_amount(worth.goods_value)}" if worth.goods_value else "")
+        + (f" · 🏠 {format_amount(worth.homes)}" if worth.homes else "")
+        + (f" · 🏢 {format_amount(worth.companies)}" if worth.companies else "")
+        + (f" · 🎟️ {format_amount(worth.lottery)}" if worth.lottery else "")
+        + (f" · 📬 {format_amount(worth.renta)}" if worth.renta else "")
+        + (f" · 🏦 −{format_amount(worth.debts)}" if worth.debts > 0 else "")
+        + (f" · 🤝 {format_amount(-worth.debts)}" if worth.debts < 0 else "")
+    )
+
+
+def fortunes_summary(ranked: list[NetWorth]) -> str:
+    """Cabecera de `fortunas`: el patrimonio de todos, de qué es y cómo de repartido está.
+
+    Los tantos por ciento son de lo que tienen (sin restar deudas), del más grande al menor.
+    """
+    totals = [w.total for w in ranked]
+    assets = sum(w.assets for w in ranked)
+    debts = sum(w.debts for w in ranked)
+    parts = sorted(
+        (
+            (sum(w.homes for w in ranked), "🏠", "pisos"),
+            (sum(w.cash for w in ranked), "💵", "efectivo"),
+            (sum(w.companies for w in ranked), "🏢", "sociedades"),
+            (sum(w.goods_value for w in ranked), "🛍️", "tienda"),
+            (sum(w.lottery + w.renta for w in ranked), "🎟️", "boletos y renta"),
+        ),
+        key=lambda part: -part[0],
+    )
+    value = gini(totals)
+    filled = round(value * 10)
+    return "\n".join(
+        [
+            f"## {format_amount(sum(totals))}",
+            " · ".join(
+                f"{emoji} {_share(part, assets)} {name}" for part, emoji, name in parts if part
+            ),
+            *([f"🏦 −{format_amount(debts)} de deudas"] if debts > 0 else []),
+            f"{'▰' * filled}{'▱' * (10 - filled)} Gini **{_decimal(value, 2)}** · el más rico "
+            f"tiene el {_decimal(top_share(totals, 0) * 100, 0)} % · el 10 % más rico, el "
+            f"{_decimal(top_share(totals, 0.1) * 100, 0)} %",
+        ]
+    )
+
+
+def you_line(everyone: tuple[NetWorth, ...], user_id: int) -> str:
+    """El puesto de `user_id` en `fortunas` y lo que le separa del de arriba (o del 2.º)."""
+    ranked = [w for w in everyone if w.total > 0]
+    rank = next((i for i, w in enumerate(ranked) if w.user_id == user_id), None)
+    if rank is None:
+        total = next((w.total for w in everyone if w.user_id == user_id), 0)
+        return f"📍 Tú: no sales en la lista (patrimonio neto de {format_amount(total)})"
+    me = ranked[rank]
+    line = f"📍 Tú: puesto {rank + 1} de {len(ranked)} · **{format_amount(me.total)}**"
+    if rank == 0:
+        if len(ranked) > 1:
+            line += f" · le sacas {format_amount(me.total - ranked[1].total)} al 2.º"
+        return line
+    gap = ranked[rank - 1].total - me.total
+    if gap == 0:
+        return f"{line} · empatas con el {rank}.º"
+    return f"{line} · te faltan {format_amount(gap)} para el {rank}.º"
+
+
+@dataclass(frozen=True, slots=True)
+class Fortunes:
+    """Lo que enseña `fortunas`, leído una vez al abrirlo.
+
+    Attributes:
+        guild_id: Servidor.
+        everyone: El patrimonio de cada miembro, del más rico al menos (también los que no
+            tienen nada o deben más de lo que tienen, para la línea de «Tú»).
+        names: El nombre de cada uno de la lista, con su título.
+        avatars: El avatar de los del podio que siguen en el servidor.
+        read_at: Cuándo se leyeron las cifras.
+    """
+
+    guild_id: int
+    everyone: tuple[NetWorth, ...]
+    names: dict[int, str]
+    avatars: dict[int, str]
+    read_at: float
+
+    @property
+    def ranked(self) -> list[NetWorth]:
+        """Los que salen en la lista: patrimonio neto positivo."""
+        return [w for w in self.everyone if w.total > 0]
+
+
+class FortunasPanel(ui.LayoutView):
+    """`fortunas`: el total del servidor, el podio, la lista por páginas y tu puesto.
+
+    Las cifras se leen una vez al abrir (`Fortunes`); pasar de página solo cambia memoria,
+    así que se contesta directamente con `edit_message`. Quien no lo abrió y pulsa un botón
+    recibe su propia copia en privado, con las mismas cifras, y el panel de quien lo abrió
+    no se mueve (como el de `hacienda`).
+
+    Args:
+        bot: Para los logros de los botones.
+        fortunes: Las cifras.
+        owner: Quien lo abrió: el único que lo mueve y de quien habla «Tú».
+        page: Página de inicio, desde 0.
+    """
+
+    def __init__(
+        self, bot: commands.Bot, fortunes: Fortunes, owner: discord.abc.User, *, page: int = 0
+    ) -> None:
+        super().__init__(timeout=FORTUNES_TIMEOUT)
+        self.bot = bot
+        self.fortunes = fortunes
+        self.owner = owner
+        self.pages = max(1, -(-len(fortunes.ranked) // FORTUNES_PAGE))
+        self.page = min(max(page, 0), self.pages - 1)
+        self.message: discord.Message | None = None
+        self.interaction: discord.Interaction | None = None
+        self.rebuild()
+
+    def rebuild(self) -> None:
+        """Monta la página actual."""
+        self.clear_items()
+        ranked = self.fortunes.ranked
+        box = ui.Container(accent_colour=COLOR)
+        box.add_item(
+            ui.TextDisplay(
+                f"# 💎 Fortunas del servidor\n-# {len(ranked)} con patrimonio · cifras de "
+                f"<t:{int(self.fortunes.read_at)}:R>"
+            )
+        )
+        box.add_item(ui.Separator())
+        if not ranked:
+            box.add_item(ui.TextDisplay("Nadie tiene nada: ni un Y$ en todo el servidor."))
+            self.add_item(box)
+            return
+        box.add_item(ui.TextDisplay(fortunes_summary(ranked)))
+        box.add_item(ui.Separator())
+        start = self.page * FORTUNES_PAGE
+        lines = []
+        for rank, worth in enumerate(ranked[start : start + FORTUNES_PAGE], start + 1):
+            name = self.fortunes.names.get(worth.user_id, f"<@{worth.user_id}>")
+            you = " 📍" if worth.user_id == self.owner.id else ""
+            if rank > len(_MEDALS):
+                lines.append(f"`{rank}.`{you} {name} · **{format_amount(worth.total)}**")
+                continue
+            text = (
+                f"{_MEDALS[rank - 1]}{you} {name}\n**{format_amount(worth.total)}**\n"
+                + _breakdown(worth)
+            )
+            avatar = self.fortunes.avatars.get(worth.user_id)
+            box.add_item(
+                ui.Section(text, accessory=ui.Thumbnail(avatar)) if avatar else ui.TextDisplay(text)
+            )
+        if lines:
+            if self.page == 0:
+                box.add_item(ui.Separator())
+            box.add_item(ui.TextDisplay("\n".join(lines)))
+        box.add_item(ui.Separator())
+        box.add_item(
+            ui.TextDisplay(
+                you_line(self.fortunes.everyone, self.owner.id)
+                + "\n-# Efectivo, pisos, sociedades, bienes de la tienda, boletos por sortear "
+                "y renta por cobrar, menos lo que se debe. Gini: 0 si todos tienen lo mismo, "
+                "1 si uno lo tiene todo."
+            )
+        )
+        if self.pages > 1:
+            row: ui.ActionRow = ui.ActionRow()
+            for key, label, emoji, disabled in (
+                ("anterior", "◀", None, self.page == 0),
+                ("pagina", f"{self.page + 1}/{self.pages}", None, True),
+                ("siguiente", "▶", None, self.page == self.pages - 1),
+                ("yo", "Yo", "📍", False),
+            ):
+                button: ui.Button = ui.Button(
+                    label=label,
+                    emoji=emoji,
+                    style=discord.ButtonStyle.secondary,
+                    disabled=disabled,
+                    custom_id=f"fortunas:{key}",
+                )
+                button.callback = self._go(key)  # type: ignore[method-assign]
+                row.add_item(button)
+            box.add_item(row)
+        self.add_item(box)
+
+    def _go(self, key: str) -> Callable[[discord.Interaction], Awaitable[None]]:
+        async def callback(interaction: discord.Interaction) -> None:
+            user = interaction.user
+            ranked = self.fortunes.ranked
+            rank = next((i for i, w in enumerate(ranked, 1) if w.user_id == user.id), 0)
+            if key == "yo":
+                # Quien no sale en la lista está por debajo de todos: la última página.
+                page = ((rank or len(ranked)) - 1) // FORTUNES_PAGE
+            else:
+                page = self.page + (1 if key == "siguiente" else -1)
+            if user.id == self.owner.id:
+                panel = self
+                panel.page = min(max(page, 0), self.pages - 1)
+                panel.rebuild()
+                await interaction.response.edit_message(view=panel, allowed_mentions=_NO_MENTIONS)
+            else:
+                panel = FortunasPanel(self.bot, self.fortunes, user, page=page)
+                await interaction.response.send_message(
+                    view=panel, ephemeral=True, allowed_mentions=_NO_MENTIONS
+                )
+                panel.interaction = interaction
+            if user.bot:
+                return
+            await logros.track(
+                self.bot,
+                self.fortunes.guild_id,
+                user,
+                interaction.channel,
+                fortunas_click_stats(
+                    turned=key != "yo",
+                    last_page=panel.pages > 1 and panel.page == panel.pages - 1,
+                    me=key == "yo",
+                    rank=rank,
+                    borrowed=panel is not self,
+                ),
+            )
+
+        return callback
+
+    async def on_timeout(self) -> None:
+        """Apaga los botones al caducar."""
+        for child in self.walk_children():
+            if isinstance(child, ui.Button):
+                child.disabled = True
+        try:
+            if self.interaction is not None:
+                await self.interaction.edit_original_response(view=self)
+            elif self.message is not None:
+                await self.message.edit(view=self)
+        except discord.HTTPException:
+            logger.debug("No se pudo cerrar un panel de fortunas", exc_info=True)
 
 
 class Patrimonio(commands.Cog):
@@ -513,74 +769,45 @@ class Patrimonio(commands.Cog):
         """Versión de texto: `.patrimonio` o `.patrimonio @alguien`."""
         await self._patrimonio_impl(ContextResponder(ctx), miembro)
 
-    async def _fortunas_impl(self, responder: CommandResponder) -> None:
-        guild = responder.guild
-        author = responder.member
-        if guild is None or author is None:
-            await responder.send_error("Las fortunas solo se miran dentro de un servidor.")
+    async def fortunas_panel(self, guild: discord.Guild, author: discord.abc.User) -> FortunasPanel:
+        """El panel de `fortunas` de `author`, con las cifras de ahora."""
+        everyone = await self.fortunes(guild.id)
+        ranked = [w for w in everyone if w.total > 0]
+        avatars = {}
+        for worth in ranked[: len(_MEDALS)]:
+            if (found := guild.get_member(worth.user_id)) is not None:
+                avatars[worth.user_id] = found.display_avatar.url
+        fortunes = Fortunes(
+            guild_id=guild.id,
+            everyone=tuple(everyone),
+            names={w.user_id: self._titled(guild, w.user_id) for w in ranked},
+            avatars=avatars,
+            read_at=time.time(),
+        )
+        return FortunasPanel(self.bot, fortunes, author)
+
+    async def _fortunas_logros(
+        self, author: discord.abc.User, channel: object, fortunes: Fortunes
+    ) -> None:
+        """Los logros de abrir `fortunas` (después de enseñarlo)."""
+        if author.bot:
             return
-        everyone = [w for w in await self.fortunes(guild.id) if w.total > 0]
-        totals = [w.total for w in everyone]
-        medals = ("🥇", "🥈", "🥉")
-        lines = [
-            f"{medals[i] if i < len(medals) else f'`{i + 1}.`'} {self._titled(guild, w.user_id)} · "
-            f"**{format_amount(w.total)}**\n-# 💵 {format_amount(w.cash)} · 🛍️ "
-            f"{format_amount(w.goods_value)}"
-            + (f" · 🏠 {format_amount(w.homes)}" if w.homes else "")
-            + (f" · 🎟️ {format_amount(w.lottery)}" if w.lottery else "")
-            + (f" · 📬 {format_amount(w.renta)}" if w.renta else "")
-            + (f" · 🏦 −{format_amount(w.debts)}" if w.debts > 0 else "")
-            + (f" · 🤝 {format_amount(-w.debts)}" if w.debts < 0 else "")
-            for i, w in enumerate(everyone[:FORTUNES_TOP])
-        ]
-        if len(everyone) > FORTUNES_TOP:
-            lines.append(f"-# Y {len(everyone) - FORTUNES_TOP} más. `perfil @miembro`.")
-        total = sum(totals)
-        cash = sum(w.cash for w in everyone)
-        embed = discord.Embed(
-            title="💎 Fortunas del servidor",
-            description=(
-                f"Patrimonio de todos: **{format_amount(total)}** "
-                f"({format_amount(cash)} en efectivo, {format_amount(total - cash)} en cosas)\n"
-                f"Gini: **{_decimal(gini(totals), 2)}** · el más rico tiene el "
-                f"{_decimal(top_share(totals, 0) * 100, 0)} % · el 10 % más rico, el "
-                f"{_decimal(top_share(totals, 0.1) * 100, 0)} %"
+        ranked = fortunes.ranked
+        rank = next((i for i, w in enumerate(ranked, 1) if w.user_id == author.id), 0)
+        await logros.track(
+            self.bot,
+            fortunes.guild_id,
+            author,
+            channel,
+            patrimonio_stats(
+                listing=True,
+                snooping=False,
+                net_worth=0,
+                illiquid=False,
+                rank=rank,
+                people=len(ranked),
             ),
-            color=COLOR,
         )
-        if not lines:
-            embed.add_field(name="Nadie tiene nada", value="Ni un Y$ en todo el servidor.")
-        block = ""
-        first = True
-        for line in lines:
-            if len(block) + len(line) + 1 > 1_024:
-                embed.add_field(name="La lista" if first else "\u200b", value=block, inline=False)
-                block, first = "", False
-            block = f"{block}\n{line}" if block else line
-        if block:
-            embed.add_field(name="La lista" if first else "\u200b", value=block, inline=False)
-        embed.set_footer(
-            text="Efectivo, pisos, bienes de la tienda, boletos por sortear y renta por cobrar, "
-            "menos lo que se debe al banco. "
-            "Gini: 0 si todos tienen lo mismo, 1 si uno lo tiene todo."
-        )
-        await responder.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
-        if not author.bot:
-            rank = next((i for i, w in enumerate(everyone, 1) if w.user_id == author.id), 0)
-            await logros.track(
-                self.bot,
-                guild.id,
-                author,
-                responder.channel,
-                patrimonio_stats(
-                    listing=True,
-                    snooping=False,
-                    net_worth=0,
-                    illiquid=False,
-                    rank=rank,
-                    people=len(everyone),
-                ),
-            )
 
     @app_commands.command(
         name="fortunas", description="Lista de todos los miembros por patrimonio."
@@ -588,13 +815,23 @@ class Patrimonio(commands.Cog):
     @app_commands.guild_only()
     async def fortunas(self, interaction: discord.Interaction) -> None:
         """La lista Forbes del servidor y cómo de repartida está la riqueza."""
-        await self._fortunas_impl(InteractionResponder(interaction))
+        assert interaction.guild is not None  # guild_only
+        # Lee el dinero, los pisos, la tienda, los negocios y la Renta de todos: se acepta antes.
+        await ack(interaction)
+        panel = await self.fortunas_panel(interaction.guild, interaction.user)
+        await edit(interaction, view=panel, allowed_mentions=_NO_MENTIONS)
+        panel.interaction = interaction
+        await self._fortunas_logros(interaction.user, interaction.channel, panel.fortunes)
 
     @commands.command(name="fortunas")
     @commands.guild_only()
     async def fortunas_text(self, ctx: commands.Context) -> None:
         """Versión de texto (`.fortunas`)."""
-        await self._fortunas_impl(ContextResponder(ctx))
+        assert ctx.guild is not None  # guild_only
+        async with ctx.typing():
+            panel = await self.fortunas_panel(ctx.guild, ctx.author)
+        panel.message = await ctx.send(view=panel, allowed_mentions=_NO_MENTIONS)
+        await self._fortunas_logros(ctx.author, ctx.channel, panel.fortunes)
 
 
 async def wealth_due(
