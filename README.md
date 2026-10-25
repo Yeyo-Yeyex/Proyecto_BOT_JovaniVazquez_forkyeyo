@@ -849,20 +849,25 @@ python -m bot
   la Lotería Nacional (jueves, sábado, Navidad y Niño), La Primitiva,
   Bonoloto, El Gordo de la Primitiva, Euromillones y dos rascas de la ONCE
   (X10 y 7 y Media). Se compra con botones: apuestas al azar (1, 5 o 10),
-  décimo o billete, o números elegidos en un formulario. Precios y reparto
-  son los reales (normas de SELAE y tablas de la ONCE) a 10 Y$ por euro, y
-  las probabilidades de la Nacional y los rascas también. En los juegos de
-  bote se ajustan al servidor: si cada persona (sin contar bots) juega una
-  apuesta por sorteo, el bote cae más o menos una vez al mes. Con 30
-  personas, el bote de la Primitiva es 1 entre 386 (en la vida real, 1 entre
-  139.838.160). La cuenta del Estado hace de banca: cobra los boletos sin
-  IGIC, paga los premios con el gravamen especial del 20 % por encima de
-  400.000 Y$ y garantiza el bote mínimo del Gordo y de Euromillones,
-  encogido en la misma proporción y con una cuarta parte de su saldo como
-  mucho. Si no
-  le llega para un premio, emite deuda pública. Los sorteos se celebran solos
-  a su hora y se anuncian en el canal; los rascas se rascan pulsando las
-  casillas (spoilers).
+  décimo o billete, o números elegidos en un formulario. Todo va dibujado: el
+  cartel de la administración con los botes al abrir, el décimo o el resguardo
+  con las bolas al comprar, el último boleto sorteado con los aciertos marcados
+  en 🎟️ Mis boletos, el rasca rascándose en un GIF (pintado antes del clic, así
+  que sale al instante) y el sorteo en el canal con las bolas saliendo del
+  bombo. Precios, bolas y categorías son los reales (normas de SELAE y tablas
+  de la ONCE) a 10 Y$ por euro, y las probabilidades de la Nacional y los rascas
+  también. En los juegos de bote se ajustan al servidor (si cada persona, sin
+  contar bots, juega una apuesta por sorteo, el bote cae más o menos una vez al
+  mes; con 30 personas, el de la Primitiva es 1 entre 386 frente a 1 entre
+  139.838.160) y las categorías por debajo del bote pagan premios fijos que
+  crecen con la dificultad. El bote junta su parte de las ventas con un mínimo
+  que garantiza el Estado y que sube cada día sin acertante, hasta 90 días
+  (Primitiva desde 5.000 Y$ y +400 al día, Euromillones desde 15.000 y +1.000).
+  Máximo 10 apuestas por persona y sorteo en estos juegos. La cuenta del Estado
+  hace de banca: cobra los boletos sin IGIC, paga los premios con el gravamen
+  especial del 20 % por encima de 400.000 Y$ y, si no le llega para un premio,
+  emite deuda pública. Los sorteos se celebran solos a su hora. Auditoría y
+  cifras en `docs/auditoria-loteria.md`.
 - **Perfil** (`perfil [miembro]`): todo lo de un miembro en un mismo menú.
   Un desplegable cambia de sección en el mismo mensaje: 📋 Resumen (un
   renglón de cada cosa), 📊 Nivel (nivel, XP y racha de días escribiendo),
@@ -1381,6 +1386,8 @@ src/bot/
 │   ├── work_tools.py    # Herramientas de curro de la tienda y su efecto en pala
 │   ├── pala.py          # Casos de uso de pala: fichar, cobrar, ascender, café
 │   ├── lottery.py       # Loterías del Estado: reglas, probabilidades y reparto
+│   ├── lottery_render.py # Lo que se ve en cada imagen de la lotería
+│   ├── lottery_scene.py # Pinta la lotería (rasca, décimo, boleto, sorteo y cartel)
 │   ├── donations.py     # Catálogo de ONGs y texto de la deducción
 │   ├── shop.py          # Reglas de la tienda: precio en caja, rebajas, factura
 │   ├── shop_catalog.py  # Surtido de serie de la tienda y sus pasillos
