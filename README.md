@@ -360,7 +360,7 @@ python -m bot
   rendimientos del trabajo y la cotización de la empresa (32 %), que va al
   Estado igualmente. Batería que se gasta y se recarga sola (o con un
   barraquito), 4 turnos ordinarios al día, 2 extras legales a la semana y,
-  después, extras en B con riesgo de Inspección. Ascensos al estilo de los Sims
+  después, extras en B con riesgo de Inspección, que sube si trasnochas. Ascensos al estilo de los Sims
   (barra de rendimiento, días en el puesto, tareas y formación), sin despidos.
   En la Ferretería del curro de la `tienda` hay 25 herramientas (casco,
   libreta de comandas, pinganillo, vademécum…) que, con tenerlas, ayudan en
@@ -418,7 +418,8 @@ python -m bot
   los canales con `tajo`.
 - **Negocios** (dentro de `pala`, 8.14.0): `pala` abre un inicio con la imagen de
   tu día en 8 **franjas**, el tiempo que comparten el curro y tu negocio: la jornada
-  reserva las suyas aunque no fiches y cada hora extra se la quitas al negocio. Hay
+  reserva las suyas aunque no fiches y cada hora extra se la quitas al negocio.
+  Acabadas, se pueden trasnochar 4 más, con más riesgo de Inspección para el B. Hay
   reducción de jornada y excedencia voluntaria (sin dinero). Desde 🏪 **Negocio** se
   monta una ☕ cafetería, 🛒 tienda o 🔧 taller en un barrio de `pisos`, con nombre,
   colores y emblema propios. Eres autónomo y respondes con lo tuyo: el local, los
@@ -1362,7 +1363,7 @@ src/bot/
 │   ├── taxes.py         # IRPF, nómina, Patrimonio, IGIC, loterías, donativos y ahorro
 │   ├── interest.py      # Cuenta remunerada: saldo medio, tramos, rachas y liquidación
 │   ├── work.py          # Reglas de pala: batería, jornada, familia, ascensos
-│   ├── agenda.py        # Las 8 franjas del día que comparten la pala y el negocio
+│   ├── agenda.py        # Las 8 franjas del día (y 4 de noche) de la pala y el negocio
 │   ├── business.py      # Reglas de los negocios: local, demanda, reputación
 │   ├── business_catalog.py # Sectores, productos, rótulos y habituales
 │   ├── business_games.py # Minijuegos del negocio: comandas, caja, diagnóstico

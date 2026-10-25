@@ -1624,8 +1624,11 @@ const SLOT = {
   estudio: { fill: C.blue, ink: "#fff", label: "Estudio", icon: "book" },
   negocio: { fill: C.bug, ink: "#fff", label: "Negocio", icon: "shop" },
   libre: { fill: "#fffdf6", ink: C.sandDk, label: "Libre", icon: "free", dashed: "rgba(160,120,60,0.4)" },
+  // una franja de noche sin usar: se puede trasnochar
+  noche: { fill: "#24364d", ink: "#c9d6e8", label: "Noche", icon: "moon", dashed: "rgba(201,214,232,0.45)", num: "rgba(201,214,232,0.55)" },
 };
-const SLOT_LEGEND = { hecha: "Fichado", jornada: "Jornada sin fichar", extra: "Hora extra", guardia: "Guardia", estudio: "Estudio", negocio: "Negocio", libre: "Libre" };
+const SLOT_LEGEND = { hecha: "Fichado", jornada: "Jornada sin fichar", extra: "Hora extra", guardia: "Guardia", estudio: "Estudio", negocio: "Negocio", libre: "Libre", noche: "Noche" };
+const NIGHT_BG = "#16263a";
 function slotTile(kind, x, y, w, h, job, n) {
   const k = SLOT[kind];
   if (!k) throw new Error(`Franja desconocida: ${kind}`);
@@ -1636,7 +1639,7 @@ function slotTile(kind, x, y, w, h, job, n) {
   const sz = Math.min(17, h * 0.2);
   if (k.icon === "job") jobIcon(job || "oficina", x + w / 2, y + h * 0.38, sz, k.ink); else glyph(k.icon, x + w / 2, y + h * 0.38, sz, k.ink);
   fitText(k.label, x + w / 2, y + h * 0.78, w - 12, F.d, 18, 12, { color: k.ink, align: "center" });
-  T(String(n), x + 11, y + 15, { font: F.d(13), color: k.dashed ? "rgba(27,42,53,0.35)" : "rgba(255,255,255,0.6)" });
+  T(String(n), x + 11, y + 15, { font: F.d(13), color: k.num || (k.dashed ? "rgba(27,42,53,0.35)" : "rgba(255,255,255,0.6)") });
 }
 function meter(icon, label, value, x, y, w) {
   card(x, y, w, 44, { r: 22 });
@@ -1696,15 +1699,26 @@ function paintDia(st) {
   card(lx, ly, lw, lh);
   TX("TU DÍA", lx + 22, ly + 26, { font: F.t(26), color: C.atl });
   let cx = lx + lw - 20;
+  if (st.night_free) cx -= chip(st.night_free, cx, ly + 10, "ink", { align: "right", size: 18 }) + 10;
   if (st.free) cx -= chip(st.free, cx, ly + 10, "green", { align: "right", size: 18 }) + 10;
   if (st.jornada) chip(st.jornada, cx, ly + 10, st.jornada === "Excedencia" ? "amber" : st.jornada === "Sin curro" ? "grey" : "steel", { align: "right", size: 18 });
-  const slots = (st.slots || []).slice(0, 8), tx0 = lx + 20, gap = 8, tw = (lw - 40 - gap * 7) / 8, ty = ly + 50, th = 84;
+  // las del día y, tras un hueco, las de noche (`night_from`) sobre un fondo oscuro
+  const slots = (st.slots || []).slice(0, 12), n0 = slots.length, night = Math.min(n0, st.night_from || n0);
+  const tx0 = lx + 20, gap = 8, split = night < n0 ? 16 : 0, tw = (lw - 40 - gap * (n0 - 1) - split) / n0, ty = ly + 50, th = 84;
+  const sx = (i) => tx0 + i * (tw + gap) + (i >= night ? split : 0);
+  if (split) {
+    const nx = sx(night) - 6, nw = sx(n0 - 1) + tw + 6 - nx;
+    fillRR(nx, ty - 6, nw, th + 12, 18, NIGHT_BG);
+    const q = rng(7);
+    for (let k = 0; k < 10; k++) dot(nx + 8 + q() * (nw - 16), ty - 3 + q() * 4, 0.8 + q() * 0.9, "rgba(255,255,255,0.55)");
+  }
   const job = st.job && st.job.icon;
   for (let i = 0; i < slots.length;) {
     const kind = slots[i].kind;
     let n = 1;
-    if (kind === "guardia") while (i + n < slots.length && slots[i + n].kind === "guardia" && n < 2) n++; // la guardia ocupa dos
-    slotTile(kind, tx0 + i * (tw + gap), ty, tw * n + gap * (n - 1), th, job, i + 1);
+    // la guardia ocupa dos, salvo si una cae de día y otra de noche: entonces va partida
+    if (kind === "guardia") while (i + n < slots.length && slots[i + n].kind === "guardia" && n < 2 && (i + n < night) === (i < night)) n++;
+    slotTile(kind, sx(i), ty, sx(i + n - 1) + tw - sx(i), th, job, i + 1);
     i += n;
   }
   // la leyenda

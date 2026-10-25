@@ -9,9 +9,13 @@ que se hace fuera de la jornada gasta franjas libres:
 - una guardia: `GUARD_FRANJAS` (es un turno doble);
 - un turno en tu negocio: 1 franja.
 
-Lo libre es lo que queda. Sin franjas libres no hay horas extra, B, guardias, estudio
-ni turnos del negocio; los turnos de jornada nunca se bloquean (ya están reservados).
-El día es el de Canarias (`levels.local_day`), como el resto de la `pala`.
+Lo libre es lo que queda. Acabadas las franjas del día se puede **trasnochar**: hay
+`FRANJAS_NOCHE` más, robadas al sueño, y ninguna después (el día no da para más de 24
+horas en bloques de dos). De noche se puede hacer lo mismo, pero la Inspección mira más el B
+(`work.inspection_chance`) y, en la `pala`, la familia lo nota (`work.FAMILY_LATE`). Sin
+franjas, ni de noche, no hay horas extra, B, guardias, estudio ni turnos del negocio; los
+turnos de jornada nunca se bloquean (ya están reservados). El día es el de Canarias
+(`levels.local_day`), como el resto de la `pala`.
 
 Lógica pura: `Agenda` se monta con lo que guardan el contrato (`Contract.franjas`) y el
 negocio (`Business.franjas_used`).
@@ -21,8 +25,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-#: Franjas de un día.
+#: Franjas de un día despierto.
 FRANJAS_DIA = 8
+#: Franjas de noche que se le pueden robar al sueño después de las del día (🌙 trasnochar).
+FRANJAS_NOCHE = 4
+#: Franjas que da de sí un día entero: después de estas no se ficha nada.
+FRANJAS_MAX = FRANJAS_DIA + FRANJAS_NOCHE
 #: Franjas que gasta una guardia (turno doble).
 GUARD_FRANJAS = 2
 #: Tramos de la jornada en franjas: completa, reducción de 1/4 y media jornada
@@ -35,6 +43,8 @@ JORNADA_NAMES: dict[int, str] = {4: "Jornada completa", 3: "Reducción 3/4", 2: 
 EXTRA = "extra"
 GUARD = "guardia"
 STUDY = "estudio"
+#: Cómo sale en `Agenda.slots` una franja de noche que aún no se ha usado.
+NIGHT = "noche"
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,23 +77,43 @@ class Agenda:
 
     @property
     def free(self) -> int:
-        """Franjas libres (nunca menos de 0)."""
+        """Franjas libres del día, sin contar las de noche (nunca menos de 0)."""
         return max(0, FRANJAS_DIA - self.used)
 
+    @property
+    def night_free(self) -> int:
+        """Franjas de noche que aún se pueden trasnochar."""
+        return max(0, FRANJAS_MAX - max(self.used, FRANJAS_DIA))
+
+    @property
+    def left(self) -> int:
+        """Todo lo que queda hoy: las libres del día más las de noche."""
+        return self.free + self.night_free
+
+    @property
+    def next_night(self) -> int:
+        """Qué franja de noche sería la siguiente (de 1 a `FRANJAS_NOCHE`), o 0 si es de día."""
+        return max(0, self.used + 1 - FRANJAS_DIA)
+
     def fits(self, franjas: int) -> bool:
-        """Si caben `franjas` más fuera de la jornada."""
-        return self.free >= franjas
+        """Si caben `franjas` más fuera de la jornada, trasnochando si hace falta."""
+        return self.left >= franjas
+
+    def late(self, franjas: int) -> int:
+        """Cuántas de las próximas `franjas` caen de noche."""
+        return max(0, self.used + franjas - FRANJAS_DIA) - max(0, self.used - FRANJAS_DIA)
 
     def slots(self) -> list[str]:
-        """Las `FRANJAS_DIA` franjas en orden, para dibujarlas.
+        """Las `FRANJAS_MAX` franjas en orden, para dibujarlas.
 
         Primero la jornada (`hecha` lo fichado y `jornada` lo reservado sin fichar),
-        luego lo de fuera de ella, el negocio y lo libre. Si se pasa del día (no
-        debería), se corta.
+        luego lo de fuera de ella, el negocio y lo libre: `"libre"` en el día y `NIGHT`
+        en las de noche. Lo usado que pasa de las del día ocupa las de noche. Si se pasa
+        del máximo (no debería), se corta.
         """
         out = ["hecha"] * self.ordinary + ["jornada"] * max(0, self.jornada - self.ordinary)
         for kind in (EXTRA, GUARD, STUDY):
             out += [kind] * self.outside.get(kind, 0)
         out += ["negocio"] * self.business
-        out += ["libre"] * (FRANJAS_DIA - len(out))
-        return out[:FRANJAS_DIA]
+        out += ["libre" if i < FRANJAS_DIA else NIGHT for i in range(len(out), FRANJAS_MAX)]
+        return out[:FRANJAS_MAX]

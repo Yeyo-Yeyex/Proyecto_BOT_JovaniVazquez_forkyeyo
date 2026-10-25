@@ -181,7 +181,8 @@ async def test_el_inicio_pinta_el_dia_y_ofrece_buscar_curro_y_montar_negocio(
     work_cog, _business_cog, scene = await make(tmp_path)
     panel, send = await open_home(work_cog)
     assert scene.painted[0]["screen"] == "dia"
-    assert [s["kind"] for s in scene.painted[0]["slots"]] == ["libre"] * 8
+    assert [s["kind"] for s in scene.painted[0]["slots"]] == ["libre"] * 8 + ["noche"] * 4
+    assert scene.painted[0]["night_from"] == 8
     assert "💼 Buscar curro" in labels(panel) and "🏪 Montar negocio" in labels(panel)
     files = send.await_args.kwargs["files"]
     assert len(files) == 1 and files[0].filename == "pala.png"
@@ -196,7 +197,7 @@ async def test_con_curro_el_inicio_lleva_al_trabajo_y_el_trabajo_quita_la_imagen
     await work_cog.service.hire(GUILD, OWNER, "obra")
     panel, _send = await open_home(work_cog)
     slots = [s["kind"] for s in scene.painted[0]["slots"]]
-    assert slots == ["jornada"] * 4 + ["libre"] * 4
+    assert slots == ["jornada"] * 4 + ["libre"] * 4 + ["noche"] * 4
     interaction = click()
     await button(panel, "🪏 Trabajo").callback(interaction)
     assert interaction.edit_original_response.await_args.kwargs["attachments"] == []
@@ -214,7 +215,7 @@ async def test_sin_pintor_el_inicio_sale_en_texto_con_las_franjas(tmp_path: Path
     assert galleries(panel) == 0
     assert send.await_args.kwargs["files"] == []
     text = "\n".join(i.content for i in panel.walk_children() if isinstance(i, ui.TextDisplay))
-    assert "⬜" in text
+    assert "⬜" in text and "🌙 ⬛⬛⬛⬛" in text
 
 
 async def test_la_jornada_se_reduce_desde_el_panel_del_curro(tmp_path: Path) -> None:

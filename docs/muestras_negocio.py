@@ -119,8 +119,12 @@ def _dia(**extra: Any) -> dict[str, Any]:
         "job": JOB,
         "business": _business("cafeteria"),
         "tip": "Te quedan 2 franjas: un turno más en la cafetería o una hora extra.",
+        "night_from": 8,
+        "night_free": "4 franjas de noche",
     }
     state.update(extra)
+    # Las 4 de noche (`agenda.FRANJAS_NOCHE`) detrás de las del día, como en el juego.
+    state["slots"] = state["slots"] + _slots(*["noche"] * (12 - len(state["slots"])))
     return state
 
 
@@ -922,6 +926,23 @@ def _phase5(today: date) -> dict[str, dict[str, Any]]:
                "role": staff.MANAGER},
     )  # fmt: skip
     s["dia_cadena"] = _dia(business=_business("cafeteria", more=3))
+    s["dia_trasnochando"] = _dia(
+        slots=_slots(*["hecha"] * 4, *["extra"] * 4, "extra", "negocio"),
+        free="0 franjas libres",
+        night_free="2 franjas de noche",
+        battery=18,
+        family=22,
+        tip="Se acabó el día: te quedan 2 de noche. Trasnochando, la Inspección pilla más el B "
+        "y tu familia lo nota.",
+    )
+    s["dia_guardia_de_noche"] = _dia(
+        business=None,
+        slots=_slots(*["hecha"] * 4, *["extra"] * 3, "guardia", "guardia"),
+        free="0 franjas libres",
+        night_free="3 franjas de noche",
+        job={**JOB, "icon": "sanidad", "name": "Sanidad", "title": "Residente", "level": "5/10"},
+        tip="La guardia empezó en la última franja del día y acaba trasnochando.",
+    )
     return s
 
 

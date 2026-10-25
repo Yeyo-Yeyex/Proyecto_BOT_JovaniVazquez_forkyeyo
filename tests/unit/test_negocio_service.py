@@ -22,7 +22,7 @@ from bot.repositories.economy import (
 )
 from bot.repositories.work import WorkRepository
 from bot.services import pala
-from bot.services.agenda import FRANJAS_DIA
+from bot.services.agenda import FRANJAS_DIA, FRANJAS_MAX, FRANJAS_NOCHE
 from bot.services.business import EVICTION_NIGHTS, nightly_bill, opening_quote
 from bot.services.business_catalog import SECTOR_BY_KEY
 from bot.services.business_games import COINS, TurnGame
@@ -330,7 +330,9 @@ async def test_sin_stock_no_se_abre(tmp_path: Path) -> None:
         await service.start_turn(GUILD, USER)
 
 
-async def test_sin_curro_hay_ocho_franjas_para_el_negocio(tmp_path: Path) -> None:
+async def test_sin_curro_hay_ocho_franjas_de_dia_y_cuatro_de_noche_para_el_negocio(
+    tmp_path: Path,
+) -> None:
     clock = Clock()
     service, work = await make(tmp_path, clock)
     await open_cafe(service)
@@ -340,7 +342,13 @@ async def test_sin_curro_hay_ocho_franjas_para_el_negocio(tmp_path: Path) -> Non
         turn.game.finish(clock.now)
         await service.finish_turn(GUILD, USER, turn)
         clock.now += 60
-    assert (await work.agenda(GUILD, USER)).free == 0
+    agenda = await work.agenda(GUILD, USER)
+    assert agenda.free == 0 and agenda.night_free == FRANJAS_NOCHE
+    # Trasnochando se llega al máximo del día, y ahí sí se para.
+    (business,) = await service.repository.owned(GUILD, USER)
+    business.turns_today = FRANJAS_MAX
+    await service.repository.save(GUILD, business)
+    assert (await work.agenda(GUILD, USER)).left == 0
     with pytest.raises(BusinessError, match="franjas"):
         await service.start_turn(GUILD, USER)
 
@@ -367,11 +375,11 @@ async def test_la_jornada_reserva_sus_franjas_y_las_extras_se_las_quitan_al_nego
         turn.game.finish(clock.now)
         await service.finish_turn(GUILD, USER, turn)
         clock.now += 3_600
-    with pytest.raises(BusinessError, match="franjas"):
-        await service.start_turn(GUILD, USER)
-    # Y sin franjas libres, la pala tampoco deja hacer más horas extra.
-    with pytest.raises(WorkError, match="franjas"):
-        await work.start_shift(GUILD, USER, black_ok=True)
+    agenda = await work.agenda(GUILD, USER)
+    assert agenda.free == 0 and agenda.night_free == FRANJAS_NOCHE
+    # Sin franjas de día, la siguiente hora extra ya es trasnochando.
+    shift = await work.start_shift(GUILD, USER, black_ok=True)
+    assert (shift.late, shift.late_franja) == (1, 1)
 
 
 async def test_el_turno_de_negocio_gasta_la_bateria_de_quien_tiene_curro(tmp_path: Path) -> None:

@@ -12057,6 +12057,11 @@ EVENTS: tuple[Event, ...] = (
 
 EVENT_BY_KEY: dict[str, Event] = {event.key: event for event in EVENTS}
 
+#: Lo que pasa cuando la Inspección te pilla un B trasnochando (`work.NIGHT_SURCHARGE`).
+NIGHT_CAUGHT_TEXT = (
+    "🕵️ **Inspección de Trabajo, de noche.** Te pillan trasnochando en negro: devuelves el "
+    "turno doble (lo cobrado y una multa igual) y te suspenden el IMV 3 días."
+)
 #: Qué pasa cuando la UCO o la Inspección te pillan con dinero en negro.
 CAUGHT_TEXT: dict[str, str] = {
     "inspeccion": (
@@ -12233,9 +12238,12 @@ class Coffee:
     price: int
 
 
+#: Unas 8 veces lo que costaban hasta la 9.19.0 (14 y 25 Y$), cuando la batería salía
+#: gratis: ahora encadenar cafés cuesta algo, sin que un café valga un turno. El
+#: barraquito sale algo mejor por punto de batería (10 Y$ frente a 11).
 COFFEES: tuple[Coffee, ...] = (
-    Coffee("cortado", "Cortado", "☕", 10, 14),
-    Coffee("barraquito", "Barraquito", "🥃", 20, 25),
+    Coffee("cortado", "Cortado", "☕", 10, 110),
+    Coffee("barraquito", "Barraquito", "🥃", 20, 200),
 )
 COFFEE_BY_KEY: dict[str, Coffee] = {coffee.key: coffee for coffee in COFFEES}
 

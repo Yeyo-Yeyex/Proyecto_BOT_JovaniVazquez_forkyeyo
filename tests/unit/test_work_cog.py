@@ -806,3 +806,13 @@ async def test_en_un_marron_se_puede_tirar_de_excusa(tmp_path: Path) -> None:
     await excuse.callback(make_interaction())
     assert panel.pending_event is None
     assert "me llama mi madre" in texts(panel)
+
+
+def test_la_oferta_del_b_dice_el_riesgo_de_dia_y_el_de_noche() -> None:
+    from bot.cogs.work import black_offer_text
+
+    day = black_offer_text(0)
+    assert "10 % de que te pille la Inspección" in day and "20 % de recargo" in day
+    night = black_offer_text(2)
+    assert "2.ª franja de noche" in night and "40 % de que te pille la Inspección" in night
+    assert "turno doble" in night

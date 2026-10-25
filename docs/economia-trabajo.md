@@ -111,7 +111,9 @@ Cambiar de oficio después de acabar el primero (obra, día 161), solo con sueld
 ## Negocios (8.14.0)
 
 El negocio propio de `pala` comparte las 8 franjas del día con el curro: la jornada
-reserva 4 y lo que queda es para horas extra o para el negocio. Sus cifras y su porqué están
+reserva 4 y lo que queda es para horas extra o para el negocio. Desde la 9.19.0 se pueden
+trasnochar 4 más; el B de noche tiene más riesgo y apurarlo no da dinero
+(`docs/noche_pala.py`). Sus cifras y su porqué están
 en `docs/negocios.md` («Equilibrio») y salen de `docs/negocio_sim.py`.
 
 - **Ingresos:** un buen jugador saca con 4 turnos de su negocio lo que un P2-P3 de obra con 4
