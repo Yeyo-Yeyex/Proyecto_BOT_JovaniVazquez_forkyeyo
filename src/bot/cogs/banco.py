@@ -123,8 +123,9 @@ def loan_line(loan: Loan) -> str:
     insured = f" · 🛡️ {loan.covers_left} coberturas" if loan.insured else ""
     if (guarantor := lending.guarantor_of(loan.aval)) is not None:
         insured += f" · 🤝 te avala <@{guarantor}>"
+    what = f"💳 {loan.listing} · " if loan.purchase and loan.listing else ""
     line = (
-        f"**#{loan.id}** · quedan {format_amount(loan.balance)} de "
+        f"**#{loan.id}** · {what}quedan {format_amount(loan.balance)} de "
         f"{format_amount(loan.principal)} · {format_amount(loan.monthly)} al mes · "
         f"{loan.months_left} cuotas · {_pct(loan.rate)}{insured}"
     )
@@ -263,6 +264,12 @@ class Banco(commands.Cog):
             value="\n".join(loan_line(loan) for loan in desk.loans)[:1024] or "Ninguno.",
             inline=False,
         )
+        if desk.purchases:
+            embed.add_field(
+                name=f"💳 Tus compras financiadas ({len(desk.purchases)})",
+                value="\n".join(loan_line(loan) for loan in desk.purchases)[:1024],
+                inline=False,
+            )
         if desk.guarantees:
             embed.add_field(
                 name=f"🤝 Avalas ({len(desk.guarantees)}/{lending.MAX_GUARANTEES})",
@@ -659,9 +666,10 @@ class BankPanel(ui.View):
         self.add_item(InsuranceButton(self.insured))
         self.add_item(AskButton(disabled=closed))
         avales.add_items(self, button_row=2, select_row=3)
-        if desk.loans and not self.picking_guarantor:
-            self.add_item(LoanSelect(desk.loans, self.selected_loan))
-            loan = next((x for x in desk.loans if x.id == self.selected_loan), None)
+        mine = (*desk.loans, *desk.purchases)
+        if mine and not self.picking_guarantor:
+            self.add_item(LoanSelect(mine, self.selected_loan))
+            loan = next((x for x in mine if x.id == self.selected_loan), None)
             if loan is not None:
                 fee = lending.early_fee(loan.balance, loan.months_left)
                 self.add_item(RepayButton(loan.id, loan.owed + fee))
@@ -871,14 +879,17 @@ class BackButton(ui.Button["BankPanel"]):
 
 
 class LoanSelect(ui.Select["BankPanel"]):
-    """Elige uno de tus préstamos para amortizarlo o desistir."""
+    """Elige uno de tus préstamos (o compras financiadas) para amortizarlo o desistir."""
 
     def __init__(self, loans: tuple[Loan, ...], selected: int | None) -> None:
         super().__init__(
             placeholder="Tus préstamos",
             options=[
                 discord.SelectOption(
-                    label=f"#{loan.id} · quedan {format_amount(loan.balance)}"[:100],
+                    label=(
+                        f"#{loan.id} · {loan.listing if loan.purchase else 'Préstamo'} · "
+                        f"quedan {format_amount(loan.balance)}"
+                    )[:100],
                     description=f"{loan.months_left} cuotas de {format_amount(loan.monthly)}"[:100],
                     value=str(loan.id),
                     default=loan.id == selected,

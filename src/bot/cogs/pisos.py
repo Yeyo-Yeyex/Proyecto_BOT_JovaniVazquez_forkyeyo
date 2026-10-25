@@ -1221,7 +1221,9 @@ class Panel(ui.View):
         for reform in REFORMS:
             if listing.kind not in reform.kinds or reform.key in done or not can:
                 continue
-            total = rules.reform_quote(listing, reform, market.index(listing.barrio)).total
+            total = rules.reform_quote(
+                listing, reform, market.index(listing.barrio), market.ipc
+            ).total
             self._confirmable(
                 f"{reform.emoji} {reform.name} ({format_amount(total)})",
                 f"reforma:{reform.key}", self._reform, row=1 + slot // 3,
@@ -1728,7 +1730,9 @@ class Panel(ui.View):
             if mode in busy or key in market.splits or base is None:
                 continue
             if rules.split_problem(base, mode, promotion=key in market.promotions) is None:
-                total = rules.split_quote(listing, mode, market.index(listing.barrio)).total
+                total = rules.split_quote(
+                    listing, mode, market.index(listing.barrio), market.ipc
+                ).total
                 add(mode, f"{motion.name} ({format_amount(total)})", motion.emoji,
                     f"{view.THRESHOLD_TEXT[motion.threshold]} ({motion.law})")  # fmt: skip
         return options[:MAX_OPTIONS]

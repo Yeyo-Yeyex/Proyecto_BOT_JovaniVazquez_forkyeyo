@@ -60,10 +60,10 @@ import random
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
+from functools import cache
 
 from bot.services import loans as lending
 from bot.services.housing import IPS_RATE, installment
-from bot.services.shop_catalog import AISLES
 
 
 class Plan(StrEnum):
@@ -104,22 +104,25 @@ MAX_BNPL = 3
 #: Lo más que suben los precios con el IPC del crédito, en %.
 IPC_CAP = 20
 
-#: Las categorías de lo que se compra (para el 0 % TIN de la semana).
-CATEGORIES: tuple[str, ...] = (
-    *(f"tienda:{aisle.key}" for aisle in AISLES),
-    "obras",
-    "negocio",
-    "pala",
-)
-#: Cómo se dice cada categoría que no es un pasillo.
+#: Las categorías que no son pasillos de la tienda, con su nombre.
 CATEGORY_NAMES = {"obras": "🔨 Obras de pisos", "negocio": "🏪 Negocios", "pala": "⛏️ Formación"}
+
+
+@cache
+def categories() -> tuple[str, ...]:
+    """Las categorías de lo que se compra (para el 0 % TIN de la semana): cada pasillo de la
+    tienda (`tienda:<pasillo>`) y `CATEGORY_NAMES`."""
+    from bot.services.shop_catalog import AISLES  # shop_catalog importa shop, que nos importa
+
+    return (*(f"tienda:{aisle.key}" for aisle in AISLES), *CATEGORY_NAMES)
 
 
 def category_name(category: str) -> str:
     """El nombre de una categoría, con su icono («🌴 Canarias», «🔨 Obras de pisos»)."""
+    from bot.services.shop_catalog import AISLE_BY_KEY
+
     if category.startswith("tienda:"):
-        key = category.removeprefix("tienda:")
-        aisle = next((a for a in AISLES if a.key == key), None)
+        aisle = AISLE_BY_KEY.get(category.removeprefix("tienda:"))
         return aisle.label if aisle is not None else "la tienda"
     return CATEGORY_NAMES.get(category, category)
 
@@ -132,7 +135,7 @@ class Purchase:
         label: Qué es, como sale en `saldo` y en el banco («Porsche Cayenne», «Reforma de
             la cocina en …»).
         amount: Lo que cuesta, con impuestos (lo que se paga al vendedor).
-        category: De qué categoría es (`CATEGORIES`), para el 0 % TIN de la semana.
+        category: De qué categoría es (`categories`), para el 0 % TIN de la semana.
         works: Si es una obra o una división de `pisos` (admite `WORKS_TERMS`).
     """
 
@@ -146,7 +149,7 @@ def zero_picks(day: date) -> tuple[str, ...]:
     """Las categorías con 0 % TIN la semana de `day` (de lunes a domingo), iguales en todos
     los servidores para que se pueda hablar de ellas."""
     year, week, _ = day.isocalendar()
-    return tuple(random.Random(f"cero:{year}:{week}").sample(CATEGORIES, ZERO_PICKS))
+    return tuple(random.Random(f"cero:{year}:{week}").sample(categories(), ZERO_PICKS))
 
 
 def plans_for(purchase: Purchase, day: date) -> tuple[Plan, ...]:

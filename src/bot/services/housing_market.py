@@ -102,8 +102,10 @@ class HousingService:
         return self._clock()
 
     async def market(self, guild_id: int) -> Market:
-        """Todo el mercado del servidor."""
-        return await self.repository.market(guild_id)
+        """Todo el mercado del servidor. De paso, deja su IPC del crédito para la tienda."""
+        market = await self.repository.market(guild_id)
+        credit.set_ipc(guild_id, market.ipc)
+        return market
 
     async def news(self, guild_id: int, listings: tuple[str, ...], limit: int = 8) -> list[News]:
         """Lo último que ha pasado en unos inmuebles."""

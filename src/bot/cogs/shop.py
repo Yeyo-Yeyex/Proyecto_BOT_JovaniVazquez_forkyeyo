@@ -516,6 +516,8 @@ def ticket_preview(price: Quote) -> str:
         return f"{left:<{width - len(right) - 1}} {right}"
 
     lines = [row("Precio", money(price.price))]
+    if price.ipc:
+        lines[0] = row(f"Precio (IPC +{price.ipc} %)", money(price.price))
     if price.discount:
         lines.append(row(f"Rebaja -{price.discount_pct} %", f"-{money(price.discount)}"))
     lines += [
@@ -528,15 +530,25 @@ def ticket_preview(price: Quote) -> str:
 
 
 def igic_line(price: Quote) -> str:
-    """La mordida del IGIC, en subtexto."""
+    """La mordida del IGIC, en subtexto (y lo que ha subido el IPC del crédito, si algo)."""
     if not price.tax:
-        return (
+        line = (
             f"-# 🐶 {TAX_COLLECTOR} no cobra nada: este artículo va al tipo cero "
             f"({price.rate.law})."
         )
+    else:
+        line = (
+            f"-# 🐶 {TAX_COLLECTOR} se lleva {format_amount(price.tax)} de {price.rate.tax} "
+            f"({price.rate.label.lower()}, {rate_label(price.rate.rate)}, {price.rate.law})."
+        )
+    return f"{line}\n{ipc_line(price.ipc)}" if price.ipc else line
+
+
+def ipc_line(pct: int) -> str:
+    """Lo que ha subido los precios el IPC del crédito, en subtexto."""
     return (
-        f"-# 🐶 {TAX_COLLECTOR} se lleva {format_amount(price.tax)} de {price.rate.tax} "
-        f"({price.rate.label.lower()}, {rate_label(price.rate.rate)}, {price.rate.law})."
+        f"-# 📈 IPC del crédito: los precios suben un {pct} % por lo que hay financiado en el "
+        "servidor sin devolver. Baja cuando se devuelve."
     )
 
 

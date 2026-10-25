@@ -229,6 +229,7 @@ class Market:
         loans: Préstamos personales activos (`banco`).
         member_debts: `{(acreedor, deudor): importe}` de los reembolsos de los avales.
         splits: Los inmuebles divididos por plantas o por habitaciones.
+        ipc: El IPC del crédito del servidor, en % (`credit.ipc_pct`): encarece las obras.
     """
 
     indexes: dict[str, float] = field(default_factory=dict)
@@ -257,6 +258,7 @@ class Market:
     loans: tuple[Loan, ...] = ()
     member_debts: dict[tuple[int, int], int] = field(default_factory=dict)
     splits: dict[str, Split] = field(default_factory=dict)
+    ipc: int = 0
     _units: dict[str, tuple[Listing, ...]] = field(default_factory=dict, repr=False, compare=False)
 
     def manager(self, key: str) -> int | None:
@@ -1022,6 +1024,7 @@ def _desk_in(
         bank_debt=market.bank_debts.get(user_id, 0),
         profile=profile,
         guarantees=tuple(market.guaranteed_by(user_id)),
+        purchases=tuple(x for x in loans if x.purchase),
     )
 
 
@@ -1281,7 +1284,27 @@ def _market_in(connection: sqlite3.Connection, guild_id: int) -> Market:
                 (guild_id,),
             )
         },
+        ipc=credit.ipc_pct(*_credit_alive_in(connection, guild_id)),
     )
+
+
+def _credit_alive_in(connection: sqlite3.Connection, guild_id: int) -> tuple[int, int]:
+    """`(lo que se debe de financiaciones, el dinero de los miembros)`, para el IPC del crédito.
+
+    El dinero solo se mira si hay algo financiado (sin nada, el IPC es 0 igual).
+    """
+    (alive,) = connection.execute(
+        "SELECT COALESCE(SUM(balance + unpaid_amount), 0) FROM housing_loans "
+        "WHERE guild_id = ? AND status = 'activo' AND kind IN (?, ?)",
+        (guild_id, finance.LOAN_PURCHASE, finance.LOAN_BNPL),
+    ).fetchone()
+    if not alive:
+        return 0, 0
+    (money,) = connection.execute(
+        "SELECT COALESCE(SUM(balance), 0) FROM economy_wallets WHERE guild_id = ? AND user_id > 0",
+        (guild_id,),
+    ).fetchone()
+    return int(alive), int(money)
 
 
 def _clear_reviews_in(connection: sqlite3.Connection, guild_id: int, key: str) -> None:
@@ -1738,11 +1761,13 @@ class LoanDesk:
     Attributes:
         euribor: El Euríbor de esta semana.
         installments: Lo que ya paga cada mes al banco (hipotecas y préstamos).
-        loans: Sus préstamos activos.
+        loans: Sus préstamos personales activos.
         asnef: Si está en el fichero de morosos.
         bank_debt: Lo que debe al banco tras un vencimiento o una ejecución.
         profile: Su perfil, para el tipo (`loans.profile_factors`).
         guarantees: Lo que avala de otros (préstamos y rehipotecas).
+        purchases: Sus financiaciones de compras (💳 Financiar), que van aparte del tope de
+            préstamos personales.
     """
 
     euribor: float
@@ -1752,6 +1777,7 @@ class LoanDesk:
     bank_debt: int
     profile: lending.Profile
     guarantees: tuple[Mortgage | Loan, ...] = ()
+    purchases: tuple[Loan, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -2609,17 +2635,7 @@ class HousingRepository:
     def _credit_alive_sync(self, guild_id: int) -> tuple[int, int]:
         connection = self._connect()
         try:
-            (alive,) = connection.execute(
-                "SELECT COALESCE(SUM(balance + unpaid_amount), 0) FROM housing_loans "
-                "WHERE guild_id = ? AND status = 'activo' AND kind IN (?, ?)",
-                (guild_id, finance.LOAN_PURCHASE, finance.LOAN_BNPL),
-            ).fetchone()
-            (money,) = connection.execute(
-                "SELECT COALESCE(SUM(balance), 0) FROM economy_wallets "
-                "WHERE guild_id = ? AND user_id > 0",
-                (guild_id,),
-            ).fetchone()
-            return int(alive), int(money)
+            return _credit_alive_in(connection, guild_id)
         finally:
             connection.close()
 
@@ -5221,7 +5237,7 @@ class HousingRepository:
             raise HousingError("Para reformar tiene que estar vacío.")
         for payer in payers:
             _check_free(market, key, payer, day)
-        quote = rules.reform_quote(listing, spec, market.index(listing.barrio))
+        quote = rules.reform_quote(listing, spec, market.index(listing.barrio), market.ipc)
         until = day + timedelta(days=spec.days)
         connection.execute(
             """
@@ -5332,7 +5348,7 @@ class HousingRepository:
             _check_free(market, key, payer, day)
             if market.advance_of(payer, key) is not None:
                 raise HousingError("Tiene un anticipo de rentas vivo: devuélvelo antes.")
-        quote = rules.split_quote(listing, mode, market.index(listing.barrio))
+        quote = rules.split_quote(listing, mode, market.index(listing.barrio), market.ipc)
         until = day + timedelta(days=quote.days)
         amounts = {
             name: rules.split(amount, payers)

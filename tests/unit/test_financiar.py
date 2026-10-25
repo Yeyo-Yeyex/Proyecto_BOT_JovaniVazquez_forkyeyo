@@ -10,9 +10,15 @@ import pytest
 from bot.repositories.housing import HousingError
 from bot.repositories.housing_finance import LOAN_BNPL, LOAN_PURCHASE
 from bot.services import credit
+from bot.services import housing as rules
 from bot.services import loans as lending
 from bot.services.economy import STARTING_BALANCE
+from bot.services.housing_catalog import LISTING_BY_KEY, REFORMS
+from bot.services.shop import emblematic, quote
+from bot.services.shop_catalog import TITLE_KEYS
 from tests.unit.test_loans import ANA, GUILD, Clock, empty, ledger_sum, make, salary, sql
+from tests.unit.test_shop import NOW
+from tests.unit.test_shop import item as shop_item
 
 COCHE = credit.Purchase("Seat Ibiza de segunda mano", 20_000, "tienda:lujo")
 CAFE = credit.Purchase("Barraquito", 200, "pala")
@@ -56,7 +62,7 @@ def test_paga_en_3_sale_por_lo_que_cuesta() -> None:
 def test_que_planes_tiene_cada_compra() -> None:
     day = date(2026, 10, 25)
     picked, *_ = credit.zero_picks(day)
-    other = next(c for c in credit.CATEGORIES if c not in credit.zero_picks(day))
+    other = next(c for c in credit.categories() if c not in credit.zero_picks(day))
     assert credit.plans_for(credit.Purchase("x", 50, other), day) == ()
     assert credit.plans_for(credit.Purchase("x", 999, picked), day) == (credit.Plan.BNPL,)
     assert credit.plans_for(credit.Purchase("x", 1_000, other), day) == (credit.Plan.NORMAL,)
@@ -74,6 +80,26 @@ def test_el_ipc_sube_con_lo_financiado_hasta_el_tope() -> None:
     assert credit.ipc_pct(900_000, 1_000_000) == credit.IPC_CAP
     assert credit.ipc_pct(10, 0) == credit.IPC_CAP
     assert credit.inflate(1_000, 7) == 1_070
+
+
+def test_el_ipc_encarece_la_tienda_y_las_obras() -> None:
+    article = shop_item(price=1_000)
+    before = quote(article, NOW)
+    credit.set_ipc(article.guild_id, 10)
+    after = quote(article, NOW)
+    assert after.price == 1_100 and after.ipc == 10 and after.total > before.total
+    piso = LISTING_BY_KEY["isleta_piso3"]
+    reform = next(r for r in REFORMS if piso.kind in r.kinds)
+    cost = rules.reform_quote(piso, reform).cost
+    assert rules.reform_quote(piso, reform, ipc=10).cost == cost + cost // 10
+    split = rules.split_quote(piso, rules.ROOMS).cost
+    assert rules.split_quote(piso, rules.ROOMS, ipc=10).cost == split + split // 10
+
+
+def test_lo_numerado_y_los_titulos_son_emblematicos() -> None:
+    assert emblematic(shop_item(stock=1))
+    assert emblematic(shop_item(catalog_key=next(iter(TITLE_KEYS))))
+    assert not emblematic(shop_item())
 
 
 # -- Con la base de datos --------------------------------------------------------------------

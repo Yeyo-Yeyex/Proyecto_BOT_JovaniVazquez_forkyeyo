@@ -29,7 +29,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from bot.repositories.housing import Holding, Market, MemberDay, News
-from bot.repositories.housing_finance import Deposit
+from bot.repositories.housing_finance import LOAN_BNPL, Deposit
 from bot.services import housing as rules
 from bot.services import loans as lending
 from bot.services.economy import format_amount
@@ -1191,7 +1191,7 @@ def reforms_state(market: Market, key: str, user_id: int) -> State:
     for reform in REFORMS:
         if listing.kind not in reform.kinds:
             continue
-        quote = rules.reform_quote(listing, reform, index)
+        quote = rules.reform_quote(listing, reform, index, market.ipc)
         made = done.get(reform.key)
         status = "available" if made is None else "done" if made[2] else "works"
         items.append(
@@ -1346,7 +1346,7 @@ def split_state(market: Market, key: str, user_id: int) -> State:
     for mode in rules.SPLIT_MODES:
         if rules.split_problem(base, mode, promotion=key in market.promotions) is not None:
             continue
-        quote = rules.split_quote(listing, mode, index)
+        quote = rules.split_quote(listing, mode, index, market.ipc)
         parent = base if mode == rules.FLOORS else listing
         units = rules.split_units(parent, mode, quote.units, quote.cost)
         if mode == rules.FLOORS:
@@ -2083,16 +2083,20 @@ def pending_items(
                 )
             )  # fmt: skip
             continue
+        kind = "loan"
         if loan.advance and loan.listing:
             what = f"Anticipo de rentas de {_place(market, loan.listing)}"
         elif loan.business_id is not None:
             what = f"Préstamo #{loan.id} de tu negocio"
+        elif loan.purchase:
+            kind = "financing"
+            plan = "Paga en 3" if loan.kind == LOAN_BNPL else "Financiación"
+            what = f"{plan} de {loan.listing or 'una compra'} (quedan {loan.months_left} cuotas)"
         else:
             what = f"Préstamo #{loan.id} del banco"
         text = f"{what}: {format_amount(due)}"
-        kind = "loan"
         if loan.unpaid_count:
-            kind = "loan_unpaid"
+            kind += "_unpaid"
             text += (
                 f" · ⚠️ {loan.unpaid_count} cuotas sin pagar: con "
                 f"{lending.DEFAULT_INSTALLMENTS}, vence entero"
