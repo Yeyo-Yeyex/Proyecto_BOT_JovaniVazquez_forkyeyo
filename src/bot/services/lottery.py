@@ -1269,17 +1269,16 @@ def scratch_odds(game: Game) -> float:
     return round(total / sum(p.count for p in prizes), 1)
 
 
-#: Importes que se pintan en las casillas de un rasca sin premio.
-_DECOYS = (2, 4, 10, 20, 40, 100, 200, 1_000, 2_000, 10_000)
-
-
 def scratch_grid(game: Game, prize: Prize | None, rng: random.Random) -> list[int]:
     """Las 9 casillas del rasca: tres iguales si hay premio, ninguna terna si no.
 
-    Es la mecánica clásica de "3 importes iguales"; los reales tienen cada
-    uno la suya, pero el premio sale de su tabla.
+    Es la mecánica clásica de "3 importes iguales"; los reales tienen cada uno la
+    suya, pero el premio sale de su tabla. Las casillas que no dan premio salen de
+    los importes de la propia tabla, como en un rasca de verdad: a veces se ven
+    dos del premio más alto (`lottery_render.scratch_near_miss`).
     """
-    decoys = [eur(e) for e in _DECOYS]
+    assert game.scratch is not None
+    decoys = sorted({p.amount for p in game.scratch[0]})
     cells: list[int] = []
     if prize is not None:
         cells += [prize.amount] * 3
