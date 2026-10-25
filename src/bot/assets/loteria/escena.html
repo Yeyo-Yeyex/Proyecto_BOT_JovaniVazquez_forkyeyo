@@ -1,0 +1,806 @@
+<!doctype html>
+<!--
+Escena de la lotería, dibujada con canvas: una sola escena con un `mode` por imagen. La pinta Node
+con Skia (assets/escena_node.cjs) y, si no hay Node, un Chromium sin ventana (ver
+bot/services/lottery_scene.py). Si no hay ninguno, el cog sigue en texto.
+
+No decide nada: Python le pasa todo ya formateado y el orden de los fotogramas
+(bot/services/lottery_render.py) y aquí solo se pinta. Funciones que llama Python:
+
+- loadFonts()                  espera a las fuentes (canvas no las carga solo).
+- setup(meta)                  elige el modo (`meta.mode`), ajusta el tamaño (`meta.w` × `meta.h`) y
+                               prepara lo fijo de la imagen. El primer fotograma tras cada `setup` sale
+                               entero.
+- renderFrames(states, first)  un recuadro por estado: {x, y, u}. Entero el primero; los demás, solo la
+                               parte que cambia respecto al fotograma anterior. `first` es el índice
+                               absoluto del primer estado (para el azar por fotograma).
+
+Modos (cada uno es un objeto en MODES con `init(meta)` y `paint(state, index)`):
+
+- "rasca": el rasca y gana apaisado (640 × 400) con su rejilla de 3 × 3 casillas, que una moneda va
+           rascando de una en una. Lleva su propio tema por juego (X10 violeta, 7 y Media esmeralda).
+
+Para añadir un modo basta registrar `MODES.nombre = { init(meta), paint(state, index) }`: `paint` dibuja el
+fotograma entero en `g` (ya con la escala puesta) y devuelve las regiones que lo componen, `{id: {sig,
+rect}}`, para que solo viaje lo que cambia (ver `dirtyRect`), o `null` si la imagen va siempre entera (las
+quietas: décimo, boleto y cartel).
+
+Todo se dibuja al doble (S = 2) y se reduce a la mitad justa al copiar al lienzo de salida. Nada de
+Math.random: el azar sale de `rngOf(semilla, …)`, así que cada proceso pinta lo mismo; y nada pasa de un
+fotograma a otro salvo el recuadro anterior, que solo sirve para decidir qué parte se devuelve. Los
+textos de la gente se limpian de lo que la fuente no tiene (emojis) para no pintar cuadrados.
+-->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: "Luckiest"; src: url("../botes/fonts/luckiest-guy.woff"); }
+  @font-face { font-family: "Montserrat"; src: url("../memes/fonts/MontserratBold.ttf"); font-weight: 700; }
+  @font-face { font-family: "RobotoM"; src: url("../memes/fonts/robotomedium.ttf"); }
+  @font-face { font-family: "RobotoR"; src: url("../memes/fonts/robotoregular.ttf"); }
+  html, body { margin: 0; padding: 0; background: transparent; }
+</style>
+</head>
+<body>
+<script>
+"use strict";
+const S = 2;
+let W = 640, H = 400;
+const big = document.createElement("canvas"); big.width = W * S; big.height = H * S;
+const out = document.createElement("canvas"); out.width = W; out.height = H;
+const g = big.getContext("2d");
+const octx = out.getContext("2d");
+
+const LUCKY = "Luckiest, Montserrat, sans-serif";
+const MONT = "Montserrat, RobotoM, sans-serif";
+const BODY = "RobotoM, sans-serif";
+const SOFT = "RobotoR, sans-serif";
+
+// -- Utilidades comunes -----------------------------------------------------------------------
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function easeOutBack(t) {
+  const k = 1.70158;
+  return 1 + (k + 1) * Math.pow(t - 1, 3) + k * Math.pow(t - 1, 2);
+}
+
+// Semilla de 32 bits a partir de cualquier cosa (FNV-1a) y generador repetible (mulberry32).
+function hashOf(...parts) {
+  let h = 2166136261;
+  for (const part of parts) {
+    const s = String(part);
+    for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+    h = Math.imul(h ^ 0x9e, 16777619);
+  }
+  return h >>> 0;
+}
+function rngOf(...parts) {
+  let a = hashOf(...parts);
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// La fuente no trae emojis ni escrituras raras: se deja lo latino, la puntuación y el signo menos.
+function clean(text) {
+  const keep = (n) => (n >= 32 && n < 0x250) || (n >= 0x2010 && n <= 0x203a) || n === 0x20ac || n === 0x2212;
+  return Array.from(String(text ?? "")).filter((c) => keep(c.codePointAt(0))).join("").replace(/\s+/g, " ").trim();
+}
+// «1.500.000 Y$» -> ["1.500.000", "Y$"]: la cifra se pinta grande y la moneda, pequeña debajo.
+function splitAmount(text) {
+  const s = clean(text);
+  const m = /^(.*?)\s+(Y\$)$/.exec(s);
+  return m ? [m[1], m[2]] : [s, ""];
+}
+
+function roundRect(c, x, y, w, h, r) {
+  const k = Math.max(0, Math.min(r, w / 2, h / 2));
+  c.beginPath(); c.moveTo(x + k, y); c.arcTo(x + w, y, x + w, y + h, k); c.arcTo(x + w, y + h, x, y + h, k);
+  c.arcTo(x, y + h, x, y, k); c.arcTo(x, y, x + w, y, k); c.closePath();
+}
+function lin(c, x0, y0, x1, y1, stops) {
+  const gr = c.createLinearGradient(x0, y0, x1, y1);
+  for (const [o, col] of stops) gr.addColorStop(o, col);
+  return gr;
+}
+function rad(c, x0, y0, r0, x1, y1, r1, stops) {
+  const gr = c.createRadialGradient(x0, y0, r0, x1, y1, r1);
+  for (const [o, col] of stops) gr.addColorStop(o, col);
+  return gr;
+}
+// Estrella de cuatro puntas con los lados cóncavos (el destello ✦, que la fuente no trae).
+function star4(c, x, y, r, pinch = 0.2) {
+  c.beginPath();
+  for (let k = 0; k < 4; k++) {
+    const a = k * Math.PI / 2;
+    const b = a + Math.PI / 4;
+    const px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
+    if (k === 0) c.moveTo(px, py); else c.lineTo(px, py);
+    c.quadraticCurveTo(x + Math.cos(b) * r * pinch * 1.4, y + Math.sin(b) * r * pinch * 1.4,
+      x + Math.cos(a + Math.PI / 2) * r, y + Math.sin(a + Math.PI / 2) * r);
+  }
+  c.closePath();
+}
+function setFont(c, weight, size, family) { c.font = `${weight ? weight + " " : ""}${size}px ${family}`; }
+function drawText(c, str, x, y, size, family, color, align = "left", weight = "") {
+  setFont(c, weight, size, family); c.fillStyle = color; c.textAlign = align; c.textBaseline = "alphabetic";
+  c.fillText(str, x, y);
+}
+// El tamaño más grande (de `size` a `min`) con el que `str` cabe en `maxW`.
+function fitSize(c, str, maxW, size, min, family, weight = "") {
+  let s = size;
+  setFont(c, weight, s, family);
+  while (s > min && c.measureText(str).width > maxW) { s -= 0.5; setFont(c, weight, s, family); }
+  return s;
+}
+function fitText(c, str, x, y, maxW, size, min, family, color, align = "left", weight = "") {
+  const s = fitSize(c, str, maxW, size, min, family, weight);
+  drawText(c, str, x, y, s, family, color, align, weight);
+  return s;
+}
+// Letra de rótulo: contorno grueso redondeado y relleno encima.
+function sticker(c, str, x, y, size, family, fill, edge, width, align = "center", weight = "") {
+  setFont(c, weight, size, family); c.textAlign = align; c.textBaseline = "alphabetic";
+  c.lineJoin = "round"; c.miterLimit = 2; c.lineWidth = width; c.strokeStyle = edge;
+  c.strokeText(str, x, y);
+  c.fillStyle = fill; c.fillText(str, x, y);
+}
+
+// -- Reparto de modos y recuadro que cambia ---------------------------------------------------
+
+const MODES = {};
+let MODE = null;     // el modo del último `setup`
+let PREV = null;     // las regiones del fotograma anterior (solo para saber qué devolver)
+
+// La unión de las regiones que han cambiado respecto al fotograma anterior (las de ahora y las de
+// antes). `null` en cualquiera de los dos lados o si no hay anterior: la imagen entera.
+function dirtyRect(now, before) {
+  if (!now || !before) return [0, 0, W, H];
+  let box = null;
+  const add = (rect) => {
+    box = box ? [Math.min(box[0], rect[0]), Math.min(box[1], rect[1]), Math.max(box[2], rect[2]), Math.max(box[3], rect[3])] : [...rect];
+  };
+  for (const id of new Set([...Object.keys(now), ...Object.keys(before)])) {
+    const a = now[id], b = before[id];
+    if (a && b && a.sig === b.sig) continue;
+    if (a) add(a.rect);
+    if (b) add(b.rect);
+  }
+  return box || [0, 0, 1, 1];
+}
+
+function snapshot(rect) {
+  let [x0, y0, x1, y1] = rect;
+  x0 = clamp(Math.floor(x0), 0, W - 1); y0 = clamp(Math.floor(y0), 0, H - 1);
+  x1 = clamp(Math.ceil(x1), x0 + 1, W); y1 = clamp(Math.ceil(y1), y0 + 1, H);
+  const w = x1 - x0, h = y1 - y0;
+  out.width = w; out.height = h;
+  octx.imageSmoothingEnabled = true; octx.imageSmoothingQuality = "high";
+  octx.drawImage(big, x0 * S, y0 * S, w * S, h * S, 0, 0, w, h);
+  return { x: x0, y: y0, u: window.exportFrame(out) };
+}
+
+function sizeCanvases(w, h) {
+  if (w === W && h === H && big.width === w * S) return;
+  W = w; H = h;
+  big.width = W * S; big.height = H * S;
+  out.width = W; out.height = H;
+}
+
+// Un lienzo suelto a la escala de la escena, con las coordenadas en píxeles lógicos.
+function layer(w, h) {
+  const c = document.createElement("canvas"); c.width = Math.ceil(w * S); c.height = Math.ceil(h * S);
+  const ctx = c.getContext("2d"); ctx.setTransform(S, 0, 0, S, 0, 0);
+  return [c, ctx];
+}
+
+// -- Modo "rasca" -----------------------------------------------------------------------------
+//
+// El boleto apaisado: a la izquierda el logo, el título, el precio, la regla, los premios gordos y el
+// código de barras; a la derecha la rejilla de 3 × 3 casillas. Cada casilla es un papel impreso con su
+// importe y, encima, el látex plateado. El rascado se redibuja entero desde `p` en cada fotograma: el
+// látex de la casilla se pinta, y encima se borra el trazo en zigzag hasta la fracción `p` de su
+// camino. Lo fijo (tarjeta, panel, papeles y látex) se pinta una vez en `init`.
+
+MODES.rasca = (() => {
+  const GRID_X = 266, GRID_Y = 25, CELL = 110, GAP = 10;
+  const RIM = 5;                               // marco impreso que queda al rascar
+  const LATEX = CELL - 2 * RIM;                // lado del látex
+  const BRUSH = 30;                            // grosor del trazo de la moneda
+  const COIN_R = 17;
+  const PANEL_X = 20, PANEL_W = 230;
+  const GOLD = "#ffd23f";
+
+  const THEMES = {
+    x10: {
+      outer: "#12062b", edge: "#12062b", rim: "#ffcf3f",
+      card: [[0, "#2a0c5c"], [0.5, "#6a1aa6"], [1, "#c2208f"]],
+      frame: "#d3279f", paper: ["#fffaf3", "#f6e7ef"], ink: "#2a1146", soft: "#7a5a8a",
+      shade: "rgba(14,4,36,0.34)", chip: "#6a1aa6",
+    },
+    "7ymedia": {
+      outer: "#04180f", edge: "#04180f", rim: "#e6c25a",
+      card: [[0, "#06301f"], [0.5, "#0b6b43"], [1, "#12925a"]],
+      frame: "#06301f", paper: ["#fffaf0", "#eef0dc"], ink: "#0c3b28", soft: "#5d7a62",
+      shade: "rgba(2,26,14,0.36)", chip: "#0b6b43",
+    },
+  };
+
+  let T = THEMES.x10;
+  let M = null;
+  let key = "";
+  let BASE = null;
+  let TMP = null, tmp = null;
+  let latex = [];
+  let cells = [];
+
+  // -- Geometría de cada casilla --------------------------------------------------------------
+
+  // El camino de la moneda: un zigzag que recorre el látex entero. Siempre el mismo para la misma
+  // semilla y casilla; unas veces va por filas y otras por columnas, de arriba abajo o al revés.
+  function makePath(i) {
+    const r = rngOf(M.seed, "camino", i);
+    const edge = 13;
+    const vertical = r() < 0.35, flip = r() < 0.5, reverse = r() < 0.5;
+    const passes = 8 + Math.floor(r() * 3);
+    const pts = [];
+    for (let k = 0; k <= passes; k++) {
+      const t = k / passes;
+      const along = edge + (LATEX - 2 * edge) * (reverse ? 1 - t : t) + (r() - 0.5) * 5;
+      const high = (k % 2 === 0) !== flip;
+      const across = (high ? LATEX - edge : edge) + (r() - 0.5) * 8;
+      pts.push(vertical ? [along, across] : [across, along]);
+    }
+    const lens = [0];
+    for (let k = 1; k < pts.length; k++) lens.push(lens[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
+    return { pts, lens, total: lens[lens.length - 1] };
+  }
+
+  // Los puntos del camino hasta la fracción `frac` (el último, interpolado) y la dirección ahí.
+  function trace(path, frac) {
+    const target = clamp(frac, 0, 1) * path.total;
+    const pts = [path.pts[0]];
+    let dir = [1, 0];
+    for (let k = 1; k < path.pts.length; k++) {
+      const a = path.pts[k - 1], b = path.pts[k];
+      const seg = path.lens[k] - path.lens[k - 1];
+      dir = [(b[0] - a[0]) / seg, (b[1] - a[1]) / seg];
+      if (path.lens[k] <= target) { pts.push(b); continue; }
+      const f = (target - path.lens[k - 1]) / seg;
+      pts.push([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]);
+      break;
+    }
+    return { pts, dir };
+  }
+
+  // Virutas de látex que quedan junto al trazo: cada una aparece cuando la moneda pasa por su punto.
+  function makeFlakes(i) {
+    const r = rngOf(M.seed, "virutas", i);
+    const flakes = [];
+    const count = 18;
+    for (let k = 0; k < count; k++) {
+      flakes.push({
+        t: 0.03 + (k + r() * 0.9) / count * 0.95,
+        side: r() < 0.5 ? -1 : 1,
+        d: BRUSH * 0.5 * (0.5 + r() * 0.85),
+        w: 2.2 + r() * 3.4,
+        h: 1.1 + r() * 1.6,
+        a: r() * Math.PI,
+      });
+    }
+    return flakes;
+  }
+
+  function cellRect(i) {
+    return { x: GRID_X + (i % 3) * (CELL + GAP), y: GRID_Y + Math.floor(i / 3) * (CELL + GAP) };
+  }
+
+  // -- Piezas fijas ---------------------------------------------------------------------------
+
+  function drawBackdrop(b) {
+    b.fillStyle = T.outer; b.fillRect(0, 0, W, H);
+    roundRect(b, 6, 6, W - 12, H - 12, 24);
+    b.fillStyle = lin(b, 6, 6, W - 6, H - 6, T.card); b.fill();
+    b.save(); roundRect(b, 6, 6, W - 12, H - 12, 24); b.clip();
+    // Un reflejo diagonal suave y la sombra de las esquinas, como el brillo de un boleto impreso.
+    b.fillStyle = lin(b, 0, 0, W * 0.55, H, [[0, "rgba(255,255,255,0.13)"], [0.55, "rgba(255,255,255,0)"]]);
+    b.fillRect(0, 0, W, H);
+    b.fillStyle = rad(b, W / 2, H / 2, H * 0.35, W / 2, H / 2, W * 0.66, [[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0.3)"]]);
+    b.fillRect(0, 0, W, H);
+    const r = rngOf(M.seed, "fondo");
+    if (M.game === "7ymedia") {
+      // Tapete: rombos finísimos y pelusa del fieltro.
+      b.strokeStyle = "rgba(255,255,255,0.05)"; b.lineWidth = 1;
+      for (let k = -H; k < W + H; k += 26) {
+        b.beginPath(); b.moveTo(k, 0); b.lineTo(k + H, H); b.stroke();
+        b.beginPath(); b.moveTo(k, H); b.lineTo(k + H, 0); b.stroke();
+      }
+      for (let k = 0; k < 160; k++) {
+        b.fillStyle = r() < 0.5 ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.1)";
+        b.fillRect(Math.floor(r() * W), Math.floor(r() * H), 1, 1);
+      }
+    } else {
+      // Destellos por todo el boleto (los tapan el panel y las casillas).
+      for (let k = 0; k < 26; k++) {
+        const x = r() * W, y = r() * H, s = 2 + r() * 5;
+        b.fillStyle = r() < 0.5 ? "rgba(255,236,170,0.7)" : "rgba(255,255,255,0.5)";
+        star4(b, x, y, s, 0.2); b.fill();
+      }
+    }
+    b.restore();
+    // Borde grueso: filo oscuro y un hilo dorado por dentro.
+    roundRect(b, 6, 6, W - 12, H - 12, 24); b.lineWidth = 6; b.strokeStyle = T.edge; b.stroke();
+    roundRect(b, 10, 10, W - 20, H - 20, 20); b.lineWidth = 2; b.strokeStyle = T.rim; b.stroke();
+  }
+
+  // El oro de la baraja: moneda con aro y un sol de ocho rayos.
+  function oro(b, x, y, r) {
+    b.save();
+    b.beginPath(); b.arc(x, y, r, 0, Math.PI * 2);
+    b.fillStyle = lin(b, x - r, y - r, x + r, y + r, [[0, "#fff4a8"], [0.5, "#f2b81c"], [1, "#b87400"]]); b.fill();
+    b.lineWidth = Math.max(1, r * 0.1); b.strokeStyle = "#6b3f00"; b.stroke();
+    b.beginPath(); b.arc(x, y, r * 0.72, 0, Math.PI * 2);
+    b.lineWidth = Math.max(0.8, r * 0.07); b.strokeStyle = "rgba(107,63,0,0.8)"; b.stroke();
+    b.fillStyle = "rgba(107,63,0,0.78)";
+    for (let k = 0; k < 8; k++) {
+      const a = k * Math.PI / 4;
+      b.beginPath();
+      b.moveTo(x + Math.cos(a - 0.2) * r * 0.2, y + Math.sin(a - 0.2) * r * 0.2);
+      b.lineTo(x + Math.cos(a) * r * 0.6, y + Math.sin(a) * r * 0.6);
+      b.lineTo(x + Math.cos(a + 0.2) * r * 0.2, y + Math.sin(a + 0.2) * r * 0.2);
+      b.closePath(); b.fill();
+    }
+    b.beginPath(); b.arc(x, y, r * 0.17, 0, Math.PI * 2); b.fill();
+    b.restore();
+  }
+
+  // La copa de la baraja: cáliz rojo con pie y nudo dorados (centrada en x, y; alto ~ 84·s).
+  function copa(b, x, y, s) {
+    b.save(); b.translate(x, y); b.scale(s, s);
+    const gold = lin(b, -20, 0, 20, 0, [[0, "#b87400"], [0.45, "#ffe27a"], [1, "#b87400"]]);
+    b.lineJoin = "round"; b.lineWidth = 3; b.strokeStyle = "#4a1208";
+    // Pie y tallo.
+    b.beginPath(); b.ellipse(0, 38, 22, 6, 0, 0, Math.PI * 2); b.fillStyle = gold; b.fill(); b.stroke();
+    b.beginPath(); b.moveTo(-5, 12); b.lineTo(-3, 36); b.lineTo(3, 36); b.lineTo(5, 12); b.closePath(); b.fillStyle = gold; b.fill(); b.stroke();
+    b.beginPath(); b.ellipse(0, 22, 9, 5, 0, 0, Math.PI * 2); b.fillStyle = gold; b.fill(); b.stroke();
+    // Copa.
+    b.beginPath(); b.moveTo(-28, -30); b.lineTo(28, -30);
+    b.bezierCurveTo(30, -2, 14, 14, 0, 14); b.bezierCurveTo(-14, 14, -30, -2, -28, -30); b.closePath();
+    b.fillStyle = lin(b, -28, -30, 28, 14, [[0, "#ff6b5e"], [0.55, "#c0262d"], [1, "#7d1019"]]); b.fill(); b.stroke();
+    b.beginPath(); b.ellipse(0, -30, 28, 7, 0, 0, Math.PI * 2); b.fillStyle = "#ffdf86"; b.fill(); b.stroke();
+    b.beginPath(); b.ellipse(0, -30, 21, 4.4, 0, 0, Math.PI * 2); b.fillStyle = "#8c1620"; b.fill();
+    b.beginPath(); b.moveTo(-18, -18); b.quadraticCurveTo(-19, -4, -8, 6);
+    b.lineWidth = 3; b.strokeStyle = "rgba(255,255,255,0.45)"; b.stroke();
+    b.restore();
+  }
+
+  function naipe(b, x, y, w, h, angle, paint) {
+    b.save(); b.translate(x, y); b.rotate(angle);
+    roundRect(b, -w / 2 + 2, -h / 2 + 3, w, h, 6); b.fillStyle = "rgba(0,0,0,0.3)"; b.fill();
+    roundRect(b, -w / 2, -h / 2, w, h, 6);
+    b.fillStyle = lin(b, 0, -h / 2, 0, h / 2, [[0, "#fff7e0"], [1, "#efdcae"]]); b.fill();
+    b.lineWidth = 1.5; b.strokeStyle = "#8a6a2c"; b.stroke();
+    roundRect(b, -w / 2 + 4, -h / 2 + 4, w - 8, h - 8, 3); b.lineWidth = 1; b.strokeStyle = "rgba(138,106,44,0.55)"; b.stroke();
+    paint(b);
+    b.restore();
+  }
+
+  function drawLogo(b) {
+    const cx = PANEL_X + PANEL_W / 2, cy = 72;
+    b.save(); roundRect(b, PANEL_X, 18, PANEL_W, 106, 16); b.clip();
+    b.fillStyle = T.shade; b.fillRect(PANEL_X, 18, PANEL_W, 106);
+    if (M.game === "7ymedia") {
+      b.fillStyle = rad(b, cx, cy, 6, cx, cy, 130, [[0, "rgba(255,226,122,0.42)"], [1, "rgba(255,226,122,0)"]]);
+      b.fillRect(PANEL_X, 18, PANEL_W, 106);
+    } else {
+      // Rayos del sol que nacen detrás del logo y se apagan hacia fuera.
+      const rays = 22;
+      b.fillStyle = rad(b, cx, cy, 8, cx, cy, 150, [[0, "rgba(255,214,90,0.5)"], [1, "rgba(255,214,90,0)"]]);
+      for (let k = 0; k < rays; k += 2) {
+        const a0 = k / rays * Math.PI * 2, a1 = (k + 1) / rays * Math.PI * 2;
+        b.beginPath(); b.moveTo(cx, cy); b.lineTo(cx + Math.cos(a0) * 200, cy + Math.sin(a0) * 200);
+        b.lineTo(cx + Math.cos(a1) * 200, cy + Math.sin(a1) * 200); b.closePath(); b.fill();
+      }
+    }
+    b.restore();
+    roundRect(b, PANEL_X, 18, PANEL_W, 106, 16); b.lineWidth = 1.5; b.strokeStyle = "rgba(255,226,122,0.55)"; b.stroke();
+
+    if (M.game === "7ymedia") {
+      naipe(b, PANEL_X + 38, cy + 2, 50, 74, -0.2, (c) => oro(c, 0, 0, 17));
+      naipe(b, PANEL_X + PANEL_W - 38, cy + 2, 50, 74, 0.2, (c) => copa(c, 0, 4, 0.52));
+      logoText(b, "7½", cx, cy + 28, 96, 134);
+    } else {
+      logoText(b, "X10", cx, cy + 25, 92, 206);
+      const r = rngOf(M.seed, "logo");
+      for (let k = 0; k < 7; k++) {
+        const side = k % 2 ? 1 : -1;
+        const x = cx + side * (62 + r() * 44), y = 28 + r() * 90;
+        b.fillStyle = "rgba(255,246,200,0.9)"; star4(b, x, y, 3 + r() * 4, 0.22); b.fill();
+      }
+    }
+  }
+
+  // El logo grande: oro con contorno oscuro, borde claro y brillo.
+  function logoText(b, str, x, y, size, maxW) {
+    const s = fitSize(b, str, maxW, size, 24, LUCKY);
+    setFont(b, "", s, LUCKY); b.textAlign = "center"; b.textBaseline = "alphabetic";
+    b.lineJoin = "round"; b.miterLimit = 2;
+    b.fillStyle = "rgba(0,0,0,0.45)"; b.strokeStyle = "rgba(0,0,0,0.45)"; b.lineWidth = s * 0.13;
+    b.strokeText(str, x + 2, y + 5); b.fillText(str, x + 2, y + 5);
+    b.strokeStyle = M.game === "7ymedia" ? "#04241a" : "#1b0836"; b.lineWidth = s * 0.13; b.strokeText(str, x, y);
+    b.strokeStyle = "#fff4c6"; b.lineWidth = s * 0.065; b.strokeText(str, x, y);
+    b.fillStyle = lin(b, 0, y - s * 0.75, 0, y, [[0, "#fffbd0"], [0.46, "#ffe066"], [0.5, "#ffb800"], [1, "#e57c00"]]);
+    b.fillText(str, x, y);
+  }
+
+  function drawPanel(b) {
+    const cx = PANEL_X + PANEL_W / 2;
+    const title = clean(M.title);
+    sticker(b, title, cx, 148, fitSize(b, title, PANEL_W - 8, 22, 12, LUCKY), LUCKY, "#ffffff", M.game === "7ymedia" ? "#04241a" : "#1b0836", 5);
+
+    // Chapa con el precio: gold dentada.
+    const px = PANEL_X + 28, py = 184;
+    b.beginPath();
+    for (let k = 0; k < 40; k++) {
+      const a = k / 40 * Math.PI * 2, rr = k % 2 ? 25 : 28;
+      b.lineTo(px + Math.cos(a) * rr, py + Math.sin(a) * rr);
+    }
+    b.closePath();
+    b.fillStyle = "rgba(0,0,0,0.35)"; b.save(); b.translate(1.5, 2.5); b.fill(); b.restore();
+    b.fillStyle = lin(b, px - 28, py - 28, px + 28, py + 28, [[0, "#fff1a0"], [0.5, "#f3b61f"], [1, "#b97806"]]); b.fill();
+    b.lineWidth = 1.5; b.strokeStyle = "#6b3f00"; b.stroke();
+    b.beginPath(); b.arc(px, py, 21, 0, Math.PI * 2); b.lineWidth = 1.3; b.strokeStyle = "rgba(107,63,0,0.7)"; b.stroke();
+    const [pn, pc] = splitAmount(M.price);
+    fitText(b, pn, px, py + 4, 34, 19, 10, MONT, "#4a2a00", "center", "700");
+    if (pc) drawText(b, pc, px, py + 16, 10, MONT, "#4a2a00", "center", "700");
+    drawText(b, "PRECIO", px, py - 12, 7, MONT, "#6b3f00", "center", "700");
+
+    // La regla, en claro.
+    const rx = PANEL_X + 66;
+    sticker(b, "3 IGUALES", rx, 182, 25, LUCKY, GOLD, "#1b0836", 5, "left");
+    sticker(b, "= PREMIO", rx, 205, 25, LUCKY, "#ffffff", "#1b0836", 5, "left");
+
+    // Premios gordos, 2 × 2.
+    roundRect(b, PANEL_X, 222, PANEL_W, 86, 12);
+    b.fillStyle = T.shade; b.fill(); b.lineWidth = 1; b.strokeStyle = "rgba(255,226,122,0.45)"; b.stroke();
+    drawText(b, "PREMIOS GORDOS", cx, 240, 11, MONT, GOLD, "center", "700");
+    (M.top || []).slice(0, 4).forEach((amount, k) => {
+      const x = PANEL_X + 14 + (k % 2) * 112, y = 266 + Math.floor(k / 2) * 27;
+      b.fillStyle = GOLD; star4(b, x + 4, y - 5, 5.5, 0.22); b.fill();
+      fitText(b, clean(amount), x + 14, y, 92, 14, 9, MONT, "#ffffff", "left", "700");
+    });
+
+    // Código de barras y número de serie.
+    roundRect(b, PANEL_X, 318, PANEL_W, 62, 8); b.fillStyle = "#f7f1e2"; b.fill();
+    const r = rngOf(M.seed, "barras");
+    const widths = [1, 1, 1];
+    let total = 3;
+    for (let k = 0; k < 46; k++) { const w = 1 + Math.floor(r() * 3); widths.push(w); total += w; }
+    widths.push(1, 1, 1); total += 3;
+    const unit = (PANEL_W - 28) / total;
+    let x = PANEL_X + 14;
+    widths.forEach((w, k) => {
+      if (k % 2 === 0) { b.fillStyle = "#1c1822"; b.fillRect(x, 324, w * unit, 34); }
+      x += w * unit;
+    });
+    drawText(b, `Nº ${clean(M.serial)}`, cx, 373, 11, BODY, "#3a3340", "center");
+  }
+
+  function drawPaper(b, i) {
+    const { x, y } = cells[i];
+    roundRect(b, x, y, CELL, CELL, 11); b.fillStyle = T.frame; b.fill();
+    roundRect(b, x + 3, y + 3, CELL - 6, CELL - 6, 8);
+    b.fillStyle = lin(b, x, y, x + CELL, y + CELL, [[0, T.paper[0]], [1, T.paper[1]]]); b.fill();
+    // Una marca de agua tenue: aros concéntricos.
+    b.save(); roundRect(b, x + 3, y + 3, CELL - 6, CELL - 6, 8); b.clip();
+    b.strokeStyle = M.game === "7ymedia" ? "rgba(12,93,59,0.07)" : "rgba(211,39,159,0.07)"; b.lineWidth = 3;
+    for (let rr = 12; rr < 90; rr += 12) { b.beginPath(); b.arc(x + CELL / 2, y + CELL / 2, rr, 0, Math.PI * 2); b.stroke(); }
+    b.restore();
+    const [num, cur] = splitAmount(M.cells[i]);
+    const size = fitSize(b, num, CELL - 22, 38, 12, MONT, "700");
+    const mid = y + CELL / 2;
+    const dy = cur ? -6 : 0;
+    drawText(b, num, x + CELL / 2, mid + size * 0.36 + dy, size, MONT, T.ink, "center", "700");
+    if (cur) drawText(b, cur, x + CELL / 2, mid + size * 0.36 + dy + 17, 14, MONT, T.soft, "center", "700");
+  }
+
+  // El látex de una casilla entero, con su grano fijo y su sello en relieve.
+  function buildLatex(i) {
+    const [c, b] = layer(LATEX, LATEX);
+    const r = rngOf(M.seed, "latex", i);
+    roundRect(b, 0, 0, LATEX, LATEX, 7);
+    b.save(); b.clip();
+    const tilt = 0.8 + r() * 0.5;
+    b.fillStyle = lin(b, 0, 0, LATEX, LATEX * tilt, [[0, "#eef0f4"], [0.22, "#b4bac5"], [0.46, "#e3e6ec"], [0.72, "#a0a7b4"], [1, "#d8dce3"]]);
+    b.fillRect(0, 0, LATEX, LATEX);
+    // Grano: motas claras y oscuras en posiciones fijas (a medio píxel lógico, un píxel de salida).
+    for (let k = 0; k < 360; k++) {
+      const x = Math.floor(r() * LATEX * 2) / 2, y = Math.floor(r() * LATEX * 2) / 2;
+      const s = r() < 0.2 ? 1 : 0.5;
+      b.fillStyle = r() < 0.5 ? `rgba(255,255,255,${0.14 + r() * 0.22})` : `rgba(58,64,78,${0.1 + r() * 0.16})`;
+      b.fillRect(x, y, s, s);
+    }
+    // Microrrayas del plateado.
+    b.lineWidth = 0.5;
+    for (let k = 0; k < 16; k++) {
+      const x = r() * LATEX, y = r() * LATEX, len = 6 + r() * 14;
+      b.strokeStyle = r() < 0.5 ? "rgba(255,255,255,0.28)" : "rgba(60,66,80,0.16)";
+      b.beginPath(); b.moveTo(x, y); b.lineTo(x + len, y + len * 0.2); b.stroke();
+    }
+    stamp(b);
+    b.restore();
+    // Bisel: luz arriba a la izquierda y sombra abajo a la derecha.
+    b.lineWidth = 1.4;
+    roundRect(b, 0.7, 0.7, LATEX - 1.4, LATEX - 1.4, 6.5);
+    b.strokeStyle = lin(b, 0, 0, LATEX, LATEX, [[0, "rgba(255,255,255,0.85)"], [0.5, "rgba(255,255,255,0.1)"], [1, "rgba(40,46,60,0.5)"]]);
+    b.stroke();
+    return c;
+  }
+
+  // El dibujito estampado en el látex: un destello (X10) o un oro con el 7½ (7 y Media).
+  function stamp(b) {
+    const c = LATEX / 2;
+    const lit = "rgba(255,255,255,0.9)", dark = "rgba(52,58,72,0.55)", mid = "rgba(172,179,193,0.95)";
+    const shape = (dx, dy, fill) => {
+      b.fillStyle = fill; b.strokeStyle = fill;
+      if (M.game === "7ymedia") {
+        b.lineWidth = 2.2; b.beginPath(); b.arc(c + dx, c - 5 + dy, 22, 0, Math.PI * 2); b.stroke();
+        b.lineWidth = 1; b.beginPath(); b.arc(c + dx, c - 5 + dy, 17.5, 0, Math.PI * 2); b.stroke();
+        setFont(b, "", 24, LUCKY); b.textAlign = "center"; b.textBaseline = "alphabetic";
+        b.fillText("7½", c + dx, c + 3 + dy);
+      } else {
+        star4(b, c + dx, c - 6 + dy, 25, 0.2); b.fill();
+        for (const [sx, sy] of [[-32, -30], [32, -26], [-31, 20], [33, 22]]) { star4(b, c + sx + dx, c + sy + dy, 5.5, 0.22); b.fill(); }
+      }
+      setFont(b, "700", 9, MONT); b.textAlign = "center"; b.textBaseline = "alphabetic";
+      b.fillText("RASCA", c + dx, c + 33 + dy);
+    };
+    shape(1, 1, dark); shape(-0.7, -0.7, lit); shape(0, 0, mid);
+  }
+
+  async function init(meta) {
+    const next = JSON.stringify([meta.game, meta.title, meta.price, meta.top, meta.cells, meta.serial, meta.seed, meta.w, meta.h]);
+    M = meta;
+    T = THEMES[meta.game] || THEMES.x10;
+    if (next === key && BASE) return;
+    key = next;
+    cells = Array.from({ length: 9 }, (_, i) => ({ ...cellRect(i), path: makePath(i), flakes: makeFlakes(i) }));
+    const [base, b] = layer(W, H);
+    drawBackdrop(b);
+    drawLogo(b);
+    drawPanel(b);
+    for (let i = 0; i < 9; i++) drawPaper(b, i);
+    BASE = base;
+    latex = Array.from({ length: 9 }, (_, i) => buildLatex(i));
+    [TMP, tmp] = layer(LATEX, LATEX);
+  }
+
+  // -- Piezas que cambian ---------------------------------------------------------------------
+
+  function strokePts(c, pts, width) {
+    c.lineWidth = width; c.lineCap = "round"; c.lineJoin = "round";
+    c.beginPath(); c.moveTo(pts[0][0], pts[0][1]);
+    if (pts.length === 1) c.lineTo(pts[0][0] + 0.01, pts[0][1]);
+    for (let k = 1; k < pts.length; k++) c.lineTo(pts[k][0], pts[k][1]);
+    c.stroke();
+  }
+
+  // Una casilla: el látex entero, rascado hasta `p` o ya limpio.
+  function drawCell(i, p) {
+    const cell = cells[i];
+    const lx = cell.x + RIM, ly = cell.y + RIM;
+    if (p <= 0) { g.drawImage(latex[i], lx, ly, LATEX, LATEX); return; }
+    if (p >= 0.999) return;
+    const t = tmp;
+    t.save();
+    t.setTransform(1, 0, 0, 1, 0, 0); t.globalCompositeOperation = "source-over"; t.globalAlpha = 1;
+    t.clearRect(0, 0, TMP.width, TMP.height);
+    t.drawImage(latex[i], 0, 0);
+    t.setTransform(S, 0, 0, S, 0, 0);
+    const { pts } = trace(cell.path, p);
+    // El canto del látex junto al trazo: un filo claro y, fuera, su sombra.
+    t.globalCompositeOperation = "source-atop";
+    t.strokeStyle = "rgba(30,36,50,0.38)"; strokePts(t, pts, BRUSH + 7);
+    t.strokeStyle = "rgba(255,255,255,0.7)"; strokePts(t, pts, BRUSH + 3.5);
+    t.globalCompositeOperation = "destination-out";
+    t.strokeStyle = "#000"; strokePts(t, pts, BRUSH);
+    // Las virutas que va dejando la moneda, que se barren al acabar.
+    t.globalCompositeOperation = "source-over";
+    const fade = clamp((1 - p) / 0.1, 0, 1);
+    for (const f of cell.flakes) {
+      if (f.t > p) break;
+      const at = trace(cell.path, f.t);
+      const [x, y] = at.pts[at.pts.length - 1];
+      const fx = x - at.dir[1] * f.side * f.d, fy = y + at.dir[0] * f.side * f.d;
+      t.save(); t.translate(fx, fy); t.rotate(f.a); t.globalAlpha = fade;
+      t.fillStyle = "rgba(34,40,54,0.42)"; t.fillRect(-f.w / 2 + 0.8, -f.h / 2 + 0.9, f.w, f.h);
+      t.fillStyle = "#e8ebf1"; t.fillRect(-f.w / 2, -f.h / 2, f.w, f.h);
+      t.restore();
+    }
+    t.restore();
+    g.drawImage(TMP, lx, ly, LATEX, LATEX);
+  }
+
+  // Dónde está la punta del trazo de una casilla (donde la moneda toca), en el boleto.
+  function tipOf(i, p) {
+    const cell = cells[i];
+    const { pts } = trace(cell.path, p);
+    const tip = pts[pts.length - 1];
+    return { x: cell.x + RIM + tip[0], y: cell.y + RIM + tip[1] };
+  }
+
+  function drawGlow(i, a) {
+    const { x, y } = cells[i];
+    g.save();
+    for (const [w, al] of [[17, 0.1], [11, 0.17], [6, 0.28]]) {
+      roundRect(g, x, y, CELL, CELL, 11); g.lineWidth = w; g.strokeStyle = `rgba(255,214,74,${al * a})`; g.stroke();
+    }
+    roundRect(g, x, y, CELL, CELL, 11); g.lineWidth = 3.5; g.strokeStyle = `rgba(255,222,96,${0.35 + 0.65 * a})`; g.stroke();
+    roundRect(g, x + 1.5, y + 1.5, CELL - 3, CELL - 3, 9.5); g.lineWidth = 1.2; g.strokeStyle = `rgba(255,255,255,${0.5 * a})`; g.stroke();
+    g.restore();
+  }
+
+  // La moneda: dorada, con el aro, «Y$» grabado y algo de lado, sobre su sombra.
+  function drawCoin(x, y, angle) {
+    g.save(); g.translate(x, y);
+    g.beginPath(); g.ellipse(5, 8, COIN_R + 1, COIN_R - 2, angle, 0, Math.PI * 2); g.fillStyle = "rgba(0,0,0,0.17)"; g.fill();
+    g.beginPath(); g.ellipse(3.5, 5.5, COIN_R, COIN_R - 1, angle, 0, Math.PI * 2); g.fillStyle = "rgba(0,0,0,0.2)"; g.fill();
+    g.rotate(angle); g.scale(1, 0.94);
+    g.beginPath(); g.arc(0, 0, COIN_R, 0, Math.PI * 2);
+    g.fillStyle = lin(g, -COIN_R, -COIN_R, COIN_R, COIN_R, [[0, "#fff6b0"], [0.5, "#f3b61f"], [1, "#a96600"]]); g.fill();
+    g.lineWidth = 1.2; g.strokeStyle = "#6b3f00"; g.stroke();
+    g.beginPath(); g.arc(0, 0, COIN_R - 3, 0, Math.PI * 2);
+    g.fillStyle = lin(g, -COIN_R, -COIN_R, COIN_R, COIN_R, [[0, "#ffe680"], [1, "#e7a00f"]]); g.fill();
+    g.lineWidth = 1; g.strokeStyle = "rgba(107,63,0,0.7)"; g.stroke();
+    setFont(g, "700", 13, MONT); g.textAlign = "center"; g.textBaseline = "alphabetic";
+    g.fillStyle = "rgba(255,248,200,0.95)"; g.fillText("Y$", 0.7, 5.2);
+    g.fillStyle = "#8a5200"; g.fillText("Y$", 0, 4.5);
+    g.beginPath(); g.arc(0, 0, COIN_R - 1.5, Math.PI * 1.1, Math.PI * 1.55);
+    g.lineWidth = 2; g.strokeStyle = "rgba(255,255,255,0.65)"; g.stroke();
+    g.restore();
+  }
+
+  function sparkle(x, y, r, a) {
+    g.fillStyle = `rgba(255,255,255,${0.95 * a})`; star4(g, x, y, r, 0.2); g.fill();
+    g.fillStyle = `rgba(255,214,74,${0.5 * a})`; star4(g, x, y, r * 1.5, 0.15); g.fill();
+  }
+
+  // ¡PREMIO!: cinta dorada con el importe, que entra con rebote sobre la tabla de premios del panel
+  // (lo que el logo, el precio y la regla enseñan se queda a la vista).
+  const RIBBON_Y = 270;
+  function drawWin(b, a, glow) {
+    const k = 0.55 + 0.45 * easeOutBack(clamp(a, 0, 1));
+    const cx = PANEL_X + PANEL_W / 2, cy = RIBBON_Y;
+    const fade = clamp(a * 2, 0, 1);
+    g.save(); g.translate(cx, cy); g.rotate(-0.05); g.scale(k, k); g.globalAlpha = fade;
+    const hw = 112, hh = 50;
+    g.beginPath();
+    g.moveTo(-hw, -hh); g.lineTo(hw, -hh); g.lineTo(hw - 13, 0); g.lineTo(hw, hh); g.lineTo(-hw, hh); g.lineTo(-hw + 13, 0); g.closePath();
+    g.fillStyle = "rgba(0,0,0,0.38)"; g.save(); g.translate(2, 5); g.fill(); g.restore();
+    g.fillStyle = lin(g, 0, -hh, 0, hh, [[0, "#fff09a"], [0.45, "#ffc21f"], [1, "#e09a00"]]); g.fill();
+    g.lineJoin = "round"; g.lineWidth = 3.5; g.strokeStyle = "#4a2a00"; g.stroke();
+    g.beginPath();
+    g.moveTo(-hw + 9, -hh + 6); g.lineTo(hw - 9, -hh + 6); g.lineTo(hw - 20, 0); g.lineTo(hw - 9, hh - 6); g.lineTo(-hw + 9, hh - 6); g.lineTo(-hw + 20, 0); g.closePath();
+    g.lineWidth = 1.5; g.strokeStyle = "rgba(255,250,210,0.85)"; g.stroke();
+    const note = clean(b.note), amount = clean(b.amount);
+    // Con importe y nota: título, importe y nota; con menos, el resto se reparte.
+    const rows = note ? { title: -20, amount: 13, note: 34 } : { title: -8, amount: 24 };
+    fitText(g, clean(b.title), 0, amount ? rows.title : 12, 190, note ? 25 : 30, 14, LUCKY, "#5a2d00", "center");
+    if (amount) {
+      const size = fitSize(g, amount, 196, note ? 34 : 38, 16, LUCKY);
+      sticker(g, amount, 0, rows.amount, size, LUCKY, "#ffffff", "#5a2d00", 6);
+    }
+    if (note) fitText(g, note, 0, rows.note, 190, 11, 7, MONT, "#5a2d00", "center", "700");
+    g.restore();
+    // Destellos alrededor de la cinta, que laten con el brillo.
+    const r = rngOf(M.seed, "chispas");
+    for (let n = 0; n < 9; n++) {
+      const x = PANEL_X + 4 + r() * (PANEL_W - 8), y = 150 + r() * 172, size = 3 + r() * 5, phase = r() * Math.PI * 2;
+      sparkle(x, y, size * (0.35 + 0.65 * glow) * (0.8 + 0.2 * Math.sin(phase)), fade);
+    }
+  }
+
+  // SIN PREMIO: el sello gris en diagonal sobre la rejilla, que cae con un golpe. Es tinta de tampón,
+  // medio transparente: los importes de debajo se siguen viendo a través de las letras.
+  const STAMP = { x: GRID_X + (3 * CELL + 2 * GAP) / 2, y: GRID_Y + (3 * CELL + 2 * GAP) / 2 + 2, hw: 128, hh: 33, angle: -0.3 };
+  function drawLose(b, a) {
+    const k = 1 + (1 - clamp(a, 0, 1)) * 0.45;
+    const { hw, hh } = STAMP;
+    const ink = "rgba(66,70,84,0.7)";
+    g.save(); g.translate(STAMP.x, STAMP.y); g.rotate(STAMP.angle); g.scale(k, k); g.globalAlpha = clamp(a * 1.6, 0, 1);
+    roundRect(g, -hw, -hh, hw * 2, hh * 2, 12); g.fillStyle = "rgba(236,238,243,0.2)"; g.fill();
+    g.lineWidth = 6.5; g.strokeStyle = "rgba(244,245,248,0.8)"; g.stroke();
+    g.lineWidth = 4; g.strokeStyle = ink; g.stroke();
+    roundRect(g, -hw + 7, -hh + 7, hw * 2 - 14, hh * 2 - 14, 7); g.lineWidth = 1.2; g.strokeStyle = ink; g.stroke();
+    const title = clean(b.title);
+    const size = fitSize(g, title, hw * 2 - 36, 44, 18, LUCKY);
+    const y = size * 0.36 + (b.note ? -6 : 0);
+    sticker(g, title, 0, y, size, LUCKY, ink, "rgba(244,245,248,0.8)", 3.5);
+    if (b.note) fitText(g, clean(b.note), 0, 25, hw * 2 - 50, 12, 8, MONT, "rgba(40,44,56,0.85)", "center", "700");
+    g.restore();
+  }
+
+  // Los límites de lo que dibuja el cartel en este fotograma (para devolver solo eso).
+  function bannerRect(b, a) {
+    if (b.tone === "win") return [0, 130, GRID_X - 2, 345];
+    const k = 1 + (1 - clamp(a, 0, 1)) * 0.45;
+    const hw = STAMP.hw * k + 5, hh = STAMP.hh * k + 5, ang = Math.abs(STAMP.angle);
+    const w = hw * Math.cos(ang) + hh * Math.sin(ang), h = hw * Math.sin(ang) + hh * Math.cos(ang);
+    return [STAMP.x - w - 3, STAMP.y - h - 3, STAMP.x + w + 3, STAMP.y + h + 3];
+  }
+
+  function paint(st, index) {
+    if (!st || !Array.isArray(st.p) || st.p.length !== 9) throw new Error("Estado del rasca incompleto");
+    g.setTransform(S, 0, 0, S, 0, 0);
+    g.globalAlpha = 1; g.globalCompositeOperation = "source-over"; g.lineCap = "butt"; g.lineJoin = "miter"; g.setLineDash([]);
+    g.drawImage(BASE, 0, 0, W, H);
+    const regions = {};
+    for (let i = 0; i < 9; i++) {
+      const p = clamp(st.p[i], 0, 1);
+      drawCell(i, p);
+      const { x, y } = cells[i];
+      regions["c" + i] = { sig: p, rect: [x, y, x + CELL, y + CELL] };
+    }
+    const glowA = clamp(st.glowA || 0, 0, 1);
+    for (const i of st.glow || []) {
+      if (glowA <= 0) break;
+      drawGlow(i, glowA);
+      const { x, y } = cells[i];
+      regions["g" + i] = { sig: glowA, rect: [x - 12, y - 12, x + CELL + 12, y + CELL + 12] };
+    }
+    if (st.active >= 0 && st.active < 9) {
+      const tip = tipOf(st.active, clamp(st.p[st.active], 0, 1));
+      // La moneda va un poco por delante y por debajo de la punta del trazo.
+      const wob = Math.sin(index * 1.7) * 0.07;
+      const x = tip.x + 8, y = tip.y + 3;
+      drawCoin(x, y, -0.38 + wob);
+      regions.coin = { sig: `${st.active}:${st.p[st.active]}:${index}`, rect: [x - COIN_R - 5, y - COIN_R - 5, x + COIN_R + 12, y + COIN_R + 14] };
+    }
+    const banner = st.banner, bannerA = clamp(st.bannerA || 0, 0, 1);
+    if (banner && bannerA > 0) {
+      // Se recorta a su recuadro: lo que dibuja nunca se sale de lo que se devuelve.
+      const rect = bannerRect(banner, bannerA);
+      g.save(); g.beginPath(); g.rect(rect[0], rect[1], rect[2] - rect[0], rect[3] - rect[1]); g.clip();
+      if (banner.tone === "win") drawWin(banner, bannerA, glowA); else drawLose(banner, bannerA);
+      g.restore();
+      regions.banner = { sig: JSON.stringify([banner, bannerA, glowA]), rect };
+    }
+    return regions;
+  }
+
+  return { init, paint };
+})();
+
+// -- Entrada ----------------------------------------------------------------------------------
+
+// En Chromium cada recuadro va como data URL de PNG; el pintor de Node
+// (assets/escena_node.cjs) pone su exportFrame, que devuelve los píxeles tal cual.
+window.exportFrame ??= (canvas) => canvas.toDataURL("image/png");
+window.loadFonts = async () => {
+  await Promise.all([
+    document.fonts.load("30px Luckiest"), document.fonts.load("700 20px Montserrat"),
+    document.fonts.load("20px RobotoM"), document.fonts.load("20px RobotoR"),
+  ]);
+  await document.fonts.ready;
+  return true;
+};
+window.setup = async (meta) => {
+  const mode = MODES[meta && meta.mode];
+  if (!mode) throw new Error(`Modo de la lotería desconocido: ${meta && meta.mode}`);
+  sizeCanvases(meta.w, meta.h);
+  MODE = mode; PREV = null;
+  await mode.init(meta);
+  return true;
+};
+window.renderFrames = (states, first = 0) => states.map((st, i) => {
+  const regions = MODE.paint(st, first + i);
+  const rect = dirtyRect(regions, PREV);
+  PREV = regions;
+  return snapshot(rect);
+});
+</script>
+</body>
+</html>
