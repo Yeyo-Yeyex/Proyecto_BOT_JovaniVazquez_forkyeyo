@@ -2,11 +2,16 @@
 
 Tablas (en el mismo archivo SQLite que el resto del bot):
 
-- `sports_events`: cada partido que ha dado The Odds API, con sus cuotas en
-  centésimas (0 si un signo no se ofrece) y, al acabar, el marcador. Los partidos son
-  de todos los servidores: las cuotas no dependen de quién apueste.
-- `sports_feed`: por competición, cuándo se pidieron las cuotas y los resultados por
-  última vez y los créditos de la API que quedaban. Así un reinicio no gasta consultas.
+- `sports_events`: cada partido que ha dado The Odds API, con sus cuotas 1X2 en
+  centésimas (0 si un signo no se ofrece), el más/menos de las casas (`totals`, JSON
+  `{"2.5": 0.52}`), los goles esperados que salen de ajustarlo (`goals_home`,
+  `goals_away`; NULL sin mercados de goles) y, al acabar, el marcador. Las cuotas de los
+  mercados de goles no se guardan: salen de los goles esperados al leer
+  (`bot.services.sports.side_odds`). Los partidos son de todos los servidores: las
+  cuotas no dependen de quién apueste.
+- `sports_feed`: por competición, cuándo se pidieron las cuotas, el más/menos y los
+  resultados por última vez y los créditos de la API que quedaban. Así un reinicio no
+  gasta consultas.
 
 El dinero no está aquí: las apuestas viven en la economía (`economy_sports_bets`), que
 es la que manda. Las reglas, en `bot.services.sports`.
@@ -15,6 +20,7 @@ es la que manda. Las reglas, en `bot.services.sports`.
 from __future__ import annotations
 
 import asyncio
+import json
 import sqlite3
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -23,7 +29,7 @@ from pathlib import Path
 from typing import TypeVar
 
 from bot.repositories import sqlite
-from bot.services.sports import Match, Pick, Score
+from bot.services.sports import Goals, Match, Pick, Score, side_odds
 
 T = TypeVar("T")
 
@@ -36,11 +42,13 @@ class FeedState:
         odds_at: Cuándo se pidieron las cuotas (epoch), o `None`.
         scores_at: Cuándo se pidieron los resultados (epoch), o `None`.
         remaining: Créditos que quedaban en la última respuesta, o `None`.
+        totals_at: Cuándo se pidió el más/menos (epoch), o `None`.
     """
 
     odds_at: float | None = None
     scores_at: float | None = None
     remaining: int | None = None
+    totals_at: float | None = None
 
 
 class SportsRepository:
@@ -100,24 +108,50 @@ class SportsRepository:
                 );
                 """
             )
+            # 9.22.0: mercados de goles. Solo se añade: una versión anterior sigue leyendo.
+            for table, column, ddl in (
+                ("sports_events", "totals", "TEXT NOT NULL DEFAULT '{}'"),
+                ("sports_events", "goals_home", "REAL"),
+                ("sports_events", "goals_away", "REAL"),
+                ("sports_feed", "totals_at", "REAL"),
+            ):
+                have = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+                if column not in have:
+                    # Nombres de una tupla fija, nunca entrada del usuario.
+                    connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
     async def save_odds(
-        self, sport: str, matches: Sequence[Match], *, now: float, remaining: int | None
+        self,
+        sport: str,
+        matches: Sequence[Match],
+        *,
+        now: float,
+        remaining: int | None,
+        totals: bool = False,
     ) -> None:
         """Guarda las cuotas recién pedidas de una competición.
 
         Los partidos que aún no han empezado y ya no vienen (aplazados o retirados) se
         quedan sin cuotas: no se puede apostar a lo que la API ya no da.
+
+        Args:
+            totals: Si la consulta traía el más/menos (se apunta cuándo, `totals_at`).
         """
-        await self._run(self._save_odds_sync, sport, tuple(matches), now, remaining)
+        await self._run(self._save_odds_sync, sport, tuple(matches), now, remaining, totals)
 
     def _save_odds_sync(
-        self, sport: str, matches: tuple[Match, ...], now: float, remaining: int | None
+        self,
+        sport: str,
+        matches: tuple[Match, ...],
+        now: float,
+        remaining: int | None,
+        totals: bool,
     ) -> None:
         with self._connect() as connection:
             connection.execute(
                 """
-                UPDATE sports_events SET odds_home = 0, odds_draw = 0, odds_away = 0
+                UPDATE sports_events SET odds_home = 0, odds_draw = 0, odds_away = 0,
+                    goals_home = NULL, goals_away = NULL
                 WHERE sport = ? AND commence > ?
                 """,
                 (sport, now),
@@ -126,13 +160,15 @@ class SportsRepository:
                 """
                 INSERT INTO sports_events
                     (event_id, sport, home, away, commence,
-                     odds_home, odds_draw, odds_away, odds_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     odds_home, odds_draw, odds_away, odds_at,
+                     totals, goals_home, goals_away)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(event_id) DO UPDATE SET
                     home = excluded.home, away = excluded.away,
                     commence = excluded.commence, odds_home = excluded.odds_home,
                     odds_draw = excluded.odds_draw, odds_away = excluded.odds_away,
-                    odds_at = excluded.odds_at
+                    odds_at = excluded.odds_at, totals = excluded.totals,
+                    goals_home = excluded.goals_home, goals_away = excluded.goals_away
                 """,
                 [
                     (
@@ -145,11 +181,16 @@ class SportsRepository:
                         m.odds.get(Pick.DRAW, 0),
                         m.odds.get(Pick.AWAY, 0),
                         now,
+                        json.dumps({str(line): p for line, p in m.totals.items()}),
+                        m.goals.home if m.goals else None,
+                        m.goals.away if m.goals else None,
                     )
                     for m in matches
                 ],
             )
             self._feed_in(connection, sport, "odds_at", now, remaining)
+            if totals:
+                self._feed_in(connection, sport, "totals_at", now, remaining)
 
     async def save_scores(
         self, sport: str, scores: Mapping[str, Score], *, now: float, remaining: int | None
@@ -175,7 +216,7 @@ class SportsRepository:
         now: float,
         remaining: int | None,
     ) -> None:
-        # `column` es `odds_at` o `scores_at`, nunca entrada del usuario.
+        # `column` es `odds_at`, `scores_at` o `totals_at`, nunca entrada del usuario.
         connection.execute(
             f"""
             INSERT INTO sports_feed (sport, {column}, remaining) VALUES (?, ?, ?)
@@ -207,12 +248,12 @@ class SportsRepository:
     def _feed_sync(self, sport: str) -> FeedState:
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT odds_at, scores_at, remaining FROM sports_feed WHERE sport = ?",
+                "SELECT odds_at, scores_at, remaining, totals_at FROM sports_feed WHERE sport = ?",
                 (sport,),
             ).fetchone()
         if row is None:
             return FeedState()
-        return FeedState(row["odds_at"], row["scores_at"], row["remaining"])
+        return FeedState(row["odds_at"], row["scores_at"], row["remaining"], row["totals_at"])
 
     async def upcoming(self, sport: str, *, now: float) -> list[Match]:
         """Los partidos de una competición que aún no han empezado y tienen cuotas."""
@@ -259,6 +300,13 @@ class SportsRepository:
 
 
 def _match(row: sqlite3.Row) -> Match:
+    try:
+        totals = {float(line): float(p) for line, p in json.loads(row["totals"]).items()}
+    except (TypeError, ValueError, AttributeError):
+        totals = {}
+    goals = None
+    if row["goals_home"] is not None and row["goals_away"] is not None:
+        goals = Goals(float(row["goals_home"]), float(row["goals_away"]))
     return Match(
         event_id=row["event_id"],
         sport=row["sport"],
@@ -270,4 +318,7 @@ def _match(row: sqlite3.Row) -> Match:
             Pick.DRAW: row["odds_draw"],
             Pick.AWAY: row["odds_away"],
         },
+        totals=totals,
+        goals=goals,
+        side=side_odds(goals, totals) if goals else {},
     )

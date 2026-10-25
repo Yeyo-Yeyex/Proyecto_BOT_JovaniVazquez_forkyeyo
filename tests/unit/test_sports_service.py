@@ -7,6 +7,7 @@ generados con una semilla, y el cliente con una sesión falsa, sin red.
 
 from __future__ import annotations
 
+import math
 import random
 from collections.abc import Mapping
 from typing import Any
@@ -19,26 +20,39 @@ from bot.services.sports import (
     MAX_ODDS,
     MIN_BOOKMAKERS,
     MIN_ODDS,
+    MIN_TOTAL_BOOKS,
     ODDS_EVERY,
     PRE_MATCH_EVERY,
     PRE_MATCH_WINDOW,
     QUOTA_RESERVE,
     RESULT_DELAY,
+    RHO,
     RTP,
     SCORES_EVERY,
+    TOTALS_EVERY,
+    TOTALS_PRE_MATCH_EVERY,
     FeedError,
+    Goals,
+    Market,
     OddsClient,
     Pick,
     Score,
     days_from,
     fair_probabilities,
+    fit_goals,
     house_odds,
+    market_of,
     odds_due,
     parse_odds,
     parse_scores,
     payout,
+    pick_text,
     quota_allows_odds,
+    score_grid,
     scores_due,
+    side_odds,
+    totals_due,
+    wins,
 )
 
 NOW = 1_800_000_000.0
@@ -680,3 +694,208 @@ async def test_una_respuesta_que_no_es_una_lista_da_feed_error(payload: Any) -> 
 
     with pytest.raises(FeedError, match="lista"):
         await client.odds("s", now=NOW)
+
+
+# -- Mercados de goles ------------------------------------------------------------------
+
+
+def totals_market(*lines: tuple[float, float, float]) -> dict[str, Any]:
+    """Un mercado `totals` de The Odds API: (línea, cuota del más, cuota del menos)."""
+    outcomes = []
+    for line, over, under in lines:
+        outcomes += [
+            {"name": "Over", "price": over, "point": line},
+            {"name": "Under", "price": under, "point": line},
+        ]
+    return {"key": "totals", "outcomes": outcomes}
+
+
+def with_totals(*lines: tuple[float, float, float]) -> dict[str, Any]:
+    """Una casa con el 1X2 y el más/menos."""
+    casa = bookmaker(2.1, 3.4, 3.5)
+    casa["markets"].append(totals_market(*lines))
+    return casa
+
+
+def model_chance(goals: Goals, pick: str) -> float:
+    """Probabilidad de una opción según el modelo, sumando la rejilla con `wins`."""
+    return sum(
+        cell
+        for h, row in enumerate(score_grid(goals))
+        for a, cell in enumerate(row)
+        if wins(pick, Score(h, a))
+    )
+
+
+def test_cada_opcion_es_de_un_solo_mercado_y_se_escribe_en_claro() -> None:
+    seen = [pick for market in Market for pick in market.picks]
+    assert len(seen) == len(set(seen))
+    assert all(market_of(pick) is market for market in Market for pick in market.picks)
+    assert market_of("9-9") is None
+    assert pick_text("1", HOME, AWAY) == f"1 ({HOME})"
+    assert pick_text("+2.5", HOME, AWAY) == "Más de 2,5 goles"
+    assert pick_text("-1.5", HOME, AWAY) == "Menos de 1,5 goles"
+    assert pick_text("si", HOME, AWAY) == "Marcan los dos"
+    assert pick_text("2-1", HOME, AWAY) == "Exacto 2-1"
+    assert pick_text("otro", HOME, AWAY) == "Otro resultado exacto"
+
+
+@pytest.mark.parametrize(
+    ("pick", "home", "away", "won"),
+    [
+        ("1", 2, 1, True),
+        ("X", 2, 1, False),
+        ("+2.5", 2, 1, True),
+        ("+2.5", 1, 1, False),
+        ("-2.5", 1, 1, True),
+        ("-1.5", 1, 0, True),
+        ("-1.5", 1, 1, False),
+        ("si", 1, 1, True),
+        ("si", 3, 0, False),
+        ("no", 0, 0, True),
+        ("no", 2, 2, False),
+        ("2-1", 2, 1, True),
+        ("2-1", 1, 2, False),
+        ("otro", 4, 0, True),
+        ("otro", 3, 3, False),
+        ("3-3", 3, 3, True),
+    ],
+)
+def test_cada_opcion_gana_o_pierde_con_el_marcador_final(
+    pick: str, home: int, away: int, won: bool
+) -> None:
+    assert wins(pick, Score(home, away)) is won
+
+
+def test_el_exacto_y_otro_resultado_cubren_todos_los_marcadores_una_vez() -> None:
+    for home in range(8):
+        for away in range(8):
+            hits = [pick for pick in Market.EXACT.picks if wins(pick, Score(home, away))]
+            assert len(hits) == 1, (home, away, hits)
+
+
+def test_la_rejilla_suma_uno_y_rho_da_mas_0_0_que_una_poisson() -> None:
+    grid = score_grid(Goals(1.4, 1.1))
+    assert sum(map(sum, grid)) == pytest.approx(1)
+    assert RHO < 0
+    assert grid[0][0] > math.exp(-1.4) * math.exp(-1.1)
+
+
+def test_el_ajuste_recupera_los_goles_de_un_partido_inventado() -> None:
+    truth = Goals(1.7, 0.9)
+    fair = {pick: model_chance(truth, pick.value) for pick in Pick}
+    totals = {line: model_chance(truth, f"+{line}") for line in (2.5, 3.5)}
+
+    goals = fit_goals(fair, totals)
+
+    assert goals is not None
+    assert goals.home == pytest.approx(truth.home, abs=1e-3)
+    assert goals.away == pytest.approx(truth.away, abs=1e-3)
+
+
+def test_sin_mas_menos_o_sin_1x2_no_hay_ajuste() -> None:
+    fair = {Pick.HOME: 0.45, Pick.DRAW: 0.27, Pick.AWAY: 0.28}
+    assert fit_goals(fair, {}) is None
+    assert fit_goals({}, {2.5: 0.5}) is None
+
+
+def test_un_mas_menos_que_contradice_al_1x2_no_se_cree() -> None:
+    # Casi seguro empate y casi seguro más de 4,5 goles: ningún par de medias da las dos.
+    fair = {Pick.HOME: 0.02, Pick.DRAW: 0.96, Pick.AWAY: 0.02}
+    assert fit_goals(fair, {4.5: 0.95}) is None
+
+
+@pytest.mark.parametrize("seed", range(5))
+def test_la_casa_nunca_regala_en_los_mercados_de_goles(seed: int) -> None:
+    rng = random.Random(seed)
+    for _ in range(40):
+        goals = Goals(rng.uniform(0.3, 3.2), rng.uniform(0.3, 3.2))
+        odds = side_odds(goals)
+        assert set(odds) == {p for m in Market if m is not Market.RESULT for p in m.picks}
+        for pick, cents in odds.items():
+            market = market_of(pick)
+            assert market is not None
+            assert cents == 0 or MIN_ODDS <= cents <= MAX_ODDS
+            assert model_chance(goals, pick) * cents / 100 <= market.rtp + 1e-9
+
+
+def test_las_lineas_que_dan_las_casas_se_cotizan_con_su_probabilidad() -> None:
+    odds = side_odds(Goals(1.4, 1.1), {2.5: 0.6, 4.5: 0.2})
+
+    assert (odds["+2.5"], odds["-2.5"]) == (156, 235)  # 94 / 0,6 y 94 / 0,4, a la baja
+    assert odds["+3.5"] == side_odds(Goals(1.4, 1.1))["+3.5"]  # la que no dan, del modelo
+    assert "+4.5" not in odds  # una línea que el bot no ofrece no se cuela
+
+
+def test_el_exacto_deja_mas_margen_que_el_resto() -> None:
+    assert Market.EXACT.rtp < RTP
+    assert {m.rtp for m in Market if m is not Market.EXACT} == {RTP}
+
+
+def test_parse_odds_lee_el_mas_menos_y_abre_los_mercados_de_goles() -> None:
+    casas = [with_totals((2.5, 1.9, 1.9), (3.0, 2.4, 1.6)) for _ in range(MIN_BOOKMAKERS)]
+
+    (match,) = parse_odds([event(bookmakers=casas)], now=NOW)
+
+    # La línea entera (3,0) puede quedar en empate de apuestas: no se usa.
+    assert dict(match.totals) == {2.5: pytest.approx(0.5)}
+    assert match.goals is not None
+    assert match.markets() == list(Market)
+    assert match.price("+2.5") > 0
+    assert match.price("1") == match.odds[Pick.HOME]
+
+
+def test_el_mas_menos_de_una_sola_casa_no_cuenta() -> None:
+    casas = [bookmaker(2.1, 3.4, 3.5) for _ in range(MIN_BOOKMAKERS)]
+    casas[0]["markets"].append(totals_market((2.5, 1.9, 1.9)))
+    assert MIN_TOTAL_BOOKS > 1
+
+    (match,) = parse_odds([event(bookmakers=casas)], now=NOW)
+
+    assert not match.totals
+    assert match.goals is None
+    assert match.markets() == [Market.RESULT]
+    assert match.price("+2.5") == 0
+
+
+def test_sin_mas_menos_en_la_consulta_se_usa_el_que_ya_se_sabia() -> None:
+    (match,) = parse_odds([event()], now=NOW, known_totals={"ev1": {2.5: 0.55}})
+
+    assert dict(match.totals) == {2.5: 0.55}
+    assert match.goals is not None
+
+
+def test_el_mas_menos_mal_formado_se_salta() -> None:
+    casas = [with_totals((2.5, 1.9, 1.9)) for _ in range(MIN_BOOKMAKERS)]
+    casas[0]["markets"][-1]["outcomes"][0]["price"] = "mucho"
+    casas[1]["markets"][-1]["outcomes"][1].pop("point")
+
+    (match,) = parse_odds([event(bookmakers=casas)], now=NOW)
+
+    # Solo queda una casa con la línea entera: no llega a `MIN_TOTAL_BOOKS`.
+    assert MIN_BOOKMAKERS - 2 < MIN_TOTAL_BOOKS
+    assert not match.totals
+
+
+def test_el_mas_menos_se_pide_una_vez_al_dia_y_antes_de_un_comienzo() -> None:
+    soon = NOW + PRE_MATCH_WINDOW - 60
+    assert totals_due(now=NOW, fetched_at=None, next_kickoff=None, remaining=None)
+    assert totals_due(now=NOW, fetched_at=NOW - TOTALS_EVERY, next_kickoff=None, remaining=400)
+    assert not totals_due(now=NOW, fetched_at=NOW - 3_600, next_kickoff=None, remaining=400)
+    early = NOW - TOTALS_PRE_MATCH_EVERY
+    assert totals_due(now=NOW, fetched_at=early, next_kickoff=soon, remaining=400)
+    late = NOW - TOTALS_PRE_MATCH_EVERY + 60
+    assert not totals_due(now=NOW, fetched_at=late, next_kickoff=soon, remaining=400)
+
+
+def test_con_la_reserva_tocada_no_se_pide_el_mas_menos() -> None:
+    assert not totals_due(now=NOW, fetched_at=None, next_kickoff=None, remaining=QUOTA_RESERVE)
+
+
+async def test_el_cliente_pide_el_mas_menos_solo_si_se_le_dice() -> None:
+    client, session = client_with(FakeReply(payload=[]))
+
+    await client.odds("soccer_spain_la_liga", now=NOW, totals=True)
+    await client.odds("soccer_spain_la_liga", now=NOW)
+
+    assert [params["markets"] for _url, params in session.calls] == ["h2h,totals", "h2h"]

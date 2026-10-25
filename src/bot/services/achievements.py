@@ -196,6 +196,7 @@ from bot.services.slots import pot_share as slots_pot_share
 from bot.services.sports import MAX_STAKE as SPORTS_MAX_STAKE
 from bot.services.sports import MIN_STAKE as SPORTS_MIN_STAKE
 from bot.services.sports import SPORTS
+from bot.services.sports import Market as SportsMarket
 from bot.services.sports import Pick as SportsPick
 from bot.services.timba import Act as TimbaAct
 from bot.services.timba import TimbaHand
@@ -637,11 +638,14 @@ PORRA_PROP_PREFIX = "porra_prop_"
 PORRA_GAMES = tuple(porra_allowed_games())
 PORRA_PROPS = tuple(prop.key for prop in PORRA_PROPOSITIONS)
 
-#: Prefijos de las apuestas deportivas por competición y por signo (`sports_pick_x`).
+#: Prefijos de las apuestas deportivas por competición, por signo del 1X2
+#: (`sports_pick_x`) y por mercado (`sports_market_goles`).
 SPORTS_LEAGUE_PREFIX = "sports_league_"
 SPORTS_PICK_PREFIX = "sports_pick_"
+SPORTS_MARKET_PREFIX = "sports_market_"
 SPORTS_LEAGUES = tuple(sport.key for sport in SPORTS)
 SPORTS_PICKS = tuple(pick.value.lower() for pick in SportsPick)
+SPORTS_MARKETS = tuple(market.value for market in SportsMarket)
 #: Cuotas (en centésimas) a partir de las que una apuesta es a la sorpresa, y hasta
 #: las que es a lo seguro.
 SPORTS_LONG_ODDS = 500
@@ -15054,10 +15058,11 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Pita a alguien con el silbato de árbitro.", C, True),
     ])  # fmt: skip
 
-    # ⚽ Deportes (`deportes`: apuestas a cuota fija al 1X2 de LaLiga y la Champions) ---------
+    # ⚽ Deportes (`deportes`: cuota fija al 1X2 y a los goles de LaLiga y la Champions) -------
     # Cadencia: unos 10 partidos de LaLiga a la semana (más la Champions en su fase de liga)
-    # y una apuesta por partido y persona; quien apuesta a menudo hace unas 7 a la semana. Así,
-    # 100 apuestas son unos 3 meses (Épico) y 250, unos 8 (Legendario). Lo que se fuerza a
+    # y una apuesta por mercado (1X2, goles, ambos marcan y exacto); quien apuesta a menudo
+    # juega unos 7 partidos a la semana y dos mercados en cada uno, unas 14 apuestas. Así,
+    # 100 apuestas son unos 2 meses (Épico) y 250, unos 4-5 (Legendario). Lo que se fuerza a
     # propósito (el mínimo, el 69, a última hora) es Común o Raro. Las cuotas acertadas salen
     # de la probabilidad real (×10 es ~9 %) y las cifras en Y$, de una apuesta normal de
     # 1.000-5.000 Y$: la rareza fija el premio, e inflarla infla la economía.
@@ -15255,6 +15260,81 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("deportes", "sports_slips", [
         (1, "sports_slips_1", "Revisión del VAR", "Mira tus apuestas con 🎟️ Mis apuestas.", C),
+    ])  # fmt: skip
+    # Mercados de goles (9.22.0). Apostar a uno es una decisión: Común o Raro. Los aciertos
+    # salen de la probabilidad real de cada opción: un exacto acierta un 6-12 % de las veces
+    # (el 1-1 es el más probable), así que quien juega 3 a la semana clava uno en unas tres
+    # semanas, cinco en unos cuatro meses y diez en más de ocho. Más de 3,5 goles sale en
+    # ~30 % de los partidos y menos de 1,5, en ~25 %.
+    a += _tiers("deportes", f"{SPORTS_MARKET_PREFIX}goles", [
+        (1, "sports_goles_1", "Ni un gol más, ni un gol menos",
+         "Haz tu primera apuesta a más/menos goles.", C),
+        (25, "sports_goles_25", "Contable de la portería",
+         "Haz 25 apuestas a más/menos goles.", R),
+    ])  # fmt: skip
+    a += _tiers("deportes", f"{SPORTS_MARKET_PREFIX}ambos", [
+        (1, "sports_ambos_1", "Uno para ti, otro para mí",
+         "Haz tu primera apuesta a «ambos marcan».", C),
+        (25, "sports_ambos_25", "Diplomacia del área", "Haz 25 apuestas a «ambos marcan».", R),
+    ])  # fmt: skip
+    a += _tiers("deportes", f"{SPORTS_MARKET_PREFIX}exacto", [
+        (1, "sports_exacto_1", "Pitoniso de la quiniela",
+         "Haz tu primera apuesta a un resultado exacto.", C),
+        (25, "sports_exacto_25", "Heredero del pulpo Paul",
+         "Haz 25 apuestas a resultados exactos.", R),
+    ])  # fmt: skip
+    a.append(
+        Achievement(
+            id="sports_all_markets",
+            name="Carta completa",
+            description="Apuesta en los cuatro mercados: resultado, goles, ambos marcan y exacto.",
+            category="deportes",
+            rarity=R,
+            conditions=tuple((f"{SPORTS_MARKET_PREFIX}{m}", 1) for m in SPORTS_MARKETS),
+        )
+    )
+    a += _tiers("deportes", "sports_match_markets_max", [
+        (4, "sports_same_match_4", "Todos los huevos en el mismo área",
+         "Apuesta a los cuatro mercados de un mismo partido.", R),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_win_exacto", [
+        (1, "sports_win_exacto_1", "Lo vi venir", "Acierta un resultado exacto.", R),
+        (5, "sports_win_exacto_5", "Nostradamus del larguero",
+         "Acierta 5 resultados exactos.", E),
+        (10, "sports_win_exacto_10", "El pulpo Paul se jubila",
+         "Acierta 10 resultados exactos.", L),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_win_otro", [
+        (1, "sports_win_otro", "Se rompió el marcador",
+         "Acierta «otro resultado exacto»: algún equipo mete 4 goles o más.", R),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_win_over35", [
+        (1, "sports_win_over35", "Lluvia de goles", "Acierta un «más de 3,5 goles».", C),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_win_under15", [
+        (1, "sports_win_under15", "Partida de ajedrez", "Acierta un «menos de 1,5 goles».", C),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_win_goles", [
+        (10, "sports_win_goles_10", "Matemático del área",
+         "Acierta 10 apuestas a más/menos goles.", R),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_win_ambos", [
+        (10, "sports_win_ambos_10", "Repartidor de goles",
+         "Acierta 10 apuestas a «ambos marcan».", R),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_lost_on_line", [
+        (1, "sports_lost_on_line_1", "Se quedó en el palo",
+         "Falla un más/menos goles por un solo gol.", C),
+        (10, "sports_lost_on_line_10", "Coleccionista de postes",
+         "Falla 10 apuestas a más/menos goles por un solo gol.", R),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_exact_near", [
+        (1, "sports_exact_near", "A un gol de la gloria",
+         "Falla un resultado exacto por un solo gol.", C),
+    ])  # fmt: skip
+    a += _tiers("deportes", "sports_lost_ambos_rout", [
+        (1, "sports_lost_ambos_rout", "Uno se quedó en el autobús",
+         "Falla «marcan los dos» en un partido con 4 goles o más.", R, True),
     ])  # fmt: skip
 
     # 🏰 patrimonio (`perfil`), 💎 `fortunas` y 🧾 la factura de `hacienda` ------------------------
@@ -23099,24 +23179,31 @@ def sports_bet_stats(
     balance_before: int,
     lead: float,
     when: datetime,
+    market: str = SportsMarket.RESULT,
+    match_markets: int = 1,
 ) -> StatDelta:
     """Lo que cuenta una apuesta deportiva (`deportes`) al hacerla.
 
     Args:
         stake: Lo apostado.
         odds: Cuota en centésimas.
-        pick: Signo: `1`, `X` o `2`.
+        pick: Opción (`bot.services.sports.MARKET_PICKS`): `1`, `X`, `2`, `+2.5`…
         sport: Competición (`bot.services.sports.SPORTS`).
         balance_before: Saldo antes de apostar.
         lead: Segundos que faltaban para el comienzo del partido.
         when: Hora canaria de la apuesta.
+        market: Mercado de `pick` (`bot.services.sports.Market`).
+        match_markets: Mercados distintos del mismo partido con apuesta suya, contando
+            esta.
     """
     add = {
         "sports_bets": 1,
         "sports_staked": stake,
         f"{SPORTS_LEAGUE_PREFIX}{sport}": 1,
-        f"{SPORTS_PICK_PREFIX}{pick.lower()}": 1,
+        f"{SPORTS_MARKET_PREFIX}{market}": 1,
     }
+    if market == SportsMarket.RESULT:
+        add[f"{SPORTS_PICK_PREFIX}{pick.lower()}"] = 1
 
     def bump(stat: str, condition: bool) -> None:
         if condition:
@@ -23135,27 +23222,39 @@ def sports_bet_stats(
     bump("sports_nochevieja", (when.month, when.day) == (12, 31))
     bump("sports_canarias", (when.month, when.day) == (5, 30))
     bump("sports_friday13", when.weekday() == 4 and when.day == 13)
-    return StatDelta(add=add, peak={"sports_stake_max": stake, "sports_odds_max": odds})
+    peak = {
+        "sports_stake_max": stake,
+        "sports_odds_max": odds,
+        "sports_match_markets_max": match_markets,
+    }
+    return StatDelta(add=add, peak=peak)
 
 
 def sports_result_stats(
-    *, stake: int, odds: int, pick: str, payout: int, home: int, away: int, streak: int
+    *,
+    stake: int,
+    odds: int,
+    pick: str,
+    payout: int,
+    home: int,
+    away: int,
+    streak: int,
+    market: str = SportsMarket.RESULT,
 ) -> StatDelta:
     """Lo que cuenta una apuesta deportiva resuelta (sin lo común del casino).
 
     Args:
         stake: Lo apostado.
         odds: Cuota en centésimas.
-        pick: Signo apostado: `1`, `X` o `2`.
+        pick: Opción apostada (`bot.services.sports.MARKET_PICKS`).
         payout: Lo cobrado, apuesta incluida (0 si falló).
         home: Goles del equipo de casa.
         away: Goles del de fuera.
         streak: Apuestas acertadas seguidas, contando esta (0 si ha fallado).
+        market: Mercado de `pick` (`bot.services.sports.Market`).
     """
     add = {"sports_settled": 1}
     peak = {}
-    draw = pick.upper() == SportsPick.DRAW
-    diff = home - away if pick == SportsPick.HOME else away - home
 
     def bump(stat: str, condition: bool) -> None:
         if condition:
@@ -23168,18 +23267,52 @@ def sports_result_stats(
             "sports_odds_won_max": odds,
             "sports_win_streak_max": streak,
         }
+    else:
+        add["sports_losses"] = 1
+        bump("sports_lost_safe", odds <= SPORTS_SAFE_ODDS)
+    if market != SportsMarket.RESULT:
+        _sports_side_stats(add, pick, market, won=payout > 0, home=home, away=away)
+        return StatDelta(add=add, peak=peak)
+    draw = pick.upper() == SportsPick.DRAW
+    diff = home - away if pick == SportsPick.HOME else away - home
+    if payout:
         bump("sports_win_draw", draw)
         bump("sports_win_00", draw and home == away == 0)
         bump("sports_win_rout", not draw and diff >= SPORTS_ROUT)
         bump("sports_win_by_one", not draw and diff == 1)
     else:
-        add["sports_losses"] = 1
-        bump("sports_lost_safe", odds <= SPORTS_SAFE_ODDS)
         bump("sports_lost_tied", not draw and home == away)
         bump("sports_lost_rout", not draw and diff <= -SPORTS_ROUT)
         bump("sports_lost_by_one", not draw and diff == -1)
         bump("sports_lost_goals", draw and home + away >= 6)
     return StatDelta(add=add, peak=peak)
+
+
+def _sports_side_stats(
+    add: dict[str, int], pick: str, market: str, *, won: bool, home: int, away: int
+) -> None:
+    """Lo propio de los mercados de goles de una apuesta resuelta (en `add`)."""
+    total = home + away
+
+    def bump(stat: str, condition: bool) -> None:
+        if condition:
+            add[stat] = 1
+
+    if market == SportsMarket.GOALS:
+        line = float(pick[1:])
+        bump("sports_win_goles", won)
+        bump("sports_win_over35", won and pick == "+3.5")
+        bump("sports_win_under15", won and pick == "-1.5")
+        bump("sports_lost_on_line", not won and abs(total - line) == 0.5)
+    elif market == SportsMarket.BOTH:
+        bump("sports_win_ambos", won)
+        bump("sports_lost_ambos_rout", not won and pick == "si" and total >= 4)
+    elif market == SportsMarket.EXACT:
+        bump("sports_win_exacto", won)
+        bump("sports_win_otro", won and pick == "otro")
+        if not won and pick != "otro":
+            want_home, want_away = (int(goals) for goals in pick.split("-"))
+            bump("sports_exact_near", abs(want_home - home) + abs(want_away - away) == 1)
 
 
 def sports_void_stats() -> StatDelta:

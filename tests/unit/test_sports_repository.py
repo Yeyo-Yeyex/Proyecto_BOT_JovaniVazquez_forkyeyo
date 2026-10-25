@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
 
 from bot.repositories.sports import FeedState, SportsRepository
-from bot.services.sports import Match, Pick, Score
+from bot.services.sports import Match, Pick, Score, priced
 
 NOW = 1_800_000_000.0
 LIGA = "soccer_spain_la_liga"
@@ -310,3 +311,73 @@ async def test_initialize_dos_veces_no_borra_nada(tmp_path: Path) -> None:
 
     assert [m.event_id for m in await repo.upcoming(LIGA, now=NOW)] == ["a"]
     assert (await repo.feed(LIGA)).remaining == 5
+
+
+# -- Más/menos y goles esperados (9.22.0) ---------------------------------------------
+
+FAIR = {Pick.HOME: 0.45, Pick.DRAW: 0.27, Pick.AWAY: 0.28}
+
+
+async def test_el_mas_menos_y_los_goles_vuelven_iguales_con_sus_cuotas(tmp_path: Path) -> None:
+    repo = await make_repo(tmp_path)
+    saved = priced(match("goles"), {2.5: 0.52, 3.5: 0.3}, FAIR)
+    assert saved.goals is not None and saved.side
+
+    await repo.save_odds(LIGA, [saved], now=NOW, remaining=None, totals=True)
+
+    assert await repo.upcoming(LIGA, now=NOW) == [saved]
+
+
+async def test_un_partido_sin_mas_menos_vuelve_sin_mercados_de_goles(tmp_path: Path) -> None:
+    repo = await make_repo(tmp_path)
+    await repo.save_odds(LIGA, [match("solo1x2")], now=NOW, remaining=None)
+
+    (back,) = await repo.upcoming(LIGA, now=NOW)
+
+    assert (dict(back.totals), back.goals, dict(back.side)) == ({}, None, {})
+
+
+async def test_solo_la_consulta_con_mas_menos_apunta_cuando_se_pidio(tmp_path: Path) -> None:
+    repo = await make_repo(tmp_path)
+    await repo.save_odds(LIGA, [match("a")], now=NOW, remaining=400)
+    assert (await repo.feed(LIGA)).totals_at is None
+
+    await repo.save_odds(LIGA, [match("a")], now=NOW + 60, remaining=398, totals=True)
+    await repo.save_odds(LIGA, [match("a")], now=NOW + 120, remaining=397)
+
+    state = await repo.feed(LIGA)
+    assert (state.odds_at, state.totals_at, state.remaining) == (NOW + 120, NOW + 60, 397)
+
+
+async def test_una_base_de_antes_gana_las_columnas_del_mas_menos(tmp_path: Path) -> None:
+    # Las tablas de la 8.13.0, sin el más/menos ni los goles esperados.
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.executescript(
+            """
+            CREATE TABLE sports_events (
+                event_id TEXT PRIMARY KEY, sport TEXT NOT NULL, home TEXT NOT NULL,
+                away TEXT NOT NULL, commence REAL NOT NULL,
+                odds_home INTEGER NOT NULL DEFAULT 0, odds_draw INTEGER NOT NULL DEFAULT 0,
+                odds_away INTEGER NOT NULL DEFAULT 0, odds_at REAL NOT NULL,
+                home_score INTEGER, away_score INTEGER
+            );
+            CREATE TABLE sports_feed (
+                sport TEXT PRIMARY KEY, odds_at REAL, scores_at REAL, remaining INTEGER
+            );
+            """
+        )
+        connection.execute(
+            "INSERT INTO sports_events VALUES "
+            "('viejo', ?, 'A', 'B', ?, 210, 340, 350, ?, NULL, NULL)",
+            (LIGA, NOW + 3_600, NOW),
+        )
+        connection.execute("INSERT INTO sports_feed VALUES (?, ?, NULL, 450)", (LIGA, NOW))
+
+    repo = await make_repo(tmp_path)
+
+    (old,) = await repo.upcoming(LIGA, now=NOW)
+    assert (old.event_id, old.goals, dict(old.totals)) == ("viejo", None, {})
+    assert (await repo.feed(LIGA)) == FeedState(NOW, None, 450, None)
+    await repo.save_odds(LIGA, [priced(old, {2.5: 0.5}, FAIR)], now=NOW, remaining=449, totals=True)
+    (new,) = await repo.upcoming(LIGA, now=NOW)
+    assert new.goals is not None

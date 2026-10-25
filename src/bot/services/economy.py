@@ -60,6 +60,7 @@ from bot.repositories.economy import (
     SlotsSettlement,
     SportsBet,
     SportsBetTakenError,
+    SportsStakeCapError,
     TillEmptyError,
     Treasury,
     WealthCharge,
@@ -169,6 +170,7 @@ __all__ = [
     "SlotsSettlement",
     "SportsBet",
     "SportsBetTakenError",
+    "SportsStakeCapError",
     "STARTING_BALANCE",
     "SHOP_ACCOUNT_ID",
     "STATE_ACCOUNT_ID",
@@ -921,7 +923,9 @@ class EconomyService:
             image_withhold=lambda gross, _pace: image_rights_withholding(gross),
         )
 
-    async def sports_bet(self, bet: SportsBet, *, game: str) -> tuple[SportsBet, int]:
+    async def sports_bet(
+        self, bet: SportsBet, *, game: str, cap: int | None = None
+    ) -> tuple[SportsBet, int]:
         """Apuesta a un partido de `deportes`; el dinero espera en el depósito.
 
         Tratamiento fiscal: juego, como el resto del casino. Es una apuesta de
@@ -934,14 +938,21 @@ class EconomyService:
         casino: la ganancia o pérdida se imputa cuando se sabe el resultado (art. 14.1.c
         LIRPF), así que entra entera en `settle_sports_bet`.
 
+        Args:
+            bet: La apuesta sin guardar, con su mercado (`bet.market`).
+            game: Prefijo de los motivos del libro.
+            cap: Lo más que se puede apostar al partido, sumando sus mercados
+                (`bot.services.sports.MAX_STAKE`; `None`, sin tope).
+
         Returns:
             La apuesta guardada y el saldo de quien apuesta.
 
         Raises:
-            SportsBetTakenError: Ya tiene una apuesta a ese partido.
+            SportsBetTakenError: Ya tiene una apuesta a ese mercado del partido.
+            SportsStakeCapError: Pasaría el tope del partido (`room`, lo que cabe).
             InsufficientFundsError: No le llega.
         """
-        return await self.repository.sports_bet(bet, game=game)
+        return await self.repository.sports_bet(bet, game=game, cap=cap)
 
     async def settle_sports_bet(
         self, guild_id: int, bet_id: int, *, payout: int, game: str
@@ -987,6 +998,12 @@ class EconomyService:
     async def open_sports_bets(self) -> list[SportsBet]:
         """Las apuestas de `deportes` sin resolver de todos los servidores."""
         return await self.repository.open_sports_bets()
+
+    async def sports_match_bets(
+        self, guild_id: int, user_id: int, event_id: str
+    ) -> list[SportsBet]:
+        """Las apuestas de alguien a un partido, una por mercado."""
+        return await self.repository.sports_match_bets(guild_id, user_id, event_id)
 
     async def sports_bets(self, guild_id: int, user_id: int, *, limit: int) -> list[SportsBet]:
         """Las apuestas de `deportes` de alguien: abiertas primero y luego las últimas."""

@@ -6,13 +6,14 @@ Lógica pura y el cliente de la API de cuotas, sin Discord ni base de datos. El 
 `EconomyService.settle_sports_bet`.
 
 De dónde salen los partidos. The Odds API (the-odds-api.com) da los próximos partidos de
-cada competición de `SPORTS` con las cuotas 1X2 de las casas de apuestas europeas
-(`OddsClient.odds`) y, al acabar, el marcador (`OddsClient.scores`). El plan gratis da
-500 créditos al mes: cada consulta de cuotas cuesta 1 (0 si no hay partidos) y cada
-consulta de resultados con `daysFrom`, 2. Por eso las consultas se espacian
-(`odds_due`, `scores_due`) y se guarda una reserva para los resultados (`QUOTA_RESERVE`).
-Con LaLiga y la Champions salen unos 330 créditos al mes; otra competición sumaría unos
-150 y no cabría con holgura.
+cada competición de `SPORTS` con las cuotas 1X2 y de más/menos goles (`totals`) de las
+casas de apuestas europeas (`OddsClient.odds`) y, al acabar, el marcador
+(`OddsClient.scores`). El plan gratis da 500 créditos al mes: cada consulta de cuotas
+cuesta 1 por mercado (0 si no hay partidos) y cada consulta de resultados con
+`daysFrom`, 2. Por eso las consultas se espacian (`odds_due`, `scores_due`), el más/menos
+solo va en algunas (`totals_due`) y se guarda una reserva para los resultados
+(`QUOTA_RESERVE`). Con LaLiga y la Champions salen unos 330 créditos al mes con el 1X2 y
+unos 60 más con el más/menos; otra competición sumaría unos 170 y no cabría.
 
 Cómo se ponen las cuotas (`house_odds`). Cada casa de apuestas lleva su margen: sus
 probabilidades implícitas (1 / cuota) suman más de 1. Se quitan normalizándolas, se
@@ -24,23 +25,41 @@ recoger). Es un sumidero de dinero, como el resto del casino: lo apostado desapa
 premio se crea, y de media se crea menos de lo que desaparece. Un signo cuya cuota no
 llegaría a `MIN_ODDS` sin regalar dinero no se ofrece.
 
-Qué se apuesta. Solo el resultado al final del partido (1, X o 2), una apuesta por
-partido y persona y de `MIN_STAKE` a `MAX_STAKE`. El tope existe porque las cuotas del
-bot se refrescan cada pocas horas: quien se entere antes de una baja de última hora
-podría ganarle a una cuota vieja, y el tope limita cuánto. Se apuesta hasta el
-comienzo del partido. Lo que la API no da por terminado `VOID_AFTER` después del
-comienzo (aplazado, suspendido o sin datos) se anula y se devuelve.
+Los goles (`fit_goals`). La API solo da los marcadores finales, así que los mercados
+extra son los que se resuelven con ellos: más/menos goles (`GOAL_LINES`), ambos marcan y
+resultado exacto (`Market`). Las casas no venden «ambos marcan» ni el exacto en la
+consulta de cuotas (habría que pedirlos partido a partido, y no cabe en el plan gratis),
+así que salen de un modelo: los goles de cada equipo siguen una Poisson con la corrección
+de Dixon y Coles para los marcadores bajos (`RHO`), y sus dos medias se ajustan para que
+den el 1X2 y el más/menos de las casas (sin su margen). De ahí sale la probabilidad de
+cada marcador (`score_grid`) y, sumando marcadores, la de cada mercado (`side_odds`),
+salvo las líneas de más/menos que dan las casas, que se cotizan con su probabilidad.
+Medido el 25/10/2026 con 32 partidos y 4 consultas de «ambos marcan» y exacto: el modelo
+ajustado al 1X2 y a una línea acierta las demás líneas de las casas por 1,5 puntos de
+media (4,8 como mucho) y «ambos marcan», por 1-2 puntos. Solo con el 1X2 fallaba hasta
+20 puntos: sin más/menos no hay mercados extra. Cada mercado tiene su retorno
+(`Market.rtp`): el exacto, más bajo, como en las casas de verdad, porque es donde el
+modelo más se equivoca. Si el ajuste no cuadra (`FIT_TOLERANCE`), el partido se queda
+solo con el 1X2.
+
+Qué se apuesta. El resultado al final del partido (1, X o 2) y los mercados de goles,
+una apuesta por mercado, partido y persona y, sumando todos los mercados del partido, de
+`MIN_STAKE` a `MAX_STAKE`. El tope existe porque las cuotas del bot se refrescan cada
+pocas horas: quien se entere antes de una baja de última hora podría ganarle a una cuota
+vieja, y el tope limita cuánto, también si carga varios mercados del mismo partido. Se
+apuesta hasta el comienzo del partido. Lo que la API no da por terminado `VOID_AFTER`
+después del comienzo (aplazado, suspendido o sin datos) se anula y se devuelve.
 
 Limitación conocida: el marcador de la API es el final, así que en una eliminatoria con
-prórroga cuenta lo que pasó en ella. En LaLiga y en la fase de liga de la Champions no
-hay prórroga.
+prórroga cuenta lo que pasó en ella (en todos los mercados). En LaLiga y en la fase de
+liga de la Champions no hay prórroga.
 """
 
 from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
@@ -113,6 +132,25 @@ VOID_AFTER = 70 * 3_600
 #: créditos a principio de mes.
 QUOTA_RESERVE = 60
 LOW_QUOTA_EVERY = 86_400
+#: El más/menos (que cuesta otro crédito por consulta) va en la consulta de cuotas una vez
+#: al día y, antes de un comienzo, si el que hay tiene más de `TOTALS_PRE_MATCH_EVERY`.
+TOTALS_EVERY = 86_400
+TOTALS_PRE_MATCH_EVERY = 6 * 3_600
+
+#: Líneas de más/menos goles que se ofrecen.
+GOAL_LINES = (1.5, 2.5, 3.5)
+#: El exacto ofrece del 0-0 al `EXACT_MAX`-`EXACT_MAX`; el resto es «otro resultado».
+EXACT_MAX = 3
+#: Casas con una línea de más/menos que hacen falta para usarla en el ajuste.
+MIN_TOTAL_BOOKS = 2
+#: Corrección de Dixon y Coles: con ρ < 0 hay más 0-0 y 1-1 y menos 1-0 y 0-1 que en una
+#: Poisson. −0,10 es la que mejor cuadra con el 1X2 de las casas (medido el 25/10/2026).
+RHO = -0.10
+#: Goles por equipo hasta los que se suma la rejilla de marcadores (lo de más es <0,01 %).
+MAX_GOALS = 10
+#: Error medio (en probabilidad) por encima del cual el ajuste no se cree y el partido
+#: no tiene mercados de goles.
+FIT_TOLERANCE = 0.03
 
 
 class Pick(StrEnum):
@@ -121,6 +159,98 @@ class Pick(StrEnum):
     HOME = "1"
     DRAW = "X"
     AWAY = "2"
+
+
+class Market(StrEnum):
+    """Mercado de una apuesta. Se guarda con ella: una apuesta por mercado y partido."""
+
+    RESULT = "1x2"
+    GOALS = "goles"
+    BOTH = "ambos"
+    EXACT = "exacto"
+
+    @property
+    def label(self) -> str:
+        """Nombre que se enseña."""
+        return {
+            Market.RESULT: "Resultado",
+            Market.GOALS: "Más/menos goles",
+            Market.BOTH: "Ambos marcan",
+            Market.EXACT: "Resultado exacto",
+        }[self]
+
+    @property
+    def rtp(self) -> float:
+        """Retorno al jugador del mercado. El exacto deja el 15 % (las casas, 20-50 %)."""
+        return 0.85 if self is Market.EXACT else RTP
+
+    @property
+    def picks(self) -> tuple[str, ...]:
+        """Las opciones del mercado, en el orden del panel."""
+        return MARKET_PICKS[self]
+
+
+def line_text(line: float) -> str:
+    """`2.5` → `2,5`."""
+    return f"{line:.1f}".replace(".", ",")
+
+
+#: Opciones de cada mercado: `1`/`X`/`2`; `+2.5` o `-2.5` (más o menos de 2,5 goles);
+#: `si`/`no` (marcan los dos o no); `2-1` u `otro` (algún equipo mete más de `EXACT_MAX`).
+MARKET_PICKS: dict[Market, tuple[str, ...]] = {
+    Market.RESULT: tuple(pick.value for pick in Pick),
+    Market.GOALS: tuple(f"{sign}{line}" for line in GOAL_LINES for sign in "+-"),
+    Market.BOTH: ("si", "no"),
+    Market.EXACT: (
+        *(f"{h}-{a}" for h in range(EXACT_MAX + 1) for a in range(EXACT_MAX + 1)),
+        "otro",
+    ),
+}
+_MARKET_OF = {pick: market for market, picks in MARKET_PICKS.items() for pick in picks}
+
+
+def market_of(pick: str) -> Market | None:
+    """El mercado de una opción, o `None` si no es ninguna."""
+    return _MARKET_OF.get(pick)
+
+
+def pick_text(pick: str, home: str, away: str) -> str:
+    """Lo apostado en palabras: `1 (Real Madrid)`, `Más de 2,5 goles`, `Exacto 2-1`…"""
+    market = market_of(pick)
+    if market is Market.RESULT:
+        return {"1": f"1 ({home})", "X": "X (empate)", "2": f"2 ({away})"}[pick]
+    if market is Market.GOALS:
+        return f"{'Más' if pick[0] == '+' else 'Menos'} de {line_text(float(pick[1:]))} goles"
+    if market is Market.BOTH:
+        return "Marcan los dos" if pick == "si" else "No marcan los dos"
+    if market is Market.EXACT:
+        return f"Exacto {pick}" if pick != "otro" else "Otro resultado exacto"
+    return pick
+
+
+def wins(pick: str, score: Score) -> bool:
+    """Si la opción `pick` gana con el marcador final `score`."""
+    market = market_of(pick)
+    if market is Market.RESULT:
+        return score.pick == pick
+    if market is Market.GOALS:
+        over = score.home + score.away > float(pick[1:])
+        return over if pick[0] == "+" else not over
+    if market is Market.BOTH:
+        return (score.home > 0 and score.away > 0) == (pick == "si")
+    if market is Market.EXACT:
+        if pick == "otro":
+            return max(score.home, score.away) > EXACT_MAX
+        return pick == f"{score.home}-{score.away}"
+    return False
+
+
+@dataclass(frozen=True, slots=True)
+class Goals:
+    """Goles que se esperan de cada equipo (las medias de sus Poisson)."""
+
+    home: float
+    away: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +264,12 @@ class Match:
         away: Equipo de fuera.
         commence: Comienzo (epoch).
         odds: Cuota de cada signo en centésimas; 0 si no se ofrece.
+        totals: Probabilidad sin margen de pasar de cada línea de goles (`{2.5: 0.52}`),
+            media de las casas; vacío si no se sabe.
+        goals: Los goles esperados ajustados a las casas (`fit_goals`), o `None` si no
+            hay más/menos o el ajuste no cuadra: entonces solo se ofrece el 1X2.
+        side: Cuota de cada opción de los mercados de goles (`side_odds`); vacío sin
+            `goals`.
     """
 
     event_id: str
@@ -142,6 +278,9 @@ class Match:
     away: str
     commence: float
     odds: Mapping[Pick, int]
+    totals: Mapping[float, float] = field(default_factory=dict)
+    goals: Goals | None = None
+    side: Mapping[str, int] = field(default_factory=dict)
 
     def team(self, pick: Pick) -> str:
         """El nombre del signo: el equipo, o «Empate»."""
@@ -156,6 +295,31 @@ class Match:
     def open_picks(self) -> list[Pick]:
         """Los signos que se pueden apostar."""
         return [pick for pick in Pick if self.odds.get(pick, 0) >= MIN_ODDS]
+
+    def price(self, pick: str) -> int:
+        """Cuota de cualquier opción en centésimas; 0 si no se ofrece."""
+        if market_of(pick) is Market.RESULT:
+            odds = self.odds.get(Pick(pick), 0)
+        else:
+            odds = self.side.get(pick, 0)
+        return odds if odds >= MIN_ODDS else 0
+
+    def markets(self) -> list[Market]:
+        """Los mercados con alguna opción a la venta."""
+        return [m for m in Market if any(self.price(pick) for pick in m.picks)]
+
+
+def priced(match: Match, totals: Mapping[float, float], fair: Mapping[Pick, float]) -> Match:
+    """`match` con su más/menos, los goles ajustados y las cuotas de los mercados de goles.
+
+    Args:
+        totals: Probabilidades de pasar de cada línea (vacío: sin mercados de goles).
+        fair: Probabilidades sin margen del 1X2, para el ajuste.
+    """
+    goals = fit_goals(fair, totals) if totals else None
+    return replace(
+        match, totals=dict(totals), goals=goals, side=side_odds(goals, totals) if goals else {}
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,12 +385,145 @@ def payout(stake: int, odds: int) -> int:
     return stake * odds // 100
 
 
-def parse_odds(events: Sequence[Mapping[str, Any]], *, now: float) -> list[Match]:
+def _cents(probability: float, rtp: float) -> int:
+    """Cuota en centésimas con retorno `rtp`, como `house_odds`: 0 si no llega a `MIN_ODDS`."""
+    if probability <= 0:
+        return MAX_ODDS
+    cents = math.floor(100 * rtp / probability)
+    return min(cents, MAX_ODDS) if cents >= MIN_ODDS else 0
+
+
+# -- Goles --------------------------------------------------------------------------------
+
+
+def score_grid(goals: Goals) -> list[list[float]]:
+    """Probabilidad de cada marcador (`grid[casa][fuera]`) hasta `MAX_GOALS`, sumando 1.
+
+    Dos Poisson independientes con la corrección de Dixon y Coles (`RHO`) en 0-0, 1-0,
+    0-1 y 1-1.
+    """
+    home = [math.exp(-goals.home) * goals.home**k / math.factorial(k) for k in range(MAX_GOALS + 1)]
+    away = [math.exp(-goals.away) * goals.away**k / math.factorial(k) for k in range(MAX_GOALS + 1)]
+    grid = [[h * a for a in away] for h in home]
+    grid[0][0] *= 1 - goals.home * goals.away * RHO
+    grid[0][1] *= 1 + goals.home * RHO
+    grid[1][0] *= 1 + goals.away * RHO
+    grid[1][1] *= 1 - RHO
+    total = sum(map(sum, grid))
+    return [[cell / total for cell in row] for row in grid]
+
+
+def _chance(grid: list[list[float]], pick: str) -> float:
+    """Probabilidad de que gane `pick` según la rejilla de marcadores."""
+    return sum(
+        cell for h, row in enumerate(grid) for a, cell in enumerate(row) if wins(pick, Score(h, a))
+    )
+
+
+def _fit_chances(goals: Goals, lines: Iterable[float]) -> list[float]:
+    """1, X, 2 y pasar de cada línea, sumando la rejilla a mano (`_chance` es lenta aquí)."""
+    grid = score_grid(goals)
+    home = draw = 0.0
+    by_total = [0.0] * (2 * MAX_GOALS + 1)
+    for h, row in enumerate(grid):
+        for a, cell in enumerate(row):
+            by_total[h + a] += cell
+            if h > a:
+                home += cell
+            elif h == a:
+                draw += cell
+    return [home, draw, 1 - home - draw] + [sum(by_total[math.ceil(line) :]) for line in lines]
+
+
+def fit_goals(fair: Mapping[Pick, float], totals: Mapping[float, float]) -> Goals | None:
+    """Los goles esperados de cada equipo que mejor dan el 1X2 y el más/menos de las casas.
+
+    Mínimos cuadrados sobre las tres probabilidades del 1X2 y la de pasar de cada línea,
+    por Gauss-Newton en logaritmos (así las medias nunca son negativas).
+
+    Args:
+        fair: Probabilidades sin margen del 1X2.
+        totals: Probabilidad sin margen de pasar de cada línea (`{2.5: 0.52}`).
+
+    Returns:
+        Los goles esperados, o `None` si falta el 1X2 o el ajuste no cuadra
+        (`FIT_TOLERANCE`).
+    """
+    if len(fair) != len(Pick) or not totals:
+        return None
+    lines = list(totals)
+    targets = [fair[pick] for pick in Pick] + [totals[line] for line in lines]
+
+    def residuals(x: tuple[float, float]) -> list[float]:
+        chances = _fit_chances(Goals(math.exp(x[0]), math.exp(x[1])), lines)
+        return [c - t for c, t in zip(chances, targets, strict=True)]
+
+    x = (math.log(1.4), math.log(1.1))
+    step = 1e-5
+    for _ in range(40):
+        r = residuals(x)
+        j0 = [(a - b) / step for a, b in zip(residuals((x[0] + step, x[1])), r, strict=True)]
+        j1 = [(a - b) / step for a, b in zip(residuals((x[0], x[1] + step)), r, strict=True)]
+        a = sum(v * v for v in j0)
+        b = sum(u * v for u, v in zip(j0, j1, strict=True))
+        c = sum(v * v for v in j1)
+        g0 = sum(u * v for u, v in zip(j0, r, strict=True))
+        g1 = sum(u * v for u, v in zip(j1, r, strict=True))
+        det = a * c - b * b
+        if det <= 1e-15:
+            return None
+        d0 = max(-1.0, min(1.0, (c * g0 - b * g1) / det))
+        d1 = max(-1.0, min(1.0, (a * g1 - b * g0) / det))
+        x = (x[0] - d0, x[1] - d1)
+        if abs(d0) + abs(d1) < 1e-9:
+            break
+    goals = Goals(math.exp(x[0]), math.exp(x[1]))
+    if not (0.05 <= goals.home <= 8 and 0.05 <= goals.away <= 8):
+        return None
+    error = residuals(x)
+    if math.sqrt(sum(e * e for e in error) / len(error)) > FIT_TOLERANCE:
+        return None
+    return goals
+
+
+def side_odds(goals: Goals, totals: Mapping[float, float] | None = None) -> dict[str, int]:
+    """Cuota de cada opción de los mercados de goles, con el retorno de su mercado.
+
+    Las líneas de más/menos que dan las casas (`totals`) se cotizan con su probabilidad,
+    como el 1X2: una Poisson no clava a la vez varias líneas con colas más gordas que
+    las suyas, y medido contra las casas alguna pasaba del 100 % de retorno. El modelo
+    queda para las líneas que no dan, «ambos marcan» y el exacto.
+    """
+    grid = score_grid(goals)
+    odds = {
+        pick: _cents(_chance(grid, pick), market.rtp)
+        for market in Market
+        if market is not Market.RESULT
+        for pick in market.picks
+    }
+    for line, over in (totals or {}).items():
+        if line in GOAL_LINES:
+            odds[f"+{line}"] = _cents(over, Market.GOALS.rtp)
+            odds[f"-{line}"] = _cents(1 - over, Market.GOALS.rtp)
+    return odds
+
+
+def parse_odds(
+    events: Sequence[Mapping[str, Any]],
+    *,
+    now: float,
+    known_totals: Mapping[str, Mapping[float, float]] | None = None,
+) -> list[Match]:
     """Los partidos de una respuesta de cuotas de The Odds API (`dateFormat=unix`).
 
     Se quedan los que no han empezado y tienen al menos `MIN_BOOKMAKERS` casas con
     los tres signos del mercado `h2h`. Lo que no tenga la forma esperada se salta.
+
+    Args:
+        known_totals: El más/menos que ya se sabía de cada partido (por `event_id`), para
+            los que no lo traen (la consulta solo lo pide a veces, `totals_due`).
     """
+    known = known_totals or {}
     matches = []
     for event in events:
         try:
@@ -241,9 +538,45 @@ def parse_odds(events: Sequence[Mapping[str, Any]], *, now: float) -> list[Match
         books = [book for b in bookmakers if (book := _book(b, home, away)) is not None]
         if len(books) < MIN_BOOKMAKERS:
             continue
-        odds = house_odds(fair_probabilities(books))
-        matches.append(Match(event_id, sport, home, away, commence, odds))
+        fair = fair_probabilities(books)
+        totals = _totals(bookmakers) or known.get(event_id, {})
+        match = Match(event_id, sport, home, away, commence, house_odds(fair))
+        matches.append(priced(match, totals, fair))
     return sorted(matches, key=lambda m: (m.commence, m.home))
+
+
+def _totals(bookmakers: list[Any]) -> dict[float, float]:
+    """Probabilidad sin margen de pasar de cada línea de goles, media de las casas.
+
+    Solo líneas de medio gol (sin empate posible) que den al menos `MIN_TOTAL_BOOKS`
+    casas; una casa con la línea mal formada no cuenta.
+    """
+    seen: dict[float, list[float]] = {}
+    for bookmaker in bookmakers:
+        if not isinstance(bookmaker, Mapping):
+            continue
+        for market in _items(bookmaker.get("markets")):
+            if not isinstance(market, Mapping) or market.get("key") != "totals":
+                continue
+            prices: dict[float, dict[str, float]] = {}
+            for outcome in _items(market.get("outcomes")):
+                try:
+                    line = float(outcome["point"])
+                    price = float(outcome["price"])
+                    side = str(outcome["name"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if math.isfinite(price) and price > 1 and (line * 2) % 2 == 1:
+                    prices.setdefault(line, {})[side] = price
+            for line, sides in prices.items():
+                if {"Over", "Under"} <= sides.keys():
+                    over, under = 1 / sides["Over"], 1 / sides["Under"]
+                    seen.setdefault(line, []).append(over / (over + under))
+    return {
+        line: sum(values) / len(values)
+        for line, values in sorted(seen.items())
+        if len(values) >= MIN_TOTAL_BOOKS
+    }
 
 
 def _book(bookmaker: object, home: str, away: str) -> dict[Pick, float] | None:
@@ -335,6 +668,23 @@ def days_from(*, now: float, oldest: float) -> int:
     return 1 if now - oldest < 20 * 3_600 else 3
 
 
+def totals_due(
+    *, now: float, fetched_at: float | None, next_kickoff: float | None, remaining: int | None
+) -> bool:
+    """Si la consulta de cuotas que toca lleva también el más/menos (un crédito más).
+
+    Una vez cada `TOTALS_EVERY` y, en los `PRE_MATCH_WINDOW` antes de un comienzo, si el
+    que hay tiene más de `TOTALS_PRE_MATCH_EVERY` (las alineaciones cambian los goles).
+    Nunca tocando la reserva de los resultados.
+    """
+    if not quota_allows_odds(remaining):
+        return False
+    if fetched_at is None or now - fetched_at >= TOTALS_EVERY:
+        return True
+    soon = next_kickoff is not None and 0 <= next_kickoff - now <= PRE_MATCH_WINDOW
+    return soon and now - fetched_at >= TOTALS_PRE_MATCH_EVERY
+
+
 def quota_allows_odds(remaining: int | None) -> bool:
     """Si quedan créditos para pedir cuotas sin tocar la reserva de los resultados."""
     return remaining is None or remaining > QUOTA_RESERVE
@@ -375,13 +725,14 @@ class OddsClient:
         self.session = session
         self.api_key = api_key
 
-    async def odds(self, sport: str, *, now: float) -> FeedReply:
-        """Cuotas 1X2 de las casas europeas para los próximos `LOOKAHEAD_SECONDS`."""
+    async def odds(self, sport: str, *, now: float, totals: bool = False) -> FeedReply:
+        """Cuotas 1X2 (y, con `totals`, más/menos) de las casas europeas para los próximos
+        `LOOKAHEAD_SECONDS`. Cada mercado cuesta un crédito."""
         return await self._get(
             f"{self.BASE_URL}/{sport}/odds/",
             {
                 "regions": "eu",
-                "markets": "h2h",
+                "markets": "h2h,totals" if totals else "h2h",
                 "oddsFormat": "decimal",
                 "dateFormat": "unix",
                 "commenceTimeFrom": _iso(now),
