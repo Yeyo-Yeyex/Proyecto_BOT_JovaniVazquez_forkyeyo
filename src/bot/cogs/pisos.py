@@ -3038,6 +3038,8 @@ class Pisos(commands.Cog):
                 await self.close_guild(guild.id)
                 await self.close_auctions(guild.id)
                 await self.close_votes(guild.id)
+                # El IPC del crédito (💳 Financiar) de la tienda y las obras, al día.
+                await self.service.refresh_ipc(guild.id)
             except Exception:
                 # Un servidor roto no para la tarea: si saliera la excepción, `tasks.loop`
                 # se pararía para siempre y nadie cobraría más alquileres.

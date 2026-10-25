@@ -44,9 +44,10 @@ dando vueltas por el servidor. Con la teoría cuantitativa del dinero (MV = PQ),
 dinero para las mismas cosas, suben los precios: los de la tienda y los de las obras suben un
 1 % por cada 1 % que supone lo financiado y aún sin devolver (`credit_alive`) sobre el dinero de
 los miembros, hasta `IPC_CAP`. Al devolverse, bajan. Lo pagan todos, también quien nunca ha
-pedido nada: así el crédito barato le quita valor al dinero. El cog de `pisos` lo recalcula
-cada 10 minutos y tras cada financiación (`set_ipc`), y la tienda y las obras lo leen de aquí
-(`ipc`) al enseñar el precio y al cobrarlo.
+pedido nada: así el crédito barato le quita valor al dinero. Se recalcula en momentos fijos
+(`HousingService.refresh_ipc`: cada 10 minutos con el cierre de `pisos` y al terminar o
+deshacer una compra financiada), y la tienda y las obras lo leen de aquí (`ipc`) al enseñar
+el precio y al cobrarlo: así lo enseñado vale al pagar, y lo que se financia es lo que cuesta.
 
 **Fiscalidad.** Lo financiado no es renta de nadie (es un préstamo) y la compra paga sus
 impuestos de siempre (el IGIC de la tienda o el de la obra). Los intereses no se deducen,

@@ -97,6 +97,7 @@ from bot.services.craps import Bet as CrapsBet
 from bot.services.craps import CrapsGame, Hand
 from bot.services.craps import Status as CrapsStatus
 from bot.services.crash import Seat as CrashSeat
+from bot.services.credit import IPC_CAP, MAX_FINANCED
 from bot.services.enraya import LEVELS as ENRAYA_LEVELS
 from bot.services.enraya import Ending as EnrayaEnding
 from bot.services.enraya import GameEvent as EnrayaEvent
@@ -9373,6 +9374,53 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("bizum", "asnef_seen", [
         (1, "asnef_seen", "En la lista negra", "Abre el banco estando en el fichero de morosos.",
          C, True),
+    ])  # fmt: skip
+    # 💳 Financiar compras (cogs/banco_compras.py: financed_stats).
+    a += _tiers("bizum", "financed", [
+        (1, "financed_1", "Tu yo del futuro paga", "Financia una compra.", C),
+        (10, "financed_10", "Klarnívoro", "Financia 10 compras.", R),
+        (50, "financed_50", "Cuotaholic", "Financia 50 compras.", E),
+    ])  # fmt: skip
+    a += _tiers("bizum", "financed_bnpl", [
+        (1, "financed_bnpl", "Deuda en trocitos", "Compra algo con Paga en 3.", C),
+        (10, "financed_bnpl_10", "Tres plazos y un destino", "Compra 10 cosas con Paga en 3.", R),
+    ])  # fmt: skip
+    a += _tiers("bizum", "financed_coffee", [
+        (1, "financed_coffee", "Café con leche y cuotas",
+         "Paga un café de la pala en Paga en 3.", C, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "financed_zero", [
+        (1, "financed_zero", "Cero patatero", "Financia una compra al 0 % TIN.", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "financed_trap", [
+        (1, "financed_trap", "No leí la letra pequeña",
+         "Financia al 0 % TIN en el plazo más corto, con una TAE peor que la normal.", R, True),
+    ])  # fmt: skip
+    a += _tiers("bizum", "financed_grace", [
+        (1, "financed_grace", "Ya si eso, el mes que viene",
+         "Financia una compra con carencia.", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "financed_works", [
+        (1, "financed_works", "Obras son amores (y cuotas)",
+         "Financia una obra o una división de pisos.", C),
+        (10, "financed_works_10", "Ladrillo a crédito", "Financia 10 obras o divisiones.", E),
+    ])  # fmt: skip
+    a += _tiers("bizum", "financed_max", [
+        (100_000, "financed_100k", "Firma aquí, aquí y aquí",
+         "Financia una compra de 100.000 Y$ o más.", R),
+    ], unit="money")  # fmt: skip
+    a += _tiers("bizum", "financed_open_max", [
+        (MAX_FINANCED, "financed_open_max", "Castillo de naipes",
+         f"Ten {MAX_FINANCED} compras financiadas a la vez.", E),
+    ])  # fmt: skip
+    a += _tiers("bizum", "financed_could_pay", [
+        (1, "financed_could_pay", "Por no tocar los ahorros",
+         "Financia algo que podías pagar al contado.", C),
+    ])  # fmt: skip
+    a += _tiers("bizum", "financed_high_ipc", [
+        (1, "financed_high_ipc", "Gasolina para la inflación",
+         f"Financia una compra con el IPC del crédito a la mitad de su tope "
+         f"({IPC_CAP // 2} %) o más.", E),
     ])  # fmt: skip
     # Rehipotecas (`banco`, 🔐 Garantías: remortgage_*_stats).
     a += _tiers("bizum", "remortgages_signed", [
@@ -25360,6 +25408,47 @@ def loan_signed_stats(
         ("loan_longest", months == max(LOAN_TERMS)),
         ("loan_insured", insured),
         ("loan_preferred", discount >= LOAN_PREFERRED - 1e-9),
+    ):
+        if hit:
+            delta.add[stat] = 1
+    return delta
+
+
+def financed_stats(
+    *,
+    plan: str,
+    amount: int,
+    grace: bool,
+    works: bool,
+    coffee: bool,
+    could_pay: bool,
+    open_count: int,
+    ipc: int,
+    trap: bool,
+) -> StatDelta:
+    """Estadísticas de quien financia una compra (💳 Financiar).
+
+    Args:
+        plan: `normal`, `cero` (0 % TIN) o `plazos` (Paga en 3).
+        coffee: Si es un café de la pala.
+        could_pay: Si tenía para pagarlo al contado.
+        open_count: Compras financiadas sin terminar de pagar, contando esta.
+        ipc: El IPC del crédito al firmar, en %.
+        trap: Si es el 0 % en el plazo más corto (peor TAE que el normal).
+    """
+    delta = StatDelta(
+        add={"financed": 1},
+        peak={"financed_max": amount, "financed_open_max": open_count},
+    )
+    for stat, hit in (
+        ("financed_bnpl", plan == "plazos"),
+        ("financed_coffee", coffee and plan == "plazos"),
+        ("financed_zero", plan == "cero"),
+        ("financed_trap", trap),
+        ("financed_grace", grace),
+        ("financed_works", works),
+        ("financed_could_pay", could_pay),
+        ("financed_high_ipc", ipc >= IPC_CAP // 2),
     ):
         if hit:
             delta.add[stat] = 1

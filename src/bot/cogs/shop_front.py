@@ -36,6 +36,7 @@ import discord
 from discord import ui
 
 from bot.cogs import achievements as logros
+from bot.cogs import banco_compras as financiar
 from bot.cogs import rastro
 from bot.cogs.shop import (
     COLOR,
@@ -51,6 +52,7 @@ from bot.cogs.shop import (
     _name,
     _select_emoji,
     compact_line,
+    financed_purchase,
     fold,
     igic_line,
     in_tab,
@@ -1078,6 +1080,8 @@ class ItemSheet(ui.LayoutView):
                 disabled=problem is not None or line.total > self.balance,
             )
         )
+        if problem is None and financed_purchase([line]) is not None:
+            actions.add_item(_button(financiar.LABEL, self.finance, custom_id="ficha:financiar"))
         in_cart = self.in_cart
         actions.add_item(
             _button(
@@ -1228,21 +1232,53 @@ class ItemSheet(ui.LayoutView):
         async with self._lock:
             if self.done:
                 return
-            outcome = await buy(
-                self.cog, self.guild, self.viewer, [TicketLine(self.item, self.qty, self.price)]
-            )
-            if outcome.error is None:
-                self.done, self.result = True, outcome.text
-            else:
-                await self._reload(note=outcome.error)
-            self.rebuild()
+            outcome = await self._purchase()
             await edit(interaction, view=self, allowed_mentions=_NO_MENTIONS)
         if outcome.error is None:
-            await self.cog.after_cart(
-                interaction, self.guild, self.viewer, outcome.bought, outcome.balance
+            await self._after_paid(interaction, outcome)
+
+    async def _purchase(self) -> Outcome:
+        """Paga lo que enseña la ficha (dentro del candado) y la repinta."""
+        outcome = await buy(
+            self.cog, self.guild, self.viewer, [TicketLine(self.item, self.qty, self.price)]
+        )
+        if outcome.error is None:
+            self.done, self.result = True, outcome.text
+        else:
+            await self._reload(note=outcome.error)
+        self.rebuild()
+        return outcome
+
+    async def _after_paid(self, interaction: discord.Interaction, outcome: Outcome) -> None:
+        await self.cog.after_cart(
+            interaction, self.guild, self.viewer, outcome.bought, outcome.balance
+        )
+        if self.storefront is not None:
+            await self.storefront.repaint(reload=True)
+
+    async def finance(self, interaction: discord.Interaction) -> None:
+        """💳 Financiar: la oferta del banco sustituye a la ficha (↩️ Volver la devuelve)."""
+        purchase = financed_purchase([TicketLine(self.item, self.qty, self.price)])
+        if purchase is None or self.done:
+            await interaction.response.edit_message(view=self)
+            return
+        paid: list[Outcome] = []
+
+        async def buy_it(_interaction: discord.Interaction) -> bool:
+            async with self._lock:
+                if self.done:
+                    return False
+                paid.append(await self._purchase())
+            return paid[-1].error is None
+
+        async def after(after_interaction: discord.Interaction) -> None:
+            await self._after_paid(after_interaction, paid[-1])
+
+        deal = financiar.Deal(purchase, buy_it, host=self, after=after)
+        if not await financiar.open_finance(self.cog.bot, interaction, deal):
+            await interaction.response.send_message(
+                "El banco está cerrado ahora mismo.", ephemeral=True
             )
-            if self.storefront is not None:
-                await self.storefront.repaint(reload=True)
 
     async def _reload(self, *, note: str | None) -> None:
         """Vuelve a leer el artículo y lo del comprador (algo cambió al pagar)."""
@@ -1402,6 +1438,8 @@ class CartPanel(ui.LayoutView):
                 disabled=bool(self.problems) or total > self.balance,
             )
         )
+        if not self.problems and financed_purchase(self.ticket) is not None:
+            buttons.add_item(_button(financiar.LABEL, self.finance, custom_id="carrito:financiar"))
         buttons.add_item(_button("🗑️ Vaciar", self.empty, custom_id="carrito:vaciar"))
         self.add_item(buttons)
 
@@ -1455,19 +1493,51 @@ class CartPanel(ui.LayoutView):
         async with self._lock:
             if self.done or not self.lines:
                 return
-            outcome = await buy(self.cog, self.guild, self.buyer, self.ticket)
-            if outcome.error is None:
-                self.last = {item.id: qty for item, qty in self.lines}
-                self.cog.set_cart(self.guild.id, self.buyer.id, {})
-                self.done, self.result, self.note = True, outcome.text, None
-                self.rebuild()
-            else:
-                self.note = outcome.error
-                await self.load()
+            outcome = await self._purchase()
             await edit(interaction, view=self, allowed_mentions=_NO_MENTIONS)
         if outcome.error is None:
-            await self.cog.after_cart(
-                interaction, self.guild, self.buyer, outcome.bought, outcome.balance
+            await self._after_paid(interaction, outcome)
+
+    async def _purchase(self) -> Outcome:
+        """Paga el carrito entero (dentro del candado) y lo repinta."""
+        outcome = await buy(self.cog, self.guild, self.buyer, self.ticket)
+        if outcome.error is None:
+            self.last = {item.id: qty for item, qty in self.lines}
+            self.cog.set_cart(self.guild.id, self.buyer.id, {})
+            self.done, self.result, self.note = True, outcome.text, None
+            self.rebuild()
+        else:
+            self.note = outcome.error
+            await self.load()
+        return outcome
+
+    async def _after_paid(self, interaction: discord.Interaction, outcome: Outcome) -> None:
+        await self.cog.after_cart(
+            interaction, self.guild, self.buyer, outcome.bought, outcome.balance
+        )
+        if self.storefront is not None:
+            await self.storefront.repaint(reload=True)
+
+    async def finance(self, interaction: discord.Interaction) -> None:
+        """💳 Financiar el carrito entero: la oferta lo sustituye (↩️ Volver lo devuelve)."""
+        purchase = financed_purchase(self.ticket)
+        if purchase is None or self.done or not self.lines:
+            await interaction.response.edit_message(view=self)
+            return
+        paid: list[Outcome] = []
+
+        async def buy_it(_interaction: discord.Interaction) -> bool:
+            async with self._lock:
+                if self.done or not self.lines:
+                    return False
+                paid.append(await self._purchase())
+            return paid[-1].error is None
+
+        async def after(after_interaction: discord.Interaction) -> None:
+            await self._after_paid(after_interaction, paid[-1])
+
+        deal = financiar.Deal(purchase, buy_it, host=self, after=after)
+        if not await financiar.open_finance(self.cog.bot, interaction, deal):
+            await interaction.response.send_message(
+                "El banco está cerrado ahora mismo.", ephemeral=True
             )
-            if self.storefront is not None:
-                await self.storefront.repaint(reload=True)

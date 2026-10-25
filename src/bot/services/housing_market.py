@@ -102,10 +102,8 @@ class HousingService:
         return self._clock()
 
     async def market(self, guild_id: int) -> Market:
-        """Todo el mercado del servidor. De paso, deja su IPC del crédito para la tienda."""
-        market = await self.repository.market(guild_id)
-        credit.set_ipc(guild_id, market.ipc)
-        return market
+        """Todo el mercado del servidor."""
+        return await self.repository.market(guild_id)
 
     async def news(self, guild_id: int, listings: tuple[str, ...], limit: int = 8) -> list[News]:
         """Lo último que ha pasado en unos inmuebles."""
@@ -232,7 +230,8 @@ class HousingService:
             grace=grace, rate=rate, income=income, payroll=payroll, day=local_day(now), now=now,
         )  # fmt: skip
         signed, balances = await self.economy.housing(guild_id, run)
-        await self.refresh_ipc(guild_id)
+        # El IPC no se recalcula aquí: la compra va justo después y tiene que costar lo que
+        # se ha financiado. Lo recalcula quien compra al terminar (`refresh_ipc`).
         return signed, balances[user_id]
 
     async def unfinance(self, guild_id: int, user_id: int, loan_id: int) -> None:
@@ -248,7 +247,11 @@ class HousingService:
         await self.refresh_ipc(guild_id)
 
     async def refresh_ipc(self, guild_id: int) -> int:
-        """Recalcula el IPC del crédito de un servidor (`credit.set_ipc`) y lo devuelve."""
+        """Recalcula el IPC del crédito de un servidor (`credit.set_ipc`) y lo devuelve.
+
+        Solo en momentos fijos (cada 10 minutos con el cierre de `pisos` y al terminar o
+        deshacer una compra financiada): así un precio enseñado sigue valiendo al pagar.
+        """
         alive, money = await self.repository.credit_alive(guild_id)
         pct = credit.ipc_pct(alive, money)
         credit.set_ipc(guild_id, pct)

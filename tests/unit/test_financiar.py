@@ -114,7 +114,7 @@ async def _finance(service, purchase=COCHE, plan=credit.Plan.NORMAL, months=12, 
     return await service.finance(GUILD, ANA, purchase, plan=plan, months=months, rate=rate, **kw)
 
 
-async def test_financiar_trae_lo_que_cuesta_y_sube_el_ipc(tmp_path: Path) -> None:
+async def test_financiar_trae_lo_que_cuesta_y_el_ipc_sube_al_recalcularlo(tmp_path: Path) -> None:
     clock = Clock(1)
     economy, service = await make(tmp_path, clock)
     salary(tmp_path, 6_000, clock)
@@ -127,8 +127,11 @@ async def test_financiar_trae_lo_que_cuesta_y_sube_el_ipc(tmp_path: Path) -> Non
     assert ledger_sum(tmp_path) == balance
     (loan,) = (await service.market(GUILD)).loans_of(ANA)
     assert loan.purchase and loan.balance == loan.principal
+    # El IPC no cambia hasta que se recalcula: la compra cuesta lo que se ha financiado.
+    assert credit.ipc(GUILD) == 0
     money = balance  # solo hay un miembro
-    assert credit.ipc(GUILD) == credit.ipc_pct(loan.owed, money) > 0
+    assert await service.refresh_ipc(GUILD) == credit.ipc_pct(loan.owed, money) > 0
+    assert credit.ipc(GUILD) > 0 and (await service.market(GUILD)).ipc == credit.ipc(GUILD)
 
 
 async def test_si_la_compra_falla_la_financiacion_se_deshace(tmp_path: Path) -> None:

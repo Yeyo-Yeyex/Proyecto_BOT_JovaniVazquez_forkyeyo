@@ -229,7 +229,7 @@ class Market:
         loans: Préstamos personales activos (`banco`).
         member_debts: `{(acreedor, deudor): importe}` de los reembolsos de los avales.
         splits: Los inmuebles divididos por plantas o por habitaciones.
-        ipc: El IPC del crédito del servidor, en % (`credit.ipc_pct`): encarece las obras.
+        ipc: El IPC del crédito del servidor, en % (`credit.ipc`): encarece las obras.
     """
 
     indexes: dict[str, float] = field(default_factory=dict)
@@ -1284,7 +1284,7 @@ def _market_in(connection: sqlite3.Connection, guild_id: int) -> Market:
                 (guild_id,),
             )
         },
-        ipc=credit.ipc_pct(*_credit_alive_in(connection, guild_id)),
+        ipc=credit.ipc(guild_id),
     )
 
 
