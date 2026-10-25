@@ -1,7 +1,7 @@
 """La escena de la lotería (`assets/loteria/escena.html`) y su clase (`bot.services.lottery_scene`).
 
-Por ahora pinta el rasca y los sorteos; el resto de modos (décimo, boleto y cartel) entran con sus
-pruebas. Las de Node se saltan si no hay `node` o falta `@napi-rs/canvas` (`npm ci` en la raíz); la
+Pinta el rasca y los sorteos (GIF y PNG final) y las imágenes quietas: décimo, boleto y cartel.
+Las de Node se saltan si no hay `node` o falta `@napi-rs/canvas` (`npm ci` en la raíz); la
 comparación con Chromium, también si no hay navegador. Sin ninguno de los dos, la clase devuelve
 `None` y el cog sigue en texto.
 """
@@ -50,10 +50,16 @@ muestras = _load()
 ANIMATIONS = muestras.animations()
 SCRATCHES = {name: a for name, a in ANIMATIONS.items() if name.startswith("rasca_")}
 DRAWS = {name: a for name, a in ANIMATIONS.items() if name.startswith("sorteo_")}
+STILLS = muestras.stills()
 
 
 def size_of(meta: dict[str, Any]) -> tuple[int, int]:
     return meta["w"], meta["h"]
+
+
+def still_meta(state: dict[str, Any]) -> dict[str, Any]:
+    """Lo que `LotteryScene.still` pasa como `meta`: el modo y el tamaño."""
+    return {"mode": state["mode"], "w": state["w"], "h": state["h"]}
 
 
 def max_bytes(name: str) -> int:
@@ -99,13 +105,27 @@ def test_las_muestras_cubren_cada_rasca_y_cada_sorteo() -> None:
     }
 
 
+def test_las_muestras_cubren_cada_imagen_quieta() -> None:
+    assert {state["mode"] for state in STILLS.values()} == {"decimo", "boleto", "cartel"}
+    tickets = [s for s in STILLS.values() if s["mode"] == "decimo"]
+    slips = [s for s in STILLS.values() if s["mode"] == "boleto"]
+    assert {s["game"] for s in tickets} == {"jueves", "sabado", "navidad", "nino"}
+    assert {s["quantity"] for s in tickets} == {1, 10}
+    assert {(s["stamp"] or {}).get("tone") for s in tickets} == {None, "win", "lose"}
+    assert {s["game"] for s in slips} == {"primitiva", "bonoloto", "gordo", "euromillones"}
+    assert any(s["result"] for s in slips) and any(not s["result"] for s in slips)
+    assert any(len(s["rows"]) > 5 for s in slips)  # dos columnas
+    assert len({s["h"] for s in slips}) > 3
+
+
 async def test_sin_node_ni_chromium_no_se_pinta() -> None:
     scene = LotteryScene(executable_path=NO_CHROMIUM, node=NO_NODE)
     try:
         for name in ("rasca_x10_premio", "sorteo_primitiva_bote", "sorteo_navidad"):
             meta, states, durations = ANIMATIONS[name]
             assert await scene.animate(meta, states, durations) is None
-        assert await scene.still(muestras.stills()["cartel"]) is None
+        for state in STILLS.values():
+            assert await scene.still(state) is None
     finally:
         await scene.close()
     assert scene.disabled
@@ -145,6 +165,70 @@ async def test_con_node_cada_animacion_es_un_gif_que_acaba_en_su_png(
     assert png.size == size_of(meta)
     # El último fotograma del GIF es el PNG que queda (salvo la paleta del GIF).
     assert difference(last_frame(media.gif), png) < 4
+
+
+@needs_node
+@module_loop
+async def test_con_node_cada_imagen_quieta_es_un_png_de_su_tamano_y_siempre_el_mismo(
+    scene: LotteryScene,
+) -> None:
+    pngs = {}
+    for name, state in STILLS.items():
+        png = await scene.still(state)
+        assert png is not None and not scene.painter.disabled, name
+        image = Image.open(io.BytesIO(png))
+        assert image.format == "PNG" and image.size == (state["w"], state["h"]), name
+        assert len(image.convert("RGB").getcolors(1 << 20) or []) > 1000, name
+        assert len(png) < 512 * 1024, name
+        # Pintar antes del clic y al pulsar tienen que dar los mismos bytes.
+        assert await scene.still(copy.deepcopy(state)) == png, name
+        pngs[name] = png
+    assert len(set(pngs.values())) == len(pngs)
+
+
+@needs_node
+@module_loop
+@pytest.mark.parametrize("name", ["decimo_premiado", "decimo_sin_premio", "decimo_sabado_billete"])
+async def test_el_sello_y_la_chapa_no_tapan_el_numero(scene: LotteryScene, name: str) -> None:
+    state = STILLS[name]
+    meta = still_meta(state)
+    bare = {**state, "stamp": None, "quantity": 1}
+    with_stamp = await final_picture(scene, meta, state)
+    without = await final_picture(scene, meta, bare)
+    assert with_stamp.tobytes() != without.tobytes()
+    # El recuadro del número (a la derecha de la ilustración) queda igual.
+    box = (284, 92, 704, 198)
+    assert with_stamp.crop(box).tobytes() == without.crop(box).tobytes()
+
+
+@needs_node
+@module_loop
+async def test_el_boleto_sorteado_enseña_los_aciertos_llenos_y_el_resto_apagado(
+    scene: LotteryScene,
+) -> None:
+    state = STILLS["boleto_primitiva_sorteado"]
+    meta = still_meta(state)
+    drawn = await final_picture(scene, meta, state)
+    plain = await final_picture(
+        scene,
+        meta,
+        {
+            **state,
+            "result": None,
+            "rows": [{**row, "hit": None, "xhit": None, "tag": ""} for row in state["rows"]],
+        },
+    )
+    assert drawn.tobytes() != plain.tobytes()
+    # Primera apuesta (A): el 07 acierta (bola llena, oscura) y el 10 no (bola apagada, clara).
+    row_y = 118 + 23
+
+    def brightness(x: int) -> float:
+        return sum(ImageStat.Stat(drawn.crop((x - 10, row_y - 13, x + 10, row_y - 7))).mean) / 3
+
+    assert brightness(82) < 120 and brightness(120) > 200
+    # Lo que paga la fila sale a la derecha, en verde.
+    tag = drawn.crop((480, row_y - 10, 620, row_y + 10)).getcolors(10000) or []
+    assert any(g > r + 40 and g > b + 20 for _, (r, g, b) in tag)
 
 
 @needs_node
@@ -422,6 +506,140 @@ WEIRD: dict[str, tuple[dict, list]] = {
 }
 
 
+DECIMO = {"mode": "decimo", "w": 720, "h": 330}
+BOLETO = {"mode": "boleto", "w": 640, "h": 406}
+CARTEL = {"mode": "cartel", "w": 720, "h": 405}
+LONG_OWNER = "Ana 🍀 " * 40
+WEIRD_ROWS = [
+    None,
+    {},
+    {"n": None, "x": "7"},
+    {"n": ["1"] * 30, "x": [1, 2, 3, 4, 5], "hit": "x", "xhit": 5, "tag": "★" * 40},
+]
+WEIRD.update(
+    {
+        "décimo vacío": (DECIMO, [{}, None, "x", {"game": "raro", "number": None, "stamp": None}]),
+        "décimo con datos raros": (
+            DECIMO,
+            [
+                {
+                    "game": "navidad",
+                    "title": None,
+                    "number": "1234567890123",
+                    "price": 5,
+                    "owner": LONG_OWNER,
+                    "quantity": "x",
+                    "barcode": "abc",
+                    "stamp": {"tone": "win", "title": None, "amount": None, "detail": "x " * 100},
+                },
+                {"game": "nino", "number": "7", "quantity": 1000, "stamp": "texto", "owner": None},
+                {"game": "sabado", "number": 48288, "quantity": None, "barcode": None, "stamp": {}},
+            ],
+        ),
+        "boleto vacío": (
+            BOLETO,
+            [{}, None, {"rows": None, "result": "x"}, {"game": "raro", "xlabel": None}],
+        ),
+        "boleto con una fila": (
+            {**BOLETO, "h": 222},
+            [
+                {
+                    "game": "bonoloto",
+                    "rows": [{"n": ["01", "02"], "x": ["3"], "hit": None, "xhit": None, "tag": ""}],
+                }
+            ],
+        ),
+        "boleto con diez filas": (
+            BOLETO,
+            [
+                {
+                    "game": "euromillones",
+                    "xlabel": "★",
+                    "owner": LONG_OWNER,
+                    "title": None,
+                    "jackpot": None,
+                    "rows": [
+                        {
+                            "n": ["01", "02", "03", "04", "05"],
+                            "x": ["01", "02"],
+                            "hit": ["hit", "comp", "", None, "hit"],
+                            "xhit": [True, False],
+                            "tag": "5 + 2 ★ · 1.000.000 Y$",
+                        }
+                    ]
+                    * 10,
+                    "result": {
+                        "n": ["01", "02", "03", "04", "05"],
+                        "x": ["01", "02"],
+                        "comp": None,
+                    },
+                }
+            ],
+        ),
+        "boleto con cuarenta filas": (
+            BOLETO,
+            [{"game": "gordo", "rows": [{"n": ["01"], "x": ["1"], "tag": "x" * 90}] * 40}],
+        ),
+        "boleto diminuto": (
+            {**BOLETO, "h": 100},
+            [{"game": "primitiva", "rows": [{"n": ["01"]}] * 7}],
+        ),
+        "boleto con filas raras": (
+            BOLETO,
+            [
+                {"rows": WEIRD_ROWS, "result": {"n": None, "x": "x", "comp": 5}},
+                {"rows": WEIRD_ROWS * 3, "result": {"n": ["1"] * 20}},
+            ],
+        ),
+        "cartel vacío": (
+            CARTEL,
+            [
+                {},
+                None,
+                {"botes": None, "nacional": None},
+                {"botes": [None, 5, "x"], "nacional": [{}]},
+            ],
+        ),
+        "cartel con diez": (
+            CARTEL,
+            [
+                {
+                    "botes": [
+                        {
+                            "game": "otro",
+                            "name": LONG_OWNER,
+                            "amount": "9" * 60,
+                            "when": None,
+                            "grow": "★ " * 30,
+                            "hot": 1,
+                        }
+                    ]
+                    * 10,
+                    "nacional": [
+                        {
+                            "game": "navidad",
+                            "name": None,
+                            "amount": None,
+                            "when": None,
+                            "days": "x",
+                        },
+                        {"game": "nino", "days": -5},
+                        {"game": "jueves", "days": 1e9},
+                        {},
+                        {},
+                        {},
+                        {},
+                        {},
+                        {},
+                        {},
+                    ],
+                }
+            ],
+        ),
+    }
+)
+
+
 @needs_node
 @module_loop
 @pytest.mark.parametrize("name", sorted(WEIRD))
@@ -484,6 +702,33 @@ async def test_node_y_chromium_pintan_lo_mismo(chromium: BrowserScene, name: str
     assert len(a) == len(b) == len(states)
     for x, y in zip(a, b, strict=True):
         assert difference(x, y) < 4
+
+
+@needs_node
+@module_loop
+@pytest.mark.parametrize(
+    "name", ["decimo_premiado", "decimo_sabado_billete", "boleto_euromillones_sorteado", "cartel"]
+)
+async def test_node_y_chromium_pintan_lo_mismo_las_imagenes_quietas(
+    chromium: BrowserScene, name: str
+) -> None:
+    painter = NodeScene(SCENE, name="El pintor de la lotería")
+    state = STILLS[name]
+    meta, size = still_meta(state), (state["w"], state["h"])
+    try:
+        from_browser = await chromium.render(meta, [state])
+        if from_browser is None:
+            pytest.skip("Chromium no arranca en esta máquina")
+        from_node = await painter.render(meta, [state], gif=False)
+        assert from_node is not None
+        (a,), (b,) = (
+            browser_scene.assemble(from_browser, size),
+            browser_scene.assemble(from_node, size),
+        )
+    finally:
+        await chromium.close()
+        await painter.close()
+    assert difference(a, b) < 4
 
 
 @needs_node

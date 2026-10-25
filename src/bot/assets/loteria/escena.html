@@ -25,6 +25,13 @@ Modos (cada uno es un objeto en MODES con `init(meta)` y `paint(state, index)`):
 - "sorteo": el plató de un sorteo (720 × 405). En los juegos de bote, un bombo de varillas con bolas que
             rebotan y la bandeja con la combinación; en la Nacional, un teatro con cinco bombitos de
             cifras y una placa por premio. El cartel del final va fuera de la combinación.
+- "decimo": el décimo de la Nacional en papel de seguridad (720 × 330), con una ilustración por sorteo,
+            el número en grande, el código de barras y, si ya hay sorteo, el sello de premiado.
+- "boleto": el resguardo de una administración (640 × lo que mida `slip_size`), con una fila de bolas
+            por apuesta y, si ya hay sorteo, la combinación ganadora y los aciertos marcados.
+- "cartel": el escaparate de «Loterías de Jovani» (720 × 405): los cuatro botes y la tira de la Nacional.
+            Los tres últimos son imágenes quietas: su estado hace también de `meta` y `paint` devuelve
+            `null`.
 
 Para añadir un modo basta registrar `MODES.nombre = { init(meta), paint(state, index) }`: `paint` dibuja el
 fotograma entero en `g` (ya con la escala puesta) y devuelve las regiones que lo componen, `{id: {sig,
@@ -167,6 +174,25 @@ function ribbonShape(c, hw, hh, look = GOLD_RIBBON, notch = 13) {
   c.beginPath();
   c.moveTo(-hw + 9, -hh + 6); c.lineTo(hw - 9, -hh + 6); c.lineTo(hw - notch - 7, 0); c.lineTo(hw - 9, hh - 6); c.lineTo(-hw + 9, hh - 6); c.lineTo(-hw + notch + 7, 0); c.closePath();
   c.lineWidth = 1.5; c.strokeStyle = look.line; c.stroke();
+}
+
+// Una estrella de cinco puntas (o de las que haga falta con `polyStar`) y una corona con sus tres joyas.
+function starPath(c, x, y, ro, ri, rot = -Math.PI / 2) {
+  c.beginPath();
+  for (let k = 0; k < 10; k++) {
+    const a = rot + k * Math.PI / 5, r = k % 2 ? ri : ro;
+    if (k === 0) c.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r); else c.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+  }
+  c.closePath();
+}
+// Una corona de oro con tres joyas, centrada en x, y.
+function crown(b, x, y, s) {
+  b.beginPath();
+  b.moveTo(x - s, y + 0.6 * s); b.lineTo(x - s, y - 0.5 * s); b.lineTo(x - 0.5 * s, y + 0.05 * s); b.lineTo(x, y - 0.7 * s);
+  b.lineTo(x + 0.5 * s, y + 0.05 * s); b.lineTo(x + s, y - 0.5 * s); b.lineTo(x + s, y + 0.6 * s); b.closePath();
+  b.fillStyle = lin(b, x - s, y - s, x + s, y + s, [[0, "#fff1a0"], [0.5, "#f3b61f"], [1, "#b97806"]]); b.fill();
+  b.lineJoin = "round"; b.lineWidth = Math.max(1, s * 0.08); b.strokeStyle = "#6b3f00"; b.stroke();
+  for (const [dx, dy] of [[-1, -0.5], [0, -0.7], [1, -0.5]]) { b.beginPath(); b.arc(x + dx * s, y + dy * s, s * 0.14, 0, Math.PI * 2); b.fillStyle = "#e0143c"; b.fill(); }
 }
 
 // -- Reparto de modos y recuadro que cambia ---------------------------------------------------
@@ -896,15 +922,6 @@ MODES.sorteo = (() => {
   // Una onda triangular de -1 a 1 y periodo 1: la bola va de pared a pared sin frenar.
   function tri(x) { const f = x - Math.floor(x); return 4 * Math.abs(f - 0.5) - 1; }
 
-  function starPath(c, x, y, ro, ri, rot = -Math.PI / 2) {
-    c.beginPath();
-    for (let k = 0; k < 10; k++) {
-      const a = rot + k * Math.PI / 5, r = k % 2 ? ri : ro;
-      if (k === 0) c.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r); else c.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
-    }
-    c.closePath();
-  }
-
   // Una bola del bombo: color liso, filo y un brillo (poco que cambiar entre fotogramas).
   function liteBall(c, x, y, r, color) {
     c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fillStyle = color; c.fill();
@@ -1207,15 +1224,6 @@ MODES.sorteo = (() => {
     return 158 + (184 - total) / 2 + r * (NAC_ROW_H + NAC_ROW_GAP);
   }
 
-  function crown(b, x, y, s) {
-    b.beginPath();
-    b.moveTo(x - s, y + 0.6 * s); b.lineTo(x - s, y - 0.5 * s); b.lineTo(x - 0.5 * s, y + 0.05 * s); b.lineTo(x, y - 0.7 * s);
-    b.lineTo(x + 0.5 * s, y + 0.05 * s); b.lineTo(x + s, y - 0.5 * s); b.lineTo(x + s, y + 0.6 * s); b.closePath();
-    b.fillStyle = lin(b, x - s, y - s, x + s, y + s, [[0, "#fff1a0"], [0.5, "#f3b61f"], [1, "#b97806"]]); b.fill();
-    b.lineJoin = "round"; b.lineWidth = Math.max(1, s * 0.08); b.strokeStyle = "#6b3f00"; b.stroke();
-    for (const [dx, dy] of [[-1, -0.5], [0, -0.7], [1, -0.5]]) { b.beginPath(); b.arc(x + dx * s, y + dy * s, s * 0.14, 0, Math.PI * 2); b.fillStyle = "#e0143c"; b.fill(); }
-  }
-
   function theatreBase(b) {
     b.fillStyle = lin(b, 0, 0, 0, 346, [[0, TH.wall[0]], [1, TH.wall[1]]]); b.fillRect(0, 0, W, H);
     const r = rngOf(M.seed, "teatro");
@@ -1377,6 +1385,646 @@ MODES.sorteo = (() => {
   }
 
   return { size: SIZE, init, paint };
+})();
+
+// -- Imágenes quietas: décimo, boleto y cartel --------------------------------------------------
+//
+// Cada una es una sola imagen: el estado entero hace también de `meta` (lleva su `mode`, `w` y `h`) y
+// `paint` lo dibuja todo y devuelve `null`, que es «la imagen entera». Nada se guarda entre imágenes.
+// Los textos de la gente (el nombre del dueño, los títulos) se limpian con `clean`; el único símbolo
+// que se conserva es la ★ de Euromillones, que la fuente no trae y se dibuja como una estrella
+// (`richText`).
+
+function stillState(raw) { return raw && typeof raw === "object" ? raw : {}; }
+function stillStart() {
+  g.setTransform(S, 0, 0, S, 0, 0);
+  g.globalAlpha = 1; g.globalCompositeOperation = "source-over"; g.lineCap = "butt"; g.lineJoin = "miter"; g.setLineDash([]);
+}
+function listOf(value, max) { return (Array.isArray(value) ? value : []).slice(0, max); }
+function textOf(value) { return clean(value); }
+
+// Un texto con ★: la estrella se dibuja (la fuente no la tiene). Devuelve lo que ocupa.
+function richClean(text) { return clean(String(text ?? "").replace(/★/g, "¤")); }
+function richWidth(c, str, size, family, weight) {
+  setFont(c, weight, size, family);
+  return str.split("¤").map((p) => c.measureText(p).width).reduce((a, b) => a + b, 0) + (str.split("¤").length - 1) * size * 0.95;
+}
+function richText(c, str, x, y, size, family, color, align = "left", weight = "") {
+  const total = richWidth(c, str, size, family, weight);
+  let cx = align === "center" ? x - total / 2 : align === "right" ? x - total : x;
+  const parts = str.split("¤");
+  setFont(c, weight, size, family); c.fillStyle = color; c.textAlign = "left"; c.textBaseline = "alphabetic";
+  parts.forEach((part, k) => {
+    c.fillText(part, cx, y); cx += c.measureText(part).width;
+    if (k < parts.length - 1) { starPath(c, cx + size * 0.45, y - size * 0.34, size * 0.46, size * 0.2); c.fillStyle = color; c.fill(); cx += size * 0.95; }
+  });
+  return total;
+}
+function fitRich(c, str, x, y, maxW, size, min, family, color, align = "left", weight = "") {
+  let s = size;
+  while (s > min && richWidth(c, str, s, family, weight) > maxW) s -= 0.5;
+  richText(c, str, x, y, s, family, color, align, weight);
+  return s;
+}
+
+// Las ondas finas del papel de seguridad (guilloché): fijas, sin azar.
+function guilloche(c, x0, y0, w, h, color, phase = 0) {
+  c.save(); c.beginPath(); c.rect(x0, y0, w, h); c.clip();
+  c.lineWidth = 0.7; c.strokeStyle = color;
+  for (let family = 0; family < 2; family++) {
+    const step = family ? 9 : 7, count = Math.ceil(h / step) + 4;
+    for (let k = 0; k < count; k++) {
+      c.beginPath();
+      for (let x = x0; x <= x0 + w + 6; x += 5) {
+        const y = y0 + k * step - 6 + Math.sin(x / (family ? 29 : 38) + k * (family ? 0.5 : 0.35) + phase) * (family ? 5 : 6.5) + Math.sin(x / 17 - k * 0.2 + family) * 2.2;
+        if (x === x0) c.moveTo(x, y); else c.lineTo(x, y);
+      }
+      c.stroke();
+    }
+  }
+  c.restore();
+}
+
+// Un código de barras con barras de 1 a 3 unidades, sacadas de la semilla.
+function drawBars(c, x, y, w, h, seed, ink) {
+  const r = rngOf(seed, "barras");
+  const widths = [1, 1, 1];
+  let total = 3;
+  for (let k = 0; k < 44; k++) { const u = 1 + Math.floor(r() * 3); widths.push(u); total += u; }
+  widths.push(1, 1, 1); total += 3;
+  const unit = w / total;
+  let cx = x;
+  widths.forEach((u, k) => { if (k % 2 === 0) { c.fillStyle = ink; c.fillRect(cx, y, u * unit, h); } cx += u * unit; });
+}
+
+// Una estrella de n puntas.
+function polyStar(c, x, y, n, ro, ri, rot = -Math.PI / 2) {
+  c.beginPath();
+  for (let k = 0; k < n * 2; k++) {
+    const a = rot + k * Math.PI / n, r = k % 2 ? ri : ro;
+    if (k === 0) c.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r); else c.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+  }
+  c.closePath();
+}
+
+// Una chapa dentada, dorada, con sombra.
+function chapa(c, x, y, r, teeth = 36) {
+  c.beginPath();
+  for (let k = 0; k < teeth; k++) { const a = k / teeth * Math.PI * 2; const rr = k % 2 ? r * 0.9 : r; c.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+  c.closePath();
+  c.fillStyle = "rgba(0,0,0,0.35)"; c.save(); c.translate(1.5, 2.5); c.fill(); c.restore();
+  c.fillStyle = lin(c, x - r, y - r, x + r, y + r, [[0, "#fff1a0"], [0.5, "#f3b61f"], [1, "#b97806"]]); c.fill();
+  c.lineJoin = "round"; c.lineWidth = 1.5; c.strokeStyle = "#6b3f00"; c.stroke();
+  c.beginPath(); c.arc(x, y, r * 0.78, 0, Math.PI * 2); c.lineWidth = 1.2; c.strokeStyle = "rgba(107,63,0,0.7)"; c.stroke();
+}
+
+// El sello de tampón: caja con doble filo, texto y desgaste, girado. `lines`: [[texto, tamaño máximo, familia]].
+function tampon(c, cx, cy, hw, hh, angle, ink, paper, lines, seed) {
+  c.save(); c.translate(cx, cy); c.rotate(angle);
+  roundRect(c, -hw, -hh, hw * 2, hh * 2, 10); c.fillStyle = paper; c.fill();
+  c.lineWidth = 4; c.strokeStyle = ink; c.stroke();
+  roundRect(c, -hw + 6, -hh + 6, hw * 2 - 12, hh * 2 - 12, 5); c.lineWidth = 1.2; c.stroke();
+  const total = lines.reduce((a, l) => a + l.size * 1.1, 0);
+  let y = -total / 2;
+  for (const l of lines) {
+    const size = fitSize(c, l.text, hw * 2 - 34, l.size, 7, l.family, l.weight || "");
+    y += size * 1.1;
+    drawText(c, l.text, 0, y - size * 0.18, size, l.family, ink, "center", l.weight || "");
+  }
+  // El gastado de la tinta: motas del color del papel.
+  const r = rngOf(seed, "tampon");
+  c.fillStyle = paper;
+  for (let n = 0; n < 60; n++) c.fillRect(-hw + r() * hw * 2, -hh + r() * hh * 2, 0.8 + r() * 1.6, 0.8 + r() * 1.2);
+  c.restore();
+}
+
+// -- Modo "decimo" ----------------------------------------------------------------------------
+//
+// El décimo de la Lotería Nacional en papel de seguridad (crema con guilloché), con una ilustración
+// por sorteo a la izquierda y, a la derecha, el título, el número en grande dentro de su recuadro, la
+// serie, el precio, el primer premio, el código de barras y el dueño. El sello de premiado cae sobre
+// la ilustración, nunca sobre el número.
+
+MODES.decimo = (() => {
+  const SIZE = [720, 330];
+  const PX = 8, PY = 8, PW = 704, PH = 314;     // el papel
+  const ART_W = 260;                             // la ilustración
+  const LEFT = 292, RIGHT = 696;                 // la columna de la derecha
+  const THEMES = {
+    jueves: { ink: "#14357f", soft: "#5d6f9c", wave: "rgba(30,70,170,0.14)", frame: "#14357f" },
+    sabado: { ink: "#8c1219", soft: "#9c5a52", wave: "rgba(176,28,36,0.14)", frame: "#8c1219" },
+    navidad: { ink: "#7b0f1d", soft: "#94603f", wave: "rgba(150,20,32,0.13)", frame: "#7b0f1d" },
+    nino: { ink: "#13327d", soft: "#5d6f9c", wave: "rgba(28,64,150,0.14)", frame: "#13327d" },
+  };
+
+  function artJueves(c, w, h) {
+    const cx = w / 2, cy = h / 2;
+    c.fillStyle = rad(c, cx, cy, 8, cx, cy, 200, [[0, "#4f8bff"], [0.55, "#1d4ed8"], [1, "#0a1d58"]]); c.fillRect(0, 0, w, h);
+    // Esquinas de arcos dorados.
+    c.strokeStyle = "rgba(255,226,140,0.55)"; c.lineWidth = 1.2;
+    for (const [x, y] of [[0, 0], [w, 0], [0, h], [w, h]]) for (const r of [26, 40, 54]) { c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.stroke(); }
+    for (const r of [122, 112, 102]) { c.beginPath(); c.arc(cx, cy, r, 0, Math.PI * 2); c.strokeStyle = "rgba(255,226,140,0.75)"; c.stroke(); }
+    // El rosetón: dieciséis pétalos, una estrella de doce puntas y el botón del centro.
+    for (let k = 0; k < 16; k++) {
+      c.save(); c.translate(cx, cy); c.rotate(k * Math.PI / 8);
+      c.beginPath(); c.ellipse(0, -66, 15, 40, 0, 0, Math.PI * 2);
+      c.fillStyle = k % 2 ? "rgba(255,255,255,0.3)" : "rgba(147,197,253,0.55)"; c.fill();
+      c.lineWidth = 1; c.strokeStyle = "rgba(255,226,140,0.8)"; c.stroke(); c.restore();
+    }
+    polyStar(c, cx, cy, 12, 54, 36, 0);
+    c.fillStyle = lin(c, cx - 54, cy - 54, cx + 54, cy + 54, [[0, "#fff1a0"], [1, "#d89a14"]]); c.fill();
+    c.lineWidth = 1.2; c.strokeStyle = "#6b4a00"; c.stroke();
+    c.beginPath(); c.arc(cx, cy, 24, 0, Math.PI * 2); c.fillStyle = "#12358f"; c.fill(); c.lineWidth = 2; c.strokeStyle = "#ffe08a"; c.stroke();
+    for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; c.beginPath(); c.arc(cx + Math.cos(a) * 12, cy + Math.sin(a) * 12, 3.4, 0, Math.PI * 2); c.fillStyle = "#ffe08a"; c.fill(); }
+    c.beginPath(); c.arc(cx, cy, 4.5, 0, Math.PI * 2); c.fillStyle = "#ffffff"; c.fill();
+  }
+
+  function artSabado(c, w, h) {
+    const cx = w / 2, cy = h * 0.58;
+    c.fillStyle = lin(c, 0, 0, 0, h, [[0, "#ffb02e"], [0.55, "#e8401c"], [1, "#85091a"]]); c.fillRect(0, 0, w, h);
+    for (let k = 0; k < 30; k++) {
+      const a0 = k / 30 * Math.PI * 2, a1 = (k + 0.5) / 30 * Math.PI * 2;
+      c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + Math.cos(a0) * 420, cy + Math.sin(a0) * 420); c.lineTo(cx + Math.cos(a1) * 420, cy + Math.sin(a1) * 420); c.closePath();
+      c.fillStyle = k % 2 ? "rgba(255,226,120,0.55)" : "rgba(255,120,30,0.5)"; c.fill();
+    }
+    for (let k = 0; k < 24; k++) {
+      const a = k / 24 * Math.PI * 2;
+      c.beginPath(); c.moveTo(cx + Math.cos(a - 0.09) * 54, cy + Math.sin(a - 0.09) * 54); c.lineTo(cx + Math.cos(a) * 74, cy + Math.sin(a) * 74); c.lineTo(cx + Math.cos(a + 0.09) * 54, cy + Math.sin(a + 0.09) * 54); c.closePath();
+      c.fillStyle = "#ffd24a"; c.fill(); c.lineWidth = 1; c.strokeStyle = "#8a2a00"; c.stroke();
+    }
+    c.beginPath(); c.arc(cx, cy, 52, 0, Math.PI * 2);
+    c.fillStyle = rad(c, cx - 14, cy - 16, 6, cx, cy, 54, [[0, "#fff8c4"], [0.55, "#ffc61f"], [1, "#e08400"]]); c.fill();
+    c.lineWidth = 3; c.strokeStyle = "#8a2a00"; c.stroke();
+    c.beginPath(); c.arc(cx, cy, 40, 0, Math.PI * 2); c.lineWidth = 1.4; c.strokeStyle = "rgba(138,42,0,0.7)"; c.stroke();
+    polyStar(c, cx, cy, 8, 30, 12, 0); c.fillStyle = "rgba(255,255,255,0.65)"; c.fill();
+    const r = rngOf("sabado");
+    for (let k = 0; k < 16; k++) { c.fillStyle = "rgba(255,246,200,0.85)"; star4(c, r() * w, r() * h * 0.5, 2 + r() * 3.5, 0.2); c.fill(); }
+  }
+
+  function artNavidad(c, w, h) {
+    c.fillStyle = lin(c, 0, 0, 0, h, [[0, "#d9283a"], [0.55, "#8a1022"], [1, "#3d0510"]]); c.fillRect(0, 0, w, h);
+    const r = rngOf("navidad");
+    for (let k = 0; k < 46; k++) { c.beginPath(); c.arc(r() * w, r() * h, 1 + r() * 1.6, 0, Math.PI * 2); c.fillStyle = `rgba(255,255,255,${0.35 + r() * 0.5})`; c.fill(); }
+    // La cola de la estrella, de arriba a la derecha.
+    c.beginPath(); c.moveTo(w + 10, -10); c.quadraticCurveTo(w * 0.7, h * 0.12, 150, 130); c.lineTo(126, 150); c.quadraticCurveTo(w * 0.55, h * 0.2, w - 40, -20); c.closePath();
+    c.fillStyle = lin(c, w, 0, 130, 140, [[0, "rgba(255,226,140,0)"], [1, "rgba(255,226,140,0.8)"]]); c.fill();
+    // La estrella de Belén, con su resplandor.
+    const sx = 138, sy = 148;
+    c.fillStyle = rad(c, sx, sy, 6, sx, sy, 92, [[0, "rgba(255,240,170,0.9)"], [1, "rgba(255,240,170,0)"]]); c.fillRect(0, 0, w, h);
+    c.beginPath();
+    for (let k = 0; k < 16; k++) { const a = -Math.PI / 2 + k * Math.PI / 8; const rr = k % 4 === 0 ? 64 : k % 2 === 0 ? 38 : 13; c.lineTo(sx + Math.cos(a) * rr, sy + Math.sin(a) * rr); }
+    c.closePath(); c.fillStyle = lin(c, sx - 60, sy - 60, sx + 60, sy + 60, [[0, "#fffbd0"], [0.5, "#ffd23f"], [1, "#d98a00"]]); c.fill();
+    c.lineJoin = "round"; c.lineWidth = 1.5; c.strokeStyle = "#7a4a00"; c.stroke();
+    // Adornos dorados colgados.
+    for (const [x, len, br] of [[40, 56, 19], [222, 98, 24], [96, 28, 11]]) {
+      c.beginPath(); c.moveTo(x, 0); c.lineTo(x, len); c.lineWidth = 1.4; c.strokeStyle = "#f3d27a"; c.stroke();
+      c.beginPath(); c.arc(x, len + br, br, 0, Math.PI * 2);
+      c.fillStyle = rad(c, x - br * 0.35, len + br * 0.6, br * 0.1, x, len + br, br * 1.1, [[0, "#fff6c0"], [0.5, "#f0b323"], [1, "#a86a00"]]); c.fill();
+      c.lineWidth = 1; c.strokeStyle = "#6b3f00"; c.stroke();
+      roundRect(c, x - 3.5, len - 2, 7, 6, 2); c.fillStyle = "#d9a21c"; c.fill();
+    }
+    // Una loma de nieve con abetos.
+    c.beginPath(); c.moveTo(0, h); c.lineTo(0, h - 52); c.quadraticCurveTo(w * 0.3, h - 82, w * 0.55, h - 56); c.quadraticCurveTo(w * 0.8, h - 36, w, h - 62); c.lineTo(w, h); c.closePath();
+    c.fillStyle = lin(c, 0, h - 80, 0, h, [[0, "#ffffff"], [1, "#d6dcf0"]]); c.fill();
+    for (const [x, s] of [[44, 1], [96, 0.72], [200, 0.9]]) {
+      for (let t = 0; t < 3; t++) { c.beginPath(); c.moveTo(x, h - 64 * s - t * 20 * s); c.lineTo(x - (16 + t * 7) * s, h - 44 * s - t * 20 * s + 22 * s); c.lineTo(x + (16 + t * 7) * s, h - 44 * s - t * 20 * s + 22 * s); c.closePath(); c.fillStyle = t % 2 ? "#1d6a3a" : "#278448"; c.fill(); }
+    }
+  }
+
+  function artNino(c, w, h) {
+    c.fillStyle = lin(c, 0, 0, 0, h, [[0, "#4a82f0"], [0.55, "#1c46b0"], [1, "#0a1f5e"]]); c.fillRect(0, 0, w, h);
+    const r = rngOf("nino");
+    for (let k = 0; k < 26; k++) { c.fillStyle = `rgba(255,226,140,${0.45 + r() * 0.4})`; star4(c, r() * w, r() * h, 2 + r() * 4, 0.2); c.fill(); }
+    // La estrella de Oriente y, debajo, las tres coronas.
+    c.fillStyle = rad(c, 138, 64, 4, 138, 64, 70, [[0, "rgba(255,240,170,0.9)"], [1, "rgba(255,240,170,0)"]]); c.fillRect(0, 0, w, 150);
+    polyStar(c, 138, 64, 8, 42, 15, -Math.PI / 2);
+    c.fillStyle = lin(c, 100, 24, 176, 104, [[0, "#fffbd0"], [0.5, "#ffd23f"], [1, "#d98a00"]]); c.fill();
+    c.lineJoin = "round"; c.lineWidth = 1.5; c.strokeStyle = "#7a4a00"; c.stroke();
+    for (const [x, y, s] of [[138, 176, 52], [72, 246, 34], [204, 246, 34]]) {
+      c.fillStyle = rad(c, x, y, 4, x, y, s * 1.8, [[0, "rgba(255,226,140,0.5)"], [1, "rgba(255,226,140,0)"]]); c.fillRect(0, 0, w, h);
+      crown(c, x, y, s);
+      c.beginPath(); c.ellipse(x, y + s * 0.78, s * 1.05, s * 0.16, 0, 0, Math.PI * 2); c.fillStyle = "rgba(0,0,0,0.3)"; c.fill();
+    }
+  }
+
+  function art(c, game, w, h) {
+    ({ jueves: artJueves, sabado: artSabado, navidad: artNavidad, nino: artNino }[game] || artJueves)(c, w, h);
+    // Doble filete dorado, como en los billetes.
+    c.lineWidth = 1.4; c.strokeStyle = "rgba(255,226,140,0.9)"; c.strokeRect(7, 7, w - 14, h - 14);
+    c.lineWidth = 0.7; c.strokeRect(11, 11, w - 22, h - 22);
+  }
+
+  function paint(raw) {
+    const st = stillState(raw);
+    stillStart();
+    const th = THEMES[st.game] || THEMES.jueves;
+    // El décimo sobre la mesa.
+    g.fillStyle = lin(g, 0, 0, 0, H, [[0, "#211a14"], [1, "#0d0a08"]]); g.fillRect(0, 0, W, H);
+    roundRect(g, PX + 3, PY + 6, PW, PH, 16); g.fillStyle = "rgba(0,0,0,0.5)"; g.fill();
+    roundRect(g, PX, PY, PW, PH, 16);
+    g.fillStyle = lin(g, 0, PY, 0, PY + PH, [[0, "#fdf8e6"], [1, "#efe2ba"]]); g.fill();
+    guilloche(g, PX + ART_W, PY, PW - ART_W, PH, th.wave, 0.6);
+    // La ilustración, con las esquinas del papel y los agujeros del cupón.
+    g.save(); roundRect(g, PX, PY, PW, PH, 16); g.clip();
+    g.beginPath(); g.rect(PX, PY, ART_W, PH); g.clip();
+    g.translate(PX, PY); art(g, st.game, ART_W, PH); g.restore();
+    for (let y = PY + 16; y < PY + PH - 8; y += 12) { g.beginPath(); g.arc(PX + ART_W, y, 2.6, 0, Math.PI * 2); g.fillStyle = "#16110d"; g.fill(); }
+    roundRect(g, PX, PY, PW, PH, 16); g.lineWidth = 2; g.strokeStyle = "rgba(120,90,30,0.55)"; g.stroke();
+
+    // Título y sorteo.
+    const title = textOf(st.title), draw = textOf(st.draw);
+    fitText(g, title, LEFT, 50, 290, 31, 14, LUCKY, th.ink);
+    fitText(g, draw, LEFT, 72, 330, 14, 9, MONT, th.soft, "left", "700");
+    g.fillStyle = th.ink; g.globalAlpha = 0.85; g.fillRect(LEFT, 80, RIGHT - LEFT, 1.8); g.fillRect(LEFT, 84, RIGHT - LEFT, 0.8); g.globalAlpha = 1;
+    const micro = (title + " · ").repeat(14);
+    g.save(); g.beginPath(); g.rect(LEFT, 84, RIGHT - LEFT, 14); g.clip();
+    drawText(g, micro, LEFT, 94, 5.5, MONT, th.soft, "left", "700");
+    g.restore();
+
+    // El número, en grande, en su recuadro de cinco casillas.
+    const bx = LEFT, by = 102, bw = RIGHT - LEFT, bh = 92;
+    roundRect(g, bx - 4, by - 4, bw + 8, bh + 8, 12); g.fillStyle = th.frame; g.fill();
+    roundRect(g, bx - 1, by - 1, bw + 2, bh + 2, 9); g.fillStyle = "#fffdf4"; g.fill();
+    guilloche(g, bx, by, bw, bh, th.wave, 2.2);
+    roundRect(g, bx, by, bw, bh, 8); g.lineWidth = 1.2; g.strokeStyle = th.ink; g.stroke();
+    const digits = Array.from(textOf(st.number).replace(/\s/g, "")).slice(0, 8);
+    const cell = bw / Math.max(5, digits.length);
+    digits.forEach((d, k) => {
+      const x = bx + cell * (k + 0.5);
+      if (k > 0) { g.fillStyle = th.ink; g.globalAlpha = 0.28; g.fillRect(bx + cell * k - 0.5, by + 10, 1, bh - 20); g.globalAlpha = 1; }
+      drawText(g, d, x + 2, by + 69, 76, MONT, "rgba(0,0,0,0.14)", "center", "700");
+      drawText(g, d, x, by + 67, 76, MONT, th.ink, "center", "700");
+    });
+
+    // Serie, precio y primer premio, y el código de barras.
+    g.fillStyle = "#d9a21c"; g.fillRect(LEFT, 214, 9, 9);
+    fitText(g, textOf(st.serie), LEFT + 17, 223, 230, 15, 9, MONT, th.ink, "left", "700");
+    fitText(g, textOf(st.price), LEFT, 247, 245, 14, 9, BODY, "#3a3026");
+    fitText(g, textOf(st.first), LEFT, 269, 250, 13, 8, MONT, th.ink, "left", "700");
+    drawBars(g, 556, 210, RIGHT - 556, 44, st.barcode, "#1c1812");
+    drawText(g, String(Math.abs(Number(st.barcode) || 0)).padStart(10, "0"), (556 + RIGHT) / 2, 267, 9, BODY, "#3a3026", "center");
+    // El dueño.
+    g.fillStyle = th.ink; g.globalAlpha = 0.5; g.fillRect(LEFT, 282, RIGHT - LEFT, 0.8); g.globalAlpha = 1;
+    drawText(g, "A NOMBRE DE", LEFT, 298, 8.5, MONT, th.soft, "left", "700");
+    fitText(g, textOf(st.owner), LEFT + 74, 299, RIGHT - LEFT - 74, 14, 8, BODY, "#2a2218");
+
+    // El billete entero, con su chapa.
+    const quantity = Number(st.quantity);
+    if (quantity > 1) {
+      const x = RIGHT - 30, y = 52;
+      g.save(); g.translate(x, y); g.rotate(0.12); g.translate(-x, -y);
+      chapa(g, x, y, 34);
+      drawText(g, "BILLETE", x, y - 3, 11, MONT, "#4a2a00", "center", "700");
+      fitText(g, `×${Math.min(99, Math.round(quantity))}`, x, y + 17, 40, 20, 8, LUCKY, "#7a1010", "center");
+      g.restore();
+    }
+
+    // El sello de premiado, sobre la ilustración.
+    const stamp = st.stamp && typeof st.stamp === "object" ? st.stamp : null;
+    if (stamp) {
+      const win = stamp.tone === "win";
+      const detail = textOf(stamp.detail);
+      const ink = win ? "#127a39" : "#555b68";
+      const lines = [{ text: textOf(stamp.title) || (win ? "PREMIADO" : "SIN PREMIO"), size: 34, family: LUCKY }];
+      if (textOf(stamp.amount)) lines.push({ text: textOf(stamp.amount), size: 26, family: LUCKY });
+      for (const part of detail ? subLines2(detail) : []) lines.push({ text: part, size: 11.5, family: MONT, weight: "700" });
+      const hh = 14 + lines.reduce((a, l) => a + l.size * 1.1, 0) / 2;
+      tampon(g, PX + 140, 236, 118, Math.min(hh, 74), -0.17, ink, "rgba(255,251,236,0.95)", lines, st.barcode);
+    }
+    return null;
+  }
+
+  // El detalle del sello en una o dos líneas: se parte por la mitad de las palabras.
+  function subLines2(text) {
+    const words = text.split(" ");
+    if (text.length <= 26 || words.length < 3) return [text];
+    const half = Math.ceil(words.length / 2);
+    return [words.slice(0, half).join(" "), words.slice(half).join(" ")];
+  }
+
+  return { size: SIZE, init: async () => {}, paint };
+})();
+
+// -- Modo "boleto" ----------------------------------------------------------------------------
+//
+// El resguardo de un terminal de la administración: papel blanco con los bordes cortados, una banda
+// con el color del juego, una fila por apuesta (letra, bolas, y la R, la C o las ★ aparte) y un pie con
+// el total, el código y el dueño. A partir de seis filas, dos columnas de cinco. Con el sorteo hecho
+// salen la combinación ganadora arriba y, en cada fila, las bolas acertadas llenas, la complementaria
+// con aro amarillo y el resto apagadas, con lo que paga cada fila a la derecha.
+
+MODES.boleto = (() => {
+  const SIZE = [640, 400];
+  const HEADER = 118, ROW = 46, FOOTER = 58;     // los mismos que `lottery_render.slip_size`
+  const GAMES = {
+    primitiva: { color: "#10824a", dark: "#06361d", pale: "#dff3e6" },
+    bonoloto: { color: "#f56a14", dark: "#8a2207", pale: "#ffe6d4" },
+    gordo: { color: "#e8222f", dark: "#7e0c18", pale: "#ffdde0" },
+    euromillones: { color: "#2a5fee", dark: "#0b2488", pale: "#dde7ff" },
+  };
+  const EXTRA = { R: ["#ff8274", "#b3121f", "#ffffff"], C: ["#ffe586", "#d98a00", "#3a2000"] };
+  const GREEN = "#12803a";
+
+  // Una bola o una estrella del resguardo. `look`: relleno (a, b), aro, tinta del número.
+  function ball(c, x, y, r, text, look, star = false) {
+    if (star) {
+      starPath(c, x, y + r * 0.04, r * 1.2, r * 0.54);
+      c.fillStyle = lin(c, x - r, y - r, x + r, y + r, [[0, look.a], [1, look.b]]); c.fill();
+      c.lineJoin = "round"; c.lineWidth = look.ringW || 1.4; c.strokeStyle = look.ring; c.stroke();
+    } else {
+      c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2);
+      c.fillStyle = rad(c, x - r * 0.35, y - r * 0.4, r * 0.1, x, y, r * 1.05, [[0, look.a], [1, look.b]]); c.fill();
+      c.lineWidth = look.ringW || 1.8; c.strokeStyle = look.ring; c.stroke();
+    }
+    if (text) fitText(c, text, x, y + r * 0.36 + (star ? r * 0.06 : 0), r * 1.45, r * (star ? 0.86 : 0.98), 6, MONT, look.ink, "center", "700");
+  }
+
+  function looks(game) {
+    const g1 = GAMES[game] || GAMES.primitiva;
+    return {
+      plain: { a: "#ffffff", b: "#ebe9e1", ring: g1.color, ink: "#1d1a22" },
+      hit: { a: g1.color, b: g1.dark, ring: g1.dark, ink: "#ffffff", ringW: 1.4 },
+      comp: { a: "#fff6c2", b: "#ffe27a", ring: "#f0a800", ink: "#3a2800", ringW: 3 },
+      off: { a: "#f0efe9", b: "#e4e2da", ring: "#c9c6bb", ink: "#9a968c", ringW: 1.4 },
+    };
+  }
+
+  function extraLook(label, on, game) {
+    if (!on) return looks(game).off;
+    const [a, b, ink] = label === "R" ? EXTRA.R : EXTRA.C;
+    return { a, b, ring: label === "R" ? "#7a0a14" : "#7a4a00", ink, ringW: 1.4 };
+  }
+
+  const STAR_LOOK = { a: "#fff3a8", b: "#ffc61f", ring: "#7a4a00", ink: "#3a2000", ringW: 1.4 };
+
+  function paint(raw) {
+    const st = stillState(raw);
+    stillStart();
+    const g1 = GAMES[st.game] || GAMES.primitiva;
+    const lk = looks(st.game);
+    const rows = listOf(st.rows, 40).map((row) => (row && typeof row === "object" ? row : {}));
+    const result = st.result && typeof st.result === "object" ? st.result : null;
+    const star = st.xlabel === "★" || st.game === "euromillones";
+    const label = star ? "★" : textOf(st.xlabel) === "C" ? "C" : "R";
+
+    // La mesa y el papel con los bordes cortados en dientes.
+    g.fillStyle = lin(g, 0, 0, 0, H, [[0, "#1d1923"], [1, "#0e0c12"]]); g.fillRect(0, 0, W, H);
+    const tooth = 10, depth = 5;
+    function paperPath(dx, dy) {
+      g.beginPath(); g.moveTo(8 + dx, 6 + dy + depth);
+      for (let x = 8, up = false; x < W - 8; x += tooth, up = !up) g.lineTo(Math.min(x + tooth, W - 8) + dx, 6 + dy + (up ? depth : 0));
+      g.lineTo(W - 8 + dx, H - 6 + dy - depth);
+      for (let x = W - 8, up = false; x > 8; x -= tooth, up = !up) g.lineTo(Math.max(x - tooth, 8) + dx, H - 6 + dy - (up ? 0 : depth));
+      g.closePath();
+    }
+    paperPath(3, 5); g.fillStyle = "rgba(0,0,0,0.5)"; g.fill();
+    paperPath(0, 0); g.fillStyle = lin(g, 0, 0, 0, H, [[0, "#fdfcf8"], [1, "#f1efe6"]]); g.fill();
+    g.save(); paperPath(0, 0); g.clip();
+
+    // La banda del juego, con el título, el sorteo y el bote.
+    g.fillStyle = lin(g, 0, 0, W, 0, [[0, g1.dark], [0.55, g1.color], [1, g1.dark]]); g.fillRect(0, 0, W, 76);
+    g.fillStyle = lin(g, 0, 0, 0, 76, [[0, "rgba(255,255,255,0.18)"], [0.5, "rgba(255,255,255,0)"]]); g.fillRect(0, 0, W, 76);
+    g.fillStyle = "rgba(255,255,255,0.65)"; g.fillRect(0, 76, W, 2);
+    sticker(g, textOf(st.title), 26, 50, fitSize(g, textOf(st.title), 380, 30, 14, LUCKY), LUCKY, "#ffffff", g1.dark, 6, "left");
+    fitText(g, textOf(st.draw), 27, 69, 380, 13, 8, MONT, "rgba(255,255,255,0.92)", "left", "700");
+    const pill = `Bote: ${textOf(st.jackpot)}`;
+    const pw = Math.min(210, Math.max(150, richWidth(g, pill, 15, MONT, "700") + 44));
+    roundRect(g, W - 24 - pw, 22, pw, 32, 16); g.fillStyle = lin(g, 0, 22, 0, 54, [[0, "#fff09a"], [0.5, "#ffc21f"], [1, "#e09a00"]]); g.fill();
+    g.lineWidth = 1.8; g.strokeStyle = "#5a3500"; g.stroke();
+    g.fillStyle = "#5a3500"; star4(g, W - 24 - pw + 16, 38, 6.5, 0.22); g.fill();
+    fitText(g, pill, W - 24 - pw / 2 + 8, 43, pw - 50, 15, 8, MONT, "#4a2a00", "center", "700");
+
+    // Debajo de la banda: la combinación ganadora o lo que se ha comprado.
+    if (result) {
+      drawText(g, "COMBINACIÓN", 26, 97, 10.5, MONT, g1.dark, "left", "700");
+      drawText(g, "GANADORA", 26, 110, 10.5, MONT, g1.dark, "left", "700");
+      let x = 138;
+      for (const n of listOf(result.n, 8)) { ball(g, x, 98, 13, textOf(n), lk.hit); x += 31; }
+      const comp = textOf(result.comp);
+      if (comp) { x += 3; ball(g, x, 98, 13, comp, lk.comp); x += 31; }
+      x += 7; g.fillStyle = "#cfccc2"; g.fillRect(x - 12, 86, 1.5, 24); x += 14;
+      for (const e of listOf(result.x, 3)) {
+        if (star) ball(g, x, 98, 13, textOf(e), STAR_LOOK, true); else ball(g, x, 98, 13, textOf(e), extraLook(label, true, st.game));
+        x += 31;
+      }
+    } else {
+      drawText(g, "TUS APUESTAS", 26, 103, 11, MONT, g1.dark, "left", "700");
+      richText(g, richClean(st.price), W - 26, 103, 12.5, BODY, "#5d584c", "right");
+      g.strokeStyle = "#cfccc2"; g.lineWidth = 1; g.setLineDash([5, 4]);
+      g.beginPath(); g.moveTo(26, 115); g.lineTo(W - 26, 115); g.stroke(); g.setLineDash([]);
+    }
+
+    // Las apuestas, en una o dos columnas.
+    const capacity = Math.max(0, Math.floor((H - HEADER - FOOTER) / ROW));
+    const columns = rows.length > 5 ? 2 : 1;
+    const perColumn = Math.max(1, columns === 2 ? Math.min(5, capacity) : capacity);
+    const room = capacity ? perColumn * columns : 0;
+    const shown = rows.length > room ? rows.slice(0, Math.max(0, room - 1)) : rows;
+    const narrow = columns === 2;
+    const colW = W / columns;
+    shown.forEach((row, k) => {
+      const col = Math.floor(k / perColumn), n = k % perColumn;
+      const x0 = col * colW, y0 = HEADER + n * ROW;
+      const tag = richClean(row.tag);
+      const hits = Array.isArray(row.hit) ? row.hit : null;
+      const xhits = Array.isArray(row.xhit) ? row.xhit : null;
+      const prized = !!tag;
+      if (prized) { g.fillStyle = "#e4f4e9"; g.fillRect(x0 + 8, y0 + 2, colW - 16, ROW - 4); g.fillStyle = GREEN; g.fillRect(x0 + 8, y0 + 2, 4, ROW - 4); }
+      else if (n % 2 === 0) { g.fillStyle = "rgba(0,0,0,0.028)"; g.fillRect(x0 + 8, y0 + 2, colW - 16, ROW - 4); }
+      const r = narrow ? 12.5 : 16, step = narrow ? 29 : 38, cy = y0 + (narrow ? 18 : 23);
+      const bx = x0 + (narrow ? 60 : 82);
+      roundRect(g, x0 + (narrow ? 16 : 24), cy - 11, 22, 22, 6); g.fillStyle = g1.pale; g.fill();
+      drawText(g, String.fromCharCode(65 + (k % 26)), x0 + (narrow ? 27 : 35), cy + 5, 13, MONT, g1.dark, "center", "700");
+      const numbers = listOf(row.n, 8);
+      numbers.forEach((num, i) => {
+        const h = hits ? hits[i] : null;
+        const look = !hits ? lk.plain : h === "hit" ? lk.hit : h === "comp" ? lk.comp : lk.off;
+        ball(g, bx + step * i, cy, r, textOf(num), look);
+      });
+      let x = bx + step * numbers.length - step / 2 + (narrow ? 12 : 16);
+      g.fillStyle = "#cfccc2"; g.fillRect(x - 1, cy - 14, 1.5, 28); x += narrow ? 14 : 14;
+      if (!star && !narrow) { drawText(g, label, x, cy + 4.5, 11, MONT, "#7a756a", "left", "700"); x += 18; }
+      for (const [i, e] of listOf(row.x, 3).entries()) {
+        const on = xhits ? !!xhits[i] : true;
+        if (star) ball(g, x + r, cy, r, textOf(e), on ? STAR_LOOK : looks(st.game).off, true);
+        else ball(g, x + r, cy, r, textOf(e), extraLook(label, on, st.game));
+        x += r * 2 + (narrow ? 5 : 7);
+      }
+      if (tag) {
+        if (narrow) fitRich(g, tag, bx - r, y0 + 41, colW - 66, 11, 7, MONT, GREEN, "left", "700");
+        else fitRich(g, tag, x0 + colW - 24, cy + 5, W - 24 - x - 12, 14, 8, MONT, GREEN, "right", "700");
+      }
+    });
+    if (rows.length > shown.length) {
+      drawText(g, `… y ${rows.length - shown.length} apuestas más`, W / 2, HEADER + capacity * ROW - 14, 12, BODY, "#5d584c", "center");
+    }
+    if (columns === 2) {
+      g.strokeStyle = "#cfccc2"; g.lineWidth = 1; g.setLineDash([3, 4]);
+      g.beginPath(); g.moveTo(W / 2, HEADER + 4); g.lineTo(W / 2, HEADER + 5 * ROW - 4); g.stroke(); g.setLineDash([]);
+    }
+
+    // El pie: total, dueño y código.
+    const fy = H - FOOTER;
+    g.strokeStyle = "#b9b5a8"; g.lineWidth = 1.2; g.setLineDash([6, 4]);
+    g.beginPath(); g.moveTo(20, fy + 2); g.lineTo(W - 20, fy + 2); g.stroke(); g.setLineDash([]);
+    fitRich(g, richClean(`Total ${textOf(st.total)} · ${textOf(st.price)}`), 26, fy + 26, 390, 15.5, 9, MONT, "#1d1a22", "left", "700");
+    drawText(g, "A nombre de", 26, fy + 43, 11, SOFT, "#7a756a");
+    fitText(g, textOf(st.owner), 98, fy + 43, 320, 12.5, 8, BODY, "#3a3640");
+    drawBars(g, 448, fy + 8, 168, 24, st.code, "#1c1812");
+    drawText(g, textOf(st.code), 532, fy + 44, 9, BODY, "#3a3640", "center");
+    g.restore();
+    return null;
+  }
+
+  return { size: SIZE, init: async () => {}, paint };
+})();
+
+// -- Modo "cartel" ----------------------------------------------------------------------------
+//
+// El escaparate de «Loterías de Jovani»: el rótulo dorado, el toldo de rayas, cuatro tarjetas de bote
+// (cada una con el color de su juego y la cifra del bote en grande y dorada, y una llama si ya arde) y
+// debajo la tira de la Nacional, con los días que faltan para Navidad y el Niño.
+
+MODES.cartel = (() => {
+  const SIZE = [720, 405];
+  const CARDS = {
+    primitiva: { a: "#22a862", b: "#07391f", glow: "#8dff9c" },
+    bonoloto: { a: "#ff8a2a", b: "#8a2207", glow: "#ffd7a0" },
+    gordo: { a: "#f2414c", b: "#7e0c18", glow: "#ffd23f" },
+    euromillones: { a: "#4a82f5", b: "#0b2488", glow: "#ffd23f" },
+  };
+  const MINI = { jueves: "#2f62d8", sabado: "#d9232f", navidad: "#cc1b2d", nino: "#3466d6" };
+  const GOLD = [[0, "#fff6b0"], [0.5, "#ffd23f"], [1, "#e08a00"]];
+
+  function flame(c, x, y, s) {
+    c.save(); c.translate(x, y); c.scale(s, s);
+    c.beginPath(); c.moveTo(0, -12); c.bezierCurveTo(6, -6, 9, -1, 7, 5); c.bezierCurveTo(6, 10, -6, 10, -7, 5); c.bezierCurveTo(-9, 0, -4, -3, -3, -8); c.bezierCurveTo(-1, -6, 0, -9, 0, -12); c.closePath();
+    c.fillStyle = lin(c, 0, -12, 0, 10, [[0, "#fff176"], [0.5, "#ff9800"], [1, "#e53935"]]); c.fill();
+    c.lineWidth = 0.8; c.strokeStyle = "#7a1d00"; c.stroke();
+    c.beginPath(); c.moveTo(0, -1); c.bezierCurveTo(3, 2, 4, 5, 0, 7); c.bezierCurveTo(-4, 5, -3, 2, 0, -1); c.fillStyle = "#fff9c4"; c.fill();
+    c.restore();
+  }
+
+  function drawFront(c) {
+    // La fachada de noche, con la luz del toldo cayendo sobre el escaparate.
+    c.fillStyle = lin(c, 0, 0, 0, H, [[0, "#0d1228"], [0.45, "#1a2550"], [1, "#0a0e22"]]); c.fillRect(0, 0, W, H);
+    const r = rngOf("cartel");
+    for (let k = 0; k < 30; k++) { c.beginPath(); c.arc(r() * W, 110 + r() * 290, 3 + r() * 14, 0, Math.PI * 2); c.fillStyle = r() < 0.5 ? "rgba(255,226,140,0.06)" : "rgba(130,170,255,0.07)"; c.fill(); }
+    c.fillStyle = rad(c, W / 2, 96, 20, W / 2, 96, 420, [[0, "rgba(255,226,140,0.3)"], [1, "rgba(255,226,140,0)"]]); c.fillRect(0, 96, W, H - 96);
+    // El marco del escaparate.
+    c.fillStyle = lin(c, 0, 0, 12, 0, [[0, "#3a2414"], [1, "#6b4426"]]); c.fillRect(0, 96, 12, H - 96);
+    c.fillStyle = lin(c, W - 12, 0, W, 0, [[0, "#6b4426"], [1, "#3a2414"]]); c.fillRect(W - 12, 96, 12, H - 96);
+    // El rótulo.
+    roundRect(c, 40, 6, W - 80, 46, 10); c.fillStyle = lin(c, 0, 6, 0, 52, [[0, "#3a2414"], [1, "#1a0e07"]]); c.fill();
+    c.lineWidth = 3; c.strokeStyle = "#e2b53a"; c.stroke();
+    roundRect(c, 46, 12, W - 92, 34, 6); c.lineWidth = 1; c.strokeStyle = "rgba(226,181,58,0.6)"; c.stroke();
+    for (let k = 0; k < 22; k++) { const x = 52 + k * ((W - 104) / 21); c.beginPath(); c.arc(x, 9.5, 2.2, 0, Math.PI * 2); c.fillStyle = k % 2 ? "#fff6b0" : "#ffd23f"; c.fill(); }
+    const sign = "LOTERÍAS DE JOVANI";
+    const size = fitSize(c, sign, 500, 34, 14, LUCKY);
+    setFont(c, "", size, LUCKY); c.textAlign = "center"; c.textBaseline = "alphabetic"; c.lineJoin = "round"; c.miterLimit = 2;
+    c.lineWidth = 6; c.strokeStyle = "#1a0e07"; c.strokeText(sign, W / 2, 41);
+    c.lineWidth = 3; c.strokeStyle = "#7a4a00"; c.strokeText(sign, W / 2, 41);
+    c.fillStyle = lin(c, 0, 41 - size * 0.75, 0, 41, GOLD); c.fillText(sign, W / 2, 41);
+    for (const sx of [78, W - 78]) { c.fillStyle = "#ffd23f"; polyStar(c, sx, 29, 5, 9, 4); c.fill(); }
+    // El toldo de rayas con su festón.
+    const stripe = 40;
+    for (let k = 0; k < W / stripe; k++) {
+      const x = k * stripe;
+      c.fillStyle = k % 2 ? "#fff4dc" : "#c8202c"; c.fillRect(x, 56, stripe, 36);
+      c.beginPath(); c.arc(x + stripe / 2, 92, stripe / 2, 0, Math.PI); c.fill();
+    }
+    c.fillStyle = lin(c, 0, 56, 0, 112, [[0, "rgba(255,255,255,0.22)"], [0.3, "rgba(255,255,255,0)"], [1, "rgba(0,0,0,0.3)"]]); c.fillRect(0, 56, W, 56);
+    c.fillStyle = "rgba(0,0,0,0.3)"; c.fillRect(0, 54, W, 3);
+    // La luz del toldo en el suelo del escaparate.
+    c.fillStyle = lin(c, 0, 104, 0, 140, [[0, "rgba(0,0,0,0.35)"], [1, "rgba(0,0,0,0)"]]); c.fillRect(12, 104, W - 24, 36);
+  }
+
+  function drawCard(c, item, x, y, w, h) {
+    const look = CARDS[item.game] || CARDS.primitiva;
+    roundRect(c, x + 2, y + 5, w, h, 14); c.fillStyle = "rgba(0,0,0,0.45)"; c.fill();
+    roundRect(c, x, y, w, h, 14); c.fillStyle = lin(c, x, y, x + w * 0.4, y + h, [[0, look.a], [1, look.b]]); c.fill();
+    c.save(); roundRect(c, x, y, w, h, 14); c.clip();
+    c.fillStyle = lin(c, 0, y, 0, y + h * 0.5, [[0, "rgba(255,255,255,0.22)"], [1, "rgba(255,255,255,0)"]]); c.fillRect(x, y, w, h * 0.5);
+    c.fillStyle = rad(c, x + w * 0.35, y + h * 0.85, 4, x + w * 0.35, y + h * 0.85, w * 0.45, [[0, "rgba(255,226,140,0.3)"], [1, "rgba(255,226,140,0)"]]); c.fillRect(x, y, w, h);
+    // Destellos de fondo.
+    const r = rngOf("tarjeta", item.game);
+    for (let k = 0; k < 8; k++) { c.fillStyle = "rgba(255,255,255,0.35)"; star4(c, x + 150 + r() * (w - 160), y + 8 + r() * (h - 16), 2 + r() * 3, 0.2); c.fill(); }
+    // Texto.
+    sticker(c, textOf(item.name), x + 16, y + 26, fitSize(c, textOf(item.name), w - 130, 21, 11, LUCKY), LUCKY, "#ffffff", look.b, 5, "left");
+    fitText(c, textOf(item.when), x + 17, y + 42, w - 130, 11, 7, MONT, "rgba(255,255,255,0.88)", "left", "700");
+    const amount = textOf(item.amount);
+    const hot = !!item.hot;
+    const size = fitSize(c, amount, hot ? w - 118 : w - 34, 44, 14, LUCKY);
+    setFont(c, "", size, LUCKY); c.textAlign = "left"; c.textBaseline = "alphabetic"; c.lineJoin = "round"; c.miterLimit = 2;
+    c.lineWidth = 7; c.strokeStyle = "#3a1a00"; c.strokeText(amount, x + 16, y + 83);
+    c.fillStyle = lin(c, 0, y + 83 - size * 0.75, 0, y + 83, GOLD); c.fillText(amount, x + 16, y + 83);
+    // Lo que crece cada día.
+    const grow = richClean(item.grow);
+    if (grow) {
+      c.beginPath(); c.moveTo(x + 18, y + h - 7); c.lineTo(x + 25, y + h - 7); c.lineTo(x + 21.5, y + h - 14); c.closePath(); c.fillStyle = "#7dff7a"; c.fill();
+      fitRich(c, grow, x + 31, y + h - 6.5, w - 60, 11.5, 7, MONT, "#ffffff", "left", "700");
+    }
+    // Una llama y un lazo en la esquina si el bote arde.
+    if (hot) {
+      c.save(); c.translate(x + w - 34, y + 34); c.rotate(Math.PI / 4);
+      c.fillStyle = lin(c, -60, 0, 60, 0, [[0, "#ff7a00"], [0.5, "#ff2d1a"], [1, "#ff7a00"]]); c.fillRect(-72, -11, 144, 22);
+      c.lineWidth = 1.2; c.strokeStyle = "#ffe08a"; c.strokeRect(-72, -11, 144, 22);
+      drawText(c, "¡ARDIENDO!", 0, 3.6, 10, MONT, "#ffffff", "center", "700");
+      c.restore();
+      flame(c, x + w - 21, y + 19, 0.8);
+    }
+    c.restore();
+    roundRect(c, x, y, w, h, 14); c.lineWidth = 2.5; c.strokeStyle = "#e2b53a"; c.stroke();
+  }
+
+  function drawMini(c, item, x, y, w, h) {
+    const color = MINI[item.game] || "#3466d6";
+    roundRect(c, x + 1, y + 3, w, h, 10); c.fillStyle = "rgba(0,0,0,0.45)"; c.fill();
+    roundRect(c, x, y, w, h, 10); c.fillStyle = lin(c, 0, y, 0, y + h, [[0, "#4a2d19"], [1, "#22130a"]]); c.fill();
+    c.save(); roundRect(c, x, y, w, h, 10); c.clip(); c.fillStyle = color; c.fillRect(x, y, 7, h); c.restore();
+    roundRect(c, x, y, w, h, 10); c.lineWidth = 2; c.strokeStyle = "#e2b53a"; c.stroke();
+    const days = Number(item.days);
+    const big = item.game === "navidad" || item.game === "nino";
+    const label = Number.isFinite(days) ? `Faltan ${Math.max(0, Math.round(days))} ${Math.round(days) === 1 ? "día" : "días"}` : "";
+    const nameW = big && label ? w - 100 : w - 28;
+    fitText(c, textOf(item.name), x + 16, y + 17, nameW, 14, 8, LUCKY, "#ffffff");
+    const amount = textOf(item.amount);
+    const size = fitSize(c, amount, w - 28, 21, 9, LUCKY);
+    setFont(c, "", size, LUCKY); c.textAlign = "left"; c.lineJoin = "round"; c.lineWidth = 4; c.strokeStyle = "#2a1400"; c.strokeText(amount, x + 16, y + 38);
+    c.fillStyle = lin(c, 0, y + 38 - size * 0.75, 0, y + 38, GOLD); c.fillText(amount, x + 16, y + 38);
+    fitText(c, textOf(item.when), x + 16, y + h - 6, w - 24, 9, 6, MONT, "rgba(255,255,255,0.78)", "left", "700");
+    if (label) {
+      if (big) {
+        const lw = Math.min(88, richWidth(c, label, 9, MONT, "700") + 14);
+        roundRect(c, x + w - lw - 8, y + 6, lw, 16, 8); c.fillStyle = "#d3122a"; c.fill();
+        c.lineWidth = 1; c.strokeStyle = "#ffe08a"; c.stroke();
+        fitText(c, label, x + w - 8 - lw / 2, y + 17.5, lw - 8, 9, 6, MONT, "#ffffff", "center", "700");
+      } else {
+        fitText(c, label, x + w - 10, y + 17, 76, 9, 6, MONT, "rgba(255,255,255,0.7)", "right", "700");
+      }
+    }
+  }
+
+  function paint(raw) {
+    const st = stillState(raw);
+    stillStart();
+    drawFront(g);
+    const botes = listOf(st.botes, 4).map((b) => (b && typeof b === "object" ? b : {}));
+    const cw = 326, ch = 100, gap = 12, left = (W - (cw * 2 + gap)) / 2;
+    botes.forEach((item, k) => drawCard(g, item, left + (k % 2) * (cw + gap), 116 + Math.floor(k / 2) * (ch + 10), cw, ch));
+    // La Nacional.
+    const nacional = listOf(st.nacional, 4).map((n) => (n && typeof n === "object" ? n : {}));
+    drawText(g, "LA NACIONAL · PRIMER PREMIO AL DÉCIMO", W / 2, 341, 9.5, MONT, "#ffd23f", "center", "700");
+    g.fillStyle = "rgba(226,181,58,0.7)";
+    g.fillRect(28, 337.5, 148, 1.2); g.fillRect(W - 176, 337.5, 148, 1.2);
+    if (nacional.length) {
+      const mgap = 8, mw = (W - 56 - mgap * (nacional.length - 1)) / nacional.length;
+      nacional.forEach((item, k) => drawMini(g, item, 28 + k * (mw + mgap), 346, mw, 54));
+    }
+    return null;
+  }
+
+  return { size: SIZE, init: async () => {}, paint };
 })();
 
 // -- Entrada ----------------------------------------------------------------------------------
