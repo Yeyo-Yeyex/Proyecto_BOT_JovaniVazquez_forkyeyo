@@ -351,8 +351,9 @@ asentadas. Neto al día, tras IRPF y cuota:
   frenaban la batería y la familia, y con el café a 25 Y$ la batería no frenaba: el B no tenía
   fin. Al muro le faltaba lo que gustaba del B, elegir si arriesgar otra vez, y en la 9.19.0
   pasó a ser una cuesta: 4 franjas de noche en las que el B rinde cada vez menos (de media, la
-  última pierde) y el café cuesta una parte del sueldo base. `docs/noche_pala.py` mide que
-  quien lo apura todo saca casi lo mismo que con el muro (con el café nuevo, un 5,6 % menos) y
+  última pierde) y el café vale unas 8 veces más (110 y 200 Y$). `docs/noche_pala.py` mide que
+  quien lo apura todo saca casi lo mismo que con el muro (en el P1, un 10 % menos; en un
+  puesto medio, un 0,5 % menos) y
   el jugador normal no nota nada.
 
 ### Medido (21/10/2026)

@@ -2083,16 +2083,13 @@ class WorkService:
             ) from error
         return training.name, training.price, tax, balance
 
-    async def buy_coffee(
-        self, guild_id: int, user_id: int, key: str
-    ) -> tuple[float, int, int, int]:
+    async def buy_coffee(self, guild_id: int, user_id: int, key: str) -> tuple[float, int, int]:
         """Se toma un café: recarga batería. Desde el cuarto del día, temblores.
 
-        Cuesta una parte del sueldo base de su puesto (`Coffee.price`). Tratamiento fiscal:
-        una compra con IGIC general (ver `EconomyService.purchase`).
+        Tratamiento fiscal: una compra con IGIC general (ver `EconomyService.purchase`).
 
         Returns:
-            `(batería después, cafés de hoy, lo pagado con IGIC, saldo final)`.
+            `(batería después, cafés de hoy, saldo final)`.
 
         Raises:
             WorkError: Si no tiene curro, el café no existe o no le llega.
@@ -2106,14 +2103,12 @@ class WorkService:
                 raise WorkError("La máquina de café es solo para quien tiene curro.")
             now = self._clock()
             roll_over_day(contract, now)
-            position = JOB_BY_KEY[contract.job].position(contract.level, contract.branch)
-            price = coffee.price(position.base_pay)
-            tax = igic(price, IGIC_GENERAL_RATE)
+            tax = igic(coffee.price, IGIC_GENERAL_RATE)
             try:
                 _, balance = await self.economy.purchase(
                     guild_id,
                     user_id,
-                    base=price,
+                    base=coffee.price,
                     tax=tax,
                     concept=f"cafe:{coffee.key}",
                     reserve=lambda _connection: None,
@@ -2124,7 +2119,7 @@ class WorkService:
             contract.battery_at = now
             contract.coffees += 1
             await self.repository.save_contract(guild_id, user_id, contract)
-            return contract.battery, contract.coffees, price + tax, balance
+            return contract.battery, contract.coffees, balance
 
     # -- Familia: regalos y favores -----------------------------------------------------
 

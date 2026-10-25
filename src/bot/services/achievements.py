@@ -10870,12 +10870,10 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "cena_micro", "La cena, en el micro",
          "Ficha trasnochando con la familia en crisis.", R, True),
     ])  # fmt: skip
-    a += _tiers("work", "work_coffee_price_max", [
-        (1_000, "cafe_1000", "Barraquito de autor",
-         "Paga 1.000 Y$ o más por un café de la máquina.", E),
-        (3_000, "cafe_3000", "Barraquito con denominación de origen",
-         "Paga 3.000 Y$ o más por un café de la máquina.", L),
-    ], unit="money")  # fmt: skip
+    a += _tiers("work", "work_coffees", [
+        (50, "cafe_50", "Cafeína en vena", "Tómate 50 cafés de la máquina.", R),
+        (300, "cafe_300", "Más barraquito que sangre", "Tómate 300 cafés de la máquina.", E),
+    ])  # fmt: skip
     a += _tiers("work", "work_fee", [
         (1, "autonomo", "Autónomo y sin vacaciones", "Paga la cuota de autónomos.", R),
     ])  # fmt: skip

@@ -881,11 +881,9 @@ def test_trasnochar_cuesta_familia_aparte_de_la_madrugada() -> None:
     assert ("trasnochando", 2 * FAMILY_LATE) in family_breakdown(ShiftKind.GUARD, noon, late=2)
 
 
-def test_el_cafe_cuesta_una_parte_del_sueldo_y_el_barraquito_rinde_mas() -> None:
+def test_el_cafe_vale_entre_5_y_10_veces_lo_de_antes_y_el_barraquito_rinde_mas() -> None:
     from bot.services.work_catalog import COFFEE_BY_KEY
 
     cortado, barraquito = COFFEE_BY_KEY["cortado"], COFFEE_BY_KEY["barraquito"]
-    assert barraquito.price(10_000) == 700 and cortado.price(10_000) == 400
-    assert barraquito.price(10_000) * 10 < barraquito.price(100_000) + 1
-    assert barraquito.share / barraquito.battery < cortado.share / cortado.battery
-    assert cortado.price(1) == 1  # nunca gratis
+    assert 5 * 14 <= cortado.price <= 10 * 14 and 5 * 25 <= barraquito.price <= 10 * 25
+    assert barraquito.price / barraquito.battery < cortado.price / cortado.battery

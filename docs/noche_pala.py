@@ -6,8 +6,8 @@ Hasta la 9.18 el día tenía 8 franjas y era un muro: pasadas, no se fichaba nad
 la 8.14.0 no había franjas y el B era infinito: el café costaba 25 Y$ y la batería no
 frenaba. Desde la 9.19.0 se pueden trasnochar 4 más, pero en ellas la Inspección pilla
 más el B (`work.inspection_chance`) y lo cobra doble (`work.inspection_surcharge`), y cada
-una cuesta familia (`work.FAMILY_LATE`). El café cuesta una parte del sueldo base
-(`Coffee.price`). Este script mide si eso da más dinero que el muro.
+una cuesta familia (`work.FAMILY_LATE`). El café vale unas 8 veces más (110 y 200 Y$).
+Este script mide si eso da más dinero que el muro.
 
 Puesto 1 de obra (base 1.800 Y$), nota 75, 28 días, 200 semillas. Estilos:
 
@@ -25,8 +25,12 @@ Resultado (25/10/2026, Y$ al día; turnos al día entre paréntesis):
 - normal: 7.742 (4,0), igual con las reglas de antes y con las de ahora;
 - grinder con el muro de 8 franjas y el café a 25 Y$: 12.208 (6,4);
 - grinder con 12 franjas y el café a 25 Y$: 12.287 (8,6), un 0,6 % más;
-- grinder con 12 franjas y el café nuevo (135 Y$ en el P1): 11.523 (8,6), un 5,6 % menos;
-- prudente con 12 franjas y el café nuevo: 11.982 (7,4), un 1,9 % menos.
+- grinder con 12 franjas y el café nuevo (214 Y$ con IGIC): 10.965 (8,6), un 10 % menos;
+- prudente con 12 franjas y el café nuevo: 11.550 (7,4), un 5 % menos.
+
+En un puesto medio (base 16.600, cambiando `BASE`), el café fijo apenas pesa y quien lo
+apura todo saca lo mismo que con el muro: 86.531 frente a 86.936 (−0,5 %). Lo que frena la
+noche es el riesgo del B, no el café.
 
 Con un riesgo de noche del 25 al 70 % y la multa de día (20 %) el grinder sacaba 13.888, un
 14 % más que con el muro: por eso de noche la multa es doble. La familia es lo que más
@@ -134,7 +138,7 @@ def run(style: str, franjas: int, coffee: float, seed: int) -> dict[str, float]:
 
 
 def main() -> None:
-    new_coffee = BARRAQUITO.price(BASE) + igic(BARRAQUITO.price(BASE))
+    new_coffee = BARRAQUITO.price + igic(BARRAQUITO.price)
     print(f"Obra P1 (base {BASE}), nota {SCORE}, {DAYS} días, {SEEDS} semillas. Por día:")
     cases = [
         ("normal", "normal", FRANJAS_DIA, OLD_COFFEE),

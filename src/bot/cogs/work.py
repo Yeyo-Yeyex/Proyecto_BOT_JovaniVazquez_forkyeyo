@@ -1181,22 +1181,19 @@ class PalaPanel(ui.LayoutView):
         select.callback = callback  # type: ignore[method-assign]
         return select
 
-    def _coffee_select(self, coffees_today: int, base_pay: int) -> ui.Select:
-        options = []
-        for coffee in COFFEES:
-            price = coffee.price(base_pay)
-            options.append(
-                discord.SelectOption(
-                    label=f"{coffee.name} · +{coffee.battery} 🔋",
-                    value=coffee.key,
-                    emoji=coffee.emoji,
-                    description=(
-                        f"{format_amount(price + igic(price))} con IGIC "
-                        f"({round(coffee.share * 100)} % de tu sueldo base)"
-                        + (" · ⚠️ temblores" if coffees_today >= MAX_COFFEES else "")
-                    ),
-                )
+    def _coffee_select(self, coffees_today: int) -> ui.Select:
+        options = [
+            discord.SelectOption(
+                label=f"{coffee.name} · +{coffee.battery} 🔋",
+                value=coffee.key,
+                emoji=coffee.emoji,
+                description=(
+                    f"{format_amount(coffee.price + igic(coffee.price))} con IGIC"
+                    + (" · ⚠️ temblores" if coffees_today >= MAX_COFFEES else "")
+                ),
             )
+            for coffee in COFFEES
+        ]
         select: ui.Select = ui.Select(
             placeholder=f"☕ Máquina de café ({coffees_today}/{MAX_COFFEES} hoy)",
             options=options,
@@ -1285,7 +1282,7 @@ class PalaPanel(ui.LayoutView):
         more.add_item(self._button("🎁 Regalos", self._gift_shop))
         more.add_item(self._button("🏠 Inicio", self._go_home_screen))
         coffee_row: ui.ActionRow = ui.ActionRow()
-        coffee_row.add_item(self._coffee_select(status.contract.coffees, status.position.base_pay))
+        coffee_row.add_item(self._coffee_select(status.contract.coffees))
         family_row: ui.ActionRow = ui.ActionRow()
         family_row.add_item(self._family_select(status))
         jornada_row: ui.ActionRow = ui.ActionRow()
@@ -1614,7 +1611,7 @@ class PalaPanel(ui.LayoutView):
     async def _coffee(self, interaction: discord.Interaction, key: str) -> None:
         await ack(interaction)
         try:
-            battery, coffees, paid, _balance = await self.service.buy_coffee(
+            battery, coffees, _balance = await self.service.buy_coffee(
                 self.guild_id, self.owner.id, key
             )
         except WorkError as error:
@@ -1623,7 +1620,7 @@ class PalaPanel(ui.LayoutView):
         coffee = next(c for c in COFFEES if c.key == key)
         note = (
             f"{coffee.emoji} Te tomas un {coffee.name.lower()}: {battery_bar(battery)} "
-            f"({format_amount(paid)}, IGIC incluido)."
+            f"({format_amount(coffee.price + igic(coffee.price))}, IGIC incluido)."
         )
         if coffees > MAX_COFFEES:
             note += " Te tiemblan hasta las pestañas."
@@ -1635,7 +1632,7 @@ class PalaPanel(ui.LayoutView):
             self.guild_id,
             self.owner,
             self.channel,
-            StatDelta(peak={"work_coffees_day_max": coffees, "work_coffee_price_max": paid}),
+            StatDelta(add={"work_coffees": 1}, peak={"work_coffees_day_max": coffees}),
         )
 
     async def _gift_shop(self, interaction: discord.Interaction) -> None:

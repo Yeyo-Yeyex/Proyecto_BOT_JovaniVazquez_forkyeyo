@@ -338,14 +338,11 @@ async def test_sin_bateria_no_se_ficha_pero_un_barraquito_ayuda(tmp_path: Path, 
     with pytest.raises(WorkError, match="reventado"):
         await service.start_shift(GUILD, USER)
     coffee = COFFEE_BY_KEY["barraquito"]
-    price = coffee.price(status.position.base_pay)  # una parte del sueldo base del puesto
-    assert price == round(status.position.base_pay * coffee.share)
-    battery, coffees, paid, balance = await service.buy_coffee(GUILD, USER, "barraquito")
+    battery, coffees, balance = await service.buy_coffee(GUILD, USER, "barraquito")
     assert battery == -30 + coffee.battery and coffees == 1
-    assert paid == price + igic(price)
-    assert balance == STARTING_BALANCE - paid
-    assert ledger(tmp_path, STATE_ACCOUNT_ID)[1] == igic(price)
-    assert ledger(tmp_path, SHOP_ACCOUNT_ID)[1] == price
+    assert balance == STARTING_BALANCE - coffee.price - igic(coffee.price)
+    assert ledger(tmp_path, STATE_ACCOUNT_ID)[1] == igic(coffee.price)
+    assert ledger(tmp_path, SHOP_ACCOUNT_ID)[1] == coffee.price
     await service.start_shift(GUILD, USER)
 
 
