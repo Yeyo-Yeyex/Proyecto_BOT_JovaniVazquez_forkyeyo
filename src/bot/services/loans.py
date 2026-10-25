@@ -253,18 +253,21 @@ def quote(principal: int, months: int, rate: float, *, insured: bool) -> Quote:
     )
 
 
-def annual_equivalent(received: int, monthly: int, months: int) -> float:
+def annual_equivalent(received: int, monthly: int, months: int, *, delay: int = 0) -> float:
     """TAE: el tipo anual efectivo con el que lo recibido vale lo mismo que lo pagado.
 
     Busca por bisección el tipo mensual `r` con `received = Σ monthly / (1 + r)^k` y lo
     pasa a año (`(1 + r)^12 - 1`), como el anexo I de la Ley 16/2011.
+
+    Args:
+        delay: Meses sin cuota antes de la primera (la carencia de `credit`).
     """
     if received <= 0 or monthly * months <= received:
         return 0.0
     low, high = 0.0, 1.0
     for _ in range(100):
         mid = (low + high) / 2
-        value = monthly * (1 - (1 + mid) ** -months) / mid
+        value = monthly * (1 - (1 + mid) ** -months) / mid / (1 + mid) ** delay
         if value > received:
             low = mid
         else:
