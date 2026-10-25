@@ -665,6 +665,8 @@ PRODUCED_STATS = {
     "work_dodged", "work_no_recuerdo", "work_payslips", "work_taxes", "work_irpf_pct_max",
     "work_half_salary", "work_max_base", "work_partner",
     "work_job_changes", "work_coffees_day_max", "work_promotions", "work_declined",
+    "work_late", "work_late_black", "work_black_last_franja", "work_caught_late",
+    "work_late_crisis", "work_coffee_price_max",
     "work_jobs_top", "work_top_obra", "work_top_hosteleria", "work_top_politica",
     "work_demoted", "imv_with_salary", "imv_floor",
     *(outcome.stat for event in (*EVENTS, RESIGN_EVENT) for _label, outcome in event.options

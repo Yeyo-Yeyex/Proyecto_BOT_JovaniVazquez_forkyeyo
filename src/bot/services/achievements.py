@@ -41,6 +41,7 @@ from enum import Enum
 from fractions import Fraction
 from typing import TYPE_CHECKING, Any
 
+from bot.services.agenda import FRANJAS_MAX, FRANJAS_NOCHE
 from bot.services.allatu import ROUNDS as ALLATU_ROUNDS
 from bot.services.allatu import TABLES as ALLATU_TABLES
 from bot.services.allatu import AllatuGame
@@ -10838,6 +10839,43 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "inspeccion", "Inspección de Trabajo llama dos veces",
          "Que te pille la Inspección.", R, True),
     ])  # fmt: skip
+    # Trasnochar: las franjas de noche (`agenda.FRANJAS_NOCHE`), la Inspección y el café.
+    a += _tiers("work", "work_late", [
+        (1, "trasnoche_1", "Ojeras de serie",
+         "Ficha un turno trasnochando, en una franja de noche.", C),
+        (25, "trasnoche_25", "Las ovejas se cuentan solas", "Ficha 25 turnos trasnochando.", R),
+        (100, "trasnoche_100", "La noche es joven (tú no)", "Ficha 100 turnos trasnochando.", E),
+        (500, "trasnoche_500", "Noctámbulo de plantilla", "Ficha 500 turnos trasnochando.", L),
+    ])  # fmt: skip
+    a += _tiers("work", "work_late_black", [
+        (10, "noche_b_10", "Gato pardo",
+         "Cobra 10 turnos en B trasnochando sin que te pille la Inspección.", R),
+        (50, "noche_b_50", "Fantasma de la nómina",
+         "Cobra 50 turnos en B trasnochando sin que te pille la Inspección.", E),
+        (200, "noche_b_200", "El Zorro firma con una B",
+         "Cobra 200 turnos en B trasnochando sin que te pille la Inspección.", L),
+    ])  # fmt: skip
+    a += _tiers("work", "work_black_last_franja", [
+        (1, "nocturno_b_menor", "Nocturno en B menor",
+         f"Cobra en B la última franja de la noche (la {FRANJAS_MAX}.ª del día) sin que te "
+         "pille la Inspección.", R, True),
+    ])  # fmt: skip
+    a += _tiers("work", "work_caught_late", [
+        (1, "ronda_noche", "La ronda de noche", "Que la Inspección te pille trasnochando en B.",
+         C, True),
+        (10, "ronda_noche_10", "Te esperan despiertos",
+         "Que la Inspección te pille 10 veces trasnochando en B.", R),
+    ])  # fmt: skip
+    a += _tiers("work", "work_late_crisis", [
+        (1, "cena_micro", "La cena, en el micro",
+         "Ficha trasnochando con la familia en crisis.", R, True),
+    ])  # fmt: skip
+    a += _tiers("work", "work_coffee_price_max", [
+        (1_000, "cafe_1000", "Barraquito de autor",
+         "Paga 1.000 Y$ o más por un café de la máquina.", E),
+        (3_000, "cafe_3000", "Barraquito con denominación de origen",
+         "Paga 3.000 Y$ o más por un café de la máquina.", L),
+    ], unit="money")  # fmt: skip
     a += _tiers("work", "work_fee", [
         (1, "autonomo", "Autónomo y sin vacaciones", "Paga la cuota de autónomos.", R),
     ])  # fmt: skip
@@ -20047,6 +20085,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("negocio", "biz_turns_day_max", [
         (8, "biz_day_8", "Jornada de 24 horas, pero con gracia", "Haz 8 turnos en un solo día.", R),
+        (FRANJAS_MAX, "biz_day_12", "Cerramos cuando se vaya el último",
+         f"Haz {FRANJAS_MAX} turnos en un solo día, trasnochando las {FRANJAS_NOCHE} de noche.",
+         R),
     ])  # fmt: skip
     a += _tiers("negocio", "biz_sectors_tried", [
         (3, "biz_sectors_3", "Tres tristes trastiendas",
@@ -26336,6 +26377,16 @@ def work_stats(outcome: ShiftOutcome, *, birthday: bool = False) -> StatDelta:
         add["work_past_limit"] = 1
     if outcome.caught:
         add["work_caught_inspeccion"] = 1
+    if outcome.late:
+        add["work_late"] = 1
+        if outcome.family_before < FAMILY_TIERS[-2].low:
+            add["work_late_crisis"] = 1
+        if outcome.kind.value == "negro" and outcome.caught:
+            add["work_caught_late"] = 1
+        elif outcome.kind.value == "negro":
+            add["work_late_black"] = 1
+            if outcome.late_franja == FRANJAS_NOCHE:
+                add["work_black_last_franja"] = 1
     if outcome.battery_before < 0:
         add["work_zombie"] = 1
     if outcome.accident:

@@ -226,7 +226,8 @@ class BusinessStatus:
         """Lo que impide abrir un turno ahora, o `None`."""
         if not self.agenda.fits(1):
             return (
-                "No te quedan franjas libres hoy: la jornada y las horas extra se las han comido."
+                "No te quedan franjas hoy, ni trasnochando: la jornada, las horas extra y "
+                "la noche se las han comido."
             )
         if self.battery <= BATTERY_MIN:
             return "Estás tan reventado que te quedas dormido de pie. Descansa un poco."

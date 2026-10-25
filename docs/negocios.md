@@ -8,6 +8,7 @@ Este documento recoge el sistema entero, sus cinco fases y cada una al detalle; 
 - **El tiempo es la moneda.** El día tiene `FRANJAS_DIA` (8) franjas. La jornada de la `pala` reserva las suyas
   (4, o menos con la reducción) aunque no fiches. Cada hora extra, guardia o turno de estudio gasta franjas
   libres, y cada turno en tu negocio también. Lo que haces de más en el curro se lo quitas al negocio.
+  Acabadas, se pueden trasnochar 4 más (9.19.0), con más riesgo de Inspección para el B.
 - **Respondes con lo tuyo.** En la fase 1 el negocio es de un autónomo: no tiene caja propia y todo sale y
   entra del monedero de su dueño. Los gastos fijos (alquiler del local, suministros y cuota) corren aunque no
   abras, y un turno malo puede perder dinero.
@@ -47,6 +48,13 @@ Dónde engancha cada fase con lo de la 1:
 ### El día en franjas (`services/agenda.py`)
 
 - `FRANJAS_DIA = 8`: unas 16 horas despierto en bloques de dos.
+- **Trasnochar** (9.19.0): `FRANJAS_NOCHE = 4` más después de las del día, y ninguna después
+  (`FRANJAS_MAX = 12`, el día entero en bloques de dos). Valen para lo mismo, pero el B de
+  noche lo pilla la Inspección un 30, 40, 50 y 60 % de las veces (`work.NIGHT_INSPECTION`; de
+  día, un 10 %) y se devuelve doble (`work.NIGHT_SURCHARGE`), y cada franja trasnochada en la `pala`
+  cuesta 5 de familia (`work.FAMILY_LATE`; el negocio no toca la familia, ni de día). Las franjas no van por horas: se trasnocha al acabar las
+  del día, aunque sean las ocho de la tarde. La plantilla del negocio no trasnocha: sus
+  turnos son de las franjas 0 a 7.
 - **Jornada:** 4 franjas (`ORDINARY_SHIFTS`), 3 con la reducción de 1/4 o 2 con la de 1/2. Queda reservada
   todo el día aunque no se fiche.
 - **Lo que gasta cada cosa:**
@@ -56,8 +64,8 @@ Dónde engancha cada fase con lo de la 1:
 - **Cuentas del día:**
   - en el curro se usa lo que sea mayor entre la jornada y lo fichado de jornada;
   - lo libre es `FRANJAS_DIA` menos lo usado en el curro, menos las extras, menos el negocio.
-- **Qué se bloquea sin franjas libres:** las horas extra, el B, las guardias y el estudio de la `pala`, y los
-  turnos del negocio. Los turnos de jornada nunca se bloquean, porque ya están reservados.
+- **Qué se bloquea sin franjas, ni de noche:** las horas extra, el B, las guardias y el estudio de la
+  `pala`, y los turnos del negocio. Los turnos de jornada nunca se bloquean, porque ya están reservados.
 - **El día** es el local de Canarias (`local_day`), como en el resto de la `pala`.
 - **Datos que se guardan:**
   - en `Contract`: `jornada` (4, 3 o 2), `jornada_next` y su día (`jornada_from`), `excedencia_since` y
@@ -302,7 +310,8 @@ Salen de las estadísticas de `business_stats` y de las de la jornada. Familias:
   al detalle»);
 - fechas: madrugada, domingo, Día de Canarias;
 - rachas de días abriendo;
-- las 8 franjas usadas;
+- las 8 franjas usadas y, en la `pala`, trasnochar (9.19.0: turnos de noche, el B de noche sin que
+  te pillen, la última franja de la noche, que te pillen de noche y con la familia en crisis);
 - el día de pluriactividad;
 - la reducción y la excedencia;
 - Hacienda: primera retención de la actividad, primer IGIC soportado;
@@ -337,10 +346,14 @@ asentadas. Neto al día, tras IRPF y cuota:
   - los niveles de precio distintos del normal;
   - el Falcon. En la fase 1 el negocio da lo de un P3-P5; los puestos altos de la `pala`
     siguen mandando al final.
-- **El cupo de franjas** cambia la `pala` sola: quien no tiene negocio puede hacer como
-  mucho 4 horas extra al día (8 turnos en total). Antes solo lo frenaban la batería y la
-  familia, y quien ficha todo lo que puede sacaba unos 5 turnos al día (`docs/familia_pala.py`),
-  así que el tope casi nunca se nota.
+- **El cupo de franjas** cambia la `pala` sola. En la 8.14.0 era un muro: quien no tenía
+  negocio podía hacer como mucho 4 horas extra al día (8 turnos en total). Antes solo lo
+  frenaban la batería y la familia, y con el café a 25 Y$ la batería no frenaba: el B no tenía
+  fin. Al muro le faltaba lo que gustaba del B, elegir si arriesgar otra vez, y en la 9.19.0
+  pasó a ser una cuesta: 4 franjas de noche en las que el B rinde cada vez menos (de media, la
+  última pierde) y el café cuesta una parte del sueldo base. `docs/noche_pala.py` mide que
+  quien lo apura todo saca casi lo mismo que con el muro (con el café nuevo, un 5,6 % menos) y
+  el jugador normal no nota nada.
 
 ### Medido (21/10/2026)
 

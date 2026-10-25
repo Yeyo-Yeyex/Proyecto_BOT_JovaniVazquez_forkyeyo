@@ -36,7 +36,7 @@ NO_CHROMIUM = "/no/existe/chromium"
 NO_NODE = "/no/existe/node"
 META = {"w": W, "h": H}
 SCRIPT = Path(__file__).resolve().parents[2] / "docs" / "muestras_negocio.py"
-SLOT_KINDS = ("hecha", "jornada", "extra", "guardia", "estudio", "negocio", "libre")
+SLOT_KINDS = ("hecha", "jornada", "extra", "guardia", "estudio", "negocio", "libre", "noche")
 
 
 def _load() -> ModuleType:

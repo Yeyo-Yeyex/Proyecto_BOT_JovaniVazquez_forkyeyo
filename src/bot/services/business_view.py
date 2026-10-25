@@ -26,7 +26,7 @@ from typing import Any
 from bot.services import business_chain as chain
 from bot.services import business_sl as sl
 from bot.services import business_staff as staff
-from bot.services.agenda import JORNADA_NAMES, Agenda
+from bot.services.agenda import FRANJAS_DIA, FRANJAS_NOCHE, JORNADA_NAMES, Agenda
 from bot.services.business import (
     MAX_LOCALES,
     RECOMMENDED_RATING,
@@ -224,9 +224,17 @@ def dia_state(
         }
     free = agenda.free
     if work is None and business is None:
-        tip = "Busca un curro o monta tu negocio: el día tiene 8 franjas para repartir."
+        tip = (
+            f"Busca un curro o monta tu negocio: el día tiene {FRANJAS_DIA} franjas para "
+            f"repartir, y {FRANJAS_NOCHE} más si trasnochas."
+        )
+    elif agenda.left == 0:
+        tip = "Hoy ya no te quedan franjas, ni de noche. Mañana más."
     elif free == 0:
-        tip = "Hoy ya no te quedan franjas libres. Mañana más."
+        tip = (
+            f"Se acabó el día: te quedan {agenda.night_free} de noche. Trasnochando, la "
+            "Inspección pilla más el B y tu familia lo nota."
+        )
     elif business is not None:
         tip = f"Te quedan {plural(free, 'franja', 'franjas')}: cada turno en tu negocio gasta una."
     else:
@@ -240,7 +248,9 @@ def dia_state(
         "date": date_text(now),
         "clock": clock_text(now),
         "slots": [{"kind": kind} for kind in agenda.slots()],
+        "night_from": FRANJAS_DIA,
         "free": plural(free, "franja libre", "franjas libres"),
+        "night_free": plural(agenda.night_free, "franja de noche", "franjas de noche"),
         "jornada": jornada,
         "battery": battery,
         "family": family,

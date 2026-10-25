@@ -59,7 +59,15 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Protocol
 
-from bot.services.agenda import EXTRA, GUARD, GUARD_FRANJAS, JORNADAS, STUDY, Agenda
+from bot.services.agenda import (
+    EXTRA,
+    FRANJAS_NOCHE,
+    GUARD,
+    GUARD_FRANJAS,
+    JORNADAS,
+    STUDY,
+    Agenda,
+)
 from bot.services.economy import EconomyService, InsufficientFundsError
 from bot.services.housing import HOME_REGEN
 from bot.services.levels import TIMEZONE, local_day
@@ -88,7 +96,6 @@ from bot.services.work import (
     HK_TIMEZONE,
     HONG_KONG,
     IMV_SUSPENSION_SECONDS,
-    INSPECTION_CHANCE,
     INSPECTION_SURCHARGE,
     JET_LAG,
     LEAVE_AFTER_DAYS,
@@ -139,6 +146,8 @@ from bot.services.work import (
     family_tier,
     follower_gain,
     holiday,
+    inspection_chance,
+    inspection_surcharge,
     is_night,
     next_shift_kind,
     on_leave,
@@ -392,6 +401,11 @@ class Shift:
     perks: Perks = NO_PERKS
     #: El tiempo al fichar (`""` si el oficio no lo nota).
     weather: str = ""
+    #: Franjas de noche que ocupa (`Agenda.late`): cuestan familia (`work.FAMILY_LATE`).
+    late: int = 0
+    #: Su primera franja de noche (de 1 a `agenda.FRANJAS_NOCHE`; 0 si empieza de día): con
+    #: ella sale el riesgo de Inspección del B (`work.inspection_chance`).
+    late_franja: int = 0
 
 
 @dataclass(slots=True)
@@ -430,6 +444,8 @@ class ShiftOutcome:
         wish_streak: Días seguidos cumpliendo el deseo, si lo cumplió.
         family_parts: Lo que movió la familia el turno, partida a partida.
         mom_repaid: Lo que se le devolvió a tu madre del Bizum en este turno.
+        late: Franjas de noche que ocupó (trasnochando).
+        late_franja: Su primera franja de noche (de 1 a `agenda.FRANJAS_NOCHE`; 0 de día).
     """
 
     job: Job
@@ -481,6 +497,8 @@ class ShiftOutcome:
     wish_streak: int = 0
     family_parts: list[tuple[str, int]] = field(default_factory=list)
     mom_repaid: int = 0
+    late: int = 0
+    late_franja: int = 0
 
     @property
     def night(self) -> bool:
@@ -923,16 +941,17 @@ class WorkService:
                 "🧸 Con la reducción de jornada no hay horas extra ni guardias: hoy ya has "
                 f"hecho tus {contract.jornada} turnos."
             )
+        late = late_franja = 0
         if kind is not ShiftKind.ORDINARY:
             need = GUARD_FRANJAS if kind is ShiftKind.GUARD else 1
             if not status.agenda.fits(need):
                 raise WorkError(
-                    f"🕗 No te quedan franjas libres hoy (tienes {status.agenda.free} y hacen "
-                    f"falta {need}): la jornada, las horas extra y tu negocio ya se han comido "
-                    "el día. Mañana más."
+                    f"🕗 No te quedan franjas hoy (tienes {status.agenda.left} y hacen falta "
+                    f"{need}): ya has trasnochado las {FRANJAS_NOCHE} de la noche. Mañana más."
                 )
+            late, late_franja = status.agenda.late(need), status.agenda.next_night
         if study:
-            return self._study_shift(status, tools)
+            return self._study_shift(status, tools, late, late_franja)
         if contract.abroad and kind is ShiftKind.BLACK:
             # En Hong Kong no hay límite de horas extra como el del art. 35.2 ET.
             kind = ShiftKind.EXTRA
@@ -943,7 +962,7 @@ class WorkService:
                 "nada de horas extra ni guardias. Mañana ya veremos."
             )
         if kind is ShiftKind.BLACK and not black_ok:
-            raise NeedsBlack()
+            raise NeedsBlack(late_franja)
         perks = self._perks(status, status.position.mechanic, tools)
         game = new_game(
             status.position,
@@ -964,6 +983,8 @@ class WorkService:
             remote=remote,
             perks=perks,
             weather=status.weather,
+            late=late,
+            late_franja=late_franja,
         )
 
     @staticmethod
@@ -978,8 +999,13 @@ class WorkService:
             perks = replace(perks, extra_time=perks.extra_time + MOTIVATED_TIME)
         return perks
 
-    def _study_shift(self, status: Status, tools: Collection[str]) -> Shift:
-        """Prepara un turno de estudio: el test del temario, sin sueldo."""
+    def _study_shift(
+        self, status: Status, tools: Collection[str], late: int = 0, late_franja: int = 0
+    ) -> Shift:
+        """Prepara un turno de estudio: el test del temario, sin sueldo.
+
+        `late` y `late_franja`: si cae trasnochando (ver `Shift`).
+        """
         job = status.job
         assert job.study is not None
         position = Position(
@@ -1005,6 +1031,8 @@ class WorkService:
             tremors=status.contract.coffees > MAX_COFFEES,
             returned_from_leave=False,
             perks=perks,
+            late=late,
+            late_franja=late_franja,
         )
 
     async def finish_shift(self, guild_id: int, user_id: int, shift: Shift) -> ShiftOutcome:
@@ -1106,6 +1134,7 @@ class WorkService:
             remote=shift.remote,
             tz=HK_TIMEZONE if abroad else TIMEZONE,
             abroad=bool(abroad),
+            late=shift.late,
         )
         intervention = change_family(contract, sum(v for _, v in family_parts), now)
         contract.motivated = False
@@ -1153,9 +1182,15 @@ class WorkService:
                 guild_id, user_id, amount=gross, concept=job.key
             )
             black = gross
-            if roll(self.rng, INSPECTION_CHANCE):
+            if roll(self.rng, inspection_chance(shift.late_franja)):
                 caught = True
-                fine, balance = await self._caught(guild_id, user_id, gross, "inspeccion")
+                fine, balance = await self._caught(
+                    guild_id,
+                    user_id,
+                    gross,
+                    "inspeccion",
+                    surcharge=inspection_surcharge(shift.late_franja),
+                )
         else:
             cash = gross
             if job.has_options(contract.level, contract.branch):
@@ -1354,6 +1389,8 @@ class WorkService:
             wish_streak=contract.wish_streak if wish is not None else 0,
             family_parts=family_parts,
             mom_repaid=mom_repaid,
+            late=shift.late,
+            late_franja=shift.late_franja,
         )
 
     def _wish(
@@ -1408,7 +1445,7 @@ class WorkService:
         family_before = family_now(contract, now)
         settle(contract, now)
         contract.battery = battery_before - shift_cost(ShiftKind.STUDY)
-        family_parts = family_breakdown(ShiftKind.STUDY, now)
+        family_parts = family_breakdown(ShiftKind.STUDY, now, late=shift.late)
         intervention = change_family(contract, sum(v for _, v in family_parts), now)
         contract.motivated = False
         contract.franjas[STUDY] = contract.franjas.get(STUDY, 0) + 1
@@ -1437,6 +1474,8 @@ class WorkService:
             promotion_ready=status.promotion_ready,
             temario=game.correct,
             family_parts=family_parts,
+            late=shift.late,
+            late_franja=shift.late_franja,
         )
 
     async def _cash_options(
@@ -1470,15 +1509,23 @@ class WorkService:
             ).balance
         return balance
 
-    async def _caught(self, guild_id: int, user_id: int, black: int, by: str) -> tuple[int, int]:
-        """Regulariza lo cobrado en negro: lo devuelves con recargo.
+    async def _caught(
+        self,
+        guild_id: int,
+        user_id: int,
+        black: int,
+        by: str,
+        *,
+        surcharge: float = INSPECTION_SURCHARGE,
+    ) -> tuple[int, int]:
+        """Regulariza lo cobrado en negro: lo devuelves con recargo (`surcharge`).
 
         La Inspección de Trabajo y la UCO, además, te dejan sin IMV unos días.
 
         Returns:
             `(multa cobrada, saldo final)`.
         """
-        amount = round(black * (1 + INSPECTION_SURCHARGE))
+        amount = round(black * (1 + surcharge))
         fine, balance = await self.economy.sanction(guild_id, user_id, amount=amount, concept=by)
         if by in CAUGHT_SUSPENDS_IMV:
             await self.economy.suspend_imv(guild_id, user_id, seconds=IMV_SUSPENSION_SECONDS)
@@ -2036,13 +2083,16 @@ class WorkService:
             ) from error
         return training.name, training.price, tax, balance
 
-    async def buy_coffee(self, guild_id: int, user_id: int, key: str) -> tuple[float, int, int]:
+    async def buy_coffee(
+        self, guild_id: int, user_id: int, key: str
+    ) -> tuple[float, int, int, int]:
         """Se toma un café: recarga batería. Desde el cuarto del día, temblores.
 
-        Tratamiento fiscal: una compra con IGIC general (ver `EconomyService.purchase`).
+        Cuesta una parte del sueldo base de su puesto (`Coffee.price`). Tratamiento fiscal:
+        una compra con IGIC general (ver `EconomyService.purchase`).
 
         Returns:
-            `(batería después, cafés de hoy, saldo final)`.
+            `(batería después, cafés de hoy, lo pagado con IGIC, saldo final)`.
 
         Raises:
             WorkError: Si no tiene curro, el café no existe o no le llega.
@@ -2056,12 +2106,14 @@ class WorkService:
                 raise WorkError("La máquina de café es solo para quien tiene curro.")
             now = self._clock()
             roll_over_day(contract, now)
-            tax = igic(coffee.price, IGIC_GENERAL_RATE)
+            position = JOB_BY_KEY[contract.job].position(contract.level, contract.branch)
+            price = coffee.price(position.base_pay)
+            tax = igic(price, IGIC_GENERAL_RATE)
             try:
                 _, balance = await self.economy.purchase(
                     guild_id,
                     user_id,
-                    base=coffee.price,
+                    base=price,
                     tax=tax,
                     concept=f"cafe:{coffee.key}",
                     reserve=lambda _connection: None,
@@ -2072,7 +2124,7 @@ class WorkService:
             contract.battery_at = now
             contract.coffees += 1
             await self.repository.save_contract(guild_id, user_id, contract)
-            return contract.battery, contract.coffees, balance
+            return contract.battery, contract.coffees, price + tax, balance
 
     # -- Familia: regalos y favores -----------------------------------------------------
 
@@ -2284,10 +2336,16 @@ class OffDuty(WorkError):
 
 
 class NeedsBlack(WorkError):
-    """El próximo turno sería extra pasado el límite legal: hay que aceptar el B."""
+    """El próximo turno sería extra pasado el límite legal: hay que aceptar el B.
 
-    def __init__(self) -> None:
+    Attributes:
+        late_franja: La franja de noche en la que caería (0 de día): el panel enseña con
+            ella el riesgo de Inspección (`work.inspection_chance`).
+    """
+
+    def __init__(self, late_franja: int = 0) -> None:
         super().__init__(
             "Ya has gastado las horas extra legales de la semana (art. 35.2 ET). "
             "Tu jefe te mira: «¿Te lo pago en B?»."
         )
+        self.late_franja = late_franja

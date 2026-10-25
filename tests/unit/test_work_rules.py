@@ -832,3 +832,60 @@ def test_la_pension_paga_irpf_sin_cotizar_y_menos_que_un_autonomo() -> None:
     assert pension.irpf <= business.irpf
     with pytest.raises(ValueError):
         compute_pension_payslip(0, Pace())
+
+
+# -- Trasnochar y el café (9.19.0) ----------------------------------------------------
+
+
+def test_acabado_el_dia_se_pueden_trasnochar_cuatro_franjas_y_ni_una_mas() -> None:
+    from bot.services.agenda import FRANJAS_DIA, FRANJAS_MAX, FRANJAS_NOCHE, Agenda
+
+    full = Agenda(jornada=4, ordinary=4, outside={"extra": 4})
+    assert (full.free, full.night_free, full.left, full.next_night) == (0, FRANJAS_NOCHE, 4, 1)
+    assert full.fits(FRANJAS_NOCHE) and not full.fits(FRANJAS_NOCHE + 1)
+    slots = full.slots()
+    assert len(slots) == FRANJAS_MAX and slots[FRANJAS_DIA:] == ["noche"] * FRANJAS_NOCHE
+    # Una guardia que empieza en la última del día deja una franja de noche.
+    assert Agenda(jornada=4, outside={"extra": 3}).late(2) == 1
+    assert Agenda(jornada=4, outside={"extra": 2}).late(2) == 0
+    # Lo usado de noche ocupa las de noche; con todo usado no queda nada.
+    done = Agenda(jornada=4, outside={"extra": 6, "estudio": 2})
+    assert done.left == 0 and "noche" not in done.slots() and done.slots()[-1] == "estudio"
+
+
+def test_de_noche_la_inspeccion_mira_mas_y_apurar_la_noche_no_da_dinero() -> None:
+    from bot.services.agenda import FRANJAS_NOCHE
+    from bot.services.work import (
+        INSPECTION_CHANCE,
+        INSPECTION_SURCHARGE,
+        NIGHT_INSPECTION,
+        inspection_chance,
+        inspection_surcharge,
+    )
+
+    assert len(NIGHT_INSPECTION) == FRANJAS_NOCHE
+    assert inspection_chance(0) == INSPECTION_CHANCE
+    assert inspection_surcharge(0) == INSPECTION_SURCHARGE
+    assert [inspection_chance(n) for n in range(1, FRANJAS_NOCHE + 1)] == list(NIGHT_INSPECTION)
+    # Lo que te quedas de media de un turno en B: de día casi todo; de noche cada franja
+    # rinde menos y la última pierde. Es el freno que sustituye al muro de las 8 franjas.
+    kept = [1 - inspection_chance(n) * (1 + inspection_surcharge(n)) for n in range(5)]
+    assert [round(k, 2) for k in kept] == [0.88, 0.4, 0.2, 0.0, -0.2]
+
+
+def test_trasnochar_cuesta_familia_aparte_de_la_madrugada() -> None:
+    from bot.services.work import FAMILY_LATE
+
+    noon = at(2026, 10, 6, hour=12)
+    assert family_cost(ShiftKind.EXTRA, noon, late=1) == FAMILY_EXTRA + FAMILY_LATE
+    assert ("trasnochando", 2 * FAMILY_LATE) in family_breakdown(ShiftKind.GUARD, noon, late=2)
+
+
+def test_el_cafe_cuesta_una_parte_del_sueldo_y_el_barraquito_rinde_mas() -> None:
+    from bot.services.work_catalog import COFFEE_BY_KEY
+
+    cortado, barraquito = COFFEE_BY_KEY["cortado"], COFFEE_BY_KEY["barraquito"]
+    assert barraquito.price(10_000) == 700 and cortado.price(10_000) == 400
+    assert barraquito.price(10_000) * 10 < barraquito.price(100_000) + 1
+    assert barraquito.share / barraquito.battery < cortado.share / cortado.battery
+    assert cortado.price(1) == 1  # nunca gratis

@@ -34,6 +34,9 @@ Cómo funciona un turno, en resumen:
 - **Franjas** (`bot.services.agenda`): el día tiene 8 y la jornada reserva las suyas
   (`Contract.jornada`) aunque no se fiche. Las horas extra, el B, las guardias (dos) y el
   estudio gastan franjas libres, que comparte el negocio propio (`bot.services.business`).
+  Acabadas, se puede **trasnochar** 4 más: de noche la Inspección pilla más el B
+  (`inspection_chance`), te lo cobra doble (`NIGHT_SURCHARGE`) y la familia lo nota
+  (`FAMILY_LATE`). Así no hay muro, pero cada turno de más rinde menos, hasta perder.
 - **Reducción de jornada** (art. 37.6 ET): 3 o 2 franjas de jornada en vez de 4, desde
   el día siguiente (preaviso, art. 37.7). Sin horas extra, B ni guardias (decisión del
   proyecto, como el tiempo parcial del art. 12.4.c ET).
@@ -146,6 +149,13 @@ BLACK_PAY = 1.0
 INSPECTION_CHANCE = 0.10
 #: Recargo sobre lo cobrado en negro cuando te pillan.
 INSPECTION_SURCHARGE = 0.20
+#: Trasnochando (`agenda.FRANJAS_NOCHE`) la Inspección mira más: probabilidad de que pille
+#: el B en cada franja de noche, de la primera a la última. Con `NIGHT_SURCHARGE`, de media
+#: la primera deja el 40 % del turno, la segunda el 20 %, la tercera nada y la cuarta
+#: pierde un 20 %: se puede seguir, pero apurar no da dinero (`docs/noche_pala.py`).
+NIGHT_INSPECTION: tuple[float, ...] = (0.30, 0.40, 0.50, 0.60)
+#: Recargo de noche: devuelves el turno doble (lo cobrado y una multa igual).
+NIGHT_SURCHARGE = 1.0
 IMV_SUSPENSION_SECONDS = 3 * 86_400
 
 # -- Accidentes ------------------------------------------------------------------------
@@ -167,6 +177,9 @@ FAMILY_ORDINARY = -6
 FAMILY_EXTRA = -12
 FAMILY_BLACK = -15
 FAMILY_NIGHT = -5
+#: Lo que cuesta cada franja trasnochada (`agenda.FRANJAS_NOCHE`), aparte de la madrugada
+#: del reloj: las franjas no van por horas, así que se puede trasnochar a las ocho de la tarde.
+FAMILY_LATE = -5
 FAMILY_SUNDAY = -3
 #: Por debajo de esto salen los eventos familiares.
 FAMILY_WORRIED = 40
@@ -1062,6 +1075,21 @@ def accident_chance(battery_before: float) -> float:
     return 0.0
 
 
+def inspection_chance(late_franja: int) -> float:
+    """Probabilidad de que la Inspección pille un turno en B.
+
+    Args:
+        late_franja: La franja de noche del turno (de 1 a `agenda.FRANJAS_NOCHE`), o 0 si
+            es de día.
+    """
+    return NIGHT_INSPECTION[late_franja - 1] if late_franja else INSPECTION_CHANCE
+
+
+def inspection_surcharge(late_franja: int) -> float:
+    """Recargo sobre lo cobrado en B si te pillan: el doble de noche (`NIGHT_SURCHARGE`)."""
+    return NIGHT_SURCHARGE if late_franja else INSPECTION_SURCHARGE
+
+
 def family_breakdown(
     kind: ShiftKind,
     now: float,
@@ -1069,12 +1097,13 @@ def family_breakdown(
     remote: bool = False,
     tz: ZoneInfo = TIMEZONE,
     abroad: bool = False,
+    late: int = 0,
 ) -> list[tuple[str, int]]:
     """Lo que cambia la familia un turno, partida a partida: `[("extra", -12), …]`.
 
     Todo turno cuesta (estudiar en casa, como uno ordinario). La madrugada se
     mide en la hora de donde trabajas (`tz`); el domingo y los festivos, en la
-    de casa.
+    de casa. `late` son las franjas de noche que ocupa (`FAMILY_LATE` cada una).
     """
     base = {
         ShiftKind.GUARD: ("guardia", GUARD_FAMILY),
@@ -1090,6 +1119,8 @@ def family_breakdown(
         parts.append(("en casa", REMOTE_FAMILY))
     if abroad:
         parts.append(("lejos de casa", ABROAD_FAMILY))
+    if late:
+        parts.append(("trasnochando", FAMILY_LATE * late))
     return parts
 
 
@@ -1100,9 +1131,11 @@ def family_cost(
     remote: bool = False,
     tz: ZoneInfo = TIMEZONE,
     abroad: bool = False,
+    late: int = 0,
 ) -> int:
     """Lo que cambia la familia un turno, en total (casi siempre, a peor)."""
-    return sum(v for _, v in family_breakdown(kind, now, remote=remote, tz=tz, abroad=abroad))
+    parts = family_breakdown(kind, now, remote=remote, tz=tz, abroad=abroad, late=late)
+    return sum(v for _, v in parts)
 
 
 def residence_phase(contract: Contract, now: float) -> str:

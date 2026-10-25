@@ -12057,6 +12057,11 @@ EVENTS: tuple[Event, ...] = (
 
 EVENT_BY_KEY: dict[str, Event] = {event.key: event for event in EVENTS}
 
+#: Lo que pasa cuando la Inspección te pilla un B trasnochando (`work.NIGHT_SURCHARGE`).
+NIGHT_CAUGHT_TEXT = (
+    "🕵️ **Inspección de Trabajo, de noche.** Te pillan trasnochando en negro: devuelves el "
+    "turno doble (lo cobrado y una multa igual) y te suspenden el IMV 3 días."
+)
 #: Qué pasa cuando la UCO o la Inspección te pillan con dinero en negro.
 CAUGHT_TEXT: dict[str, str] = {
     "inspeccion": (
@@ -12224,18 +12229,30 @@ def events_for(
 
 @dataclass(frozen=True, slots=True)
 class Coffee:
-    """Algo de la máquina de café: cuánto recarga y cuánto cuesta (base, sin IGIC)."""
+    """Algo de la máquina de café: cuánto recarga y cuánto cuesta.
+
+    El precio es una parte del sueldo base del puesto (`share`), no una cifra fija: la
+    batería que da vale un turno más, y un turno vale según el puesto. Con un precio fijo
+    (era de 14 y 25 Y$) el café salía gratis a cualquiera y la batería no frenaba nada.
+    Decisión de equilibrio, no de realismo.
+    """
 
     key: str
     name: str
     emoji: str
     battery: int
-    price: int
+    #: Lo que cuesta, en parte del sueldo base del puesto (sin IGIC).
+    share: float
+
+    def price(self, base_pay: int) -> int:
+        """Precio sin IGIC para quien cobra `base_pay` por turno."""
+        return max(1, round(base_pay * self.share))
 
 
+#: El barraquito sale algo mejor por punto de batería (0,35 % del sueldo frente a 0,4 %).
 COFFEES: tuple[Coffee, ...] = (
-    Coffee("cortado", "Cortado", "☕", 10, 14),
-    Coffee("barraquito", "Barraquito", "🥃", 20, 25),
+    Coffee("cortado", "Cortado", "☕", 10, 0.04),
+    Coffee("barraquito", "Barraquito", "🥃", 20, 0.07),
 )
 COFFEE_BY_KEY: dict[str, Coffee] = {coffee.key: coffee for coffee in COFFEES}
 

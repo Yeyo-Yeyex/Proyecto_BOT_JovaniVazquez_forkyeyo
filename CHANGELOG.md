@@ -8,6 +8,14 @@ criterio.
 
 ## 9.x
 
+### 9.19.0 · 2026-10-25
+
+- Pala: 4 franjas de noche para trasnochar y el café cuesta según tu sueldo
+- Pala: acabadas las 8 franjas del día se pueden trasnochar 4 más (horas extra, B, guardias, estudio o el negocio), y ninguna después. De noche la Inspección pilla el B un 30, 40, 50 y 60 % de las veces (de día, un 10 %) y lo devuelves doble, y cada turno de la `pala` trasnochando cuesta 5 de familia. El panel y la oferta del B dicen el riesgo de ese turno
+- Pala: el café de la máquina cuesta una parte del sueldo base de tu puesto (el cortado, el 4 %; el barraquito, el 7 %) en vez de 14 y 25 Y$
+- Pala: el inicio pinta las 12 franjas, con las 4 de noche sobre fondo oscuro
+- Logros: catorce nuevos de trasnochar, del B de noche y del café, y «¿Qué es dormir?» (12 turnos en un día) vuelve a poderse sacar
+
 ### 9.18.0 · 2026-10-24
 
 - Admin: `dinero`, para que Yeyo y Dani den yapdollars a un miembro o a sí mismos (devolver lo perdido por un fallo o dar premios)

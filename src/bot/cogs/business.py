@@ -416,8 +416,12 @@ class NegocioPanel(ui.LayoutView):
         blocker = status.blocker
         if blocker:
             return blocker
-        free = status.agenda.free
-        return f"Abrir gasta 1 franja. Te quedan {free}."
+        agenda = status.agenda
+        if agenda.free:
+            return (
+                f"Abrir gasta 1 franja. Te quedan {agenda.free} (y {agenda.night_free} de noche)."
+            )
+        return f"Abrir gasta 1 franja: estás trasnochando. Te quedan {agenda.night_free} de noche."
 
     def _portada_state(self, business: Business) -> dict[str, Any]:
         """La portada del local que se mira."""
@@ -689,7 +693,7 @@ class NegocioPanel(ui.LayoutView):
                         f"Caja de hoy **{signed(business.sales_today)}** · "
                         f"{business.clients_today} clientes · {business.turns_today} turnos · "
                         "franjas libres: "
-                        f"{status.agenda.free}"
+                        f"{status.agenda.free} (+{status.agenda.night_free} 🌙)"
                     )
                     lines.append(
                         f"-# Esta noche: alquiler y suministros {format_amount(bill.total)}"

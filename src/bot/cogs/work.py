@@ -156,6 +156,8 @@ from bot.services.work import (
     excedencia_return_at,
     family_ready_at,
     family_tier,
+    inspection_chance,
+    inspection_surcharge,
     performance_bar,
     rested_at,
     stars,
@@ -170,6 +172,7 @@ from bot.services.work_catalog import (
     GIFTS,
     JOB_BY_KEY,
     JOBS,
+    NIGHT_CAUGHT_TEXT,
     Event,
 )
 from bot.services.work_games import GRACE_SECONDS
@@ -466,7 +469,7 @@ def status_text(status: Status, notes: list[str]) -> str:
         f"🗓️ Hoy: {min(contract.shifts_today, contract.jornada)}/{contract.jornada} turnos "
         f"ordinarios · Extras legales esta semana: "
         f"{min(contract.extras_week, LEGAL_EXTRAS_PER_WEEK)}/{LEGAL_EXTRAS_PER_WEEK} · "
-        f"franjas libres hoy: {status.agenda.free}",
+        f"franjas libres hoy: {status.agenda.free} (+{status.agenda.night_free} de noche 🌙)",
         "Próximo turno: " + next_turn_text(status),
     ]
     if contract.on_excedencia:
@@ -574,7 +577,38 @@ def next_turn_text(status: Status) -> str:
         return "cuando acabe el saliente"
     if contract.reduced and status.next_kind is not ShiftKind.ORDINARY:
         return "mañana (la reducción no deja hacer horas extra)"
-    return KIND_TEXT[status.next_kind]
+    text = KIND_TEXT[status.next_kind]
+    if status.next_kind is ShiftKind.ORDINARY:
+        return text
+    if not status.agenda.left:
+        return "mañana (ya has trasnochado toda la noche)"
+    night = status.agenda.next_night
+    if night:
+        text += f" · 🌙 trasnochando ({night}.ª de noche)"
+    if status.next_kind is ShiftKind.BLACK:
+        text += f" · {black_risk_text(night)}"
+    return text
+
+
+def black_risk_text(late_franja: int) -> str:
+    """`30 % de que te pille la Inspección`: el riesgo de un turno en B, de día o de noche."""
+    return f"{round(inspection_chance(late_franja) * 100)} % de que te pille la Inspección"
+
+
+def black_offer_text(late_franja: int) -> str:
+    """La letra pequeña de la oferta del B: el riesgo de ahora y lo que pasa si te pillan."""
+    fine = round(inspection_surcharge(late_franja) * 100)
+    if late_franja:
+        return (
+            f"🌙 Es tu {late_franja}.ª franja de noche y de noche la Inspección mira más: "
+            f"**{black_risk_text(late_franja)}**. Si te pilla, devuelves el turno doble "
+            f"(lo cobrado y un {fine} % de multa) y te quedas sin IMV 3 días."
+        )
+    return (
+        f"Cobras el turno sin impuestos: **{black_risk_text(late_franja)}**. Si te pilla, "
+        f"devuelves lo cobrado con un {fine} % de recargo y te quedas sin IMV 3 días. "
+        "De noche (trasnochando) el riesgo sube."
+    )
 
 
 def home_text(state: dict[str, Any], *, image: bool) -> str:
@@ -583,12 +617,14 @@ def home_text(state: dict[str, Any], *, image: bool) -> str:
     if not image:
         icons = {
             "hecha": "🟩", "jornada": "🟨", "extra": "🟧", "guardia": "🟥",
-            "estudio": "🟪", "negocio": "🟦", "libre": "⬜",
+            "estudio": "🟪", "negocio": "🟦", "libre": "⬜", "noche": "⬛",
         }  # fmt: skip
-        lines.append("".join(icons[slot["kind"]] for slot in state["slots"]))
+        slots = [icons[slot["kind"]] for slot in state["slots"]]
+        night = state["night_from"]
+        lines.append("".join(slots[:night]) + " 🌙 " + "".join(slots[night:]))
         lines.append(
             "-# 🟩 fichado · 🟨 jornada · 🟧 extra · 🟥 guardia · 🟪 estudio · "
-            "🟦 negocio · ⬜ libre"
+            "🟦 negocio · ⬜ libre · ⬛ noche"
         )
         if job := state["job"]:
             lines.append(f"🪏 {job['title']} ({job['name']}, {job['level']}) · {job['today']}")
@@ -905,7 +941,7 @@ def outcome_text(outcome: ShiftOutcome) -> str:
         lines.append(f"## 🤫 En B: +{format_amount(outcome.black)}")
         lines.append(f"-# Sin IRPF, sin cotizar y sin que lo vea el IMV. {TAX_COLLECTOR} llora.")
     if outcome.caught:
-        lines.append(CAUGHT_TEXT["inspeccion"])
+        lines.append(NIGHT_CAUGHT_TEXT if outcome.late_franja else CAUGHT_TEXT["inspeccion"])
         lines.append(f"-# Multa cobrada: {format_amount(outcome.fine)}.")
     if outcome.fee:
         lines.append(f"🧾 Cuota de autónomos de la semana: −{format_amount(outcome.fee)}.")
@@ -1145,19 +1181,22 @@ class PalaPanel(ui.LayoutView):
         select.callback = callback  # type: ignore[method-assign]
         return select
 
-    def _coffee_select(self, coffees_today: int) -> ui.Select:
-        options = [
-            discord.SelectOption(
-                label=f"{coffee.name} · +{coffee.battery} 🔋",
-                value=coffee.key,
-                emoji=coffee.emoji,
-                description=(
-                    f"{format_amount(coffee.price + igic(coffee.price))} con IGIC"
-                    + (" · ⚠️ temblores" if coffees_today >= MAX_COFFEES else "")
-                ),
+    def _coffee_select(self, coffees_today: int, base_pay: int) -> ui.Select:
+        options = []
+        for coffee in COFFEES:
+            price = coffee.price(base_pay)
+            options.append(
+                discord.SelectOption(
+                    label=f"{coffee.name} · +{coffee.battery} 🔋",
+                    value=coffee.key,
+                    emoji=coffee.emoji,
+                    description=(
+                        f"{format_amount(price + igic(price))} con IGIC "
+                        f"({round(coffee.share * 100)} % de tu sueldo base)"
+                        + (" · ⚠️ temblores" if coffees_today >= MAX_COFFEES else "")
+                    ),
+                )
             )
-            for coffee in COFFEES
-        ]
         select: ui.Select = ui.Select(
             placeholder=f"☕ Máquina de café ({coffees_today}/{MAX_COFFEES} hoy)",
             options=options,
@@ -1246,7 +1285,7 @@ class PalaPanel(ui.LayoutView):
         more.add_item(self._button("🎁 Regalos", self._gift_shop))
         more.add_item(self._button("🏠 Inicio", self._go_home_screen))
         coffee_row: ui.ActionRow = ui.ActionRow()
-        coffee_row.add_item(self._coffee_select(status.contract.coffees))
+        coffee_row.add_item(self._coffee_select(status.contract.coffees, status.position.base_pay))
         family_row: ui.ActionRow = ui.ActionRow()
         family_row.add_item(self._family_select(status))
         jornada_row: ui.ActionRow = ui.ActionRow()
@@ -1575,7 +1614,7 @@ class PalaPanel(ui.LayoutView):
     async def _coffee(self, interaction: discord.Interaction, key: str) -> None:
         await ack(interaction)
         try:
-            battery, coffees, _balance = await self.service.buy_coffee(
+            battery, coffees, paid, _balance = await self.service.buy_coffee(
                 self.guild_id, self.owner.id, key
             )
         except WorkError as error:
@@ -1584,7 +1623,7 @@ class PalaPanel(ui.LayoutView):
         coffee = next(c for c in COFFEES if c.key == key)
         note = (
             f"{coffee.emoji} Te tomas un {coffee.name.lower()}: {battery_bar(battery)} "
-            f"({format_amount(coffee.price + igic(coffee.price))}, IGIC incluido)."
+            f"({format_amount(paid)}, IGIC incluido)."
         )
         if coffees > MAX_COFFEES:
             note += " Te tiemblan hasta las pestañas."
@@ -1596,7 +1635,7 @@ class PalaPanel(ui.LayoutView):
             self.guild_id,
             self.owner,
             self.channel,
-            StatDelta(peak={"work_coffees_day_max": coffees}),
+            StatDelta(peak={"work_coffees_day_max": coffees, "work_coffee_price_max": paid}),
         )
 
     async def _gift_shop(self, interaction: discord.Interaction) -> None:
@@ -1994,8 +2033,7 @@ class PalaPanel(ui.LayoutView):
                 )
                 row.add_item(self._button("🏠 Me voy a casa", self._home))
                 self._frame(
-                    f"## 🤫 Horas extra\n{error}\n-# Cobras el turno sin impuestos, pero si "
-                    "viene la Inspección devuelves todo con recargo y te quedas sin IMV 3 días.",
+                    f"## 🤫 Horas extra\n{error}\n{black_offer_text(error.late_franja)}",
                     COLOR_BAD,
                     [row],
                 )

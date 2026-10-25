@@ -33,12 +33,16 @@ from bot.services.work import (
     ACTIVE_SHARES,
     BATTERY_MAX,
     BRANCH_DAYS,
+    FAMILY_LATE,
     FLAT_RATE_FEE,
     FOLLOWERS_START,
+    INSPECTION_CHANCE,
     INSPECTION_SURCHARGE,
     LEGACY_DAYS,
     LEGAL_EXTRAS_PER_WEEK,
     MEGAVIRAL,
+    NIGHT_INSPECTION,
+    NIGHT_SURCHARGE,
     ORDINARY_SHIFTS,
     PENSION_CAP,
     PERFORMANCE_START,
@@ -249,7 +253,7 @@ async def test_si_la_inspeccion_pilla_el_b_devuelves_con_recargo_y_sin_imv(
     status.contract.extras_week = LEGAL_EXTRAS_PER_WEEK
     status.contract.shift_day = "2026-10-06"
     await service.repository.save_contract(GUILD, USER, status.contract)
-    dice.hits.add(pala.INSPECTION_CHANCE)
+    dice.hits.add(INSPECTION_CHANCE)
     outcome = await work(service, black_ok=True)
     assert outcome.caught
     assert outcome.fine == round(outcome.black * (1 + INSPECTION_SURCHARGE))
@@ -334,12 +338,68 @@ async def test_sin_bateria_no_se_ficha_pero_un_barraquito_ayuda(tmp_path: Path, 
     with pytest.raises(WorkError, match="reventado"):
         await service.start_shift(GUILD, USER)
     coffee = COFFEE_BY_KEY["barraquito"]
-    battery, coffees, balance = await service.buy_coffee(GUILD, USER, "barraquito")
+    price = coffee.price(status.position.base_pay)  # una parte del sueldo base del puesto
+    assert price == round(status.position.base_pay * coffee.share)
+    battery, coffees, paid, balance = await service.buy_coffee(GUILD, USER, "barraquito")
     assert battery == -30 + coffee.battery and coffees == 1
-    assert balance == STARTING_BALANCE - coffee.price - igic(coffee.price)
-    assert ledger(tmp_path, STATE_ACCOUNT_ID)[1] == igic(coffee.price)
-    assert ledger(tmp_path, SHOP_ACCOUNT_ID)[1] == coffee.price
+    assert paid == price + igic(price)
+    assert balance == STARTING_BALANCE - paid
+    assert ledger(tmp_path, STATE_ACCOUNT_ID)[1] == igic(price)
+    assert ledger(tmp_path, SHOP_ACCOUNT_ID)[1] == price
     await service.start_shift(GUILD, USER)
+
+
+async def _night_contract(service: WorkService, extras: int) -> None:
+    """Un contrato con la jornada fichada y `extras` horas extra hoy (las legales, gastadas)."""
+    await service.hire(GUILD, USER, "obra")
+    status = await service.status(GUILD, USER)
+    assert status is not None
+    contract = status.contract
+    contract.shifts_today = ORDINARY_SHIFTS + extras
+    contract.extras_week = LEGAL_EXTRAS_PER_WEEK
+    contract.franjas = {"extra": extras}
+    contract.shift_day = contract.franjas_day = "2026-10-06"
+    await service.repository.save_contract(GUILD, USER, contract)
+
+
+async def test_trasnochando_el_b_corre_mas_riesgo_te_lo_cobran_doble_y_cuesta_familia(
+    tmp_path: Path, dice: Dice
+) -> None:
+    clock = Clock()
+    service = await make(tmp_path, clock)
+    await _night_contract(service, 4)  # 4 de jornada y 4 extras: el día está lleno
+    with pytest.raises(NeedsBlack) as offer:
+        await service.start_shift(GUILD, USER)
+    assert offer.value.late_franja == 1
+    # Con saldo de sobra: si no llega, la multa se queda en lo que haya (sin deuda).
+    await service.economy.grant(GUILD, USER, amount=20_000, reason="prueba")
+    state_before = ledger(tmp_path, STATE_ACCOUNT_ID)[1]
+    dice.hits.add(NIGHT_INSPECTION[0])
+    outcome = await work(service, black_ok=True)
+    assert (outcome.late, outcome.late_franja) == (1, 1)
+    assert outcome.caught
+    assert outcome.fine == round(outcome.black * (1 + NIGHT_SURCHARGE))
+    assert ledger(tmp_path, STATE_ACCOUNT_ID)[1] == state_before + outcome.fine
+    assert ("trasnochando", FAMILY_LATE) in outcome.family_parts
+
+
+async def test_de_dia_el_b_no_corre_el_riesgo_de_la_noche(tmp_path: Path, dice: Dice) -> None:
+    clock = Clock()
+    service = await make(tmp_path, clock)
+    await _night_contract(service, 3)  # la siguiente es la 8.ª: aún de día
+    dice.hits.update(NIGHT_INSPECTION)
+    outcome = await work(service, black_ok=True)
+    assert (outcome.late, outcome.late_franja) == (0, 0)
+    assert not outcome.caught
+    assert not any(label == "trasnochando" for label, _value in outcome.family_parts)
+
+
+async def test_pasadas_las_doce_franjas_no_se_ficha_mas(tmp_path: Path, dice: Dice) -> None:
+    clock = Clock()
+    service = await make(tmp_path, clock)
+    await _night_contract(service, 8)  # 4 de jornada, 4 extras de día y 4 de noche
+    with pytest.raises(WorkError, match="trasnochado"):
+        await service.start_shift(GUILD, USER, black_ok=True)
 
 
 # -- Ascensos ------------------------------------------------------------------------
