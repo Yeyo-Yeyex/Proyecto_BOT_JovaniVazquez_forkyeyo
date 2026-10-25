@@ -1032,8 +1032,11 @@ class Renta(commands.Cog):
             card_key=key,
             drawing=drawing,
         )
-        if previous is not None and previous.card_key == key:
-            view.changed = False
+        if previous is not None:
+            # Se sube la carta nueva o, si no se pudo pintar, se quita la vieja.
+            view.changed = previous.card_key != key and (
+                png is not None or previous.png is not None
+            )
         return view
 
     @app_commands.command(name="renta", description="Mira y presenta tu declaración de la renta.")
