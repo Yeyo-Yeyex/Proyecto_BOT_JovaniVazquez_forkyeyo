@@ -9390,7 +9390,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Paga un café de la pala en Paga en 3.", C, True),
     ])  # fmt: skip
     a += _tiers("bizum", "financed_zero", [
-        (1, "financed_zero", "Cero patatero", "Financia una compra al 0 % TIN.", C),
+        (1, "financed_zero", "Cero de interés", "Financia una compra al 0 % TIN.", C),
     ])  # fmt: skip
     a += _tiers("bizum", "financed_trap", [
         (1, "financed_trap", "No leí la letra pequeña",
@@ -9410,7 +9410,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Financia una compra de 100.000 Y$ o más.", R),
     ], unit="money")  # fmt: skip
     a += _tiers("bizum", "financed_open_max", [
-        (MAX_FINANCED, "financed_open_max", "Castillo de naipes",
+        (MAX_FINANCED, "financed_open_max", "Jenga de cuotas",
          f"Ten {MAX_FINANCED} compras financiadas a la vez.", E),
     ])  # fmt: skip
     a += _tiers("bizum", "financed_could_pay", [

@@ -552,6 +552,10 @@ async def test_el_gimnasio_tiene_un_boton_por_stat_con_custom_id_fijo(tmp_path: 
         "gallos:train_velocidad",
         "gallos:train_aguante",
         "gallos:train_back",
+        # 💳 Financiar cada entrenamiento (9.20.0)
+        "gallos:financiar_fuerza",
+        "gallos:financiar_velocidad",
+        "gallos:financiar_aguante",
     }
     assert "Gimnasio" in panel.embed().description
     await panel._leave_gym(fake_interaction(make_user(OWNER_ID)))
