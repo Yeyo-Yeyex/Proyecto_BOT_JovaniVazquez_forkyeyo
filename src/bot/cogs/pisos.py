@@ -68,6 +68,7 @@ import hashlib
 import io
 import json
 import logging
+import random
 import sqlite3
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
@@ -91,6 +92,7 @@ from bot.repositories.housing import (
     Eviction,
     HousingError,
     HousingRepository,
+    KeysDeal,
     Market,
     MemberSale,
     PriceChanged,
@@ -109,6 +111,7 @@ from bot.services.achievements import (
     guarantee_night_stats,
     housing_action_stats,
     housing_day_stats,
+    housing_keys_stats,
     housing_panel_stats,
     housing_purchase_stats,
     housing_sale_stats,
@@ -123,6 +126,7 @@ from bot.services.housing_catalog import (
     BARRIO_NEWS_BY_KEY,
     BARRIOS,
     ISLANDS,
+    KEYS_LINES,
     KINDS,
     LISTING_BY_KEY,
     REFORM_BY_KEY,
@@ -130,6 +134,7 @@ from bot.services.housing_catalog import (
     RENT_LEVELS,
     TENANT_BY_KEY,
     Listing,
+    RentLevel,
     listings_of,
 )
 from bot.services.housing_market import HousingService
@@ -172,6 +177,8 @@ GESTION, CANDIDATOS, SUBASTAS = "gestion", "candidatos", "subastas"
 REFORMAS, IMPREVISTOS, RESENAS, JUNTA = "reformas", "imprevistos", "resenas", "junta"
 PLANTAS, DIVIDIR = "plantas", "dividir"
 CALLES, EDIFICIO = "calles", "edificio"
+#: 🔑 Recuperar el piso (9.23.0): se ve la ficha y cambian los botones.
+LLAVES = "llaves"
 #: Cómo se llama cada edificio en su botón del plano (caben cinco por fila en el móvil).
 SHORT_BUILDING = {
     "bloque": "Bloque", "aparcamiento": "Parking", "guardamuebles": "Trasteros", "casa": "Casa",
@@ -237,6 +244,28 @@ def requirements_text(rent: int, income: int) -> str:
         f"🧾 Tu nómina no llega a 3 veces la renta: fianza y garantía adicional de dos "
         f"meses ({extra} en total) salvo que te avalen tus padres (favor de `pala`), y "
         f"entonces solo la fianza ({deposit}). Vuelve cuando te vayas."
+    )
+
+
+def years_text(days: int) -> str:
+    """«1 año» o «5 años» para una duración en días del bot (un día, un mes)."""
+    years = days // 12
+    return "1 año" if years == 1 else f"{years} años"
+
+
+def odds_text(odds: float) -> str:
+    """Una probabilidad para un botón: «60 %»."""
+    return f"{round(odds * 100)} %"
+
+
+def term_note(listing: Listing, level: RentLevel, term: int) -> str:
+    """Lo que cambia firmar `term` días, para la descripción del desplegable."""
+    find, risk = rules.term_factors(listing, level, term)
+    if term == rules.TERM_DEFAULT:
+        return "Lo de siempre: el máximo de candidatos y el menor impago"
+    return (
+        f"{round((1 - find) * 100)} % menos candidatos y {round((risk - 1) * 100)} % más "
+        "impago; lo recuperas antes"
     )
 
 
@@ -590,6 +619,8 @@ class Panel(ui.View):
         market, me = self.market, self.owner.id
         names = self._names(market)
         today = self.cog.service.today()
+        if screen == LLAVES:
+            screen = FICHA  # 🔑 Recuperar el piso se ve sobre la ficha
         if screen == CALLES:
             return view.streets_state(market, barrio or self.barrio, me, today)
         if screen == EDIFICIO:
@@ -865,6 +896,8 @@ class Panel(ui.View):
     ) -> None:
         """Pinta la pantalla de ahora y la pone en el mensaje (o lo manda, la primera vez)."""
         await self.refresh()
+        if content is None and self.screen == LLAVES:
+            content = self._keys_text()
         state = self._checkout_state() if self.screen == CAJA else await self._state(self.screen)
         key = Painter.key(state)
         self.rebuild()
@@ -950,6 +983,8 @@ class Panel(ui.View):
             self._building_buttons()
         elif self.screen == FICHA:
             self._ficha_buttons()
+        elif self.screen == LLAVES:
+            self._keys_buttons()
         elif self.screen == CARTERA:
             mine = self.market.of_member(self.owner.id)[:MAX_OPTIONS]
             if mine:
@@ -1026,7 +1061,11 @@ class Panel(ui.View):
             self._confirmable(f"📈 Montar SOCIMI ({fee})", "socimi", self._found_socimi, row=3)
         home = market.homes.get(me)
         if home is not None and home[0] in (HOME_OWN, HOME_RENTED):
-            self._confirmable("🚪 Dejar mi casa", "dejar", self._leave_home, row=3)
+            fine = self._early_fine()
+            label = f"🚪 Dejar mi casa (indemnización {format_amount(fine)})" if fine else (
+                "🚪 Dejar mi casa"
+            )  # fmt: skip
+            self._confirmable(label, "dejar", self._leave_home, row=3)
 
     def _vpo_buttons(self) -> None:
         me, market = self.owner.id, self.market
@@ -1069,7 +1108,13 @@ class Panel(ui.View):
         if market.mortgages_of(me, key):
             self._confirmable("🏦 Amortizar", "amortizar", self._amortize, row=4)
         if market.homes.get(me) == (HOME_OWN, key):
-            self._button("🚪 Mudarme", "mudarme", self._move_out, row=4)
+            if fine := self._early_fine():
+                self._confirmable(
+                    f"🚪 Mudarme (indemnización {format_amount(fine)})", "mudarme",
+                    self._move_out, row=4,
+                )  # fmt: skip
+            else:
+                self._button("🚪 Mudarme", "mudarme", self._move_out, row=4)
         elif (
             is_home and holders[me] == rules.SHARES and lease.status == rules.VACANT
             and me not in market.homes
@@ -1106,6 +1151,8 @@ class Panel(ui.View):
         can_decide = mine and (boss is None or boss == self.owner.id)
         if can_decide and lease is not None and lease.status in (rules.DEFAULTING, rules.SQUATTED):
             self._button("⚖️ Desahuciar", "desahuciar", self._evict, row=1)
+        if boss == self.owner.id and lease is not None and rules.recoverable(lease):
+            self._button("🔑 Recuperar el piso", "llaves", self._go_keys, row=1)
         if boss == self.owner.id and lease is not None and lease.status != rules.BY_ROOMS:
             listing = self._at(key)
             index = self.market.index(listing.barrio)
@@ -1212,6 +1259,189 @@ class Panel(ui.View):
                 self._button("🏗️ Reformas", "reformas", self._go_reforms, row=3)
                 self._button("🏦 Rehipotecar", "rehipotecar", self._remortgage, row=3)
                 self._button("💸 Adelantar rentas", "anticipo", self._advance, row=3)
+        self._term_select(row=4)
+
+    def _term_select(self, *, row: int) -> None:
+        """Cuánto dura el próximo contrato (9.23.0): de 1 a 5 años, si con su renta se elige."""
+        key, market = self.listing, self.market
+        lease = market.leases.get(key)
+        if market.manager(key) != self.owner.id or lease is None or lease.status == rules.BY_ROOMS:
+            return
+        listing = self._at(key)
+        level = RENT_LEVELS.get(lease.level, RENT_LEVELS["referencia"])
+        choices = rules.term_choices(listing, level)
+        if not choices:
+            return
+        current = rules.contract_months(listing, level, lease.term)
+        pick: ui.Select = ui.Select(
+            placeholder="Cuánto dura el próximo contrato",
+            custom_id=f"{GAME}:duracion",
+            row=row,
+            options=[
+                discord.SelectOption(
+                    label=f"{years_text(term)} ({term} días del bot)",
+                    value=str(term),
+                    emoji="🗓️",
+                    description=term_note(listing, level, term)[:100],
+                    default=term == current,
+                )
+                for term in choices
+            ],
+        )
+        pick.callback = self._pick_term  # type: ignore[method-assign]
+        self.add_item(pick)
+
+    def _keys_buttons(self) -> None:
+        """🔑 Recuperar el piso: comprar las llaves, no renovar o pedirlo para vivir."""
+        key, market = self.listing, self.market
+        lease = market.leases.get(key)
+        today = self.cog.service.today()
+        if lease is not None and rules.recoverable(lease) and market.manager(key) == self.owner.id:
+            if lease.member is not None:
+                self._button(
+                    "🤝 Ofrecerle las llaves", "llaves_miembro", self._member_keys_form, row=1,
+                    style=discord.ButtonStyle.success,
+                )  # fmt: skip
+            elif lease.keys_wait is not None and today < lease.keys_wait:
+                if lease.keys_ask:
+                    self._confirmable(
+                        f"✅ Pagarle lo que pide ({format_amount(lease.keys_ask)})",
+                        "llaves_precio", self._keys_accept_ask, row=1,
+                    )  # fmt: skip
+                    self._button("✖️ Dejarlo", "llaves_dejar", self._keys_drop_ask, row=1)
+                else:
+                    self._button(
+                        f"⏳ No quiere hablar hasta el {lease.keys_wait:%d/%m}", "llaves_espera",
+                        self._back_to_listing, row=1, disabled=True,
+                    )  # fmt: skip
+            elif (quote := market.keys_quote(key, today)) is not None:
+                free = quote.odds(rules.KEYS_FREE)
+                self._button(
+                    f"🙏 Por las buenas · {odds_text(free)}", "llaves_buenas", self._keys_free,
+                    row=1, disabled=free <= 0,
+                )  # fmt: skip
+                for offer, emoji, name, callback in (
+                    (rules.KEYS_FAIR, "🤝", "Justa", self._keys_fair),
+                    (rules.KEYS_RICH, "💰", "Generosa", self._keys_rich),
+                ):
+                    amount = rules.keys_offer_amount(offer, quote.fair)
+                    self._confirmable(
+                        f"{emoji} {name}: {format_amount(amount)} · {odds_text(quote.odds(offer))}",
+                        f"llaves_{offer}", callback, row=1,
+                    )  # fmt: skip
+            if not lease.leaving:
+                self._button("🚪 No renovarle", "no_renovar", self._toggle_no_renew, row=2)
+            elif lease.leaving == rules.LEAVE_NO_RENEW:
+                self._button("↩️ Que renueve", "no_renovar", self._toggle_no_renew, row=2)
+            if self._need_problem() is None:
+                self._confirmable("🏠 Lo necesito para vivir", "necesidad", self._claim_need, row=2)
+        self._button("◀ La ficha", "ficha", self._back_to_listing, row=3)
+        self._button("🗺️ Mapa", "mapa", self._go_map, row=3)
+        self._button("🔑 Mis pisos", "cartera", self._go_portfolio, row=3)
+
+    def _tenant_name(self, lease: rules.Lease) -> str:
+        """Quién vive de alquiler: el inquilino del catálogo o el miembro."""
+        if lease.member is not None:
+            return _name(self.guild, lease.member)
+        tenant = TENANT_BY_KEY.get(lease.tenant or "")
+        return tenant.name if tenant is not None else "El inquilino"
+
+    def _need_problem(self) -> str | None:
+        """Por qué no se puede pedir este piso para vivir (art. 9.3 LAU), o `None`."""
+        key, me, market = self.listing, self.owner.id, self.market
+        lease = market.leases.get(key)
+        if lease is None:
+            return "No hay contrato."
+        problem = rules.need_problem(self._at(key), lease, self.cog.service.today())
+        if problem is not None:
+            return problem
+        if market.shares_of(key).get(me, 0) != rules.SHARES:
+            return "Solo si es entero tuyo."
+        if me in market.homes:
+            return "Ya vives en otro sitio: la necesidad tiene que ser de verdad."
+        if market.reclaim_of(me) is not None:
+            return "Ya has pedido otro piso para vivir."
+        return None
+
+    def _early_fine(self) -> int:
+        """La indemnización si se muda ya del piso que pidió para vivir (0 si no debe nada)."""
+        me, market = self.owner.id, self.market
+        found = market.reclaim_of(me)
+        if found is None or found[1].until is None:
+            return 0
+        if market.homes.get(me) != (HOME_OWN, found[0]):
+            return 0
+        return found[1].fine if self.cog.service.today() < found[1].until else 0
+
+    def _keys_text(self) -> str:
+        """Lo que se ve encima de la ficha en 🔑 Recuperar el piso: las reglas y las cifras."""
+        key, market = self.listing, self.market
+        lease = market.leases.get(key)
+        if lease is None or not rules.recoverable(lease) or lease.until is None:
+            return "🔑 Ya no hay a quién pedirle que se vaya."
+        today = self.cog.service.today()
+        listing = self._at(key)
+        tense = rules.tense(market.index(listing.barrio))
+        left = rules.days_left(lease, today)
+        lines = [
+            f"🔑 **Recuperar el piso** · {self._tenant_name(lease)} · le quedan {left} días de "
+            f"contrato (hasta el {lease.until:%d/%m})."
+        ]
+        boss = market.manager(key)
+        fame = market.fame(boss, today) if boss is not None else 0
+        quote = market.keys_quote(key, today)
+        if quote is not None:
+            lines.append(
+                f"🤝 **Comprar las llaves.** Lo justo hoy: **{format_amount(quote.fair)}** "
+                "(medio mes de renta por cada 12 días que le quedan, más si está a gusto o si "
+                "los alquileres han subido desde que firmó). Si "
+                f"acepta, se va en {rules.KEYS_MOVE_DAYS} días y paga hasta entonces. Si no, se "
+                f"enfada y te dice su precio, que vale {rules.KEYS_WAIT_DAYS} días."
+            )
+            if quote.risk == "alto":
+                lines.append(
+                    "⚠️ Es de riesgo alto: si le ofreces poco, puede atrincherarse y dejar de pagar."
+                )
+        elif lease.member is not None:
+            fair = rules.keys_fair(lease.rent, left, 1.0, lease.mood, fame)
+            lines.append(
+                "🤝 **Comprarle las llaves.** Es un miembro: le ofreces lo que quieras y decide "
+                f"él, que puede contraofertar. Como referencia, lo justo serían "
+                f"{format_amount(fair)}. Hacienda se le queda el 19 % (ganancia patrimonial)."
+            )
+        if fame:
+            lines.append(
+                f"📣 Tu fama de casero: {fame} (pisos recuperados así en {rules.FAME_DAYS} días). "
+                f"Cada uno encarece el siguiente un {round(rules.FAME_STEP * 100)} %, nadie se va "
+                "por las buenas y los candidatos tardan más en llegar."
+            )
+        if lease.leaving == rules.LEAVE_NO_RENEW:
+            extra = ", salvo que pida la prórroga de un año (zona tensionada)" if tense else ""
+            lines.append(
+                f"🚪 Ya le has dicho que no renuevas: se va el {lease.until:%d/%m}{extra}."
+            )
+        elif lease.leaving == rules.LEAVE_EXTENDED:
+            lines.append(
+                f"🚪 Está en la prórroga de la Ley de Vivienda: se va el {lease.until:%d/%m}."
+            )
+        else:
+            extra = (
+                ". En zona tensionada puede pedir una prórroga de un año (Ley 12/2023)"
+                if tense
+                else ""
+            )
+            lines.append(f"🚪 **No renovar** es gratis: se va el {lease.until:%d/%m}{extra}.")
+        problem = self._need_problem()
+        if problem is None:
+            fine = rules.need_fine(lease.rent, left)
+            lines.append(
+                f"🏠 **Lo necesito para vivir** (art. 9.3 LAU): se va en "
+                f"{rules.NEED_NOTICE_DAYS} días y esa noche te mudas tú. Tienes que vivir ahí "
+                f"{rules.NEED_STAY_DAYS} días; si te vas antes, le pagas {format_amount(fine)}."
+            )
+        else:
+            lines.append(f"🏠 Lo necesito para vivir (art. 9.3 LAU): {problem}")
+        return "\n".join(lines)
 
     def _reform_buttons(self) -> None:
         """🏗️ Reformas: una por botón, con dos clics porque cuesta dinero."""
@@ -2522,6 +2752,9 @@ class Panel(ui.View):
         )  # fmt: skip
 
     async def _move_out(self, interaction: discord.Interaction) -> None:
+        if self._early_fine():
+            await self._move_out_paying(interaction)
+            return
         await ack(interaction)
         self.confirm = None
         try:
@@ -2530,6 +2763,23 @@ class Panel(ui.View):
             await notify(interaction, str(error))
             return
         await self.show(interaction)
+
+    async def _move_out_paying(self, interaction: discord.Interaction) -> None:
+        """Deja antes de tiempo el piso que pidió para vivir: paga la indemnización."""
+
+        async def run() -> tuple[int, int]:
+            return await self.cog.service.leave_home_paying(self.guild.id, self.owner.id)
+
+        result = await self._money(interaction, run)
+        if result is None:
+            return
+        fine, _balance = result
+        await self._done(interaction, Event.HOME, housing_keys_stats("indemniza", amount=fine))
+        await notify(
+            interaction,
+            f"🚪 Te vas antes de tiempo: pagas {format_amount(fine)} de indemnización al inquilino "
+            "al que pediste que se fuera (art. 9.3 LAU).",
+        )
 
     async def _leave_home(self, interaction: discord.Interaction) -> None:
         await self._move_out(interaction)
@@ -2566,7 +2816,9 @@ class Panel(ui.View):
         level = RENT_LEVELS["referencia" if lease.level == rules.VACATION_LEVEL else lease.level]
         rent = rules.asking_rent(listing, level, market.index(listing.barrio))
         income = await self.cog.service.work_income(self.guild.id, member.id)
-        offer = TenantOffer(self.cog, self.guild, self.owner, member, listing, rent, income)
+        days = rules.contract_months(listing, RENT_LEVELS["referencia"], lease.term)
+        offer = TenantOffer(self.cog, self.guild, self.owner, member, listing, rent, income,
+                            days=days)  # fmt: skip
         offer.message = await interaction.followup.send(
             content=member.mention,
             embed=offer.embed(),
@@ -2631,6 +2883,197 @@ class Panel(ui.View):
         delta = housing_panel_stats(screen="desahucio", squatters=eviction.squatters)
         delta.merge(housing_action_stats("desahucio", fee=eviction.fee + eviction.fee_igic))
         await logros.track(self.cog.bot, self.guild.id, self.owner, interaction.channel, delta)
+
+    async def _go_keys(self, interaction: discord.Interaction) -> None:
+        """🔑 Recuperar el piso: la ficha con las ofertas, no renovar y la necesidad."""
+        await self._go(interaction, LLAVES)
+
+    async def _keys_free(self, interaction: discord.Interaction) -> None:
+        await self._offer_keys(interaction, rules.KEYS_FREE)
+
+    async def _keys_fair(self, interaction: discord.Interaction) -> None:
+        await self._offer_keys(interaction, rules.KEYS_FAIR)
+
+    async def _keys_rich(self, interaction: discord.Interaction) -> None:
+        await self._offer_keys(interaction, rules.KEYS_RICH)
+
+    async def _offer_keys(self, interaction: discord.Interaction, offer: str) -> None:
+        """Le ofrece al inquilino del catálogo dinero (o nada) por irse."""
+
+        async def run() -> tuple[KeysDeal, int]:
+            return await self.cog.service.offer_keys(self.guild.id, self.owner.id, self.listing,
+                                                     offer)  # fmt: skip
+
+        result = await self._money(interaction, run)
+        if result is not None:
+            await self._keys_answered(interaction, result[0], offer)
+
+    async def _keys_accept_ask(self, interaction: discord.Interaction) -> None:
+        """Le paga lo que pidió al decir que no."""
+
+        async def run() -> tuple[KeysDeal, int]:
+            return await self.cog.service.accept_keys_ask(self.guild.id, self.owner.id,
+                                                          self.listing)  # fmt: skip
+
+        result = await self._money(interaction, run)
+        if result is not None:
+            await self._keys_answered(interaction, result[0], "")
+
+    async def _keys_answered(
+        self, interaction: discord.Interaction, deal: KeysDeal, offer: str
+    ) -> None:
+        """Enseña lo que contestó el inquilino, con su frase, y apunta los logros."""
+        tenant = TENANT_BY_KEY.get(deal.tenant or "")
+        name = tenant.name if tenant is not None else "El inquilino"
+        answer = deal.answer
+        if answer.accepted:
+            self.screen = FICHA
+            await self._done(interaction, Event.HOME, None)
+            line = random.choice(KEYS_LINES["si" if answer.paid else "buenas"])
+            deal_text = (
+                f"acepta {format_amount(answer.paid)}" if answer.paid else "se va por las buenas"
+            )
+            until = f" Se va el {deal.lease.until:%d/%m}." if deal.lease.until else ""
+            await notify(interaction, f"🔑 **{name}** {deal_text}.{until}\n> {line}")
+            fame = self.market.fame(self.owner.id, self.cog.service.today())
+            action = "llaves" if offer else "contraoferta"
+            delta = housing_keys_stats(action, amount=answer.paid, offer=offer, fame=fame)
+            await logros.track(self.cog.bot, self.guild.id, self.owner, interaction.channel, delta)
+            return
+        await self.show(interaction)
+        if answer.trench:
+            text = (
+                f"🚧 **{name}** se atrinchera: deja de pagar desde hoy.\n"
+                f"> {random.choice(KEYS_LINES['trinchera'])}\n"
+                "Si no se pone al día, toca ⚖️ Desahuciar."
+            )
+        else:
+            line = random.choice(KEYS_LINES["no"]).format(price=format_amount(answer.ask))
+            wait = f" hasta el {deal.lease.keys_wait:%d/%m}" if deal.lease.keys_wait else ""
+            text = f"✖️ **{name}** no acepta.\n> {line}\nSu precio vale{wait}."
+        cameo = await mascotas.cameo(self.cog.bot, self.guild.id, self.owner.id, Moment(Event.HOME))
+        await notify(interaction, text + (f"\n{cameo}" if cameo else ""))
+        delta = housing_keys_stats("trinchera" if answer.trench else "oferta", offer=offer)
+        await logros.track(self.cog.bot, self.guild.id, self.owner, interaction.channel, delta)
+
+    async def _keys_drop_ask(self, interaction: discord.Interaction) -> None:
+        """No le paga lo que pidió: su precio se olvida. No mueve dinero."""
+        await ack(interaction)
+        self.confirm = None
+        try:
+            await self.cog.service.drop_keys_ask(self.guild.id, self.owner.id, self.listing)
+        except HousingError as error:
+            await notify(interaction, str(error))
+            return
+        await self.show(interaction)
+        await logros.track(self.cog.bot, self.guild.id, self.owner, interaction.channel,
+                           housing_keys_stats("deja"))  # fmt: skip
+
+    async def _toggle_no_renew(self, interaction: discord.Interaction) -> None:
+        """Avisa de que no renovará el contrato (o se echa atrás). No mueve dinero."""
+        await ack(interaction)
+        self.confirm = None
+        lease = self.market.leases.get(self.listing, rules.Lease())
+        on = not lease.leaving
+        try:
+            lease = await self.cog.service.set_no_renew(self.guild.id, self.owner.id,
+                                                        self.listing, on)  # fmt: skip
+        except HousingError as error:
+            await notify(interaction, str(error))
+            return
+        await self.show(interaction)
+        if not on:
+            await notify(interaction, "↩️ Hecho: si quiere, renovará al acabar el contrato.")
+            return
+        until = f" el {lease.until:%d/%m}" if lease.until else ""
+        tense = rules.tense(self.market.index(self._at(self.listing).barrio))
+        extra = " En zona tensionada puede pedirte antes una prórroga de un año." if tense else ""
+        await notify(interaction, f"🚪 Avisado: no le renuevas. Se va{until}.{extra}")
+        await logros.track(self.cog.bot, self.guild.id, self.owner, interaction.channel,
+                           housing_keys_stats("no_renueva"))  # fmt: skip
+
+    async def _claim_need(self, interaction: discord.Interaction) -> None:
+        """Pide el piso para vivir en él (art. 9.3 LAU). No mueve dinero."""
+        await ack(interaction)
+        self.confirm = None
+        try:
+            lease, fine = await self.cog.service.claim_need(self.guild.id, self.owner.id,
+                                                            self.listing)  # fmt: skip
+        except HousingError as error:
+            await notify(interaction, str(error))
+            await self.show(interaction)
+            return
+        self.screen = FICHA
+        await self.show(interaction)
+        until = f" el {lease.until:%d/%m}" if lease.until else ""
+        await notify(
+            interaction,
+            f"🏠 Se lo has pedido para vivir (art. 9.3 LAU): se va{until} y esa noche te mudas "
+            f"tú. Tienes que vivir ahí {rules.NEED_STAY_DAYS} días; si te vas antes, le pagas "
+            f"{format_amount(fine)}.",
+        )
+        await logros.track(self.cog.bot, self.guild.id, self.owner, interaction.channel,
+                           housing_keys_stats("necesidad"))  # fmt: skip
+
+    async def _member_keys_form(self, interaction: discord.Interaction) -> None:
+        """Abre el formulario de lo que se le ofrece al miembro (sin `ack`: es un formulario)."""
+        lease = self.market.leases.get(self.listing)
+        if lease is None or lease.member is None:
+            await interaction.response.send_message(
+                "Ya no vive ahí ningún miembro.", ephemeral=True
+            )
+            return
+        today = self.cog.service.today()
+        fame = self.market.fame(self.owner.id, today)
+        fair = rules.keys_fair(lease.rent, rules.days_left(lease, today), 1.0, lease.mood, fame)
+        await interaction.response.send_modal(
+            KeysModal("¿Cuánto le ofreces por irse?", fair, self.offer_member_keys)
+        )
+
+    async def offer_member_keys(self, interaction: discord.Interaction, amount: int) -> None:
+        """Publica la oferta por las llaves para el miembro de alquiler (`MemberKeysOffer`)."""
+        await ack(interaction)
+        lease = self.market.leases.get(self.listing)
+        if lease is None or lease.member is None or lease.until is None:
+            await notify(interaction, "Ya no vive ahí ningún miembro.")
+            return
+        member = self.guild.get_member(lease.member)
+        if member is None:
+            try:
+                member = await self.guild.fetch_member(lease.member)
+            except discord.HTTPException:
+                member = None
+        if member is None:
+            await notify(interaction, "No encuentro a tu inquilino en el servidor.")
+            return
+        left = rules.days_left(lease, self.cog.service.today())
+        offer = MemberKeysOffer(self.cog, self.guild, self.owner, member, self._at(self.listing),
+                                amount, left)  # fmt: skip
+        offer.message = await interaction.followup.send(
+            content=member.mention,
+            embed=offer.embed(),
+            view=offer,
+            wait=True,
+            allowed_mentions=discord.AllowedMentions(users=[member]),
+        )
+
+    async def _pick_term(self, interaction: discord.Interaction) -> None:
+        """Cambia lo que dura el próximo contrato. No mueve dinero."""
+        values = interaction.data.get("values", []) if interaction.data else []
+        await ack(interaction)
+        if not values or not str(values[0]).isdigit():
+            return
+        term = int(values[0])
+        try:
+            await self.cog.service.set_term(self.guild.id, self.owner.id, self.listing, term)
+        except HousingError as error:
+            await notify(interaction, str(error))
+            return
+        await self.show(interaction)
+        logros.note(
+            self.cog.bot, self.guild.id, self.owner.id,
+            housing_keys_stats("duracion", term=term), getattr(interaction.channel, "id", None),
+        )  # fmt: skip
 
     async def _toggle_pick(self, interaction: discord.Interaction) -> None:
         """Cambia quién elige al inquilino: la gestora o el dueño. No mueve dinero."""
@@ -2953,7 +3396,8 @@ class MemberSaleOffer(ui.View):
 class TenantOffer(ui.View):
     """Oferta pública de alquiler de un piso a otro miembro: él acepta o rechaza.
 
-    Al aceptar firma 5 años (60 días) con la renta que pide el piso ese día, deja la
+    Al aceptar firma lo que dure el contrato que eligió el dueño (de serie, 5 años: 60 días)
+    con la renta que pide el piso ese día, deja la
     fianza (y la garantía adicional si su nómina no llega a 3 veces la renta y no le
     avalan sus padres) y la paga cada noche de su monedero. Si gana poco, cobra el Bono
     Alquiler Joven. La oferta enseña cuánto de su sueldo se le iría en la renta.
@@ -2968,6 +3412,8 @@ class TenantOffer(ui.View):
         listing: Listing,
         rent: int,
         income: int = 0,
+        *,
+        days: int = rules.TERM_DEFAULT,
     ) -> None:
         super().__init__(timeout=OFFER_TIMEOUT)
         self.cog = cog
@@ -2977,6 +3423,8 @@ class TenantOffer(ui.View):
         self.listing = listing
         self.key = listing.key
         self.rent = rent
+        #: Lo que dura el contrato que se ofrece, en días del bot.
+        self.days = days
         #: Neto medio de nómina al día de quien alquila (para la tasa de esfuerzo).
         self.income = income
         self.message: discord.Message | None = None
@@ -2992,7 +3440,8 @@ class TenantOffer(ui.View):
             or (
                 f"**{self.owner.display_name}** le ofrece a **{self.tenant.display_name}** "
                 f"«{listing.title}» ({barrio}) por unos **{format_amount(self.rent)} al mes**, "
-                "5 años (60 días del bot). La renta se paga cada noche de tu monedero; si "
+                f"{years_text(self.days)} ({self.days} días del bot). La renta se paga cada noche "
+                "de tu monedero; si "
                 "ganas poco, el Estado te pone el Bono Alquiler Joven. Vivir en casa propia "
                 "(aunque sea alquilada) recarga más rápido la batería de `pala`.\n\n"
                 + effort_text(self.rent, self.income)
@@ -3101,6 +3550,208 @@ class TenantOffer(ui.View):
         try:
             await self.message.edit(
                 content=None, embed=self.embed("⌛ La oferta de alquiler ha caducado."),
+                view=None, allowed_mentions=discord.AllowedMentions.none(),
+            )  # fmt: skip
+        except discord.HTTPException:
+            pass
+
+
+class KeysModal(ui.Modal):
+    """Cuánto se ofrece (o se pide) por las llaves de un piso que alquila un miembro."""
+
+    def __init__(
+        self,
+        title: str,
+        suggested: int,
+        then: Callable[[discord.Interaction, int], Awaitable[None]],
+    ) -> None:
+        super().__init__(title=title)
+        self.then = then
+        self.amount: ui.TextInput = ui.TextInput(
+            label="Importe (Y$)",
+            placeholder=f"Lo justo serían unos {format_amount(suggested)}",
+            default=str(suggested),
+            min_length=1,
+            max_length=15,
+        )
+        self.add_item(self.amount)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        """Valida la cifra (es lo que escribe un miembro) y sigue."""
+        amount = _number(self.amount.value)
+        if amount is None or not 0 <= amount <= rules.KEYS_MAX:
+            await notify(
+                interaction, f"Pon un importe en Y$, de 0 a {format_amount(rules.KEYS_MAX)}."
+            )
+            return
+        await self.then(interaction, amount)
+
+
+class MemberKeysOffer(ui.View):
+    """Oferta pública por las llaves de un piso alquilado a un miembro: regatean hasta que uno
+    acepta, el otro rechaza o caduca.
+
+    Contesta a quien no hizo la última cifra: el inquilino a la del casero y el casero a la
+    contraoferta del inquilino. Al aceptar, el casero paga, el miembro cobra con el 19 % de
+    IRPF de su ganancia patrimonial y se va en `housing.KEYS_MOVE_DAYS` días.
+    """
+
+    def __init__(
+        self,
+        cog: Pisos,
+        guild: discord.Guild,
+        owner: discord.abc.User,
+        tenant: discord.abc.User,
+        listing: Listing,
+        amount: int,
+        left: int,
+    ) -> None:
+        super().__init__(timeout=OFFER_TIMEOUT)
+        self.cog = cog
+        self.guild = guild
+        self.owner = owner
+        self.tenant = tenant
+        self.listing = listing
+        self.amount = amount
+        self.left = left
+        #: Si la última cifra la ha puesto el casero (contesta el inquilino) o al revés.
+        self.by_owner = True
+        self.message: discord.Message | None = None
+        #: Hay un pago en marcha: un segundo clic no paga dos veces.
+        self.busy = False
+
+    def embed(self, text: str | None = None) -> discord.Embed:
+        title = f"«{self.listing.title}» ({BARRIO_BY_KEY[self.listing.barrio].name})"
+        if self.by_owner:
+            ask = (
+                f"**{self.owner.display_name}** le ofrece a **{self.tenant.display_name}** "
+                f"**{format_amount(self.amount)}** por dejar {title}."
+            )
+        else:
+            ask = (
+                f"**{self.tenant.display_name}** pide **{format_amount(self.amount)}** por dejar "
+                f"{title}. Le toca a **{self.owner.display_name}**."
+            )
+        return discord.Embed(
+            title="🔑 Te compran las llaves",
+            description=text
+            or (
+                f"{ask}\n\nLe quedan {self.left} días de contrato. Si acepta, tiene "
+                f"{rules.KEYS_MOVE_DAYS} días para irse, la fianza vuelve sola y Hacienda se "
+                "queda el 19 % de lo que cobra (ganancia patrimonial). Si no, sigue como estaba."
+            ),
+            color=discord.Color.gold(),
+        )
+
+    def _turn(self) -> int:
+        """Quién tiene que contestar ahora."""
+        return self.tenant.id if self.by_owner else self.owner.id
+
+    async def _close(self, interaction: discord.Interaction, text: str) -> None:
+        self.stop()
+        await interaction.response.edit_message(
+            content=None, embed=self.embed(text), view=None,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )  # fmt: skip
+
+    @ui.button(
+        label="Aceptar", emoji="🤝", style=discord.ButtonStyle.success,
+        custom_id="pisos:llaves:si",
+    )  # fmt: skip
+    async def accept(self, interaction: discord.Interaction, _button: ui.Button) -> None:
+        if interaction.user.id != self._turn():
+            await interaction.response.send_message("Ahora no te toca contestar.", ephemeral=True)
+            return
+        if self.busy:
+            await interaction.response.send_message("Un momento, que se está pagando.",
+                                                    ephemeral=True)  # fmt: skip
+            return
+        self.busy = True
+        await ack(interaction)
+        try:
+            deal = await self.cog.service.member_keys(
+                self.guild.id, self.owner.id, self.listing.key, self.tenant.id, self.amount
+            )
+        except HousingError as error:
+            await notify(interaction, str(error))
+            return
+        except InsufficientFundsError:
+            await notify(
+                interaction,
+                f"A {self.owner.display_name} no le llega para pagar {format_amount(self.amount)}.",
+            )
+            return
+        except BalanceLimitError:
+            await notify(interaction, "No cabe más dinero en ese monedero. Probad con menos.")
+            return
+        except (OSError, sqlite3.Error):
+            logger.exception("No se pudo cerrar la compra de unas llaves entre miembros")
+            await notify(interaction, "Se ha caído el notario. Prueba otra vez en un momento.")
+            return
+        finally:
+            self.busy = False
+        self.stop()
+        until = f" el {deal.lease.until:%d/%m}" if deal.lease.until else ""
+        text = (
+            f"🔑 Trato: **{self.tenant.display_name}** deja {self.listing.title}{until} por "
+            f"**{format_amount(deal.amount)}**."
+        )
+        if deal.tax:
+            text += (
+                f"\n-# 🐶 IRPF del ahorro de {self.tenant.display_name}: "
+                f"−{format_amount(deal.tax)} (19 % de la ganancia patrimonial)."
+            )
+        await edit(interaction, content=None, view=None, embed=self.embed(text))
+        await renta.remind(self.cog.bot, interaction)
+        today = self.cog.service.today()
+        market = await self.cog.service.market(self.guild.id)
+        await logros.track(
+            self.cog.bot, self.guild.id, self.owner, interaction.channel,
+            housing_keys_stats("miembro", amount=deal.amount,
+                               fame=market.fame(self.owner.id, today)),
+        )  # fmt: skip
+        await logros.track(self.cog.bot, self.guild.id, self.tenant, interaction.channel,
+                           housing_keys_stats("vende_llaves", amount=deal.amount))  # fmt: skip
+
+    @ui.button(
+        label="Contraoferta", emoji="💬", style=discord.ButtonStyle.primary,
+        custom_id="pisos:llaves:otra",
+    )  # fmt: skip
+    async def counter(self, interaction: discord.Interaction, _button: ui.Button) -> None:
+        if interaction.user.id != self._turn():
+            await interaction.response.send_message("Ahora no te toca contestar.", ephemeral=True)
+            return
+        title = "¿Cuánto pides por irte?" if self.by_owner else "¿Cuánto le ofreces?"
+        await interaction.response.send_modal(KeysModal(title, self.amount, self._countered))
+
+    async def _countered(self, interaction: discord.Interaction, amount: int) -> None:
+        """La nueva cifra: ahora contesta el otro."""
+        self.amount = amount
+        self.by_owner = interaction.user.id == self.owner.id
+        await interaction.response.edit_message(
+            embed=self.embed(), view=self, allowed_mentions=discord.AllowedMentions.none()
+        )
+        await logros.track(self.cog.bot, self.guild.id, interaction.user, interaction.channel,
+                           housing_keys_stats("regatea"))  # fmt: skip
+
+    @ui.button(
+        label="No hay trato", emoji="✖️", style=discord.ButtonStyle.secondary,
+        custom_id="pisos:llaves:no",
+    )  # fmt: skip
+    async def reject(self, interaction: discord.Interaction, _button: ui.Button) -> None:
+        if interaction.user.id == self.tenant.id:
+            await self._close(interaction, f"✖️ {self.tenant.display_name} se queda donde está.")
+        elif interaction.user.id == self.owner.id:
+            await self._close(interaction, f"↩️ {self.owner.display_name} retira la oferta.")
+        else:
+            await interaction.response.send_message("Esa oferta no es para ti.", ephemeral=True)
+
+    async def on_timeout(self) -> None:
+        if self.message is None:
+            return
+        try:
+            await self.message.edit(
+                content=None, embed=self.embed("⌛ La oferta por las llaves ha caducado."),
                 view=None, allowed_mentions=discord.AllowedMentions.none(),
             )  # fmt: skip
         except discord.HTTPException:

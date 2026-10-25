@@ -25,10 +25,12 @@ from bot.repositories.housing import (
     Eviction,
     HousingError,
     HousingRepository,
+    KeysDeal,
     LoanClosed,
     LoanDesk,
     Market,
     MemberDay,
+    MemberKeys,
     MemberSale,
     News,
     Purchase,
@@ -531,6 +533,83 @@ class HousingService:
         run = self.repository.evict(guild_id, user_id, key, local_day(now), now, self.rng)
         eviction, balances = await self.economy.housing(guild_id, run)
         return eviction, balances.get(user_id, await self.economy.balance(guild_id, user_id))
+
+    # -- 9.23.0: duración del contrato y recuperar el piso (`docs/pisos-llaves.md`) ---------
+
+    async def set_term(self, guild_id: int, user_id: int, key: str, term: int) -> Lease:
+        """Cambia lo que dura el próximo contrato (`housing.TERMS`)."""
+        return await self.repository.set_term(guild_id, user_id, key, term)
+
+    async def set_no_renew(self, guild_id: int, user_id: int, key: str, on: bool) -> Lease:
+        """Avisa de que no renovará el contrato en vigor (o se echa atrás)."""
+        now = self._clock()
+        return await self.repository.set_no_renew(guild_id, user_id, key, on, local_day(now), now)
+
+    async def offer_keys(
+        self, guild_id: int, user_id: int, key: str, offer: str
+    ) -> tuple[KeysDeal, int]:
+        """Le ofrece al inquilino del catálogo dinero (o nada) por irse (`housing.KEYS_OFFERS`).
+
+        Returns:
+            `(lo que contestó, saldo)`.
+
+        Raises:
+            HousingError: Si no se puede preguntar.
+            InsufficientFundsError: Si no le llega para lo que ofrece.
+        """
+        now = self._clock()
+        run = self.repository.offer_keys(guild_id, user_id, key, offer, local_day(now), now,
+                                         self.rng)  # fmt: skip
+        deal, balances = await self.economy.housing(guild_id, run)
+        return deal, balances.get(user_id, await self.economy.balance(guild_id, user_id))
+
+    async def accept_keys_ask(self, guild_id: int, user_id: int, key: str) -> tuple[KeysDeal, int]:
+        """Le paga al inquilino lo que pidió al rechazar la oferta. Devuelve `(trato, saldo)`.
+
+        Raises:
+            HousingError: Si no hay contraoferta o caducó.
+            InsufficientFundsError: Si no le llega.
+        """
+        now = self._clock()
+        run = self.repository.accept_keys_ask(guild_id, user_id, key, local_day(now), now)
+        deal, balances = await self.economy.housing(guild_id, run)
+        return deal, balances.get(user_id, await self.economy.balance(guild_id, user_id))
+
+    async def drop_keys_ask(self, guild_id: int, user_id: int, key: str) -> Lease:
+        """No acepta lo que pidió el inquilino."""
+        return await self.repository.drop_keys_ask(guild_id, user_id, key)
+
+    async def member_keys(
+        self, guild_id: int, owner_id: int, key: str, member_id: int, amount: int
+    ) -> MemberKeys:
+        """Le compra las llaves a un miembro de alquiler que ha aceptado `amount`.
+
+        Raises:
+            HousingError: Si ya no se puede.
+            InsufficientFundsError: Si al casero no le llega.
+        """
+        now = self._clock()
+        run = self.repository.member_keys(guild_id, owner_id, key, member_id, amount,
+                                          local_day(now), now)  # fmt: skip
+        deal, _balances = await self.economy.housing(guild_id, run)
+        return deal
+
+    async def claim_need(self, guild_id: int, user_id: int, key: str) -> tuple[Lease, int]:
+        """Pide el piso para vivir en él (art. 9.3 LAU). Devuelve `(contrato, indemnización)`."""
+        now = self._clock()
+        return await self.repository.claim_need(guild_id, user_id, key, local_day(now), now)
+
+    async def leave_home_paying(self, guild_id: int, user_id: int) -> tuple[int, int]:
+        """Deja antes de tiempo el piso que pidió para vivir. Devuelve `(lo pagado, saldo)`.
+
+        Raises:
+            HousingError: Si no hay indemnización que pagar.
+            InsufficientFundsError: Si no le llega.
+        """
+        now = self._clock()
+        run = self.repository.leave_home_paying(guild_id, user_id, local_day(now), now)
+        fine, balances = await self.economy.housing(guild_id, run)
+        return fine, balances.get(user_id, await self.economy.balance(guild_id, user_id))
 
     async def set_pick(self, guild_id: int, user_id: int, key: str, pick: str) -> Lease:
         """Cambia quién elige al próximo inquilino (`housing.PICK_AGENCY` o `PICK_SELF`)."""

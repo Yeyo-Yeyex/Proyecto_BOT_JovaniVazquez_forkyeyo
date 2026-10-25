@@ -557,7 +557,7 @@ async def test_todas_las_pantallas_respetan_los_limites_de_discord(tmp_path: Pat
                             (GESTION, None), (CANDIDATOS, None), ("subastas", None),
                             ("reformas", None), ("imprevistos", None), ("resenas", None),
                             ("junta", None), ("calles", None), ("dividir", None),
-                            ("edificio", None)):  # fmt: skip
+                            ("edificio", None), ("llaves", None)):  # fmt: skip
         panel.screen, panel.pending, panel.done = screen, pending, None
         panel.barrio, panel.listing = "vegueta", "vegueta_edificio"
         panel.rebuild()
@@ -1214,3 +1214,98 @@ async def test_el_boton_verde_lleva_a_los_candidatos_de_un_sitio_y_al_siguiente(
     market = await cog.service.market(GUILD)
     assert market.leases["isleta_piso3~h2"].tenant == "coliving"
     assert panel.screen == FICHA  # ya no espera nadie más
+
+
+# -- 9.23.0: duración del contrato y recuperar el piso -----------------------------------------
+
+
+def _limits(panel: Panel) -> set[str]:
+    """Comprueba lo que Discord exige de los componentes y devuelve sus `custom_id`."""
+    rows: dict[int, int] = {}
+    for item in panel.children:
+        rows[item.row or 0] = rows.get(item.row or 0, 0) + (
+            5 if isinstance(item, discord.ui.Select) else 1
+        )
+        if isinstance(item, discord.ui.Button):
+            assert len(item.label or "") <= 80
+        if isinstance(item, discord.ui.Select):
+            for option in item.options:
+                assert len(option.label) <= 100 and len(option.description or "") <= 100
+    assert max(rows) <= 4 and all(width <= 5 for width in rows.values()), rows
+    ids = [getattr(item, "custom_id", None) for item in panel.children]
+    assert len(ids) == len(set(ids))
+    return {i for i in ids if i}
+
+
+async def test_recuperar_el_piso_ofrece_lo_que_toca_y_cabe_en_discord(tmp_path: Path) -> None:
+    cog, _scene, _clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(5_000_000, "prueba")])
+    await cog.service.buy(GUILD, ana.id, "taco_bajo", rules.SHARES)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute(
+            "UPDATE housing_leases SET status = 'alquilado', tenant = 'rider', rent = 3000, "
+            "until = '2026-12-01', signed = '2026-01-01'"
+        )
+    panel = await open_panel(cog, ana, guild_with(ana))
+    panel.listing, panel.screen = "taco_bajo", FICHA
+    await panel.refresh()
+    panel.rebuild()
+    assert "pisos:llaves" in _limits(panel)
+    panel.screen = "llaves"
+    panel.rebuild()
+    ids = _limits(panel)
+    assert {"pisos:llaves_buenas", "pisos:llaves_justa", "pisos:llaves_generosa"} <= ids
+    assert {"pisos:no_renovar", "pisos:necesidad"} <= ids
+    text = panel._keys_text()
+    assert "Lo justo hoy" in text and "art. 9.3 LAU" in text and "No renovar" in text
+    # Con su contraoferta en pie, solo se le paga o se deja.
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute("UPDATE housing_leases SET keys_ask = 7000, keys_wait = '2026-10-20'")
+    await panel.refresh()
+    panel.rebuild()
+    ids = _limits(panel)
+    assert {"pisos:llaves_precio", "pisos:llaves_dejar"} <= ids
+    assert "pisos:llaves_justa" not in ids
+    # En 🧰 Gestionar se elige lo que dura el próximo contrato.
+    panel.screen = GESTION
+    panel.rebuild()
+    assert "pisos:duracion" in _limits(panel)
+    pick = next(i for i in panel.children if getattr(i, "custom_id", "") == "pisos:duracion")
+    assert [o.value for o in pick.options] == [str(t) for t in rules.TERMS]
+
+
+async def test_pedirlas_por_las_buenas_y_que_diga_que_no(tmp_path: Path) -> None:
+    cog, _scene, _clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(5_000_000, "prueba")])
+    await cog.service.buy(GUILD, ana.id, "taco_bajo", rules.SHARES)
+    with sqlite3.connect(tmp_path / "bot.db") as connection:
+        connection.execute(
+            "UPDATE housing_leases SET status = 'alquilado', tenant = 'enfermeros', rent = 3000, "
+            "until = '2026-12-01', signed = '2026-01-01'"
+        )
+    cog.service.rng = random.Random(0)
+    cog.service.rng.random = lambda: 0.99  # type: ignore[method-assign]  # nunca por las buenas
+    panel = await open_panel(cog, ana, guild_with(ana))
+    panel.listing, panel.screen = "taco_bajo", "llaves"
+    await panel.refresh()
+    balance = await cog.economy.balance(GUILD, ana.id)
+    press = clicked(ana, [])
+    await panel._keys_free(press)
+    text = " ".join(str(c) for c in press.followup.send.await_args_list)
+    assert "no acepta" in text
+    lease = (await cog.service.market(GUILD)).leases["taco_bajo"]
+    assert lease.keys_ask > 0 and await cog.economy.balance(GUILD, ana.id) == balance
+
+
+async def test_la_duracion_se_cambia_desde_gestionar(tmp_path: Path) -> None:
+    cog, _scene, _clock = await make(tmp_path)
+    ana = member(10, "Ana")
+    await cog.economy.repository.apply(GUILD, ana.id, [LedgerEntry(5_000_000, "prueba")])
+    await cog.service.buy(GUILD, ana.id, "taco_bajo", rules.SHARES)
+    panel = await open_panel(cog, ana, guild_with(ana))
+    panel.listing, panel.screen = "taco_bajo", GESTION
+    await panel.refresh()
+    await panel._pick_term(clicked(ana, [], values=["24"]))
+    assert (await cog.service.market(GUILD)).leases["taco_bajo"].term == 24

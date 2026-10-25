@@ -580,6 +580,14 @@ class Lease:
         license_until: Último día de la licencia vacacional (se renueva si se puede).
         license_denied_until: Hasta qué día no se puede volver a pedir la licencia (la
             comunidad votó que no).
+        term: Días que dura el próximo contrato (`TERMS`), como `level`: 0 es el de serie
+            de su nivel (`contract_months`).
+        leaving: Por qué se va el inquilino el día `until` en vez de renovar: `""` (renueva
+            si quiere), `LEAVE_NO_RENEW`, `LEAVE_EXTENDED` (ya tuvo su prórroga),
+            `LEAVE_KEYS` (le compraron las llaves) o `LEAVE_NEED` (art. 9.3 LAU).
+        keys_ask: Lo que pide el inquilino por irse tras rechazar una oferta (0 si nada).
+        keys_wait: Hasta qué día no quiere volver a hablar de irse (ni acepta su precio).
+        signed: Día en que se firmó el contrato en vigor (`None` en los de antes de la 9.23).
     """
 
     status: str = VACANT
@@ -609,6 +617,11 @@ class Lease:
     reviews: int = 0
     license_until: date | None = None
     license_denied_until: date | None = None
+    term: int = 0
+    leaving: str = ""
+    keys_ask: int = 0
+    keys_wait: date | None = None
+    signed: date | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -685,7 +698,8 @@ class DayOutcome:
         extra: Coste de los imprevistos del día.
         events: Imprevistos y cambios de estado del día, para las noticias
             (`firma`, `renueva`, `se_va`, `impago`, `paga`, `okupa`, `desahucio`,
-            `candidato`, `seguro` y las claves de `EVENTS`).
+            `candidato`, `seguro`, los finales de contrato de la 9.23 —`prorroga`,
+            `no_renovado`, `sale_llaves`, `sale_necesidad`— y las claves de `EVENTS`).
         insurer: Lo que paga hoy el seguro de impago por la renta que no se cobra.
     """
 
@@ -863,6 +877,287 @@ def eviction_fee(rent: int) -> int:
     return min(EVICTION_FEE_MAX, max(EVICTION_FEE_MIN, rent * EVICTION_FEE_MONTHS))
 
 
+# -- Duración del contrato y recuperar el piso (9.23.0, `docs/pisos-llaves.md`) ----------
+
+#: Lo que puede durar un contrato de vivienda o de local, de 1 a 5 años (a un día = un mes).
+#: En la ley, uno de menos de 5 años se prorroga cada año a voluntad del inquilino hasta los
+#: 5 (art. 9.1 LAU); aquí lo firmado es lo que dura, o elegir no cambiaría nada.
+TERMS = (12, 24, 36, 48, 60)
+TERM_DEFAULT = 60
+#: Con 1 año, lo que baja encontrar inquilino y lo que sube el impago (en proporción, menos
+#: con más años): `docs/pisos_sim.py --duraciones`.
+TERM_FIND_CUT = 0.4
+TERM_RISK_UP = 0.3
+#: Por qué se va el inquilino al acabar el contrato (`Lease.leaving`).
+LEAVE_NO_RENEW = "no_renueva"
+LEAVE_EXTENDED = "prorroga"
+LEAVE_KEYS = "llaves"
+LEAVE_NEED = "necesidad"
+#: La prórroga de la Ley de Vivienda en zona tensionada (art. 10.2 LAU, Ley 12/2023): la pide
+#: con esta probabilidad un inquilino del catálogo (un miembro, siempre), una vez y por un año.
+TENSE_EXTENSION = 0.5
+EXTENSION_DAYS = 12
+#: Comprar las llaves: medio mes de renta por cada 12 días que le quedan (un mes como
+#: mínimo), y lo que tarda en irse una vez aceptado (sigue pagando hasta entonces).
+KEYS_DAYS_PER_MONTH = 24
+KEYS_MOVE_DAYS = 2
+#: Lo que multiplica la oferta generosa al precio justo.
+KEYS_GENEROUS = 1.5
+#: Si los alquileres han subido desde que firmó, el inquilino pide además esta parte de lo
+#: que le costaría de más alquilar uno igual hoy hasta que acabe su contrato. Así echarlo para
+#: subirle la renta solo compensa si el barrio se ha disparado (`docs/pisos_sim.py
+#: --duraciones`, 48 días por delante: con la justa, a la par si ha subido un 15 % y 5,7 meses
+#: de renta si un 40 %; con la generosa, nunca). Sin esto, con un 20 % se ganaban 5 meses.
+KEYS_MARKET_SHARE = 0.5
+#: Lo más que se puede ofrecer a un miembro por las llaves (se escribe a mano).
+KEYS_MAX = 10_000_000
+#: El precio de verdad de cada inquilino es el justo por un factor lognormal, fijo para cada
+#: contrato: con la oferta justa acepta el 60 % de las veces y con la generosa, el 90 %.
+KEYS_LOG_MU = -0.1
+KEYS_LOG_SIGMA = 0.394
+#: Lo que le sienta mal que le pidan irse si dice que no, y los días que no quiere volver a
+#: hablar del tema (su contraoferta vale mientras tanto).
+KEYS_MOOD_HIT = 10
+KEYS_WAIT_DAYS = 7
+#: Un inquilino de riesgo alto al que se le ofrece poco (por las buenas o la justa) se
+#: atrinchera con esta probabilidad: deja de pagar y toca desahuciarlo.
+TRENCH_CHANCE = 0.10
+#: Fama de casero: cuántos pisos ha recuperado comprando llaves en los últimos `FAME_DAYS`
+#: días. Cada uno encarece el siguiente un `FAME_STEP` y espanta a los candidatos
+#: (`FAME_FIND_CUT` por punto, hasta `FAME_FIND_MIN`).
+FAME_DAYS = 30
+FAME_STEP = 0.2
+FAME_FIND_CUT = 0.1
+FAME_FIND_MIN = 0.5
+#: Necesidad del arrendador (art. 9.3 LAU): tras 12 días (un año) de contrato, el inquilino
+#: se va en 2 (dos meses de preaviso) y el dueño tiene que vivir ahí 12 días; si se va
+#: antes, paga 1 mes de renta por cada 12 días que le quedaban al contrato.
+NEED_AFTER_DAYS = 12
+NEED_NOTICE_DAYS = 2
+NEED_STAY_DAYS = 12
+
+
+def days_left(lease: Lease, day: date) -> int:
+    """Días que le quedan al contrato en vigor (1 como mínimo, si lo hay)."""
+    return max(1, (lease.until - day).days) if lease.until is not None else 0
+
+
+def recoverable(lease: Lease) -> bool:
+    """Si hay a quién pedirle que se vaya: alguien al día que no se va ya por otra razón."""
+    return (
+        lease.status == RENTED
+        and (lease.tenant is not None or lease.member is not None)
+        and lease.level != VACATION_LEVEL
+        and lease.leaving not in (LEAVE_KEYS, LEAVE_NEED)
+    )
+
+
+def _round_up(amount: float) -> int:
+    return int(math.ceil(amount / 100 - 1e-9)) * 100
+
+
+def keys_fair(rent: int, left: int, stay: float, mood: int, fame: int, market_rent: int = 0) -> int:
+    """El precio justo de las llaves, en Y$ (a cientos, hacia arriba).
+
+    Args:
+        left: Días que le quedan al contrato.
+        stay: Lo que el inquilino tiende a irse (`TenantFactors.stay`, 1 en un miembro): el
+            que se iría solo pide menos.
+        mood: Su humor. Contento pide más; enfadado no pide menos, o dejarle las averías sin
+            arreglar sería la forma de echarlo.
+        fame: La fama del casero (`fame`).
+        market_rent: Lo que pide hoy un piso igual (`asking_rent`): si es más que su renta,
+            pide `KEYS_MARKET_SHARE` de la diferencia por cada mes que le queda.
+    """
+    months = max(1.0, left / KEYS_DAYS_PER_MONTH)
+    attachment = min(1.5, max(0.7, 1 / max(stay, 0.01)))
+    happy = 1 + max(0, mood - MOOD_BASE) / 100
+    moving = KEYS_MARKET_SHARE * max(0, market_rent - rent) * left
+    return _round_up((rent * months * attachment * happy + moving) * (1 + FAME_STEP * fame))
+
+
+def keys_odds(offer: int, fair: int) -> float:
+    """Probabilidad de que acepte `offer` cuando lo justo es `fair` (la que sale en el botón)."""
+    if offer <= 0 or fair <= 0:
+        return 0.0
+    z = (math.log(offer / fair) - KEYS_LOG_MU) / KEYS_LOG_SIGMA
+    return 0.5 * (1 + math.erf(z / math.sqrt(2)))
+
+
+def keys_reserve(fair: int, seed: str) -> int:
+    """Lo que pide de verdad por irse: el justo por un factor fijo para cada contrato.
+
+    `seed` sale del contrato (inmueble, inquilino y día de la firma): volver a preguntar no
+    cambia lo que pide, aunque sí cambia el justo (le quedan menos días, sube tu fama).
+    """
+    z = random.Random(seed).gauss(0, 1)
+    return _round_up(fair * math.exp(KEYS_LOG_MU + KEYS_LOG_SIGMA * z))
+
+
+def free_odds(stay: float, left: int, fame: int) -> float:
+    """Probabilidad de que se vaya por las buenas, sin cobrar nada.
+
+    Más si ya pensaba irse (`stay` alto) o le queda poco contrato; nunca si el casero
+    tiene fama de echar a la gente.
+    """
+    if fame > 0:
+        return 0.0
+    return min(0.35, max(0.05, 0.05 + 0.10 * stay + 0.15 * (1 - min(left, 60) / 60)))
+
+
+def fame_find(fame: int) -> float:
+    """Lo que la fama del casero multiplica encontrar inquilino."""
+    return max(FAME_FIND_MIN, 1 - FAME_FIND_CUT * fame)
+
+
+def need_fine(rent: int, left: int) -> int:
+    """La indemnización del art. 9.3 LAU si el dueño no vive ahí lo que debe: 1 mes de renta
+    por cada 12 días (año) que le quedaban al contrato, y 1 como mínimo."""
+    return rent * max(1, math.ceil(left / 12))
+
+
+def need_problem(listing: Listing, lease: Lease, day: date) -> str | None:
+    """Por qué no se puede pedir el piso para vivir en él (art. 9.3 LAU), o `None`.
+
+    Solo mira el contrato; que sea todo suyo y no viva en otro sitio lo mira el repositorio.
+    """
+    if not recoverable(lease):
+        return "No hay a quién pedírselo."
+    if listing.kind not in HOME_KINDS:
+        return "La necesidad es para vivir: en esto no se vive."
+    if lease.level == NOMAD_LEVEL:
+        return "Es un contrato de temporada: ese acaba solo."
+    start = lease.signed or lease.since
+    if start is not None and (day - start).days < NEED_AFTER_DAYS:
+        ready = start + timedelta(days=NEED_AFTER_DAYS)
+        return f"Hasta el {ready:%d/%m} no lleva un año de contrato (art. 9.3 LAU)."
+    return None
+
+
+@dataclass(frozen=True, slots=True)
+class KeysQuote:
+    """Lo que pediría hoy un inquilino del catálogo por irse, y lo que sale en los botones.
+
+    Attributes:
+        fair: El precio justo (`keys_fair`).
+        reserve: Lo que pide de verdad (`keys_reserve`): no se enseña.
+        free: Probabilidad de que se vaya por las buenas (`free_odds`).
+        risk: Su riesgo de impago (`risk_tier`): uno alto puede atrincherarse.
+        fame: La fama del casero.
+        left: Días que le quedan al contrato.
+    """
+
+    fair: int
+    reserve: int
+    free: float
+    risk: str
+    fame: int
+    left: int
+
+    def odds(self, offer: str) -> float:
+        """La probabilidad de que acepte cada oferta (la que sale en su botón)."""
+        if offer == KEYS_FREE:
+            return self.free
+        return keys_odds(keys_offer_amount(offer, self.fair), self.fair)
+
+
+def keys_quote(
+    listing: Listing, lease: Lease, day: date, fame: int, seed: str, index: float = 1.0
+) -> KeysQuote:
+    """Lo que pediría hoy el inquilino del catálogo de `lease` por irse (`KeysQuote`).
+
+    `seed` identifica el contrato (inmueble, inquilino y día de la firma): lo que pide de
+    verdad no cambia por volver a preguntar. `index` es el del barrio: si los alquileres han
+    subido, pide más.
+    """
+    factors = tenant_factors(lease.tenant, lease.level, listing.kind)
+    left = days_left(lease, day)
+    level = RENT_LEVELS.get(lease.level, RENT_LEVELS["referencia"])
+    market_rent = asking_rent(listing, level, index)
+    fair = keys_fair(lease.rent, left, factors.stay, lease.mood, fame, market_rent)
+    return KeysQuote(
+        fair=fair,
+        reserve=keys_reserve(fair, seed),
+        free=free_odds(factors.stay, left, fame),
+        risk=risk_tier(factors),
+        fame=fame,
+        left=left,
+    )
+
+
+#: Las tres ofertas por las llaves, en el orden de los botones.
+KEYS_FREE = "buenas"
+KEYS_FAIR = "justa"
+KEYS_RICH = "generosa"
+KEYS_OFFERS = (KEYS_FREE, KEYS_FAIR, KEYS_RICH)
+
+
+def keys_offer_amount(offer: str, fair: int) -> int:
+    """Lo que se ofrece con cada botón."""
+    if offer == KEYS_FREE:
+        return 0
+    return fair if offer == KEYS_FAIR else _round_up(fair * KEYS_GENEROUS)
+
+
+@dataclass(frozen=True, slots=True)
+class KeysAnswer:
+    """Lo que contesta un inquilino del catálogo a una oferta por las llaves.
+
+    Attributes:
+        accepted: Si se va.
+        paid: Lo que se le paga si se va (0 por las buenas).
+        ask: Su contraoferta si no se va (0 si se atrinchera).
+        trench: Si se atrinchera: deja de pagar.
+    """
+
+    accepted: bool
+    paid: int = 0
+    ask: int = 0
+    trench: bool = False
+
+
+def keys_answer(
+    offer: str, fair: int, reserve: int, free: float, risk: str, rng: random.Random
+) -> KeysAnswer:
+    """Si acepta la oferta: por las buenas con `free` de probabilidad; con dinero, si llega
+    a lo que pide de verdad (`reserve`). Si no, contraoferta con ese precio, salvo que sea
+    de riesgo alto, le hayan ofrecido poco y se atrinchere (`TRENCH_CHANCE`)."""
+    amount = keys_offer_amount(offer, fair)
+    if offer == KEYS_FREE:
+        if rng.random() < free:
+            return KeysAnswer(True)
+    elif amount >= reserve:
+        return KeysAnswer(True, paid=amount)
+    if risk == "alto" and offer != KEYS_RICH and rng.random() < TRENCH_CHANCE:
+        return KeysAnswer(False, trench=True)
+    return KeysAnswer(False, ask=reserve)
+
+
+def keys_refused(lease: Lease, day: date, answer: KeysAnswer) -> Lease:
+    """El contrato tras decir que no: humor abajo, su precio y unos días sin hablar del tema.
+
+    Si se atrinchera, deja de pagar desde hoy (el impago de siempre).
+    """
+    lease = replace(
+        lease, mood=max(0, lease.mood - KEYS_MOOD_HIT), keys_ask=answer.ask,
+        keys_wait=day + timedelta(days=KEYS_WAIT_DAYS),
+    )  # fmt: skip
+    if answer.trench:
+        lease = replace(lease, status=DEFAULTING, since=day, unpaid=1)
+    return lease
+
+
+def leaves_in(lease: Lease, day: date, why: str, days: int) -> Lease:
+    """El contrato de quien se va en `days` días por `why` (`LEAVE_KEYS` o `LEAVE_NEED`).
+
+    Sigue pagando hasta entonces; si el contrato ya acababa antes, se va ese día.
+    """
+    until = day + timedelta(days=days)
+    if lease.until is not None and lease.until < until:
+        until = lease.until
+    return replace(lease, until=until, leaving=why, keys_ask=0, keys_wait=None)
+
+
 # -- Noticias de barrio ---------------------------------------------------------------
 
 #: Probabilidad de que un barrio sin noticia salga en las de un lunes, y cuántas salen como
@@ -925,13 +1220,35 @@ def find_chance(
     return min(1.0, find)
 
 
-def contract_months(listing: Listing, level: RentLevel) -> int:
-    """Lo que dura un contrato: el de su nivel, o `ROOM_MONTHS` como mucho en una habitación.
+def contract_months(listing: Listing, level: RentLevel, term: int = 0) -> int:
+    """Lo que dura un contrato: el que eligió el dueño (`term`) o el de su nivel.
 
-    La habitación se rige por el Código Civil y no por la LAU (criterio mayoritario de las
-    Audiencias): no tiene las prórrogas obligatorias de cinco años.
+    Los nómadas (temporada) y el vacacional tienen su duración y no se elige. La habitación
+    no pasa de `ROOM_MONTHS`: se rige por el Código Civil y no por la LAU (criterio
+    mayoritario de las Audiencias), sin las prórrogas obligatorias de cinco años.
     """
-    return min(level.months, ROOM_MONTHS) if listing.kind == ROOM_KIND else level.months
+    months = term if term and level.months == TERM_DEFAULT else level.months
+    return min(months, ROOM_MONTHS) if listing.kind == ROOM_KIND else months
+
+
+def term_choices(listing: Listing, level: RentLevel) -> tuple[int, ...]:
+    """Las duraciones que puede elegir el dueño con esa renta (ninguna si es fija)."""
+    if level.months != TERM_DEFAULT or listing.kind == ROOM_KIND:
+        return ()
+    return TERMS
+
+
+def term_factors(listing: Listing, level: RentLevel, term: int) -> tuple[float, float]:
+    """`(encontrar inquilino, impago)` que multiplica firmar más corto que cinco años.
+
+    Va en proporción a lo que le falta para los 60 días: con 1 año, `1 - TERM_FIND_CUT` y
+    `1 + TERM_RISK_UP`; con 5, nada. Quien busca estabilidad no firma un año, y quien lo
+    firma suele ser quien peor paga.
+    """
+    if not term_choices(listing, level):
+        return 1.0, 1.0
+    short = (TERM_DEFAULT - contract_months(listing, level, term)) / (TERM_DEFAULT - TERMS[0])
+    return 1 - TERM_FIND_CUT * short, 1 + TERM_RISK_UP * short
 
 
 def sign(listing: Listing, lease: Lease, tenant: str, day: date, index: float) -> Lease:
@@ -948,11 +1265,15 @@ def sign(listing: Listing, lease: Lease, tenant: str, day: date, index: float) -
         status=RENTED,
         tenant=tenant,
         rent=rent,
-        until=day + timedelta(days=contract_months(listing, level)),
+        until=day + timedelta(days=contract_months(listing, level, lease.term)),
         since=day,
+        signed=day,
         unpaid=0,
         claims=0,
         mood=MOOD_BASE,
+        leaving="",
+        keys_ask=0,
+        keys_wait=None,
         reduction=contract_reduction(
             listing, level.key, index=index, rent=rent, last_rent=lease.last_rent,
             young=is_young(tenant), day=day,
@@ -964,8 +1285,47 @@ def _vacated(lease: Lease, day: date) -> Lease:
     """El inmueble se queda vacío: sin inquilino, ni contrato, ni impago que cubrir."""
     return replace(
         lease, status=VACANT, tenant=None, rent=0, until=None, since=day, unpaid=0,
-        eviction_at=None, claims=0, last_rent=lease.rent, bonus=False,
+        eviction_at=None, claims=0, last_rent=lease.rent, bonus=False, leaving="", keys_ask=0,
+        keys_wait=None, signed=None,
     )  # fmt: skip
+
+
+def member_gone(lease: Lease, day: date) -> Lease:
+    """El piso que deja un miembro de alquiler, por lo que sea: vacío y sin contrato."""
+    return replace(
+        lease, status=VACANT, member=None, bono=False, rent=0, last_rent=lease.rent, until=None,
+        since=day, unpaid=0, eviction_at=None, leaving="", keys_ask=0, keys_wait=None,
+        signed=None,
+    )  # fmt: skip
+
+
+def contract_end(
+    listing: Listing, lease: Lease, day: date, index: float, rng: random.Random,
+    renew: float,
+) -> tuple[Lease, Event]:  # fmt: skip
+    """El día que acaba un contrato de un inquilino del catálogo: renueva, se va o prorroga.
+
+    Si el dueño no quiere renovar (`Lease.leaving`), se va; en zona tensionada pide antes,
+    una vez, la prórroga de la Ley de Vivienda (art. 10.2 LAU, Ley 12/2023), con
+    `TENSE_EXTENSION` de probabilidad. Si no se ha dicho nada, renueva con probabilidad
+    `renew` por otro contrato de la duración elegida ese día, con la misma renta.
+    """
+    tenant = lease.tenant
+    if lease.leaving == LEAVE_NO_RENEW and tense(index) and rng.random() < TENSE_EXTENSION:
+        extended = replace(
+            lease, until=day + timedelta(days=EXTENSION_DAYS), leaving=LEAVE_EXTENDED
+        )
+        return extended, Event("prorroga", tenant=tenant)
+    if lease.leaving:
+        key = {LEAVE_KEYS: "sale_llaves", LEAVE_NEED: "sale_necesidad"}.get(
+            lease.leaving, "no_renovado"
+        )
+        return _vacated(lease, day), Event(key, tenant=tenant)
+    if rng.random() < renew:
+        level = RENT_LEVELS.get(lease.level, RENT_LEVELS["referencia"])
+        months = contract_months(listing, level, lease.term)
+        return replace(lease, until=day + timedelta(days=months)), Event("renueva")
+    return _vacated(lease, day), Event("se_va")
 
 
 def advance_day(
@@ -999,6 +1359,8 @@ def advance_day(
     factors = tenant_factors(lease.tenant, lease.level, listing.kind)
     # El humor del inquilino cambia lo que se queda: contento renueva más y se va menos.
     factors = replace(factors, stay=factors.stay * mood_factor(lease.mood))
+    # Firmar corto espanta a quien busca estabilidad y atrae a quien peor paga.
+    term_find, term_risk = term_factors(listing, level, lease.term)
     living = lease.status in (RENTED, DEFAULTING)
     extra, rolled = roll_events(
         listing, rng, wear=factors.wear if living else 1.0,
@@ -1026,13 +1388,12 @@ def advance_day(
     elif status == RENTED:
         rent = lease.rent
         if lease.until is not None and day >= lease.until:
-            if rng.random() < max(0.0, 1 - (1 - RENEWAL) * factors.stay):
-                lease = replace(lease, until=day + timedelta(days=contract_months(listing, level)))
-                events.append(Event("renueva"))
-            else:
-                lease = _vacated(lease, day)
-                events.append(Event("se_va"))
-        elif rng.random() < level.default * factors.risk * (news.default if news else 1.0):
+            renew = max(0.0, 1 - (1 - RENEWAL) * factors.stay)
+            lease, end = contract_end(listing, lease, day, index, rng, renew)
+            events.append(end)
+        elif rng.random() < (
+            level.default * factors.risk * term_risk * (news.default if news else 1.0)
+        ):
             lease = replace(lease, status=DEFAULTING, since=day, unpaid=1)
             rent = 0
             events.append(Event("impago"))
@@ -1049,7 +1410,7 @@ def advance_day(
             lease = replace(lease, unpaid=lease.unpaid + 1)
     elif status == VACANT:
         vacant_for = (day - lease.since).days if lease.since is not None else 0
-        if rng.random() < min(1.0, find_chance(listing, level, day, news) * boost):
+        if rng.random() < min(1.0, find_chance(listing, level, day, news) * boost * term_find):
             tenant = _tenant_for(level.key, listing.kind, rng)
             if lease.pick == PICK_SELF:
                 events.append(Event("candidato", tenant=tenant))

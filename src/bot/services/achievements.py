@@ -704,6 +704,9 @@ PISOS_ROOM_TENANTS_STAT = "pisos_room_tenants"
 #: Fase 4: un contador por reforma hecha; las distintas, en `with_derived`.
 PISOS_REFORM_PREFIX = "pisos_reform_"
 PISOS_REFORM_KINDS_STAT = "pisos_reform_kinds"
+#: 9.23.0: un contador por duración de contrato elegida; las distintas, en `with_derived`.
+PISOS_TERM_PREFIX = "pisos_term_"
+PISOS_TERMS_STAT = "pisos_terms"
 #: 9.14.0: un contador por edificio de las calles visto por dentro; los distintos, en
 #: `with_derived`.
 PISOS_BUILDING_PREFIX = "pisos_bldg_"
@@ -875,6 +878,21 @@ PISOS_REHAB_STORY = (
     "tienen una reducción del 60 % en vez del 50 % (art. 23.2.c LIRPF). La obra no se deduce "
     "como gasto: es una mejora, suma a lo que te costó el piso y se amortiza. Y paga el ICIO, "
     "el impuesto de las obras, hasta un 4 % (art. 102 del RDL 2/2004)."
+)
+
+PISOS_KEYS_SOLD_STORY = (
+    "🔑 **Vender tus llaves.** Lo que te paga el dueño para que dejes el piso alquilado es una "
+    "ganancia patrimonial, no un rendimiento del alquiler (consulta vinculante DGT V3259-23): "
+    "tributa en la base del ahorro, al 19 % en el primer tramo (arts. 33.1 y 49 LIRPF). En la "
+    "vida real no lleva retención y se declara en la Renta; el bot te descuenta ese 19 % al "
+    "cobrarlo, como la plusvalía del Rastro."
+)
+PISOS_NEED_STORY = (
+    "🏠 **Necesidad de vivienda.** Con un año de contrato cumplido, el dueño puede recuperar "
+    "el piso para vivir en él (art. 9.3 LAU), avisando con dos meses (2 días del bot). Si no "
+    "lo ocupa, el inquilino puede volver o pedir un mes de renta por cada año que le quedara. "
+    "Aquí te mudas solo en cuanto se va, y si te vas antes de 12 días (un año), pagas esa "
+    "indemnización."
 )
 
 #: Discurso de la primera renta de `pisos` (`pisos_rent_1`).
@@ -8066,6 +8084,154 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "pisos_evict_1", "Burofax y demanda", "Pide un desahucio en el juzgado.", C),
         (5, "pisos_evict_5", "Cliente fijo del juzgado de primera instancia",
          "Pide 5 desahucios.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_term_changes", [
+        (1, "pisos_term_1", "Letra pequeña, cláusula tercera",
+         "Cambia la duración del contrato.", C),
+        (10, "pisos_term_10", "Contrato de quita y pon",
+         "Cambia la duración del contrato 10 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", PISOS_TERMS_STAT, [
+        (5, "pisos_terms_5", "Cinco temporadas y una película",
+         "Elige las cinco duraciones de contrato: 1, 2, 3, 4 y 5 años.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_TERM_PREFIX}60", [
+        (1, "pisos_term_60", "Cadena perpetua con derecho a nevera",
+         "Elige un contrato de 5 años.", C, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_TERM_PREFIX}12", [
+        (1, "pisos_term_12", "Un año y a la calle", "Elige un contrato de 1 año.", C),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_keys_offers", [
+        (1, "pisos_keys_offers_1", "Se te ve el llavero",
+         "Ofrece comprarle las llaves a un inquilino.", C),
+        (10, "pisos_keys_offers_10", "Portero de finca regia",
+         "Haz 10 ofertas por unas llaves.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_keys_free_asks", [
+        (1, "pisos_keys_ask_1", "Por la cara bonita",
+         "Pide las llaves a un inquilino por las buenas.", C),
+        (10, "pisos_keys_ask_10", "Quien no llora no mama",
+         "Pide las llaves por las buenas 10 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_keys_refused", [
+        (1, "pisos_keys_refused_1", "Portazo en las narices",
+         "Que un inquilino rechace venderte las llaves.", C),
+        (10, "pisos_keys_refused_10", "El no ya lo tienes",
+         "Que te rechacen la oferta de unas llaves 10 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_keys_trench", [
+        (1, "pisos_keys_trench_1", "Resistiré",
+         "Que un inquilino se atrinchere y deje de pagar cuando le ofreces comprar sus llaves.",
+         R, True),
+        (5, "pisos_keys_trench_5", "Los últimos de Filipinas",
+         "Que se atrinchere un inquilino 5 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_keys_dropped", [
+        (1, "pisos_keys_dropped_1", "Ya lo pensaré mañana",
+         "No pagues la contraoferta de un inquilino.", C),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_keys_bought", [
+        (1, "pisos_keys_bought_1", "Llave en mano", "Recupera un piso comprando sus llaves.", C),
+        (5, "pisos_keys_bought_5", "Llave maestra", "Compra las llaves de 5 pisos.", R),
+        (10, "pisos_keys_bought_10", "Por un puñado de llaves",
+         "Compra las llaves de 10 pisos.", E),
+        (40, "pisos_keys_bought_40", "Alí Babá y las cuarenta llaves",
+         "Compra las llaves de 40 pisos.", L),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_keys_paid", [
+        (50_000, "pisos_keys_paid_50k", "Llaves de oro",
+         "Paga 50.000 Y$ en total por llaves.", R),
+        (500_000, "pisos_keys_paid_500k", "El rescate de Atahualpa",
+         "Paga 500.000 Y$ en total por llaves.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("pisos", "pisos_keys_max", [
+        (100_000, "pisos_keys_max_100k", "Cheque con muchos ceros",
+         "Paga 100.000 Y$ de una vez por unas llaves.", E),
+        (1_000_000, "pisos_keys_max_1m", "Quien paga, manda",
+         "Paga 1.000.000 Y$ de una vez por unas llaves.", M),
+    ], unit="money")  # fmt: skip
+    a += _tiers("pisos", "pisos_keys_fame", [
+        (1, "pisos_fame_1", "Fama, ven a mí", "Consigue 1 de fama de casero.", C),
+        (3, "pisos_fame_3", "Se corre la voz", "Llega a 3 de fama de casero.", R),
+        (5, "pisos_fame_5", "El Rey Midas del llavero", "Llega a 5 de fama de casero.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_keys_free", [
+        (1, "pisos_keys_free_1", "Hoy invita la casa",
+         "Que un inquilino te entregue las llaves gratis, por las buenas.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_keys_generous", [
+        (1, "pisos_keys_generous_1", "Propina de casero",
+         "Que un inquilino acepte tu oferta generosa por las llaves.", C),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_keys_counter", [
+        (1, "pisos_keys_counter_1", "Una contraoferta que no puedes rechazar",
+         "Paga la contraoferta de un inquilino.", C),
+        (10, "pisos_keys_counter_10", "Padrino de pisos",
+         "Paga 10 contraofertas de inquilinos.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_keys_member", [
+        (1, "pisos_keys_member_1", "Entre bomberos no se pisan la manguera",
+         "Cómprale las llaves a un miembro al que le alquilas un piso.", R),
+        (5, "pisos_keys_member_5", "Amiguismo inmobiliario",
+         "Cómprale las llaves a 5 miembros.", E),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="pisos_keys_sold_1", name="Se vende, razón aquí",
+        description="Véndele tus llaves de alquiler a quien te alquila el piso.",
+        category="pisos", rarity=R, conditions=(("pisos_keys_sold", 1),), secret=True,
+        story=PISOS_KEYS_SOLD_STORY,
+    ))  # fmt: skip
+    a += _tiers("pisos", "pisos_keys_sold", [
+        (5, "pisos_keys_sold_5", "Nómada de cheque en mano",
+         "Vende tus llaves de alquiler 5 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_keys_sold_amount", [
+        (100_000, "pisos_keys_sold_100k", "Ahorro con intereses",
+         "Cobra 100.000 Y$ en total por vender tus llaves de alquiler.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("pisos", "pisos_keys_haggles", [
+        (1, "pisos_keys_haggle_1", "Esto me sale caro, hermano",
+         "Haz una contraoferta en el regateo de llaves entre miembros.", C),
+        (10, "pisos_keys_haggle_10", "Chalán de Zocodover",
+         "Haz 10 contraofertas en el regateo de llaves.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", "pisos_no_renew", [
+        (1, "pisos_no_renew_1", "Hasta aquí hemos llegado",
+         "Avisa a un inquilino de que no vas a renovar su contrato.", C),
+        (10, "pisos_no_renew_10", "Aviso a navegantes",
+         "Avisa de que no renuevas 10 veces.", R),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="pisos_need_1", name="Mi casa es tu casa, pero sobre todo mía",
+        description="Pide un piso alquilado para vivir en él.",
+        category="pisos", rarity=C, conditions=(("pisos_need", 1),), story=PISOS_NEED_STORY,
+    ))  # fmt: skip
+    a.append(Achievement(
+        id="pisos_need_fine_1", name="Antes se pilla a un mentiroso",
+        description="Paga la indemnización por no vivir 12 días en un piso pedido por necesidad.",
+        category="pisos", rarity=R, conditions=(("pisos_need_fine", 1),), secret=True,
+        story=PISOS_NEED_STORY,
+    ))  # fmt: skip
+    a += _tiers("pisos", "pisos_need_fine_paid", [
+        (50_000, "pisos_need_fine_50k", "Capricho de temporada",
+         "Paga 50.000 Y$ en total en indemnizaciones por necesidad.", E),
+    ], unit="money")  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}prorroga", [
+        (1, "pisos_extension_1", "Prórroga y penaltis",
+         "Que un inquilino pida la prórroga de un año de la Ley de Vivienda.", R, True),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}no_renovado", [
+        (1, "pisos_not_renewed_1", "Fin de contrato, fin de fiesta",
+         "Que se acabe un contrato que no has renovado y el inquilino se vaya.", R),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}sale_llaves", [
+        (1, "pisos_exit_keys_1", "Sale por la puerta grande",
+         "Que un inquilino se vaya con las llaves ya pagadas.", C),
+    ])  # fmt: skip
+    a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}sale_necesidad", [
+        (1, "pisos_exit_need_1", "Se acabó el recreo",
+         "Que un inquilino deje el piso porque lo necesitas para vivir.", C),
     ])  # fmt: skip
     a += _tiers("pisos", f"{PISOS_EVENT_PREFIX}desahucio", [
         (1, "pisos_evicted_1", "Lanzamiento judicial",
@@ -21133,7 +21299,8 @@ def with_derived(stats: Mapping[str, int]) -> dict[str, int]:
     `perfil_sections`, las secciones distintas de `perfil` que ha mirado, y
     `horse_backed_kinds` y `horse_backed_max`, los caballos distintos por los
     que ha apostado y los boletos al que más; `pisos_barrios` y `pisos_kinds`, los
-    barrios y los tipos de inmueble distintos en los que ha comprado.
+    barrios y los tipos de inmueble distintos en los que ha comprado, y `pisos_terms`,
+    las duraciones de contrato distintas (12, 24, 36, 48 y 60 días) que ha elegido.
     """
     full = dict(stats)
     full[MESSAGES_TOTAL_STAT] = full.get("messages", 0) + full.get("messages_imported", 0)
@@ -21239,6 +21406,9 @@ def with_derived(stats: Mapping[str, int]) -> dict[str, int]:
     )
     full[PISOS_REFORM_KINDS_STAT] = sum(
         1 for r in HOUSING_REFORMS if stats.get(f"{PISOS_REFORM_PREFIX}{r.key}", 0) > 0
+    )
+    full[PISOS_TERMS_STAT] = sum(
+        1 for term in (12, 24, 36, 48, 60) if stats.get(f"{PISOS_TERM_PREFIX}{term}", 0) > 0
     )
     full[PISOS_BUILDINGS_SEEN_STAT] = sum(
         1 for b in STREET_BUILDINGS if stats.get(f"{PISOS_BUILDING_PREFIX}{b.key}", 0) > 0
@@ -26219,6 +26389,67 @@ def housing_action_stats(
         if young:
             delta.add["pisos_young70"] = 1
     return delta
+
+
+def housing_keys_stats(
+    action: str, *, amount: int = 0, offer: str = "", fame: int = 0, term: int = 0
+) -> StatDelta:
+    """Estadísticas de recuperar un piso y de la duración del contrato (9.23.0).
+
+    Args:
+        action: `oferta` (un inquilino del catálogo dice que no), `llaves` (dice que sí),
+            `contraoferta` (le pagas lo que pidió), `deja` (no se lo pagas), `trinchera`
+            (se atrinchera), `miembro` (le compras las llaves a un miembro), `vende_llaves`
+            (eres el miembro que las vende), `regatea` (contraofertas entre miembros),
+            `no_renueva`, `necesidad`, `indemniza` (pagas la del art. 9.3) o `duracion`.
+        amount: Lo pagado o cobrado.
+        offer: La oferta hecha (`housing.KEYS_OFFERS`), con `oferta`, `llaves` y `trinchera`.
+        fame: Tu fama de casero después de comprar unas llaves.
+        term: La duración elegida, con `duracion`.
+    """
+    add: dict[str, int] = {}
+    peak: dict[str, int] = {}
+    if action in ("oferta", "llaves", "trinchera"):
+        add["pisos_keys_offers"] = 1
+        if offer == "buenas":
+            add["pisos_keys_free_asks"] = 1
+    if action == "oferta":
+        add["pisos_keys_refused"] = 1
+    elif action == "trinchera":
+        add["pisos_keys_trench"] = 1
+    elif action == "deja":
+        add["pisos_keys_dropped"] = 1
+    elif action in ("llaves", "contraoferta", "miembro"):
+        add["pisos_keys_bought"] = 1
+        if amount:
+            add["pisos_keys_paid"] = amount
+            peak["pisos_keys_max"] = amount
+        peak["pisos_keys_fame"] = fame
+        if action == "llaves" and offer == "buenas":
+            add["pisos_keys_free"] = 1
+        elif action == "llaves" and offer == "generosa":
+            add["pisos_keys_generous"] = 1
+        elif action == "contraoferta":
+            add["pisos_keys_counter"] = 1
+        elif action == "miembro":
+            add["pisos_keys_member"] = 1
+    elif action == "vende_llaves":
+        add["pisos_keys_sold"] = 1
+        if amount:
+            add["pisos_keys_sold_amount"] = amount
+    elif action == "regatea":
+        add["pisos_keys_haggles"] = 1
+    elif action == "no_renueva":
+        add["pisos_no_renew"] = 1
+    elif action == "necesidad":
+        add["pisos_need"] = 1
+    elif action == "indemniza":
+        add["pisos_need_fine"] = 1
+        add["pisos_need_fine_paid"] = amount
+    elif action == "duracion":
+        add["pisos_term_changes"] = 1
+        add[f"{PISOS_TERM_PREFIX}{term}"] = 1
+    return StatDelta(add=add, peak=peak)
 
 
 def housing_day_stats(

@@ -22,6 +22,12 @@ Uso (desde la raíz del repo):
     python docs/pisos_sim.py              # todos los inmuebles, 3 semillas
     python docs/pisos_sim.py --seeds 10   # más semillas, cifras más estables
     python docs/pisos_sim.py --niveles    # renta cobrada por nivel y tipo de barrio
+    python docs/pisos_sim.py --duraciones # cada duración de contrato y comprar las llaves
+
+Con `--duraciones` (9.23.0, `docs/pisos-llaves.md`) dice cuánto se cobra con cada duración de
+contrato si el dueño no hace nada, si no renueva cuando el barrio ha subido o si compra las
+llaves, con el índice quieto, subiendo o en olas; y cuánto gana o pierde comprar las llaves
+según lo que haya subido el barrio.
 
 En la consola de Windows hace falta `PYTHONIOENCODING=utf-8`.
 """
@@ -29,6 +35,7 @@ En la consola de Windows hace falta `PYTHONIOENCODING=utf-8`.
 from __future__ import annotations
 
 import argparse
+import math
 import random
 import statistics
 import sys
@@ -136,13 +143,119 @@ def levels(seeds: int) -> None:
         print(f"{barrio.theme:10} {row[0]:>11.2f} {row[1]:>8.2f} {row[2]:>8.2f}")
 
 
+#: Cómo se mueve el índice del barrio en `--duraciones`: quieto, subiendo un 40 % en un año
+#: (360 días) y en olas de ±25 % cada 120 días.
+PATHS = {
+    "quieto": lambda d: 1.0,
+    "sube": lambda d: 1 + 0.4 * min(d, 360) / 360,
+    "olas": lambda d: 1 + 0.25 * math.sin(2 * math.pi * d / 120),
+}
+
+
+def term_run(
+    listing: Listing, term: int, strategy: str, path: str, seed: int, days: int = 360,
+    rise: float = 0.15,
+) -> float:  # fmt: skip
+    """Renta cobrada al día (menos abogados y llaves) entre la de referencia de hoy, con la
+    duración `term` y una estrategia del dueño:
+
+    - `pasivo`: no hace nada (renueva quien quiere).
+    - `no_renueva`: si el índice ha subido un `rise` desde que firmó, avisa de que no
+      renueva (para volver a alquilar con la renta de ese día).
+    - `llaves`: si el índice ha subido el doble que eso, le compra las llaves con la oferta
+      generosa (sin fama: un solo piso).
+    """
+    rng = random.Random(seed)
+    start = date(2026, 1, 1)
+    lease = housing.Lease(level="referencia", term=term, since=start)
+    signed_at = 1.0
+    total = 0.0
+    for offset in range(days):
+        day = start + timedelta(days=offset)
+        index = PATHS[path](offset)
+        out = housing.advance_day(listing, lease, day, index, rng)
+        lease = out.lease
+        if any(e.key == "firma" for e in out.events):
+            signed_at = index
+        evicting = lease.status == housing.EVICTING
+        lease = _evict(lease, day, rng)
+        if lease.status == housing.EVICTING and not evicting:
+            fee = housing.eviction_fee(lease.rent or housing.reference_rent(listing, index))
+            total -= (fee + round(fee * housing.SERVICES_IGIC)) / housing.reference_rent(listing)
+        total += out.rent / housing.reference_rent(listing, index)
+        if lease.status != housing.RENTED or lease.leaving or lease.tenant is None:
+            continue
+        if strategy == "no_renueva" and index >= signed_at * (1 + rise):
+            lease = replace(lease, leaving=housing.LEAVE_NO_RENEW)
+        elif strategy == "llaves" and index >= signed_at * (1 + 2 * rise):
+            if lease.keys_wait is not None and day < lease.keys_wait:
+                continue
+            quote = housing.keys_quote(listing, lease, day, 0, f"{seed}:{offset}", index)
+            answer = housing.keys_answer(housing.KEYS_RICH, quote.fair, quote.reserve,
+                                         quote.free, quote.risk, rng)  # fmt: skip
+            if answer.accepted:
+                total -= answer.paid / housing.reference_rent(listing, index)
+                lease = housing.leaves_in(lease, day, housing.LEAVE_KEYS, housing.KEYS_MOVE_DAYS)
+            else:
+                lease = housing.keys_refused(lease, day, answer)
+    return total / days
+
+
+def terms(seeds: int) -> None:
+    """Cada duración con cada estrategia y cada índice, en un piso de referencia normal."""
+    listing = next(i for i in LISTINGS if i.kind == "piso2")
+    strategies = ("pasivo", "no_renueva", "llaves")
+    for path in PATHS:
+        print(f"Índice {path} (renta cobrada al día / renta de referencia de ese día):")
+        print(f"{'duración':>9} " + " ".join(f"{s:>11}" for s in strategies))
+        for term in housing.TERMS:
+            row = [
+                statistics.mean(term_run(listing, term, s, path, seed) for seed in range(seeds))
+                for s in strategies
+            ]
+            print(f"{term:>6} d. " + " ".join(f"{v:>11.3f}" for v in row))
+        print()
+    print("Comprar las llaves cuando el índice ha subido (48 días de contrato por delante):")
+    print(f"{'sube':>6} {'justa':>7} {'generosa':>9} {'ganas':>7} {'neto justa':>11} "
+          f"{'neto gen.':>10}  (en meses de la renta vieja)")  # fmt: skip
+    rent = housing.reference_rent(listing)
+    for jump in (0.1, 0.15, 0.2, 0.4):
+        fair = rich = gained = 0.0
+        n = seeds * 50
+        for seed in range(n):
+            rng = random.Random(seed)
+            day = date(2026, 1, 1)
+            old = housing.Lease(
+                status=housing.RENTED, level="referencia", tenant="enfermeros", rent=rent,
+                until=day + timedelta(days=48), since=day, signed=day,
+            )  # fmt: skip
+            quote = housing.keys_quote(listing, old, day, 0, str(seed), 1 + jump)
+            fair += quote.fair / rent
+            rich += housing.keys_offer_amount(housing.KEYS_RICH, quote.fair) / rent
+            # Lo que gana es la renta nueva menos la vieja hasta que acabe, menos los días
+            # vacío buscando a otro (con la probabilidad real de encontrarlo).
+            new_rent = housing.reference_rent(listing, 1 + jump)
+            find = housing.find_chance(listing, housing.RENT_LEVELS["referencia"], day)
+            empty = 0
+            while rng.random() >= find:
+                empty += 1
+            months = 48 - housing.KEYS_MOVE_DAYS - empty
+            gained += (new_rent * months - rent * (48 - housing.KEYS_MOVE_DAYS)) / rent
+        print(f"{jump:>5.0%} {fair / n:>7.1f} {rich / n:>9.1f} {gained / n:>7.1f} "
+              f"{(gained - fair) / n:>11.1f} {(gained - rich) / n:>10.1f}")  # fmt: skip
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--seeds", type=int, default=3)
     parser.add_argument("--niveles", action="store_true")
+    parser.add_argument("--duraciones", action="store_true")
     args = parser.parse_args()
     if args.niveles:
         levels(args.seeds)
+        return
+    if args.duraciones:
+        terms(args.seeds)
         return
     rows = []
     for listing in LISTINGS:

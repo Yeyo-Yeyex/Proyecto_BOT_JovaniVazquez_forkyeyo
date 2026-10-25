@@ -8,6 +8,16 @@ criterio.
 
 ## 9.x
 
+### 9.23.0 · 2026-10-25
+
+- Pisos: eliges cuánto dura cada contrato y puedes recuperar el piso aunque el inquilino pague
+- Pisos: en 🧰 Gestionar, la duración del próximo contrato, de 1 a 5 años (12 a 60 días); firmar corto trae menos candidatos y más impagos, pero al acabar lo recuperas gratis
+- Pisos: botón 🔑 Recuperar el piso en la ficha de un piso alquilado, con tres caminos: no renovar (gratis; en zona tensionada el inquilino puede pedir un año de prórroga), pedirlo para vivir (art. 9.3 LAU: se va en 2 días, te mudas y tienes que vivir ahí 12) y comprarle las llaves
+- Pisos: comprar las llaves cuesta medio mes de renta por cada año que le queda (más si está a gusto o si los alquileres han subido); se le ofrece por las buenas, lo justo o algo generoso, con la probabilidad de que acepte en el botón; si dice que no, te dice su precio, y uno de riesgo alto puede atrincherarse
+- Pisos: fama de casero: cada piso recuperado así en 30 días encarece el siguiente un 20 %, nadie se va por las buenas y los candidatos tardan más
+- Pisos: a un miembro de alquiler se le ofrecen las llaves en el canal y regatea; lo que cobra paga el 19 % de IRPF (ganancia patrimonial)
+- Logros: 46 nuevos en 🏠 Pisos (comprar llaves, la fama, el regateo, atrincherarse, la prórroga, la necesidad, las cinco duraciones…)
+
 ### 9.22.0 · 2026-10-25
 
 - Deportes: `deportes` estrena panel y apuestas a los goles

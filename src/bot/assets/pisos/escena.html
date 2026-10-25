@@ -2547,6 +2547,7 @@ function paintFicha(st) {
   if (st.waiting > 0) tags.push({ text: `${st.waiting} ${st.waiting === 1 ? "candidato esperando" : "candidatos esperando"}`, kind: "orange", icon: "people" });
   if (st.decisions > 0) tags.push({ text: `${st.decisions} ${st.decisions === 1 ? "imprevisto" : "imprevistos"}`, kind: "red", icon: "warn" });
   if (st.reformed) tags.push({ text: "Reformado", kind: "green", icon: "tools" });
+  if (st.leaving) tags.unshift({ text: st.leaving, kind: "orange", icon: "warn" });
   let cy = y0;
   if (st.offer) { offerBanner(st.offer, colC, cy, wC, 60); cy += 70; }
   const memberRent = !st.tenant && st.contract_rent;

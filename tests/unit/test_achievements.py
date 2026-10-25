@@ -81,6 +81,8 @@ from bot.services.achievements import (
     PISOS_ROOM_TENANTS_STAT,
     PISOS_TENANT_PREFIX,
     PISOS_TENANTS_STAT,
+    PISOS_TERM_PREFIX,
+    PISOS_TERMS_STAT,
     PISOS_THEMES_STAT,
     POKER_MADE_PREFIX,
     PORRA_GAME_PREFIX,
@@ -211,7 +213,8 @@ HOUSING_EVENT_KEYS = (
     "fianza_incautada", "firma_negocio", "candidato", "seguro", "noticia", "obra_terminada",
     "decision_cunado", "decision_vuelve", "decision_espera", "decision_parte",
     "decision_mediacion", "superanfitrion_logrado", "limpieza", "licencia_renovada",
-    "licencia_caduca", "fondo_reserva",
+    "licencia_caduca", "fondo_reserva", "prorroga", "no_renovado", "sale_llaves",
+    "sale_necesidad",
 )  # fmt: skip
 
 PRODUCED_STATS = {
@@ -423,6 +426,13 @@ PRODUCED_STATS = {
     # 9.12.0 (plantas, habitaciones y el atajo de candidatos)
     "pisos_split_spent", "pisos_split_units", "pisos_shortcut", "pisos_rooms_rushed",
     "pisos_split_mortgaged", "pisos_floor_sold", PISOS_ROOM_TENANTS_STAT,
+    PISOS_TERMS_STAT, *(f"{PISOS_TERM_PREFIX}{n}" for n in (12, 24, 36, 48, 60)),
+    "pisos_keys_offers", "pisos_keys_free_asks", "pisos_keys_refused", "pisos_keys_trench",
+    "pisos_keys_dropped", "pisos_keys_bought", "pisos_keys_paid", "pisos_keys_max",
+    "pisos_keys_fame", "pisos_keys_free", "pisos_keys_generous", "pisos_keys_counter",
+    "pisos_keys_member", "pisos_keys_sold", "pisos_keys_sold_amount", "pisos_keys_haggles",
+    "pisos_no_renew", "pisos_need", "pisos_need_fine", "pisos_need_fine_paid",
+    "pisos_term_changes",
     PISOS_REFORM_KINDS_STAT, *(f"{PISOS_REFORM_PREFIX}{r.key}" for r in HOUSING_REFORM_LIST),
     *(f"{PISOS_TENANT_PREFIX}{t.key}" for t in HOUSING_TENANT_LIST),
     *(f"{PISOS_NEWS_PREFIX}{n.key}" for n in HOUSING_NEWS_LIST),

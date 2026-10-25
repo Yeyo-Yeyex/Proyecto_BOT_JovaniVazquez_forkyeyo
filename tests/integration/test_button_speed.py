@@ -2260,6 +2260,99 @@ async def pisos_owned(client: BotClient, key: str) -> None:
     await client.get_cog("Pisos").service.buy(GUILD_ID, OWNER_ID, key, 100)
 
 
+def pisos_signed_long_ago(client: BotClient, key: str) -> None:
+    """El contrato lleva más de un año (12 días) firmado: se puede pedir para vivir."""
+    connection = client.housing._connect()  # noqa: SLF001
+    try:
+        connection.execute(
+            "UPDATE housing_leases SET signed = '2026-01-01' WHERE guild_id = ? AND listing = ?",
+            (GUILD_ID, key),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+async def _keys_panel(client: BotClient, owner: MagicMock):  # noqa: ANN202
+    """El panel en 🔑 Recuperar el piso de un bajo alquilado a una familia de la gestora."""
+    await pisos_owned(client, "taco_bajo")
+    pisos_let(client, "taco_bajo")
+    pisos_signed_long_ago(client, "taco_bajo")
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen = "taco_bajo", "llaves"
+    return panel
+
+
+async def press_pisos_keys_open(client: BotClient, owner: MagicMock) -> Click:
+    await pisos_owned(client, "taco_bajo")
+    pisos_let(client, "taco_bajo")
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen = "taco_bajo", "ficha"
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._go_keys(interaction)
+
+    return click
+
+
+async def press_pisos_keys_free(client: BotClient, owner: MagicMock) -> Click:
+    panel = await _keys_panel(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._keys_free(interaction)
+
+    return click
+
+
+async def press_pisos_no_renew(client: BotClient, owner: MagicMock) -> Click:
+    panel = await _keys_panel(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._toggle_no_renew(interaction)
+
+    return click
+
+
+async def press_pisos_need(client: BotClient, owner: MagicMock) -> Click:
+    panel = await _keys_panel(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await panel._claim_need(interaction)
+
+    return click
+
+
+async def press_pisos_term(client: BotClient, owner: MagicMock) -> Click:
+    await pisos_owned(client, "taco_bajo")
+    panel = pisos_panel(client, owner)
+    panel.listing, panel.screen = "taco_bajo", "gestion"
+
+    async def click(interaction: MagicMock) -> None:
+        interaction.data = {"values": ["24"]}
+        await panel._pick_term(interaction)
+
+    return click
+
+
+async def press_pisos_member_keys(client: BotClient, owner: MagicMock) -> Click:
+    from bot.repositories.economy import LedgerEntry
+
+    await pisos_owned(client, "taco_bajo")
+    bea = guarantor_mock()
+    await client.economy.repository.apply(GUILD_ID, bea.id, [LedgerEntry(1_000_000, "test")])
+    cog = client.get_cog("Pisos")
+    await cog.service.rent_to_member(GUILD_ID, OWNER_ID, "taco_bajo", bea.id)
+    module = module_of(client, "Pisos")
+    listing = (await cog.service.market(GUILD_ID)).listing("taco_bajo")
+    view = module.MemberKeysOffer(cog, owner.guild, owner, bea, listing, 10_000, 60)
+
+    async def click(interaction: MagicMock) -> None:
+        interaction.user = bea
+        await view.accept.callback(interaction)
+
+    return click
+
+
 async def press_pisos_pick(client: BotClient, owner: MagicMock) -> Click:
     await pisos_owned(client, "taco_bajo")
     panel = pisos_panel(client, owner)
@@ -2882,6 +2975,12 @@ CASES: dict[str, Press] = {
     "pisos: elegir yo al inquilino": press_pisos_pick,
     "pisos: contratar el seguro": press_pisos_insurance,
     "pisos: desahuciar con abogado": press_pisos_evict,
+    "pisos: abrir Recuperar el piso": press_pisos_keys_open,
+    "pisos: pedir las llaves por las buenas": press_pisos_keys_free,
+    "pisos: no renovar": press_pisos_no_renew,
+    "pisos: pedirlo para vivir": press_pisos_need,
+    "pisos: duración del contrato": press_pisos_term,
+    "pisos: aceptar las llaves entre miembros": press_pisos_member_keys,
     "pisos: pujar en una subasta": press_pisos_bid,
     "pisos: empezar una reforma": press_pisos_reform,
     "pisos: alquilar por habitaciones": press_pisos_split,
