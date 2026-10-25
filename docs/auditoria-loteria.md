@@ -106,3 +106,21 @@ todo el servidor jugando.
 - Compras, rascas y premios pasan por `EconomyService.lottery`, sin IGIC y con el
   gravamen del 20 % por décimo o apuesta por encima de 40.000 € (DA 33ª LIRPF). Si el
   Estado no llega a un premio, emite deuda pública.
+
+## Las imágenes (9.25.0)
+
+Una sola escena (`assets/loteria/escena.html`) con un modo por imagen, pintada con Node.
+Medido con `docs/medir_dibujos.py` a 4 hilos («1 abierto» / «caliente», ms) y con
+`docs/muestras_loteria.py` (peso):
+
+| Imagen | Tiempo | Peso | Cuándo se ve |
+|---|---:|---:|---|
+| Rasca (GIF de ~2,5 s) | 322 / 246 | 280-380 KB | Al rascar; se pinta antes del clic, así que del clic al GIF no se espera nada |
+| Sorteo de bote (GIF de ~5 s) | 654 / 540 | 0,9-1,2 MB | En el canal, al celebrarse |
+| Sorteo de la Nacional (GIF de ~4-5,5 s) | 628 / 494 | 0,9-1,1 MB | En el canal, al celebrarse |
+| Décimo | 77 / 81 | ~200 KB | Al comprar y en 🎟️ Mis boletos |
+| Resguardo | 38 / 37 | 45-90 KB | Al comprar y en 🎟️ Mis boletos |
+| Cartel | 64 / 68 | ~190 KB | En 🏠 Inicio; solo se repinta si cambia |
+
+La escena suma ~50 MB a cada proceso de Node que la carga (como mucho 4). Si Node falla,
+pasa a Chromium; si tampoco hay, el panel sigue en texto como antes.
