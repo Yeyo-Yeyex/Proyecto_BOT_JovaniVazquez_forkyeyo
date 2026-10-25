@@ -164,7 +164,12 @@ python -m bot
   se presenta con el botón de `renta` o con el aviso (solo lo ves tú) que
   sale la primera vez que juegas en la semana, durante 4 semanas (los «4
   años» de la ley). `renta` enseña un sobre cerrado con «📑 Abrir»: dentro,
-  las cuentas en pocas líneas y «🔍 Ver el detalle» con los artículos. Al
+  la carta dibujada (de lo que ganaste a tu base, la cuota frente a lo
+  retenido, el sello con el resultado y la tabla por conceptos) y cuatro
+  pestañas: 📄 Resumen, 🧩 Desglose (cada fuente con su parte de la cuota y
+  si faltó o sobró por retener), 📜 Paso a paso con los artículos y
+  🤝 Consejo (cuánto habría rendido donar esa semana, con el botón 🤝 Donar).
+  Pagar o presentar pone su sello en la carta. Al
   presentar, el bot lo anuncia en el canal. El bot crea un evento de Discord
   por campaña (necesita **Gestionar eventos**). Detalle y fuentes en
   `src/bot/services/taxes.py`. Cada cobro
