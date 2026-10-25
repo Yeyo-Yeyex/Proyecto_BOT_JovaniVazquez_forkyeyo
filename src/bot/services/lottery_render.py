@@ -482,7 +482,7 @@ def _slots(game: Game) -> list[dict[str, str]]:
 
 
 def _values(game: Game, result: Mapping, order: Sequence[int]) -> list[str]:
-    """Lo que sale en cada hueco, con los números en el orden en que salen del bombo."""
+    """Lo que va en cada hueco, con los números en el orden `order`."""
     numbers = [f"{result['numbers'][i]:02d}" for i in order]
     if game.kind is Kind.LOTTO:
         return [*numbers, f"{result['comp']:02d}", str(result["reintegro"])]
@@ -497,8 +497,10 @@ def pool_draw(
     """Sorteo de un juego de bote: `(meta, fotogramas, duraciones)`.
 
     Las bolas salen en un orden barajado con la semilla del sorteo (en la tele
-    salen desordenadas); el último fotograma las enseña ordenadas, como la
-    combinación ganadora, con el cartel del bote.
+    salen desordenadas) y cada una vuela a su hueco de la combinación ordenada,
+    así que la fila se va llenando a saltos y al final no cambia nada de sitio.
+    Detrás de los números salen el complementario y el reintegro, la clave o las
+    estrellas. El último fotograma lleva el cartel del bote.
     """
     seed = seed_of("sorteo", game.key, int(draw_at))
     rng = random.Random(seed)
@@ -506,7 +508,9 @@ def pool_draw(
     order = list(range(main))
     rng.shuffle(order)
     slots = _slots(game)
-    values = _values(game, result, order)
+    values = _values(game, result, list(range(main)))
+    # Qué hueco se llena en cada salida: los números barajados y lo demás, en su orden.
+    filling = [*order, *range(main, len(slots))]
     w, h = DRAW_SIZE
     meta = {
         "mode": "sorteo",
@@ -536,17 +540,15 @@ def pool_draw(
     for _ in range(DRAW_INTRO_FRAMES):
         spin += 0.35
         states.append(state())
-    for slot, value in enumerate(values):
+    for slot in filling:
         for k in range(1, BALL_FLIGHT_FRAMES + 1):
             spin += 0.35
             t = round(_smooth(k / BALL_FLIGHT_FRAMES), 4)
-            states.append(state({"slot": slot, "v": value, "t": t}))
-        shown[slot] = value
+            states.append(state({"slot": slot, "v": values[slot], "t": t}))
+        shown[slot] = values[slot]
         for _ in range(BALL_PAUSE_FRAMES):
             spin += 0.2
             states.append(state())
-    # Al final, la combinación ordenada, como se anuncia.
-    shown = _values(game, result, list(range(main)))
     for k in range(1, DRAW_BANNER_FRAMES + 1):
         spin += 0.1
         states.append(state(banner_a=min(1.0, k / (DRAW_BANNER_FRAMES - 3)), final=True))
