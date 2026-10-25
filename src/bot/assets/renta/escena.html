@@ -1,0 +1,311 @@
+<!doctype html>
+<!--
+Escena de `/renta`, dibujada con canvas: la carta de la declaración de una semana. La pinta Node
+con Skia (assets/escena_node.cjs) y, si no hay Node, un Chromium sin ventana (ver
+bot/services/renta_scene.py). Si no hay ninguno, el cog sale en texto.
+
+No decide nada: Python le pasa el estado ya formateado (`renta_report.card_state`) y aquí solo se
+pinta (nada de calcular impuestos). Mide 960 × 560. Funciones que llama Python:
+
+- loadFonts()                espera a las fuentes (canvas no las carga solo).
+- setup(meta)                sin estado entre imágenes: cada una se pinta entera.
+- renderFrames(states)       un PNG por estado: {x: 0, y: 0, u}.
+
+La carta: cabecera roja con la semana y el nombre; dos barras (de lo que ganaste a tu base, y la
+cuota frente a lo retenido y las deducciones: lo que falta sale a pagar, lo que sobra a devolver);
+el sello con el resultado, el sello de lo que ya se hizo (`seal`), el tipo medio, cuánto de cada
+100 Y$ fue a Hacienda y la tabla por conceptos. Todo al doble de tamaño (S = 2) y se reduce al
+copiar. Nada de Math.random. Los textos del usuario se limpian de lo que la fuente no tiene
+(emojis) para no pintar cuadrados.
+-->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: "Montserrat"; src: url("../memes/fonts/MontserratBold.ttf"); font-weight: 700; }
+  @font-face { font-family: "RobotoM"; src: url("../memes/fonts/robotomedium.ttf"); }
+  @font-face { font-family: "RobotoR"; src: url("../memes/fonts/robotoregular.ttf"); }
+  html, body { margin: 0; padding: 0; background: transparent; }
+</style>
+</head>
+<body>
+<script>
+"use strict";
+const S = 2;
+const W = 960;
+const H = 560;
+const big = document.createElement("canvas"); big.width = W * S; big.height = H * S;
+const out = document.createElement("canvas"); out.width = W; out.height = H;
+const g = big.getContext("2d");
+const octx = out.getContext("2d");
+
+const MONT = "Montserrat, RobotoM, sans-serif";
+const BODY = "RobotoM, sans-serif";
+const SOFT = "RobotoR, sans-serif";
+const PAPER = "#f7f2e8";
+const INK = "#2b2620";
+const MUTED = "#8a7f6c";
+const LINE = "#e3d9c6";
+const RED = "#c4302b";
+const GREEN = "#2e9e4f";
+const GREY = "#6f6a62";
+const NAVY = "#1f3b63";
+const TEAL = "#1f8a70";
+const BLUE = "#3b7dd8";
+const TONES = { pay: RED, refund: GREEN, zero: GREY, even: GREY };
+const SEALS = { "PAGADA": "#2e5fa8", "PRESENTADA": "#2e5fa8", "FRACCIONADA": "#b26a00",
+  "CON DEUDA": RED, "CADUCADA": GREY, "PENDIENTE": GREY };
+
+// -- Utilidades ------------------------------------------------------------------------------
+
+function rgb(hex) {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex || "");
+  const n = m ? parseInt(m[1], 16) : 0x808080;
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function alpha(hex, a) { const [r, gg, b] = rgb(hex); return `rgba(${r},${gg},${b},${a})`; }
+// La fuente no trae emojis ni escrituras raras: se deja lo latino, la puntuación y el signo menos.
+function clean(text) {
+  const keep = (n) => (n >= 32 && n < 0x250) || (n >= 0x2010 && n <= 0x203a) || n === 0x20ac || n === 0x2212;
+  return Array.from(String(text ?? "")).filter((c) => keep(c.codePointAt(0))).join("").replace(/\s+/g, " ").trim();
+}
+function rr(x, y, w, h, r) {
+  const k = Math.max(0, Math.min(r, w / 2, h / 2));
+  g.beginPath(); g.moveTo(x + k, y); g.arcTo(x + w, y, x + w, y + h, k); g.arcTo(x + w, y + h, x, y + h, k);
+  g.arcTo(x, y + h, x, y, k); g.arcTo(x, y, x + w, y, k); g.closePath();
+}
+function font(weight, size, family) { g.font = `${weight} ${size}px ${family}`; }
+function text(str, x, y, size, fam, color, align = "left", weight = "") {
+  font(weight, size, fam); g.fillStyle = color; g.textAlign = align; g.textBaseline = "alphabetic"; g.fillText(str, x, y);
+}
+function fitText(str, x, y, maxW, size, min, fam, color, align = "left", weight = "") {
+  let s = size;
+  font(weight, s, fam);
+  while (s > min && g.measureText(str).width > maxW) { s -= 1; font(weight, s, fam); }
+  text(str, x, y, s, fam, color, align, weight);
+  return g.measureText(str).width;
+}
+// Rayado de un rectángulo: lo que no cuenta (gastos) o lo que falta por pagar.
+function hatch(x, y, w, h, color, step = 7) {
+  if (w <= 0) return;
+  g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip();
+  g.strokeStyle = color; g.lineWidth = 2;
+  for (let i = x - h; i < x + w; i += step) { g.beginPath(); g.moveTo(i, y + h); g.lineTo(i + h, y); g.stroke(); }
+  g.restore();
+}
+function swatch(x, y, color, striped = false) {
+  rr(x, y - 10, 12, 12, 3); g.fillStyle = striped ? "#efe7d6" : color; g.fill();
+  if (striped) hatch(x, y - 10, 12, 12, color, 4);
+}
+// Leyenda en una línea: [color, rayado, etiqueta, valor].
+function legend(items, x, y) {
+  let cx = x;
+  for (const [color, striped, label, value] of items) {
+    swatch(cx, y, color, striped);
+    cx += 18;
+    font("", 14, SOFT); g.fillStyle = MUTED; g.textAlign = "left"; g.fillText(label, cx, y);
+    cx += g.measureText(label).width + 6;
+    font("", 14, BODY); g.fillStyle = INK; g.fillText(value, cx, y);
+    cx += g.measureText(value).width + 22;
+  }
+}
+
+// -- Partes ----------------------------------------------------------------------------------
+
+function paper() {
+  rr(0, 0, W, H, 18); g.fillStyle = PAPER; g.fill();
+  // Guilloché suave de papel oficial: ondas fijas, sin azar.
+  g.save(); rr(0, 0, W, H, 18); g.clip();
+  g.strokeStyle = "rgba(160,130,90,0.07)"; g.lineWidth = 1;
+  for (let k = 0; k < 14; k++) {
+    g.beginPath();
+    for (let x = 0; x <= W; x += 8) {
+      const y = 96 + k * 34 + Math.sin(x / 46 + k * 0.9) * 9;
+      if (x === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    }
+    g.stroke();
+  }
+  g.restore();
+}
+
+function header(st) {
+  g.save(); rr(0, 0, W, H, 18); g.clip();
+  const band = g.createLinearGradient(0, 0, W, 0);
+  band.addColorStop(0, "#b3161d"); band.addColorStop(1, "#7f0d12");
+  g.fillStyle = band; g.fillRect(0, 0, W, 84);
+  g.fillStyle = "#e0b043"; g.fillRect(0, 84, W, 4);
+  g.restore();
+  text("AGENCIA TRIBUTARIA DEL SERVIDOR · MODELO 100", 32, 30, 12, BODY, "rgba(255,255,255,0.72)");
+  fitText("DECLARACIÓN DE LA RENTA", 32, 66, 520, 30, 20, MONT, "#ffffff", "left", "700");
+  fitText(clean(st.week), W - 32, 40, 360, 20, 13, BODY, "#ffffff", "right");
+  fitText(clean(st.name), W - 32, 66, 360, 16, 11, SOFT, "rgba(255,255,255,0.82)", "right");
+}
+
+const BAR_X = 32, BAR_W = 570, BAR_H = 34;
+
+function sectionTitle(label, value, y) {
+  text(label, BAR_X, y, 13, BODY, MUTED);
+  if (value) text(value, BAR_X + BAR_W, y, 17, MONT, INK, "right", "700");
+}
+
+// De lo que ganaste a tu base: la base y, rayado, lo que se fue en gastos y reducciones.
+function incomeBar(st, y) {
+  sectionTitle("LO QUE GANASTE", st.labels.earned, y);
+  const top = y + 12;
+  rr(BAR_X, top, BAR_W, BAR_H, 8); g.fillStyle = "#efe7d6"; g.fill();
+  const earned = Math.max(0, st.earned), base = Math.max(0, Math.min(st.base, earned));
+  if (earned > 0) {
+    const bw = BAR_W * base / earned;
+    g.save(); rr(BAR_X, top, BAR_W, BAR_H, 8); g.clip();
+    hatch(BAR_X + bw, top, BAR_W - bw, BAR_H, "#c9bda5");
+    g.fillStyle = NAVY; g.fillRect(BAR_X, top, bw, BAR_H);
+    g.restore();
+  } else {
+    text("Sin rentas esa semana", BAR_X + BAR_W / 2, top + 23, 14, SOFT, MUTED, "center");
+  }
+  legend([[NAVY, false, "Base", st.labels.base], ["#b3a68c", true, "Gastos y reducciones", st.labels.cut]], BAR_X, top + BAR_H + 24);
+}
+
+// La cuota frente a lo que ya la paga: retenido y deducciones; falta (a pagar) o sobra (a devolver).
+function quotaBar(st, y) {
+  sectionTitle("TU CUOTA DE IRPF", st.labels.quota, y);
+  const top = y + 12;
+  rr(BAR_X, top, BAR_W, BAR_H, 8); g.fillStyle = "#efe7d6"; g.fill();
+  const quota = Math.max(0, st.quota), held = Math.max(0, st.withheld), ded = Math.max(0, st.deductions);
+  const total = Math.max(quota, held + ded);
+  const items = [[TEAL, false, "Retenido", st.labels.withheld]];
+  if (ded > 0) items.push([BLUE, false, "Deducciones", st.labels.deductions]);
+  if (total > 0) {
+    const k = BAR_W / total;
+    g.save(); rr(BAR_X, top, BAR_W, BAR_H, 8); g.clip();
+    g.fillStyle = TEAL; g.fillRect(BAR_X, top, held * k, BAR_H);
+    g.fillStyle = BLUE; g.fillRect(BAR_X + held * k, top, ded * k, BAR_H);
+    if (st.tone === "pay") {
+      const x = BAR_X + (held + ded) * k;
+      g.fillStyle = alpha(RED, 0.16); g.fillRect(x, top, BAR_X + quota * k - x, BAR_H);
+      hatch(x, top, BAR_X + quota * k - x, BAR_H, alpha(RED, 0.75));
+    } else if (st.tone === "refund") {
+      // Lo que pasa de la cuota vuelve: rayado verde encima de lo retenido de más.
+      const x = BAR_X + quota * k;
+      g.fillStyle = "#e3f1e6"; g.fillRect(x, top, BAR_X + BAR_W - x, BAR_H);
+      hatch(x, top, BAR_X + BAR_W - x, BAR_H, alpha(GREEN, 0.8));
+    }
+    g.restore();
+    // La raya de la cuota: hasta ahí hay que pagar.
+    const qx = BAR_X + quota * k;
+    g.save(); g.strokeStyle = INK; g.lineWidth = 2; g.setLineDash([5, 4]);
+    g.beginPath(); g.moveTo(qx, top - 6); g.lineTo(qx, top + BAR_H + 6); g.stroke(); g.restore();
+  } else {
+    text("Sin cuota que pagar", BAR_X + BAR_W / 2, top + 23, 14, SOFT, MUTED, "center");
+  }
+  if (st.tone === "pay") items.push([RED, true, "Falta", st.amount]);
+  else if (st.tone === "refund") items.push([GREEN, true, "Sobra", st.amount]);
+  legend(items, BAR_X, top + BAR_H + 24);
+}
+
+// El sello del resultado, como de tampón: tinta algo transparente y algo girada.
+function verdict(st) {
+  const color = TONES[st.tone] || GREY;
+  const cx = 780, cy = 160, w = 268, h = 118;
+  g.save(); g.translate(cx, cy); g.rotate(-0.07); g.globalAlpha = 0.93;
+  rr(-w / 2, -h / 2, w, h, 12); g.lineWidth = 4; g.strokeStyle = color; g.stroke();
+  rr(-w / 2 + 7, -h / 2 + 7, w - 14, h - 14, 8); g.lineWidth = 1.5; g.stroke();
+  fitText(clean(st.verdict), 0, -14, w - 40, 26, 16, MONT, color, "center", "700");
+  if (st.tone !== "zero") fitText(clean(st.amount), 0, 34, w - 40, 40, 18, MONT, color, "center", "700");
+  else text("Ni pagas ni te devuelven", 0, 30, 15, BODY, color, "center");
+  g.restore();
+}
+
+// Lo que ya se hizo con ella (pagada, presentada…), en un sello más pequeño.
+function seal(st) {
+  const label = clean(st.seal);
+  if (!label) return;
+  const color = SEALS[st.seal] || GREY;
+  g.save(); g.translate(780, 254); g.rotate(0.05);
+  font("700", 20, MONT);
+  const w = g.measureText(label).width + 40, h = 40;
+  rr(-w / 2, -h / 2, w, h, 8); g.lineWidth = 3; g.strokeStyle = color;
+  if (st.seal === "PENDIENTE") g.setLineDash([7, 5]);
+  g.stroke(); g.setLineDash([]);
+  text(label, 0, 8, 20, MONT, color, "center", "700");
+  g.restore();
+}
+
+function stat(x, y, w, label, value) {
+  rr(x, y, w, 56, 10); g.fillStyle = "#efe7d6"; g.fill();
+  fitText(label, x + w / 2, y + 21, w - 16, 11, 8, BODY, MUTED, "center");
+  fitText(value, x + w / 2, y + 45, w - 16, 19, 11, MONT, INK, "center", "700");
+}
+
+function stats(st) {
+  stat(648, 292, 140, "TIPO MEDIO", clean(st.rate));
+  if (st.per100 >= 0) stat(796, 292, 140, "DE CADA 100 Y$", `${st.per100} a Hacienda`);
+}
+
+const COLS = [
+  ["CONCEPTO", 56, "left"], ["GANASTE", 470, "right"], ["LE TOCA", 610, "right"],
+  ["RETENIDO", 740, "right"], ["DIFERENCIA", 928, "right"],
+];
+
+function table(st) {
+  const y0 = 384;
+  g.fillStyle = LINE; g.fillRect(32, y0 - 20, W - 64, 2);
+  text("POR CONCEPTOS", 32, y0 + 4, 13, BODY, MUTED);
+  const rows = st.rows || [];
+  if (!rows.length) {
+    text("Esta declaración es de antes del desglose por conceptos.", W / 2, y0 + 78, 16, SOFT, MUTED, "center");
+    return;
+  }
+  for (const [label, x, align] of COLS.slice(1)) text(label, x, y0 + 4, 11, BODY, MUTED, align);
+  let y = y0 + 36;
+  rows.slice(0, 4).forEach((row, i) => {
+    if (i % 2 === 0) { rr(32, y - 21, W - 64, 30, 6); g.fillStyle = "rgba(160,130,90,0.08)"; g.fill(); }
+    g.beginPath(); g.arc(42, y - 6, 6, 0, Math.PI * 2); g.fillStyle = row.color || GREY; g.fill();
+    fitText(clean(row.name), 56, y, 300, 16, 11, BODY, INK);
+    fitText(clean(row.earned), 470, y, 150, 16, 11, SOFT, INK, "right");
+    fitText(clean(row.quota), 610, y, 130, 16, 11, SOFT, INK, "right");
+    fitText(clean(row.withheld), 740, y, 120, 16, 11, SOFT, INK, "right");
+    fitText(clean(row.gap), 928, y, 176, 15, 10, BODY, TONES[row.tone] || GREY, "right");
+    y += 32;
+  });
+  text("Cifras en Y$. La cuota se reparte según lo que cada concepto suma a la base.", 32, H - 14, 11, SOFT, MUTED);
+}
+
+function paintCard(st) {
+  paper();
+  header(st);
+  incomeBar(st, 124);
+  quotaBar(st, 232);
+  verdict(st);
+  seal(st);
+  stats(st);
+  table(st);
+}
+
+// -- Entrada ---------------------------------------------------------------------------------
+
+function sceneFrame(st) {
+  g.setTransform(S, 0, 0, S, 0, 0);
+  g.clearRect(0, 0, W, H);
+  g.lineCap = "butt"; g.lineJoin = "miter"; g.globalAlpha = 1; g.setLineDash([]);
+  paintCard(st);
+  octx.clearRect(0, 0, W, H);
+  octx.imageSmoothingEnabled = true; octx.imageSmoothingQuality = "high";
+  octx.drawImage(big, 0, 0, W * S, H * S, 0, 0, W, H);
+  return { x: 0, y: 0, u: window.exportFrame(out) };
+}
+
+window.exportFrame ??= (canvas) => canvas.toDataURL("image/png");
+window.loadFonts = async () => {
+  await Promise.all([document.fonts.load("700 20px Montserrat"), document.fonts.load("20px RobotoM"), document.fonts.load("20px RobotoR")]);
+  await document.fonts.ready;
+  return true;
+};
+window.setup = async (meta) => true;
+window.renderFrames = (states, first = 0) => states.map((st) => {
+  if (!st || typeof st !== "object" || !st.labels) throw new Error("Estado de la carta incompleto");
+  return sceneFrame(st);
+});
+</script>
+</body>
+</html>

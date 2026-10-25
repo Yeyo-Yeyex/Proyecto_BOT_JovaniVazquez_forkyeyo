@@ -31,6 +31,7 @@ from bot.services import housing as housing_rules
 from bot.services.achievements import StatDelta
 from bot.services.blackjack import Card
 from bot.services.coin import Outcome
+from bot.services.donations import BY_KEY
 from bot.services.economy import format_amount
 from bot.services.enraya import Board, Disc
 from bot.services.hold_win_render import Media
@@ -2952,5 +2953,24 @@ async def test_resolver_una_apuesta_deportiva_llega_a_apuestas_y_a_los_logros_co
         assert profile.stats["sports_settled"] == 2
         assert profile.stats["sports_wins"] == 2
         assert profile.stats["sports_win_goles"] == 1
+    finally:
+        await client.close()
+
+
+async def test_donar_desde_la_renta_llega_al_cog_de_donativos(tmp_path: Path) -> None:
+    """El botón Donar del consejo de la Renta dona con el `donar` de siempre."""
+    client = await load_bot(tmp_path)
+    try:
+        ong = BY_KEY["hambre"]
+        member = SimpleNamespace(id=OWNER_ID, display_name="Diego", mention="@Diego", bot=False)
+        interaction = fake_interaction(member)
+        interaction.guild = SimpleNamespace(id=GUILD_ID)
+        interaction.channel_id = 5
+
+        await client.get_cog("Renta").donate(interaction, "hambre", "100", suggested=100)
+
+        # El saldo del miembro también cobra el logro del primer donativo: se mira la ONG.
+        assert await client.economy.balance(GUILD_ID, ong.account_id) == 100
+        assert interaction.followup.send.await_args.kwargs["ephemeral"] is False
     finally:
         await client.close()

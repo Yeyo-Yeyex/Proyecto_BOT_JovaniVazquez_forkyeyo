@@ -1,29 +1,43 @@
-"""Textos de la declaración de la Renta (`renta`): el sobre, el resumen y el detalle.
+"""Textos y carta de la declaración de la Renta (`renta`).
 
-Lógica pura, sin Discord: el cog los mete en un embed. Los números salen de la
+Lógica pura, sin Discord: el cog lo monta en su panel. Los números salen de la
 declaración rehecha con sus entradas (`EconomyService.irpf_statement`), así que cuadran
 al Y$ con lo que se cobró o se devolvió.
 
-Hay dos modos, para no saturar a nadie:
+La declaración se enseña en pestañas, para no saturar a nadie:
 
-- **Resumen:** las cuentas en cinco líneas (base, cuota, deducciones, retenido y
-  resultado).
-- **Detalle:** el porqué de cada línea, paso a paso y con su artículo: el trabajo (gastos
-  y reducción), cada inmueble (tope de intereses, arrastre y reducción), el resto de
+- **Resumen:** el resultado y lo que se hace con él; si se puede dibujar, encima va la
+  carta (`card_state`, pintada por `bot.services.renta_scene`).
+- **Desglose:** cada fuente de renta (trabajo, alquileres, casino…) con lo que entró, la
+  parte de la cuota que le toca, lo que se le retuvo y si faltó o sobró (`concepts`).
+- **Paso a paso:** el porqué de cada línea con su artículo: el trabajo (gastos y
+  reducción), cada inmueble (tope de intereses, arrastre y reducción), el resto de
   rentas, la integración en la base, las dos escalas, las deducciones y lo retenido por
   fuente.
+- **Consejo:** cuánto habría rendido donar esa semana (`donation_advice`), rehecho con
+  `taxes.week_return`, no estimado.
 """
 
 from __future__ import annotations
 
+from collections.abc import Collection
+from dataclasses import dataclass
+from datetime import date, timedelta
+
 from bot.repositories.economy import PAYMENT_PENDING, PAYMENT_SPLIT
-from bot.services.economy import IrpfStatement, format_amount, week_label
+from bot.services.donations import deduction_rule_text
+from bot.services.economy import IrpfStatement, format_amount, monday_epoch, week_label
 from bot.services.taxes import (
     BECKHAM_LIMIT_EUR,
+    CLAIM_WEEKS,
+    DONATION_BASE_LIMIT,
+    DONATION_FULL_LIMIT,
+    DONATION_FULL_RATE,
     INCOME_BECKHAM,
     INCOME_BUSINESS,
     INCOME_FOREIGN,
     INCOME_IMAGE,
+    INCOME_IMPUTED,
     INCOME_PENSION,
     INCOME_PRIZE,
     INCOME_PROPERTY,
@@ -32,6 +46,7 @@ from bot.services.taxes import (
     WORK_REDUCTION_OTHER_INCOME_EUR,
     format_rate,
     second_installment,
+    week_return,
     weekly_yd,
 )
 
@@ -81,8 +96,47 @@ def envelope_text(statement: IrpfStatement) -> str:
     )
 
 
-def result_line(statement: IrpfStatement) -> str:
-    """El resultado en una línea, con lo que se hizo con él."""
+#: Sellos de la carta: lo que ya se ha hecho con la declaración (`seal_for`).
+PAID = "PAGADA"
+SPLIT = "FRACCIONADA"
+OWED = "CON DEUDA"
+FILED = "PRESENTADA"
+EXPIRED = "CADUCADA"
+#: Solo en la carta: falta pagarla o presentarla.
+PENDING = "PENDIENTE"
+
+
+def seal_for(statement: IrpfStatement, pending: Collection[date], now: float) -> str:
+    """El sello de una declaración: lo que ya se hizo con ella, o `""` si falta decidir.
+
+    Args:
+        pending: Lunes de las declaraciones aún por presentar
+            (`EconomyService.pending_declarations`): la fila de la declaración no sabe si
+            se presentó.
+        now: Ahora (epoch), para saber si una devolución sin presentar ya caducó.
+    """
+    filed = statement.filed
+    if filed.result > 0:
+        if filed.payment == PAYMENT_PENDING:
+            return ""
+        if filed.debt:
+            return OWED
+        if filed.payment == PAYMENT_SPLIT and not filed.second_at:
+            return SPLIT
+        return PAID
+    if filed.refund <= 0 or statement.week in pending:
+        return ""
+    if now >= monday_epoch(statement.week + timedelta(weeks=1 + CLAIM_WEEKS)):
+        return EXPIRED
+    return FILED
+
+
+def result_line(statement: IrpfStatement, seal: str = "") -> str:
+    """El resultado en una línea, con lo que se hizo con él.
+
+    Args:
+        seal: El de `seal_for`: dice si una devolución ya se presentó o caducó.
+    """
     filed = statement.filed
     if filed.result > 0:
         line = f"💸 **Te sale a pagar {_money(filed.result)}.**"
@@ -116,13 +170,21 @@ def result_line(statement: IrpfStatement) -> str:
         if filed.compensated:
             line += f" {_money(filed.compensated)} pagan lo que debías a Hacienda."
         if filed.refund:
-            line += f" Quedan {_money(filed.refund)}: preséntala para cobrarlos."
+            if seal == FILED:
+                line += f" Ya la presentaste: {_money(filed.refund)} cobrados."
+            elif seal == EXPIRED:
+                line += (
+                    f" No la presentaste a tiempo: {_money(filed.refund)} se los quedó "
+                    f"{TAX_COLLECTOR}."
+                )
+            else:
+                line += f" Quedan {_money(filed.refund)}: preséntala para cobrarlos."
         return line
     return "😐 **Sale a cero.** Ni tú le debes nada ni él a ti."
 
 
-def summary_text(statement: IrpfStatement) -> str:
-    """El resumen: las cuentas en pocas líneas."""
+def summary_text(statement: IrpfStatement, seal: str = "") -> str:
+    """El resumen: las cuentas en pocas líneas (sin carta dibujada)."""
     filed = statement.filed
     lines = [
         f"📑 **Declaración de la semana {week_label(statement.week)}**",
@@ -132,12 +194,17 @@ def summary_text(statement: IrpfStatement) -> str:
     if filed.deductions:
         lines.append(f"Deducciones: {_minus(filed.deductions)}")
     lines.append(f"Retenido durante la semana: {_minus(filed.withheld)}")
-    lines.append(result_line(statement))
-    lines.append(
-        f"-# Tu tipo medio fue el {format_rate(filed.rate)}: es el mínimo con el que te "
-        "retienen esta semana."
-    )
+    lines.append(result_line(statement, seal))
+    lines.append(rate_note(statement))
     return "\n".join(lines)
+
+
+def rate_note(statement: IrpfStatement) -> str:
+    """Línea pequeña del tipo medio de la semana."""
+    return (
+        f"-# Tu tipo medio fue el {format_rate(statement.filed.rate)}: es el mínimo con el "
+        "que te retienen esta semana."
+    )
 
 
 def _work_lines(statement: IrpfStatement) -> list[str]:
@@ -279,11 +346,12 @@ def _withheld_lines(statement: IrpfStatement) -> list[str]:
     return lines
 
 
-def detail_text(statement: IrpfStatement, *, rate: float | None = None) -> str:
+def detail_text(statement: IrpfStatement, *, rate: float | None = None, seal: str = "") -> str:
     """El detalle: el porqué de cada cifra, paso a paso y con sus artículos.
 
     Args:
         rate: Tipo con el que te retienen ahora (se añade al final si se da).
+        seal: El de `seal_for`, para el resultado.
     """
     sections = [
         [f"🔍 **Declaración de la semana {week_label(statement.week)}, paso a paso**"],
@@ -293,8 +361,360 @@ def detail_text(statement: IrpfStatement, *, rate: float | None = None) -> str:
         _base_lines(statement),
         _deduction_lines(statement),
         _withheld_lines(statement),
-        [result_line(statement)],
+        [result_line(statement, seal)],
     ]
     if rate is not None:
         sections.append([f"-# Esta semana te retienen al {format_rate(rate)}."])
     return "\n\n".join("\n".join(lines) for lines in sections if lines)
+
+
+# -- Por conceptos (pestaña Desglose y la tabla de la carta) ------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Concept:
+    """Una fuente de renta de la declaración (`concepts`), en Y$.
+
+    Attributes:
+        key: Clave estable (`trabajo`, `alquileres`…): su color en la carta.
+        emoji: Su icono en el texto.
+        name: Su nombre.
+        earned: Lo que entró: los íntegros (del casino, el neto de la semana).
+        base: Lo que aporta a la base liquidable (negativo si la rebaja).
+        quota: La parte de la cuota que le toca (negativa si la rebaja).
+        withheld: Lo que se le retuvo durante la semana.
+    """
+
+    key: str
+    emoji: str
+    name: str
+    earned: int
+    base: int
+    quota: int
+    withheld: int
+
+    @property
+    def gap(self) -> int:
+        """Lo que faltó por retener (positivo) o lo que sobró (negativo)."""
+        return self.quota - self.withheld
+
+
+#: `(clave, emoji, nombre, fuentes de lo retenido)`, en el orden del desglose.
+CONCEPTS: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
+    ("trabajo", "🪏", "Trabajo y pensiones", (INCOME_WORK, INCOME_PENSION, INCOME_FOREIGN)),
+    ("alquileres", "🏠", "Alquileres", (INCOME_PROPERTY,)),
+    ("actividad", "🧾", "Actividad", (INCOME_BUSINESS,)),
+    ("premios", "🎁", "Premios y logros", (INCOME_PRIZE,)),
+    ("casino", "🎰", "Casino", ("juego",)),
+    ("imagen", "📸", "Derechos de imagen", (INCOME_IMAGE,)),
+    ("vacios", "🏚️", "Pisos vacíos", (INCOME_IMPUTED,)),
+    ("antes", "📦", "Rentas de antes de la 8.0.0", ("antes",)),
+    ("beckham", "⚽", "Ley Beckham", (INCOME_BECKHAM,)),
+)
+
+
+def _shares(total: int, weights: list[int]) -> list[int]:
+    """Reparte `total` en proporción a `weights` (pueden ser negativos), sumando `total`."""
+    whole = sum(weights)
+    if total <= 0 or whole <= 0:
+        return [0] * len(weights)
+    shares = [round(total * weight / whole) for weight in weights]
+    # Lo que se pierde al redondear se lo lleva la fuente que más aporta.
+    top = max(range(len(weights)), key=lambda i: weights[i])
+    shares[top] += total - sum(shares)
+    return shares
+
+
+def concepts(statement: IrpfStatement) -> tuple[Concept, ...]:
+    """La declaración por fuentes de renta, de modo que sus cuentas den el resultado.
+
+    La cuota de la escala se reparte en proporción a lo que cada fuente aporta a la base,
+    es decir, al tipo medio: la escala es progresiva y no hay un reparto exacto, pero así
+    las partes suman la cuota al Y$ y `Σ cuota − deducciones − Σ retenido` es el
+    resultado. Una fuente que rebaja la base (un piso en negativo, las bases negativas de
+    antes) se lleva una parte negativa: lo que te ahorra. La Ley Beckham va fuera de la
+    escala, con su propia cuota. Lo retenido que no es de ninguna fuente conocida sale
+    aparte, para que la cuenta cuadre.
+
+    Returns:
+        Las fuentes con algo que contar; vacío si la declaración no guardó sus entradas.
+    """
+    detail = statement.detail
+    if detail is None:
+        return ()
+    income, tax = statement.income, detail.tax
+    amounts = {
+        "trabajo": (income.work, tax.work),
+        "alquileres": (sum(p.income for p in income.properties), tax.properties),
+        "actividad": (income.business, income.business),
+        "premios": (income.prizes, income.prizes),
+        "casino": (income.gambling, max(0, income.gambling)),
+        "imagen": (income.image, income.image),
+        "vacios": (income.imputed, income.imputed),
+        "antes": (income.other, income.other),
+        "beckham": (income.beckham, 0),
+    }
+    rows: list[tuple[str, str, str, int, int, int]] = []
+    known: set[str] = set()
+    for key, emoji, name, sources in CONCEPTS:
+        earned, base = amounts[key]
+        withheld = sum(statement.withheld_by.get(source, 0) for source in sources)
+        known.update(sources)
+        if earned or base or withheld:
+            rows.append((key, emoji, name, earned, base, withheld))
+    if tax.negative_used:
+        rows.append(("arrastre", "↩️", "Bases negativas de antes", 0, -tax.negative_used, 0))
+    if other := sum(v for k, v in statement.withheld_by.items() if k not in known):
+        rows.append(("otros", "📎", "Otras retenciones", 0, 0, other))
+    shares = _shares(tax.quota - tax.beckham, [base for *_, base, _w in rows])
+    return tuple(
+        Concept(key, emoji, name, earned, base, tax.beckham if key == "beckham" else share, held)
+        for (key, emoji, name, earned, base, held), share in zip(rows, shares, strict=True)
+    )
+
+
+def _gap_text(gap: int) -> str:
+    """Lo que faltó (positivo) o sobró (negativo) por retener, en palabras."""
+    if gap > 0:
+        return f"faltaron {_money(gap)}"
+    return f"sobraron {_money(-gap)}" if gap < 0 else "cuadra"
+
+
+def _concept_lines(concept: Concept) -> list[str]:
+    head = f"{concept.emoji} **{concept.name}**"
+    if concept.earned < 0:
+        head += f" · perdiste {_money(-concept.earned)}, que no rebajan nada más"
+    elif concept.earned:
+        head += f" · entraron {_money(concept.earned)}"
+    bits = []
+    if concept.quota > 0:
+        bits.append(f"le tocan {_money(concept.quota)} de cuota")
+    elif concept.quota < 0:
+        bits.append(f"te ahorra {_money(-concept.quota)} de cuota")
+    if concept.withheld:
+        bits.append(f"te retuvieron {_money(concept.withheld)}")
+    if not bits:
+        return [head]
+    text = " y ".join(bits)
+    # Sin retenciones, lo que rebaja la cuota no «sobra»: solo ahorra.
+    text += f": {_gap_text(concept.gap)}." if concept.withheld or concept.quota > 0 else "."
+    return [head, f"-# {text[0].upper()}{text[1:]}"]
+
+
+def concepts_text(statement: IrpfStatement, seal: str = "") -> str:
+    """La pestaña Desglose: cada fuente con su parte de la cuota, y la cuenta que da el resultado.
+
+    Args:
+        seal: El de `seal_for`, para el resultado.
+    """
+    rows = concepts(statement)
+    if not rows:
+        return (
+            "🧩 Esta declaración es de antes de que se guardara de dónde sale cada cifra: "
+            "solo tiene el resumen.\n\n" + result_line(statement, seal)
+        )
+    lines = [f"🧩 **Por conceptos · semana {week_label(statement.week)}**"]
+    for concept in rows:
+        lines += _concept_lines(concept)
+    detail = statement.detail
+    if detail is not None and detail.deductions:
+        lines.append(f"🧮 **Deducciones** · te rebajan {_money(detail.deductions)} de la cuota")
+    lines.append(
+        "-# La cuota de la escala se reparte entre las fuentes según lo que cada una suma a la "
+        "base: la escala es progresiva, así que es una cuenta orientativa que cuadra al Y$."
+    )
+    lines.append(result_line(statement, seal))
+    return "\n".join(lines)
+
+
+# -- El consejo de los donativos ----------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class DonationAdvice:
+    """Lo que habría rendido donar en la semana declarada (`donation_advice`), en Y$.
+
+    Attributes:
+        donated: Lo donado esa semana.
+        deducted: Lo que se dedujo por ello.
+        more: Lo que habría convenido donar de más: hasta agotar el tramo del 80 % sin
+            pasar del 10 % de la base ni de la cuota que quedaba (0 si nada).
+        saved: Cuánto habría bajado el resultado donando `more` más, rehecho con
+            `taxes.week_return` (no estimado).
+        ceiling: Lo máximo donado que desgrava en la semana (el 10 % de la base).
+        quota_left: Cuota que aún podían rebajar los donativos.
+    """
+
+    donated: int
+    deducted: int
+    more: int
+    saved: int
+    ceiling: int
+    quota_left: int
+
+
+def donation_advice(statement: IrpfStatement) -> DonationAdvice | None:
+    """Cuánto le habría convenido donar en la semana declarada, o `None` sin entradas.
+
+    Los donativos rebajan la cuota (art. 19 de la Ley 49/2002): el 80 % de los primeros
+    `DONATION_FULL_LIMIT` y el 40 % del resto, hasta el 10 % de la base y nunca más de la
+    cuota que quede tras las demás deducciones (`taxes.donation_deduction`). El consejo es
+    lo que quedaba hasta agotar el tramo del 80 %, que es donde donar sale más barato.
+    """
+    detail = statement.detail
+    if detail is None:
+        return None
+    arguments = statement.arguments
+    donated = arguments.get("donated", 0)
+    tax = detail.tax
+    quota_left = tax.quota - detail.foreign - detail.home - detail.rental - detail.donations
+    ceiling = int(tax.base * DONATION_BASE_LIMIT)
+    more = max(0, min(DONATION_FULL_LIMIT, ceiling) - donated)
+    more = min(more, int(quota_left / DONATION_FULL_RATE))
+    saved = 0
+    if more > 0:
+        again = week_return(statement.income, **{**arguments, "donated": donated + more})
+        saved = detail.result - again.result
+    return DonationAdvice(
+        donated=donated,
+        deducted=detail.donations,
+        more=more,
+        saved=saved,
+        ceiling=ceiling,
+        quota_left=quota_left,
+    )
+
+
+def advice_text(statement: IrpfStatement, advice: DonationAdvice) -> str:
+    """La pestaña Consejo: si donar habría salido barato esa semana y cuánto."""
+    week = week_label(statement.week)
+    lines = [f"🤝 **El consejo de {TAX_COLLECTOR}**"]
+    gave = f"donaste {_money(advice.donated)}" if advice.donated else "no donaste nada"
+    if advice.more:
+        lines.append(
+            f"La semana {week} {gave}. Si hubieras donado **{_money(advice.more)}** más, te "
+            f"habría devuelto **{_money(advice.saved)}**: te habría costado de verdad "
+            f"{_money(advice.more - advice.saved)}."
+        )
+    elif advice.deducted:
+        lines.append(
+            f"La semana {week} {gave} y te dedujeron {_money(advice.deducted)}: ya "
+            "aprovechaste el tramo que más devuelve."
+        )
+        if advice.quota_left > 0 and advice.ceiling > advice.donated:
+            lines.append(
+                f"-# Lo que dones de más vuelve al 40 %, hasta {_money(advice.ceiling)} donados "
+                "en la semana."
+            )
+    else:
+        lines.append(
+            f"La semana {week} donar no te habría devuelto nada: los donativos rebajan el IRPF "
+            "que pagas y no había cuota que rebajar."
+        )
+    lines.append(f"-# Desgrava el {deduction_rule_text()}.")
+    lines.append(
+        "📅 Lo que dones hasta el domingo cuenta en la Renta del lunes: si esta semana ganas "
+        "parecido, te sale igual de barato."
+    )
+    lines.append(
+        "-# Donar no da dinero: como mucho recuperas el 80 %. El resto se lo queda la ONG."
+    )
+    return "\n".join(lines)
+
+
+# -- La carta dibujada --------------------------------------------------------------------
+
+#: Color de cada concepto en la carta.
+CONCEPT_COLORS: dict[str, str] = {
+    "trabajo": "#2f6fd6",
+    "alquileres": "#d9822b",
+    "actividad": "#8e5bd6",
+    "premios": "#c99a06",
+    "casino": "#1f9d8a",
+    "imagen": "#d6457f",
+    "vacios": "#7d8a96",
+    "antes": "#9aa5ae",
+    "beckham": "#2e9e4f",
+    "arrastre": "#4b5b6b",
+    "otros": "#7d8a96",
+}
+#: Filas de la tabla de la carta; el resto se junta en «Otros».
+CARD_ROWS = 4
+
+
+def _signed(amount: int) -> str:
+    return f"−{format_amount(-amount)}" if amount < 0 else format_amount(amount)
+
+
+def _card_row(name: str, key: str, earned: int, quota: int, withheld: int) -> dict[str, str]:
+    gap = quota - withheld
+    return {
+        "name": name,
+        "color": CONCEPT_COLORS.get(key, CONCEPT_COLORS["otros"]),
+        "earned": _signed(earned) if earned else "—",
+        "quota": _signed(quota),
+        "withheld": format_amount(withheld),
+        "gap": _gap_text(gap),
+        "tone": "pay" if gap > 0 else "refund" if gap < 0 else "even",
+    }
+
+
+def card_state(statement: IrpfStatement, name: str, seal: str = "") -> dict[str, object]:
+    """La carta de la declaración para la escena (`renta_scene`), todo ya en texto.
+
+    Dos barras: de lo que ganaste a tu base y cómo se paga la cuota (lo retenido y las
+    deducciones frente a la cuota: lo que falta sale a pagar y lo que sobra, a devolver);
+    el sello con el resultado, el tipo medio y la tabla por conceptos (`concepts`).
+
+    Args:
+        name: Nombre de su dueño, tal cual (la escena quita lo que no sabe pintar).
+        seal: El de `seal_for`: lo que ya se hizo con ella, en un sello encima. Sin él,
+            la que falta pagar o presentar lleva `PENDING`.
+    """
+    filed = statement.filed
+    if not seal and (filed.refund > 0 or filed.result > 0 and filed.payment == PAYMENT_PENDING):
+        seal = PENDING
+    rows = concepts(statement)
+    general = [c for c in rows if c.key != "beckham"]
+    earned = sum(max(0, c.earned) for c in general) if rows else filed.base
+    everything = earned + sum(max(0, c.earned) for c in rows if c.key == "beckham")
+    deductions = statement.detail.deductions if statement.detail else filed.deductions
+    due = max(0, filed.quota - deductions)
+    result = filed.result
+    tone = "pay" if result > 0 else "refund" if result < 0 else "zero"
+    table = [_card_row(c.name, c.key, c.earned, c.quota, c.withheld) for c in rows]
+    if len(table) > CARD_ROWS:
+        rest = rows[CARD_ROWS - 1 :]
+        table = table[: CARD_ROWS - 1] + [
+            _card_row(
+                f"Otros ({len(rest)})",
+                "otros",
+                sum(c.earned for c in rest),
+                sum(c.quota for c in rest),
+                sum(c.withheld for c in rest),
+            )
+        ]
+    return {
+        "week": f"Semana {week_label(statement.week)}",
+        "name": name,
+        "earned": earned,
+        "base": filed.base,
+        "quota": filed.quota,
+        "deductions": deductions,
+        "withheld": filed.withheld,
+        "labels": {
+            "earned": format_amount(earned),
+            "base": format_amount(filed.base),
+            "cut": format_amount(max(0, earned - filed.base)),
+            "quota": format_amount(filed.quota),
+            "deductions": format_amount(deductions),
+            "withheld": format_amount(filed.withheld),
+        },
+        "tone": tone,
+        "verdict": {"pay": "A PAGAR", "refund": "A DEVOLVER", "zero": "A CERO"}[tone],
+        "amount": format_amount(abs(result)),
+        "rate": format_rate(filed.rate),
+        "per100": round(100 * due / everything) if everything > 0 else -1,
+        "seal": seal,
+        "rows": table,
+    }

@@ -8,6 +8,15 @@ criterio.
 
 ## 9.x
 
+### 9.24.0 · 2026-10-25
+
+- Renta: la declaración en una carta dibujada, con desglose y consejo de donar
+- Renta: al abrir el sobre sale la carta (de lo que ganaste a tu base, la cuota frente a lo retenido, el sello con el resultado, el tipo medio y la tabla por conceptos) y cuatro pestañas: 📄 Resumen, 🧩 Desglose, 📜 Paso a paso y 🤝 Consejo
+- Renta: 🧩 Desglose reparte la cuota entre cada fuente (trabajo, alquileres, casino…) y dice cuánto faltó o sobró por retener en cada una
+- Renta: 🤝 Consejo calcula cuánto habría rendido donar esa semana (rehecho con la declaración de verdad) y lleva el botón 🤝 Donar con la cantidad que más rinde ya escrita
+- Renta: pagar o presentar pone su sello en la carta, que queda de justificante; arreglado que, tras presentarla, `renta` siguiera diciendo «preséntala»
+- Logros: 7 nuevos de la Renta, por mirar el desglose y el consejo y por donar desde el consejo
+
 ### 9.23.0 · 2026-10-25
 
 - Pisos: eliges cuánto dura cada contrato y puedes recuperar el piso aunque el inquilino pague

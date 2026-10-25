@@ -16,7 +16,7 @@ import re
 import sqlite3
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from functools import partial
 from typing import TypeVar
@@ -411,6 +411,8 @@ class IrpfStatement:
         income: La renta de la semana por clases.
         withheld_by: Lo retenido por fuente (`taxes.INCOME_*`, `juego` o `antes`).
         opened: Si su dueño ya la ha abierto.
+        arguments: El resto de entradas de `taxes.week_return` (lo retenido, lo donado…),
+            para rehacerla cambiando una (el consejo de los donativos).
     """
 
     week: date
@@ -419,6 +421,7 @@ class IrpfStatement:
     income: WeekIncome
     withheld_by: dict[str, int]
     opened: bool
+    arguments: dict[str, int] = field(default_factory=dict)
 
 
 def week_start(day: date) -> date:
@@ -1263,6 +1266,7 @@ class EconomyService:
             income=income,
             withheld_by=withheld_by,
             opened=opened,
+            arguments={str(k): int(v) for k, v in arguments.items()},
         )
 
     async def open_irpf_return(self, guild_id: int, user_id: int, week: date) -> None:
