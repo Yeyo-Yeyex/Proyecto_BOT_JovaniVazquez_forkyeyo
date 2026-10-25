@@ -867,8 +867,12 @@ class Loteria(commands.Cog):
         prize = plan.prize.amount if plan.prize else None
         order = render.scratch_order(plan.cells, prize, random.Random(plan.seed))
         tax = gravamen(prize) if prize else 0
+        assert plan.game.scratch is not None
         states, durations = render.scratch_states(
-            plan.cells, order, render.scratch_banner(plan.prize, tax)
+            plan.cells,
+            order,
+            render.scratch_banner(plan.prize, tax),
+            top=plan.game.scratch[0][0].amount,
         )
         meta = render.scratch_meta(plan.game, plan.cells, seed=plan.seed)
         return await self._animate(meta, states, durations)

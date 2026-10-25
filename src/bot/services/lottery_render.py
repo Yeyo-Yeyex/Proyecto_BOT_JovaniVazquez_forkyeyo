@@ -230,25 +230,38 @@ def scratch_banner(prize: Prize | None, tax: int) -> dict[str, str]:
 
 
 def scratch_states(
-    cells: Sequence[int], order: Sequence[int], banner: Mapping[str, str]
+    cells: Sequence[int],
+    order: Sequence[int],
+    banner: Mapping[str, str],
+    *,
+    top: int | None = None,
 ) -> tuple[list[dict[str, Any]], list[int]]:
     """Fotogramas del rasca y sus duraciones, con el revelado y el fotograma quieto.
 
     Cada estado dice cuánto está rascada cada casilla (`p`, de 0 a 1), cuál se
-    está rascando (`active`, para la moneda), qué casillas brillan al final y el
-    cartel. El último es el PNG.
+    está rascando (`active`, para la moneda), qué casillas brillan al final
+    (`glow`) y con qué tono (`glowTone`: `win`, las tres iguales; `near`, las dos
+    del premio más alto de un rasca sin premio) y el cartel. El último es el PNG.
+
+    Args:
+        top: Premio más alto de la tabla del rasca, para resaltar el «casi».
     """
     progress = [0.0] * len(cells)
     states: list[dict[str, Any]] = []
     counts = Counter(cells)
-    winners = [i for i, value in enumerate(cells) if counts[value] >= 3]
+    glow = [i for i, value in enumerate(cells) if counts[value] >= 3]
+    tone = "win"
+    if not glow and top is not None and counts[top] == 2:
+        glow = [i for i, value in enumerate(cells) if value == top]
+        tone = "near"
 
-    def state(active: int, glow: float = 0.0, banner_a: float = 0.0) -> dict[str, Any]:
+    def state(active: int, shine: float = 0.0, banner_a: float = 0.0) -> dict[str, Any]:
         return {
             "p": [round(p, 4) for p in progress],
             "active": active,
-            "glow": winners if glow > 0 else [],
-            "glowA": round(glow, 3),
+            "glow": glow if shine > 0 else [],
+            "glowA": round(shine, 3),
+            "glowTone": tone,
             "banner": dict(banner) if banner_a > 0 else None,
             "bannerA": round(banner_a, 3),
         }
@@ -262,7 +275,7 @@ def scratch_states(
     for k in range(1, SCRATCH_REVEAL_FRAMES + 1):
         # El brillo late dos veces y se queda; el cartel entra a la vez.
         pulse = 0.65 + 0.35 * math.cos(k / SCRATCH_REVEAL_FRAMES * 4 * math.pi)
-        states.append(state(-1, glow=pulse, banner_a=min(1.0, k / (SCRATCH_REVEAL_FRAMES - 3))))
+        states.append(state(-1, shine=pulse, banner_a=min(1.0, k / (SCRATCH_REVEAL_FRAMES - 3))))
     durations = [SCRATCH_FRAME_MS] * (len(states) - 1) + [FINAL_FRAME_MS]
     return states, durations
 

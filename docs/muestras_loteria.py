@@ -58,14 +58,14 @@ def _scratch(key: str, *, prize_index: int | None, near: bool = False, seed: int
     table = game.scratch[0]
     prize = table[prize_index] if prize_index is not None else None
     rng = random.Random(seed)
+    top = table[0].amount
     while True:
         cells = lot.scratch_grid(game, prize, rng)
-        top = table[0].amount
         if not near or (prize is None and cells.count(top) == 2):
             break
     order = scratch_order(cells, prize.amount if prize else None, random.Random(seed))
     tax = lot.gravamen(prize.amount) if prize else 0
-    states, durations = scratch_states(cells, order, scratch_banner(prize, tax))
+    states, durations = scratch_states(cells, order, scratch_banner(prize, tax), top=top)
     return scratch_meta(game, cells, seed=seed), states, durations
 
 
