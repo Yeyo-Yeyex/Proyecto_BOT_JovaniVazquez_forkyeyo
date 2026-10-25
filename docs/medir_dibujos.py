@@ -93,6 +93,7 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
     from bot.services.horses_scene import SceneRenderer
     from bot.services.housing_catalog import BARRIOS
     from bot.services.housing_scene import HousingScene
+    from bot.services.lottery_scene import LotteryScene
     from bot.services.roulette_scene import RouletteScene
     from bot.services.slots_scene import SlotsScene
     from bot.services.tower import Difficulty
@@ -100,6 +101,11 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
     from bot.services.war_scene import WarScene
 
     no = "/no/existe/chromium"
+    # Las muestras de la lotería viven en `docs/` (main lo pone en el path).
+    from muestras_loteria import animations as lottery_animations
+    from muestras_loteria import stills as lottery_stills
+
+    lottery_anims, lottery_pngs = lottery_animations(), lottery_stills()
 
     async def tie_and_war(scene: WarScene) -> None:
         """Un empate y la guerra que sigue: lo más largo que se pinta en una mano."""
@@ -239,6 +245,29 @@ def games() -> dict[str, tuple[Callable[[], Any], Callable[[Any], Awaitable[Any]
                 "negocio_venta": "venta_con_comprador",
             }.items()
         },
+        # La lotería: el rasca, un sorteo de cada tipo y las imágenes quietas del panel.
+        **{
+            f"loteria_{name}": (
+                lambda: LotteryScene(executable_path=no),
+                lambda s, sample=sample: s.animate(*lottery_anims[sample]),
+            )
+            for name, sample in {
+                "rasca": "rasca_x10_premio",
+                "sorteo": "sorteo_primitiva_bote",
+                "nacional": "sorteo_navidad",
+            }.items()
+        },
+        **{
+            f"loteria_{name}": (
+                lambda: LotteryScene(executable_path=no),
+                lambda s, sample=sample: s.still(lottery_pngs[sample]),
+            )
+            for name, sample in {
+                "decimo": "decimo_navidad",
+                "boleto": "boleto_gordo_10",
+                "cartel": "cartel",
+            }.items()
+        },
         # Cada una de las otras pantallas del panel de `pisos`.
         **{
             f"pisos_{screen}": (
@@ -289,7 +318,12 @@ def main() -> int:
     parser.add_argument("--hilos", type=int, default=4, help="Procesadores (0: sin atar).")
     args = parser.parse_args()
     repo = args.repo.resolve()
-    sys.path[:0] = [str(repo / "src"), str(repo / "tests"), str(repo / "tests" / "unit")]
+    sys.path[:0] = [
+        str(repo / "src"),
+        str(repo / "tests"),
+        str(repo / "tests" / "unit"),
+        str(repo / "docs"),
+    ]
     os.environ.setdefault("NODE_PATH", str(HERE / "node_modules"))
     if args.hilos:
         pin(args.hilos)
