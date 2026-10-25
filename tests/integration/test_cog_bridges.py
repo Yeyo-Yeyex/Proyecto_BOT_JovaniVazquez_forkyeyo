@@ -2845,8 +2845,10 @@ async def test_las_sanciones_de_admin_llegan_al_historial_del_panel_con_el_bot_r
         await client.close()
 
 
-async def bet_on_match(client: BotClient, *, user_id: int = OWNER_ID):  # noqa: ANN201
-    """Una apuesta deportiva abierta (1 al Madrid, 100 Y$ a ×1,85) en el partido `e1`."""
+async def bet_on_match(  # noqa: ANN201
+    client: BotClient, *, user_id: int = OWNER_ID, pick: str = "1", market: str = "1x2"
+):
+    """Una apuesta deportiva abierta (por defecto, 1 al Madrid, 100 Y$ a ×1,85) en `e1`."""
     from bot.repositories.economy import SportsBet
 
     start = client.economy.now() + 3_600
@@ -2860,13 +2862,27 @@ async def bet_on_match(client: BotClient, *, user_id: int = OWNER_ID):  # noqa: 
         home="Real Madrid",
         away="Barcelona",
         commence=start,
-        pick="1",
+        pick=pick,
         odds=185,
         stake=100,
         created_at=client.economy.now(),
+        market=market,
     )
     bet, _ = await client.economy.sports_bet(ticket, game="deportes")
     return bet
+
+
+def sent_texts(channel: MagicMock) -> list[str]:
+    """Lo que se mandó al canal: el texto suelto o el de los bloques de una vista."""
+    texts = []
+    for call in channel.send.await_args_list:
+        if call.args:
+            texts.append(str(call.args[0]))
+        elif (view := call.kwargs.get("view")) is not None:
+            texts.append(
+                "\n".join(c.content for c in view.walk_children() if hasattr(c, "content"))
+            )
+    return texts
 
 
 async def test_saldo_incluye_las_apuestas_deportivas_abiertas_con_el_bot_real(
@@ -2896,6 +2912,7 @@ async def test_resolver_una_apuesta_deportiva_llega_a_apuestas_y_a_los_logros_co
     client = await load_bot(tmp_path)
     try:
         bet = await bet_on_match(client)
+        await bet_on_match(client, pick="+2.5", market="goles")
         cog = client.get_cog("Deportes")
         match = Match("e1", bet.sport, bet.home, bet.away, bet.commence, {})
         await client.sports.save_odds(bet.sport, [match], now=bet.created_at, remaining=None)
@@ -2915,19 +2932,25 @@ async def test_resolver_una_apuesta_deportiva_llega_a_apuestas_y_a_los_logros_co
 
         resolved = await cog.settle(bet.commence + RESULT_DELAY)
 
-        assert [r.bet.status for r in resolved] == ["won"]
-        # Un envío es el resultado; los demás, los avisos de logros que desbloquea.
-        sent = [str(call.args[0]) for call in channel.send.await_args_list if call.args]
+        assert [r.bet.status for r in resolved] == ["won", "won"]
+        # Un envío es el resultado (con el marcador dibujado, el doble de `render_fakes`);
+        # los demás, los avisos de logros que desbloquea.
+        sent = sent_texts(channel)
         assert sum("**Final:" in text for text in sent) == 1
+        assert any(
+            call.kwargs.get("file") is not None and call.kwargs["file"].filename == "final.png"
+            for call in channel.send.await_args_list
+        )
         plays = await client.casino_stats.report(
             GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
         )
-        assert plays.by_game["deportes"].plays == 1
+        assert plays.by_game["deportes"].plays == 2
         pending = client.get_cog("Achievements")._pending[GUILD_ID][OWNER_ID]
-        assert pending.add["casino_plays"] == 1
-        assert pending.add["casino_game_deportes"] == 1
+        assert pending.add["casino_plays"] == 2
+        assert pending.add["casino_game_deportes"] == 2
         profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
-        assert profile.stats["sports_settled"] == 1
-        assert profile.stats["sports_wins"] == 1
+        assert profile.stats["sports_settled"] == 2
+        assert profile.stats["sports_wins"] == 2
+        assert profile.stats["sports_win_goles"] == 1
     finally:
         await client.close()

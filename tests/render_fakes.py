@@ -35,6 +35,7 @@ import bot.services.roulette_render as roulette_render
 import bot.services.roulette_scene as roulette_scene
 import bot.services.slots_render as slots_render
 import bot.services.slots_scene as slots_scene
+import bot.services.sports_scene as sports_scene
 import bot.services.tower_scene as tower_scene
 import bot.services.war_scene as war_scene
 from bot.services.allatu_scene import Media as AllatuMedia
@@ -347,6 +348,28 @@ class FakeBusinessScene:
         return None
 
 
+class FakeSportsScene:
+    """`SportsScene` sin dibujar: un PNG de relleno por imagen; apunta lo que le piden."""
+
+    def __init__(self) -> None:
+        self.states: list[dict[str, object]] = []
+
+    @property
+    def disabled(self) -> bool:
+        return False
+
+    async def paint(self, states: list[dict[str, object]]) -> list[bytes] | None:
+        self.states += states
+        return [b"PNG" for _state in states]
+
+    async def still(self, state: dict[str, object]) -> bytes | None:
+        self.states.append(state)
+        return b"PNG"
+
+    async def close(self) -> None:
+        return None
+
+
 def use_fake_drawings(monkeypatch: pytest.MonkeyPatch) -> None:
     """Sustituye los dibujantes por sus dobles; llamar antes de cargar los cogs."""
     monkeypatch.setattr(slots_scene, "SlotsScene", FakeSlotsScene)
@@ -359,3 +382,4 @@ def use_fake_drawings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(tower_scene, "TowerScene", FakeTowerScene)
     monkeypatch.setattr(allatu_scene, "AllatuScene", FakeAllatuScene)
     monkeypatch.setattr(business_scene, "BusinessScene", FakeBusinessScene)
+    monkeypatch.setattr(sports_scene, "SportsScene", FakeSportsScene)

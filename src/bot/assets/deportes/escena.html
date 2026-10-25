@@ -1,0 +1,368 @@
+<!doctype html>
+<!--
+Escena de `/deportes`, dibujada con canvas: el boleto de una apuesta (`kind: "boleto"`) y el marcador
+final de un partido (`kind: "final"`). Las pinta Node con Skia (assets/escena_node.cjs) y, si no hay
+Node, un Chromium sin ventana (ver bot/services/sports_scene.py). Si no hay ninguno, el cog sale en
+texto.
+
+No decide nada: Python le pasa cada estado ya formateado y aquí solo se pinta (nada de calcular
+dinero). Los dos tipos miden 960 × 440. Funciones que llama Python:
+
+- loadFonts()                espera a las fuentes (canvas no las carga solo).
+- setup(meta)                sin estado entre imágenes: cada una se pinta entera.
+- renderFrames(states)       un PNG por estado: {x: 0, y: 0, u}.
+
+Los escudos son genéricos (blasón con los colores y las 3 letras del equipo; `pattern`: plain,
+stripes, hoops, halves o sash). Todo al doble de tamaño (S = 2) y se reduce al copiar. Nada de
+Math.random: el único "azar" (el código de barras) sale de un hash del número de serie. Los textos
+del usuario se limpian de lo que la fuente no tiene (emojis) para no pintar cuadrados.
+-->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: "Montserrat"; src: url("../memes/fonts/MontserratBold.ttf"); font-weight: 700; }
+  @font-face { font-family: "RobotoM"; src: url("../memes/fonts/robotomedium.ttf"); }
+  @font-face { font-family: "RobotoR"; src: url("../memes/fonts/robotoregular.ttf"); }
+  html, body { margin: 0; padding: 0; background: transparent; }
+</style>
+</head>
+<body>
+<script>
+"use strict";
+const S = 2;
+const W = 960;
+const H = 440;
+const big = document.createElement("canvas"); big.width = W * S; big.height = H * S;
+const out = document.createElement("canvas"); out.width = W; out.height = H;
+const g = big.getContext("2d");
+const octx = out.getContext("2d");
+
+const MONT = "Montserrat, RobotoM, sans-serif";
+const BODY = "RobotoM, sans-serif";
+const SOFT = "RobotoR, sans-serif";
+const GOLD = "#ffcf5a";
+const GREEN = "#43d98a";
+
+// -- Utilidades ------------------------------------------------------------------------------
+
+function rgb(hex) {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex || "");
+  const n = m ? parseInt(m[1], 16) : 0x808080;
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function lum(hex) { const [r, gg, b] = rgb(hex); return (0.299 * r + 0.587 * gg + 0.114 * b) / 255; }
+function mix(hex, to, t) {
+  const a = rgb(hex), b = rgb(to);
+  return `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(",")})`;
+}
+function alpha(hex, a) { const [r, gg, b] = rgb(hex); return `rgba(${r},${gg},${b},${a})`; }
+// La fuente no trae emojis ni escrituras raras: se deja lo latino y la puntuación habitual.
+function clean(text) {
+  const keep = (n) => (n >= 32 && n < 0x250) || (n >= 0x2010 && n <= 0x203a) || n === 0x20ac;
+  return Array.from(String(text ?? "")).filter((c) => keep(c.codePointAt(0))).join("").replace(/\s+/g, " ").trim();
+}
+function rr(x, y, w, h, r) {
+  g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+}
+function font(weight, size, family) { g.font = `${weight} ${size}px ${family}`; }
+function text(str, x, y, size, fam, color, align = "left", weight = "") {
+  font(weight, size, fam); g.fillStyle = color; g.textAlign = align; g.textBaseline = "alphabetic"; g.fillText(str, x, y);
+}
+// Tamaño que cabe en `maxW`, sin bajar de `min`; devuelve el tamaño final.
+function fitSize(str, maxW, size, min, fam, weight = "") {
+  let s = size;
+  font(weight, s, fam);
+  while (s > min && g.measureText(str).width > maxW) { s -= 1; font(weight, s, fam); }
+  return s;
+}
+function fitText(str, x, y, maxW, size, min, fam, color, align = "left", weight = "") {
+  const s = fitSize(str, maxW, size, min, fam, weight);
+  text(str, x, y, s, fam, color, align, weight);
+  return s;
+}
+// Parte `str` en dos líneas lo más igualadas que se pueda.
+function splitTwo(str) {
+  const w = str.split(" ");
+  if (w.length < 2) return [str, ""];
+  let best = 1, diff = 1e9;
+  for (let i = 1; i < w.length; i++) {
+    const d = Math.abs(w.slice(0, i).join(" ").length - w.slice(i).join(" ").length);
+    if (d < diff) { diff = d; best = i; }
+  }
+  return [w.slice(0, best).join(" "), w.slice(best).join(" ")];
+}
+// Nombre de equipo: una línea si cabe a buen tamaño y, si no, dos líneas centradas.
+function teamName(name, cx, y, maxW, color) {
+  const str = clean(name);
+  font("700", 26, MONT);
+  if (g.measureText(str).width <= maxW) { fitText(str, cx, y, maxW, 26, 20, MONT, color, "center", "700"); return; }
+  const [a, b] = splitTwo(str);
+  if (!b) { fitText(a, cx, y, maxW, 26, 14, MONT, color, "center", "700"); return; }
+  const s = Math.min(fitSize(a, maxW, 24, 13, MONT, "700"), fitSize(b, maxW, 24, 13, MONT, "700"));
+  text(a, cx, y - s * 0.45, s, MONT, color, "center", "700");
+  text(b, cx, y + s * 0.75, s, MONT, color, "center", "700");
+}
+
+// -- Fondo -----------------------------------------------------------------------------------
+
+function backdrop(accent) {
+  const bg = g.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, "#0d1220"); bg.addColorStop(1, "#080b14");
+  g.fillStyle = bg; g.fillRect(0, 0, W, H);
+  const glow = g.createRadialGradient(W / 2, H * 0.35, 20, W / 2, H * 0.35, W * 0.7);
+  glow.addColorStop(0, alpha(accent, 0.28)); glow.addColorStop(1, alpha(accent, 0));
+  g.fillStyle = glow; g.fillRect(0, 0, W, H);
+  g.save(); g.globalAlpha = 0.05; g.strokeStyle = "#ffffff"; g.lineWidth = 1;
+  for (let x = -H; x < W; x += 26) { g.beginPath(); g.moveTo(x, H); g.lineTo(x + H, 0); g.stroke(); }
+  g.restore();
+}
+
+// -- Escudo ----------------------------------------------------------------------------------
+
+function shieldPath(x, y, w, h) {
+  g.beginPath();
+  g.moveTo(x + w * 0.08, y + h * 0.06);
+  g.quadraticCurveTo(x + w * 0.5, y - h * 0.02, x + w * 0.92, y + h * 0.06);
+  g.lineTo(x + w * 0.96, y + h * 0.5);
+  g.bezierCurveTo(x + w * 0.96, y + h * 0.78, x + w * 0.7, y + h * 0.92, x + w * 0.5, y + h);
+  g.bezierCurveTo(x + w * 0.3, y + h * 0.92, x + w * 0.04, y + h * 0.78, x + w * 0.04, y + h * 0.5);
+  g.closePath();
+}
+// Luminosidad del campo donde cae la abreviatura (media de los dos colores si lleva dibujo).
+function fieldLum(team) {
+  const a = lum(team.primary), b = lum(team.secondary);
+  return team.pattern === "plain" ? a : (a + b) / 2;
+}
+function crest(team, cx, cy, w) {
+  const h = w * 1.12, x = cx - w / 2, y = cy - h / 2;
+  const p = team.primary || "#888888", s = team.secondary || "#ffffff";
+  g.save();
+  g.shadowColor = "rgba(0,0,0,0.55)"; g.shadowBlur = 22; g.shadowOffsetY = 8;
+  shieldPath(x, y, w, h); g.fillStyle = "#ffffff"; g.fill();
+  g.restore();
+  const ix = x + w * 0.06, iy = y + h * 0.05, iw = w * 0.88, ih = h * 0.9;
+  g.save();
+  shieldPath(ix, iy, iw, ih); g.clip();
+  g.fillStyle = p; g.fillRect(x, y, w, h);
+  g.fillStyle = s;
+  switch (team.pattern) {
+    case "stripes": for (let i = 0; i < 6; i += 2) g.fillRect(ix + (iw / 6) * (i + 1), iy, iw / 6, ih); break;
+    case "hoops": for (let i = 0; i < 6; i += 2) g.fillRect(ix, iy + (ih / 6) * (i + 1), iw, ih / 6); break;
+    case "halves": g.fillRect(cx, iy, iw, ih); break;
+    case "sash":
+      g.beginPath(); g.moveTo(ix, iy + ih * 0.12); g.lineTo(ix + iw * 0.28, iy); g.lineTo(ix + iw, iy + ih * 0.78);
+      g.lineTo(ix + iw, iy + ih); g.lineTo(ix + iw * 0.72, iy + ih); g.lineTo(ix, iy + ih * 0.3); g.closePath(); g.fill();
+      break;
+    default: // liso: un filete del segundo color por dentro
+      g.lineWidth = w * 0.045; g.strokeStyle = s; shieldPath(ix + iw * 0.07, iy + ih * 0.07, iw * 0.86, ih * 0.84); g.stroke();
+  }
+  const gloss = g.createLinearGradient(0, iy, 0, iy + ih);
+  gloss.addColorStop(0, "rgba(255,255,255,0.32)"); gloss.addColorStop(0.45, "rgba(255,255,255,0.04)");
+  gloss.addColorStop(1, "rgba(0,0,0,0.30)");
+  g.fillStyle = gloss; g.fillRect(x, y, w, h);
+  g.restore();
+  g.save(); shieldPath(ix, iy, iw, ih); g.lineWidth = Math.max(2, w * 0.03); g.strokeStyle = "rgba(0,0,0,0.45)"; g.stroke(); g.restore();
+  // Abreviatura: el color contrasta con el campo y lleva un contorno del contrario.
+  const abbr = clean(team.abbr).toUpperCase().slice(0, 4) || "?";
+  const light = fieldLum(team) > 0.55;
+  const ink = light ? "#101522" : "#ffffff", edge = light ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.75)";
+  const size = fitSize(abbr, iw * 0.78, Math.round(w * 0.3), 10, MONT, "700");
+  font("700", size, MONT); g.textAlign = "center"; g.textBaseline = "middle";
+  g.lineJoin = "round"; g.lineWidth = Math.max(3, size * 0.2); g.strokeStyle = edge; g.strokeText(abbr, cx, cy + h * 0.02);
+  g.fillStyle = ink; g.fillText(abbr, cx, cy + h * 0.02);
+  g.lineJoin = "miter";
+}
+
+// -- Piezas comunes --------------------------------------------------------------------------
+
+function pill(label, x, y, h, color, fg, size = 15) {
+  font("700", size, MONT);
+  const w = g.measureText(label).width + h * 1.1;
+  rr(x, y, w, h, h / 2); g.fillStyle = color; g.fill();
+  text(label, x + w / 2, y + h / 2 + size * 0.36, size, MONT, fg, "center", "700");
+  return w;
+}
+function leagueTag(st, x, y) {
+  const col = st.accent || "#3b6cff";
+  return pill(clean(st.league).toUpperCase(), x, y, 32, col, lum(col) > 0.6 ? "#0b0f1a" : "#ffffff", 16);
+}
+
+// -- Boleto ----------------------------------------------------------------------------------
+
+function ticketPath(l, t, r, b, nx, rad) {
+  const step = 24, sr = 5, ys = [];
+  for (let y = t + 22 + step / 2; y < b - 22 - step / 2 + 1; y += step) ys.push(y);
+  g.beginPath(); g.moveTo(l + 22, t);
+  g.lineTo(nx - rad, t); g.arc(nx, t, rad, Math.PI, 0, true);
+  g.lineTo(r - 22, t); g.arcTo(r, t, r, t + 22, 22);
+  for (const y of ys) { g.lineTo(r, y - sr); g.arc(r, y, sr, -Math.PI / 2, Math.PI / 2, true); }
+  g.lineTo(r, b - 22); g.arcTo(r, b, r - 22, b, 22);
+  g.lineTo(nx + rad, b); g.arc(nx, b, rad, 0, Math.PI, true);
+  g.lineTo(l + 22, b); g.arcTo(l, b, l, b - 22, 22);
+  for (let i = ys.length - 1; i >= 0; i--) { g.lineTo(l, ys[i] + sr); g.arc(l, ys[i], sr, Math.PI / 2, -Math.PI / 2, true); }
+  g.lineTo(l, t + 22); g.arcTo(l, t, l + 22, t, 22);
+  g.closePath();
+}
+
+function barcode(serial, x, y, w, h) {
+  let seed = 2166136261;
+  for (const c of String(serial)) seed = Math.imul(seed ^ c.charCodeAt(0), 16777619) >>> 0;
+  let cx = x;
+  g.fillStyle = "rgba(255,255,255,0.88)";
+  while (cx < x + w - 2) {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    const bw = 1 + (seed >>> 28) % 3, gap = 1 + (seed >>> 24) % 3;
+    g.fillRect(cx, y, Math.min(bw, x + w - cx), h);
+    cx += bw + gap;
+  }
+}
+
+function paintBoleto(st) {
+  const accent = st.accent || "#3b6cff";
+  backdrop(accent);
+  const L = 26, T = 20, R = W - 26, B = H - 20, NX = 686;
+  g.save(); g.shadowColor = "rgba(0,0,0,0.6)"; g.shadowBlur = 26; g.shadowOffsetY = 10;
+  ticketPath(L, T, R, B, NX, 15);
+  const paper = g.createLinearGradient(0, T, 0, B);
+  paper.addColorStop(0, "#232b44"); paper.addColorStop(1, "#141a2c");
+  g.fillStyle = paper; g.fill(); g.restore();
+  g.save(); ticketPath(L, T, R, B, NX, 15); g.clip();
+  const band = g.createLinearGradient(L, 0, R, 0);
+  band.addColorStop(0, mix(accent, "#000000", 0.25)); band.addColorStop(1, accent);
+  g.fillStyle = band; g.fillRect(L, T, R - L, 10);
+  const sheen = g.createLinearGradient(L, T, R, B);
+  sheen.addColorStop(0, "rgba(255,255,255,0.09)"); sheen.addColorStop(0.5, "rgba(255,255,255,0)"); sheen.addColorStop(1, "rgba(255,255,255,0.04)");
+  g.fillStyle = sheen; g.fillRect(L, T, R - L, B - T);
+  g.fillStyle = "rgba(0,0,0,0.22)"; g.fillRect(NX, T, R - NX, B - T);
+  g.restore();
+  g.save(); g.setLineDash([7, 7]); g.strokeStyle = "rgba(255,255,255,0.28)"; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(NX, T + 22); g.lineTo(NX, B - 22); g.stroke(); g.restore();
+  g.save(); ticketPath(L, T, R, B, NX, 15); g.lineWidth = 2; g.strokeStyle = "rgba(255,255,255,0.14)"; g.stroke(); g.restore();
+
+  // Cabecera de la parte principal.
+  const lx = L + 28;
+  const tagW = leagueTag(st, lx, T + 30);
+  text("RESGUARDO DE APUESTA", lx + tagW + 16, T + 52, 14, BODY, "rgba(255,255,255,0.55)");
+  fitText(clean(st.kickoff), NX - 24, T + 52, 200, 17, 11, BODY, "#e9edf8", "right");
+
+  // Equipos y VS.
+  const cxA = lx + 130, cxB = NX - 138, cy = T + 152;
+  crest(st.home, cxA, cy, 112); crest(st.away, cxB, cy, 112);
+  text("VS", (cxA + cxB) / 2, cy + 12, 34, MONT, "rgba(255,255,255,0.35)", "center", "700");
+  teamName(st.home.name, cxA, T + 254, 236, "#ffffff");
+  teamName(st.away.name, cxB, T + 254, 236, "#ffffff");
+
+  // Mercado y apuesta.
+  const px = lx, py = T + 296, pw = NX - 24 - px, ph = 76;
+  rr(px, py, pw, ph, 14); g.fillStyle = "rgba(0,0,0,0.32)"; g.fill();
+  rr(px, py, 7, ph, 3.5); g.fillStyle = accent; g.fill();
+  text(clean(st.market).toUpperCase(), px + 24, py + 27, 14, BODY, mix(accent, "#ffffff", 0.55));
+  fitText(clean(st.pick), px + 24, py + 61, pw - 44, 32, 16, MONT, "#ffffff", "left", "700");
+
+  // Talón: cuota, apostado y cobro.
+  const sx = NX + 24, sw = R - 24 - sx, scx = sx + sw / 2;
+  text("CUOTA", scx, T + 56, 14, BODY, "rgba(255,255,255,0.55)", "center");
+  const o = fitSize(clean(st.odds), sw, 66, 28, MONT, "700");
+  g.save(); g.shadowColor = alpha(GOLD, 0.5); g.shadowBlur = 22;
+  text(clean(st.odds), scx, T + 70 + o * 0.78, o, MONT, GOLD, "center", "700"); g.restore();
+  g.fillStyle = "rgba(255,255,255,0.14)"; g.fillRect(sx, T + 148, sw, 1.5);
+  text("APOSTADO", sx, T + 178, 13, BODY, "rgba(255,255,255,0.55)");
+  fitText(clean(st.stake), sx, T + 208, sw, 28, 14, MONT, "#ffffff", "left", "700");
+  text("COBRARÍAS", sx, T + 240, 13, BODY, "rgba(255,255,255,0.55)");
+  fitText(clean(st.payout), sx, T + 272, sw, 30, 14, MONT, GREEN, "left", "700");
+  barcode(st.serial, sx, T + 292, sw, 34);
+  text(clean(st.serial), sx, T + 350, 14, BODY, "rgba(255,255,255,0.75)");
+  fitText(clean(st.player), R - 24, T + 350, sw - 100, 14, 10, SOFT, "rgba(255,255,255,0.6)", "right");
+}
+
+// -- Marcador final --------------------------------------------------------------------------
+
+function paintFinal(st) {
+  const accent = st.accent || "#3b6cff";
+  backdrop(accent);
+  leagueTag(st, 34, 26);
+  const fw = pill("FINAL", W - 34 - 90, 26, 32, "#e5384b", "#ffffff", 16);
+  fitText(clean(st.date), W - 34 - fw - 14, 49, 220, 17, 11, BODY, "#c9d1e6", "right");
+
+  const cxA = 175, cxB = W - 175, cy = 156;
+  crest(st.home, cxA, cy, 150); crest(st.away, cxB, cy, 150);
+  teamName(st.home.name, cxA, 278, 290, "#ffffff");
+  teamName(st.away.name, cxB, 278, 290, "#ffffff");
+
+  // Marcador de tele.
+  const bw = 290, bh = 124, bx = (W - bw) / 2, by = 88;
+  g.save(); g.shadowColor = "rgba(0,0,0,0.6)"; g.shadowBlur = 24; g.shadowOffsetY = 8;
+  rr(bx, by, bw, bh, 20);
+  const plate = g.createLinearGradient(0, by, 0, by + bh);
+  plate.addColorStop(0, "#1c2440"); plate.addColorStop(1, "#0b0f1d");
+  g.fillStyle = plate; g.fill(); g.restore();
+  g.save(); rr(bx, by, bw, bh, 20); g.clip();
+  const sh = g.createLinearGradient(0, by, 0, by + bh * 0.5);
+  sh.addColorStop(0, "rgba(255,255,255,0.14)"); sh.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = sh; g.fillRect(bx, by, bw, bh * 0.5);
+  g.fillStyle = accent; g.fillRect(bx, by + bh - 9, bw, 9);
+  g.restore();
+  rr(bx, by, bw, bh, 20); g.lineWidth = 2; g.strokeStyle = "rgba(255,255,255,0.18)"; g.stroke();
+  const hg = String(st.homeGoals), ag = String(st.awayGoals);
+  const ds = hg.length > 2 || ag.length > 2 ? 60 : hg.length + ag.length > 2 ? 76 : 92;
+  g.save(); g.shadowColor = "rgba(0,0,0,0.5)"; g.shadowBlur = 8; g.shadowOffsetY = 3;
+  text(hg, W / 2 - 62, by + 52 + ds * 0.42, ds, MONT, "#ffffff", "center", "700");
+  text(ag, W / 2 + 62, by + 52 + ds * 0.42, ds, MONT, "#ffffff", "center", "700");
+  g.restore();
+  rr(W / 2 - 11, by + 54, 22, 6, 3); g.fillStyle = "rgba(255,255,255,0.45)"; g.fill();
+
+  // Chips de mercados.
+  const chips = (st.chips || []).slice(0, 5);
+  if (chips.length) {
+    const gap = 14, cw = Math.min(190, (W - 68 - gap * (chips.length - 1)) / chips.length), ch = 72;
+    const total = cw * chips.length + gap * (chips.length - 1);
+    let x = (W - total) / 2; const y = 312;
+    for (const [label, value] of chips) {
+      rr(x, y, cw, ch, 16);
+      const cg = g.createLinearGradient(0, y, 0, y + ch);
+      cg.addColorStop(0, "#222a46"); cg.addColorStop(1, "#151b30");
+      g.fillStyle = cg; g.fill();
+      g.lineWidth = 1.5; g.strokeStyle = "rgba(255,255,255,0.14)"; g.stroke();
+      rr(x + 14, y, cw - 28, 4, 2); g.fillStyle = accent; g.fill();
+      fitText(clean(label).toUpperCase(), x + cw / 2, y + 28, cw - 20, 13, 9, BODY, "rgba(255,255,255,0.6)", "center");
+      fitText(clean(value), x + cw / 2, y + 59, cw - 20, 28, 14, MONT, "#ffffff", "center", "700");
+      x += cw + gap;
+    }
+  }
+  fitText(clean(st.summary), W / 2, 418, W - 80, 19, 11, BODY, "#c9d1e6", "center");
+}
+
+// -- Entrada ---------------------------------------------------------------------------------
+
+const KINDS = { boleto: paintBoleto, final: paintFinal };
+
+function paintOne(st) {
+  const draw = KINDS[st.kind];
+  if (!draw) throw new Error(`Tipo desconocido: ${st.kind}`);
+  g.setTransform(S, 0, 0, S, 0, 0);
+  g.clearRect(0, 0, W, H);
+  g.lineCap = "butt"; g.lineJoin = "miter"; g.globalAlpha = 1; g.setLineDash([]);
+  draw(st);
+}
+
+function sceneFrame(st) {
+  paintOne(st);
+  octx.clearRect(0, 0, W, H);
+  octx.imageSmoothingEnabled = true; octx.imageSmoothingQuality = "high";
+  octx.drawImage(big, 0, 0, W * S, H * S, 0, 0, W, H);
+  return { x: 0, y: 0, u: window.exportFrame(out) };
+}
+
+window.exportFrame ??= (canvas) => canvas.toDataURL("image/png");
+window.loadFonts = async () => {
+  await Promise.all([document.fonts.load("700 20px Montserrat"), document.fonts.load("20px RobotoM"), document.fonts.load("20px RobotoR")]);
+  await document.fonts.ready;
+  return true;
+};
+window.setup = async (meta) => true;
+window.renderFrames = (states, first = 0) => states.map((st) => sceneFrame(st));
+</script>
+</body>
+</html>

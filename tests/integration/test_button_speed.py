@@ -796,7 +796,7 @@ def sports_panel(client: BotClient, owner: MagicMock):  # noqa: ANN201
 
 async def press_sports_stake(client: BotClient, owner: MagicMock) -> Click:
     view, match = sports_panel(client, owner)
-    modal = module_of(client, "Deportes").StakeModal(view, match, next(iter(match.odds)))
+    modal = module_of(client, "Deportes").StakeModal(view, match, "1")
     modal.amount._value = "50"  # lo que Discord rellena al enviar
 
     async def click(interaction: MagicMock) -> None:
@@ -808,7 +808,9 @@ async def press_sports_stake(client: BotClient, owner: MagicMock) -> Click:
 
 async def press_sports_slip(client: BotClient, owner: MagicMock) -> Click:
     view, _ = sports_panel(client, owner)
-    button = next(c for c in view.children if c.custom_id == "deportes:mis")
+    button = next(
+        c for c in view.walk_children() if getattr(c, "custom_id", None) == "deportes:mis"
+    )
 
     async def click(interaction: MagicMock) -> None:
         await button.callback(interaction)
