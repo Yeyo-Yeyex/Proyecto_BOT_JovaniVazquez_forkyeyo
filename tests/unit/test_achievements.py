@@ -106,6 +106,8 @@ from bot.services.achievements import (
     SHOP_USE_KINDS_STAT,
     SPORTS_LEAGUE_PREFIX,
     SPORTS_LEAGUES,
+    SPORTS_MARKET_PREFIX,
+    SPORTS_MARKETS,
     SPORTS_PICK_PREFIX,
     SPORTS_PICKS,
     TOPIC_KINDS_STAT,
@@ -890,6 +892,10 @@ PRODUCED_STATS = {
     # Apuestas deportivas (`sports_*_stats`; las pruebas del final comprueban cada una)
     *(f"{SPORTS_LEAGUE_PREFIX}{league}" for league in SPORTS_LEAGUES),
     *(f"{SPORTS_PICK_PREFIX}{pick}" for pick in SPORTS_PICKS),
+    *(f"{SPORTS_MARKET_PREFIX}{market}" for market in SPORTS_MARKETS),
+    "sports_match_markets_max", "sports_win_exacto", "sports_win_otro", "sports_win_over35",
+    "sports_win_under15", "sports_win_goles", "sports_win_ambos", "sports_lost_on_line",
+    "sports_exact_near", "sports_lost_ambos_rout",
     "sports_bets", "sports_staked", "sports_bet_long", "sports_bet_safe", "sports_all_in",
     "sports_bet_min", "sports_bet_cap", "sports_bet_666", "sports_bet_69", "sports_last_minute",
     "sports_early", "sports_night", "sports_nochevieja", "sports_canarias", "sports_friday13",
@@ -2135,9 +2141,19 @@ def test_una_apuesta_deportiva_normal_solo_cuenta_lo_basico() -> None:
         "sports_bets": 1,
         "sports_staked": 100,
         f"{SPORTS_LEAGUE_PREFIX}soccer_spain_la_liga": 1,
+        f"{SPORTS_MARKET_PREFIX}1x2": 1,
         f"{SPORTS_PICK_PREFIX}1": 1,
     }
-    assert delta.peak == {"sports_stake_max": 100, "sports_odds_max": 200}
+    assert delta.peak == {
+        "sports_stake_max": 100, "sports_odds_max": 200, "sports_match_markets_max": 1,
+    }  # fmt: skip
+
+
+def test_una_apuesta_de_goles_cuenta_su_mercado_y_no_un_signo_del_1x2() -> None:
+    delta = _sports_bet(pick="+2.5", market="goles", match_markets=3)
+    assert delta.add[f"{SPORTS_MARKET_PREFIX}goles"] == 1
+    assert not any(stat.startswith(SPORTS_PICK_PREFIX) for stat in delta.add)
+    assert delta.peak["sports_match_markets_max"] == 3
 
 
 def test_el_signo_se_cuenta_en_minuscula() -> None:
@@ -2236,6 +2252,45 @@ def test_un_fallo_al_empate_no_cuenta_como_empate_ni_como_goleada() -> None:
     delta = _sports_result(payout=0, streak=0, pick="X", home=3, away=0)
     assert delta.add.keys() == {"sports_settled", "sports_losses"}
     assert "sports_lost_goals" not in _sports_result(payout=0, pick="X", home=2, away=0).add
+
+
+@pytest.mark.parametrize(
+    ("over", "stat"),
+    [
+        ({"pick": "+3.5", "market": "goles", "home": 3, "away": 1}, "sports_win_over35"),
+        ({"pick": "-1.5", "market": "goles", "home": 1, "away": 0}, "sports_win_under15"),
+        ({"pick": "+2.5", "market": "goles", "home": 2, "away": 1}, "sports_win_goles"),
+        ({"pick": "si", "market": "ambos", "home": 2, "away": 1}, "sports_win_ambos"),
+        ({"pick": "2-1", "market": "exacto"}, "sports_win_exacto"),
+        ({"pick": "otro", "market": "exacto", "home": 5, "away": 0}, "sports_win_otro"),
+    ],
+)
+def test_los_aciertos_de_los_mercados_de_goles_suman_su_estadistica(over: dict, stat: str) -> None:
+    assert _sports_result(**over).add[stat] == 1
+
+
+@pytest.mark.parametrize(
+    ("over", "stat"),
+    [
+        ({"pick": "+2.5", "market": "goles", "home": 1, "away": 1}, "sports_lost_on_line"),
+        ({"pick": "-2.5", "market": "goles", "home": 2, "away": 1}, "sports_lost_on_line"),
+        ({"pick": "2-1", "market": "exacto", "home": 2, "away": 2}, "sports_exact_near"),
+        ({"pick": "si", "market": "ambos", "home": 4, "away": 0}, "sports_lost_ambos_rout"),
+    ],
+)
+def test_los_fallos_de_los_mercados_de_goles_suman_su_estadistica(over: dict, stat: str) -> None:
+    assert _sports_result(payout=0, streak=0, **over).add[stat] == 1
+
+
+def test_los_mercados_de_goles_no_cuentan_lo_del_1x2() -> None:
+    won = _sports_result(pick="-2.5", market="goles", home=1, away=0)
+    assert won.add == {"sports_settled": 1, "sports_wins": 1, "sports_win_goles": 1}
+    lost = _sports_result(pick="si", market="ambos", payout=0, streak=0, home=1, away=1)
+    assert lost.add == {"sports_settled": 1, "sports_losses": 1}
+    far = _sports_result(pick="+3.5", market="goles", payout=0, streak=0, home=1, away=0)
+    assert "sports_lost_on_line" not in far.add
+    wide = _sports_result(pick="0-0", market="exacto", payout=0, streak=0, home=2, away=1)
+    assert "sports_exact_near" not in wide.add
 
 
 def test_anular_o_mirar_las_apuestas_deportivas_tiene_su_contador() -> None:

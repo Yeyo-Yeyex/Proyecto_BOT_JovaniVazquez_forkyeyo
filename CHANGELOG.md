@@ -8,6 +8,16 @@ criterio.
 
 ## 9.x
 
+### 9.22.0 · 2026-10-25
+
+- Deportes: `deportes` estrena panel y apuestas a los goles
+- Deportes: panel nuevo con el color de cada competición, los próximos partidos con su botón y, en cada partido, la probabilidad de cada resultado en barras y los goles que se esperan de cada equipo
+- Deportes: tres mercados nuevos además del 1X2: más/menos goles (1,5, 2,5 y 3,5), ambos marcan y resultado exacto (del 0-0 al 3-3 y «otro resultado»), cada uno en su pestaña
+- Deportes: una apuesta por mercado y partido; el tope de 50.000 Y$ cuenta para todo el partido sumando mercados
+- Deportes: al apostar llega el boleto dibujado, con los escudos de los dos equipos, y al acabar el partido sale en el canal el marcador final dibujado con cómo quedó cada mercado
+- Deportes: las cuotas de goles salen de ajustar un modelo de goles al 1X2 y al más/menos de las casas; el exacto deja un 15 % a la casa y el resto, el 6 % de siempre
+- Logros: 20 nuevos en ⚽ Deportes (cada mercado, clavar un exacto, quedarse en el palo por un gol, los cuatro mercados de un mismo partido…)
+
 ### 9.21.0 · 2026-10-25
 
 - Fortunas: `fortunas` estrena panel, con podio, páginas y tu puesto
