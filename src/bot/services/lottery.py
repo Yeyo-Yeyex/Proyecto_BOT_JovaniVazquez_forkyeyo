@@ -2,36 +2,54 @@
 
 Imita los juegos reales con sus normas oficiales, pasados a yapdollars con
 `YAPDOLLARS_PER_EURO` (10 Y$ = 1 €). La cuenta del Estado hace de banca:
-cobra los boletos, paga los premios y garantiza el bote mínimo donde el juego
-real lo tiene.
+cobra los boletos, paga los premios y garantiza el bote.
 
-Juegos de bote (reparto a partes iguales entre acertantes de cada categoría):
+Juegos de bote: La Primitiva (lunes, jueves y sábado, 1 €; 6 de 49,
+complementario y reintegro), Bonoloto (lunes a sábado, 0,50 €), El Gordo de la
+Primitiva (domingo, 1,50 €; 5 de 54 y número clave) y Euromillones (martes y
+viernes, 2,20 €; 5 de 50 y 2 estrellas de 12; sin El Millón, que es un sorteo
+entre todos los boletos españoles y en un servidor pequeño regalaría el dinero).
+Las bolas, las categorías y lo que hay que acertar son los reales.
 
-- **La Primitiva** (lunes, jueves y sábado, 1 €): 6 de 49, complementario y
-  reintegro. Normas de SELAE de junio de 2022: el 55 % de la recaudación va a
-  premios (7ª), el 10 % al reintegro y el 45 % a las categorías; la 5ª (3
-  aciertos) cobra 8 € fijos y el resto se reparte 30/37/6/11/16 % entre
-  especial (6 + reintegro), 1ª, 2ª, 3ª y 4ª (8ª.1). Si la especial o la 1ª
-  quedan desiertas, su fondo pasa a la especial del sorteo siguiente (8ª.1.1
-  y 1.2); la 2ª baja a la 3ª, la 3ª a la 4ª y la 4ª al bote (8ª.1.3).
-- **Bonoloto** (lunes a sábado, 0,50 €): igual pero sin categoría especial;
-  45/24/12/19 % y 4 € fijos para 3 aciertos (normas de marzo de 2015).
-- **El Gordo de la Primitiva** (domingo, 1,50 €): 5 de 54 y número clave. El
-  22 % de la recaudación va a la 1ª y el 23 %, menos los 3 € fijos de la 8ª,
-  se reparte 33/6/7/8/26/20 % entre la 2ª y la 7ª (normas de enero de 2024,
-  8ª). La mitad de lo destinado a la 1ª va al fondo de reserva, que paga el
-  mínimo garantizado de 4,5 M€ (9ª): aquí esa mitad se queda en el Estado,
-  que es quien garantiza.
-- **Euromillones** (martes y viernes, 2,20 €): 5 de 50 y 2 estrellas de 12.
-  El 50 % va a premios en 13 categorías; el 4,80 % del fondo va a la reserva
-  que garantiza el bote mínimo de 17 M€ (aquí, al Estado). Una categoría
-  desierta pasa a la siguiente inferior con acertantes. No se vende El Millón
-  (los 0,30 € de España): es un sorteo entre todos los boletos españoles que
-  siempre toca a alguien y en un servidor pequeño regalaría el dinero.
+Lo que no puede ser real es el reparto. Las normas de SELAE reparten un fondo
+de lo recaudado entre los acertantes de cada categoría (la Primitiva, el 45 %
+de lo vendido con 30/37/6/11/16 % por categoría, y así cada juego). Con las
+apuestas de un servidor de decenas de personas ese fondo es de unos pocos Y$:
+en octubre de 2026, acertar el bote de la Primitiva pagaba de mediana 6 Y$,
+menos que la apuesta, y en 60 días se jugaron 44 apuestas
+(`docs/auditoria-loteria.md`). Por eso, a la medida del servidor:
+
+- **Probabilidades** (`server_odds`): con las reales (1 entre 140 millones el
+  bote de la Primitiva) no caería nunca. Se fija que el bote caiga de media una
+  vez cada `JACKPOT_PERIOD_DAYS` si cada miembro juega una apuesta por sorteo, y
+  las categorías intermedias se acercan en la misma escala (logarítmica), así
+  que el orden se mantiene: la última sigue con su probabilidad real y el bote
+  sigue siendo lo más difícil. Las bolas salen igual que siempre; lo que cambia
+  es que, a veces, el bombo se «carga» con la apuesta de alguien
+  (`draw_result`).
+- **Premios fijos por debajo del bote** (`category_prizes`): cada categoría
+  devuelve de media la misma parte del precio, y entre todas lo mismo que
+  devolverían con las normas reales (`real_shares`). Como la parte es igual,
+  el premio crece con la dificultad: con las probabilidades reales salen cifras
+  parecidas a las de verdad (4 aciertos de la Primitiva, unos 740 Y$; 5 + C,
+  1,7 millones) y en un servidor pequeño, donde las categorías están más
+  juntas, premios más juntos (de 40 a 150 Y$ con 20 personas). Ninguno baja del
+  precio de la apuesta.
+- **El bote** junta lo que le toca de cada venta según las normas
+  (`jackpot_rate`, que se acumula si nadie acierta) con un **mínimo que
+  garantiza el Estado** (`guarantee_for`): `Game.jackpot_floor` el día que se
+  estrena y `Game.jackpot_daily` más por cada día sin acertante, hasta
+  `JACKPOT_GROWTH_DAYS` días y nunca más de `GUARANTEE_SHARE` del saldo del
+  Estado. El Estado solo paga cuando alguien lo acierta; entonces el mínimo
+  vuelve a empezar. Es dinero nuevo para los miembros, a propósito y con tope:
+  sale del saldo del Estado (lo recaudado) y, entre los cuatro juegos, no
+  pasa de unos 2.000 Y$ al día más los mínimos de salida.
+- **Tope por persona** (`POOL_MAX_PER_DRAW`): con un bote grande y pocas
+  personas, comprar cien apuestas sería comprar el bote. Diez por sorteo.
 
 En los cuatro, ningún premio de una categoría puede ser mayor que el de una
-superior: si pasa, se juntan los fondos y se reparte entre todos (8ª.2 de la
-Primitiva y equivalentes). Eso es una regresión isotónica, `_no_inversion`.
+superior: si pasa, se juntan y se reparte entre todos (8ª.2 de la Primitiva y
+equivalentes). Eso es una regresión isotónica, `_no_inversion`.
 
 Lotería Nacional (premios fijos por décimo, el 70 % de la emisión):
 
@@ -45,19 +63,9 @@ Lotería Nacional (premios fijos por décimo, el 70 % de la emisión):
 Rascas de la ONCE (instantáneos, con la tabla de premios de su emisión):
 **X10** (2 €, devuelve el 64 %) y **7 y Media** (1 €, devuelve el 59 %).
 
-En la Nacional y los rascas las probabilidades son las reales. En los juegos
-de bote se ajustan al tamaño del servidor (`server_odds`): con las reales (1
-entre 140 millones el bote de la Primitiva) en un servidor de decenas de
-personas no caería nunca. Se fija que el bote caiga de media una vez cada
-`JACKPOT_PERIOD_DAYS` si cada miembro juega una apuesta por sorteo, y las
-categorías intermedias se acercan en la misma escala (logarítmica), así que
-el orden de las categorías se mantiene: la última sigue con su probabilidad
-real y el bote sigue siendo lo más difícil. Las bolas salen igual que
-siempre; lo que cambia es que, a veces, el bombo se «carga» con la apuesta
-de alguien (`draw_result`). Como los premios salen del fondo del sorteo, que
-toque más a menudo no crea dinero: reparte lo mismo entre menos sorteos. El
-bote garantizado del Estado se encoge en la misma proporción
-(`guarantee_for`), para que el Estado no pague 17 M€ cada mes.
+En la Nacional y los rascas las probabilidades y los premios son los reales:
+funcionan en un servidor pequeño porque sus premios son fijos y muchos (el
+reintegro, las terminaciones), y son lo que más se juega.
 """
 
 from __future__ import annotations
@@ -83,6 +91,11 @@ GUARANTEE_SHARE = 0.25
 #: Apuestas (o décimos) como máximo por persona y sorteo. Evita filas sin fin
 #: en la base de datos del NAS; nadie juega 100 apuestas por gusto.
 MAX_PER_DRAW = 100
+#: Apuestas como máximo por persona y sorteo en los juegos de bote: con el bote
+#: que pone el Estado, cien apuestas en un servidor pequeño serían comprarlo.
+POOL_MAX_PER_DRAW = 10
+#: Días que sigue subiendo el mínimo del bote sin acertante; luego se queda quieto.
+JACKPOT_GROWTH_DAYS = 90
 #: Números de la Lotería Nacional: del 00000 al 99999.
 NACIONAL_NUMBERS = 100_000
 #: Si cada miembro juega una apuesta en cada sorteo, el bote de un juego cae de
@@ -211,10 +224,13 @@ class Game:
         weekly: `(día de la semana, hora, minuto)` de los sorteos, hora de
             Madrid (lunes = 0). Vacío para los sorteos anuales y los rascas.
         yearly: `(mes, día, hora, minuto)` de un sorteo anual.
-        variable_share: Parte de la recaudación para el fondo de categorías.
+        variable_share: Parte de la recaudación para el fondo de categorías
+            según las normas reales (sale de ahí lo que devuelve cada una,
+            `real_shares`).
         reserve: Parte de ese fondo (o de la 1ª, en el Gordo) que va al Estado
             como fondo de reserva del bote garantizado.
-        guarantee: Bote mínimo real, en Y$ (0 si no tiene).
+        jackpot_floor: Bote mínimo que garantiza el Estado al estrenarse, en Y$.
+        jackpot_daily: Lo que sube ese mínimo por cada día sin acertante.
         reintegro: Si tiene reintegro (devuelve el precio de la apuesta).
         categories: De mayor a menor premio.
         program: Programa de la Lotería Nacional.
@@ -231,7 +247,8 @@ class Game:
     yearly: tuple[int, int, int, int] | None = None
     variable_share: float = 0.0
     reserve: float = 0.0
-    guarantee: int = 0
+    jackpot_floor: int = 0
+    jackpot_daily: int = 0
     reintegro: bool = False
     categories: tuple[Category, ...] = ()
     program: NacionalProgram | None = None
@@ -253,6 +270,11 @@ class Game:
     def scheduled(self) -> bool:
         """Si tiene sorteos (los rascas se resuelven al momento)."""
         return self.kind is not Kind.SCRATCH
+
+    @property
+    def max_per_draw(self) -> int:
+        """Apuestas o décimos como máximo por persona y sorteo."""
+        return POOL_MAX_PER_DRAW if self.categories else MAX_PER_DRAW
 
     def category(self, key: str) -> Category:
         """La categoría `key` del juego."""
@@ -451,7 +473,7 @@ GAMES: tuple[Game, ...] = (
     Game(
         "primitiva", "La Primitiva", "🔵", Kind.LOTTO, eur(1), 0.55,
         weekly=((_MON, 21, 30), (_THU, 21, 30), (_SAT, 21, 30)),
-        variable_share=0.45, reintegro=True,
+        variable_share=0.45, reintegro=True, jackpot_floor=5_000, jackpot_daily=400,
         categories=_lotto_categories(
             especial=True, shares=(0.30, 0.37, 0.06, 0.11, 0.16), fixed=eur(8)
         ),
@@ -460,21 +482,21 @@ GAMES: tuple[Game, ...] = (
     Game(
         "bonoloto", "Bonoloto", "🟢", Kind.LOTTO, eur(0.5), 0.55,
         weekly=tuple((day, 21, 30) for day in (_MON, _TUE, _WED, _THU, _FRI, _SAT)),
-        variable_share=0.45, reintegro=True,
+        variable_share=0.45, reintegro=True, jackpot_floor=2_000, jackpot_daily=150,
         categories=_lotto_categories(especial=False, shares=(0.45, 0.24, 0.12, 0.19), fixed=eur(4)),
         blurb="6 de 49, de lunes a sábado. La más barata.",
     ),
     Game(
         "gordo", "El Gordo de la Primitiva", "🟡", Kind.GORDO, eur(1.5), 0.55,
         weekly=((_SUN, 21, 30),), variable_share=0.45, reserve=0.5,
-        guarantee=eur(4_500_000), reintegro=True, categories=_gordo_categories(),
-        blurb="5 de 54 y número clave, los domingos. Bote mínimo garantizado.",
+        jackpot_floor=8_000, jackpot_daily=450, reintegro=True, categories=_gordo_categories(),
+        blurb="5 de 54 y número clave, los domingos.",
     ),
     Game(
         "euromillones", "Euromillones", "⭐", Kind.EURO, eur(2.2), 0.50,
         weekly=((_TUE, 21, 0), (_FRI, 21, 0)), variable_share=0.50, reserve=_EURO_RESERVE,
-        guarantee=eur(17_000_000), categories=_euro_categories(),
-        blurb="5 de 50 y 2 estrellas de 12. Sin El Millón. Bote mínimo garantizado.",
+        jackpot_floor=15_000, jackpot_daily=1_000, categories=_euro_categories(),
+        blurb="5 de 50 y 2 estrellas de 12. Sin El Millón.",
     ),
     Game(
         "x10", "Rasca X10", "🟣", Kind.SCRATCH, eur(2), 0.64, scratch=_X10,
@@ -507,25 +529,15 @@ def draws_per_period(game: Game) -> float:
     return len(game.weekly) * JACKPOT_PERIOD_DAYS / 7
 
 
-def jackpot_scale(game: Game, members: int) -> float:
-    """Cuánto más fácil es el bote en un servidor de `members` personas (1 = real).
-
-    El "1 entre N" del bote pasa a ser `members × sorteos del periodo`: si cada
-    uno juega una apuesta por sorteo, cae una vez por periodo. Nunca es más
-    difícil que el real ni más fácil que la categoría más baja.
-    """
-    real = real_odds(game)
-    return _jackpot_target(game, members) / real[_jackpot_key(game)]
-
-
-def _jackpot_key(game: Game) -> str:
+def jackpot_key(game: Game) -> str:
+    """Clave de la categoría del bote de un juego de bote."""
     return next(c.key for c in game.categories if c.jackpot)
 
 
 def _jackpot_target(game: Game, members: int) -> float:
     """`N` de "1 entre N" del bote en un servidor de `members` personas."""
     real = real_odds(game)
-    top, bottom = real[_jackpot_key(game)], min(real.values())
+    top, bottom = real[jackpot_key(game)], min(real.values())
     return min(top, max(bottom, max(1, members) * draws_per_period(game)))
 
 
@@ -548,7 +560,7 @@ def _extra_mass(real: Mapping[str, float], odds: Mapping[str, float]) -> float:
 def server_odds(game: Game, members: int) -> dict[str, float]:
     """`N` de "1 entre N" de cada categoría en un servidor de `members` personas.
 
-    El bote baja a `members × sorteos del periodo` (`jackpot_scale`). Las
+    El bote baja a `members × sorteos del periodo` (`_jackpot_target`). Las
     categorías por encima de un ancla se interpolan en escala logarítmica
     entre el ancla y el bote: una que en la vida real está a medio camino, en
     órdenes de magnitud, sigue a medio camino. Así ninguna adelanta a otra
@@ -564,7 +576,7 @@ def server_odds(game: Game, members: int) -> dict[str, float]:
     todo el servidor jugando, el bote cae algo menos de una vez al mes.
     """
     real = real_odds(game)
-    top, bottom = real[_jackpot_key(game)], min(real.values())
+    top, bottom = real[jackpot_key(game)], min(real.values())
     target = _jackpot_target(game, members)
     budget = 1 / max(1, members)
     odds = _interpolate(real, bottom, top, target)
@@ -651,6 +663,71 @@ def result_for(game: Game, pick: Pick, key: str, rng: random.Random) -> dict:
             "stars": sorted(rng.sample(own, stars) + rng.sample(other_stars, 2 - stars)),
         }
     raise ValueError(f"{game.key} no es un juego de bote")
+
+
+def real_shares(game: Game) -> dict[str, float]:
+    """Parte del precio que devuelve de media cada categoría con las normas reales.
+
+    Las categorías de fondo se llevan su parte de lo que queda del fondo después
+    de pagar los premios fijos (con sus probabilidades reales); el Gordo
+    reparte aparte el 22 % de la 1ª (sin la mitad de la reserva) y el 23 % del
+    resto. No cuenta el reintegro, que devuelve el precio entero 1 de cada 10.
+    """
+    real = real_odds(game)
+    shares = {
+        c.key: c.fixed / real[c.key] / game.price for c in game.categories if c.fixed is not None
+    }
+    if game.kind is Kind.GORDO:
+        rest = 0.23 - sum(shares.values())
+        for cat in game.categories:
+            if cat.jackpot:
+                shares[cat.key] = 0.22 * (1 - game.reserve)
+            elif cat.share is not None:
+                shares[cat.key] = rest * cat.share
+        return shares
+    variable = game.variable_share - sum(shares.values())
+    for cat in game.categories:
+        if cat.share is not None:
+            shares[cat.key] = variable * cat.share
+    return shares
+
+
+def jackpot_rate(game: Game) -> float:
+    """Parte de cada venta que va al bote (y se acumula si nadie lo acierta)."""
+    return real_shares(game)[jackpot_key(game)]
+
+
+def _nice(amount: float) -> int:
+    """Un premio redondo: entero por debajo de 100 y con dos cifras significativas
+    por encima (1.234 → 1.200). Nunca cambia el orden de dos premios."""
+    if amount < 100:
+        return max(1, round(amount))
+    step = 10 ** (int(math.log10(amount)) - 1)
+    return int(round(amount / step) * step)
+
+
+def category_prizes(game: Game, members: int | None) -> dict[str, int]:
+    """Premio fijo por apuesta de cada categoría por debajo del bote.
+
+    Entre todas devuelven lo mismo que con las normas reales (`real_shares`),
+    repartido a partes iguales: cada una paga su parte del precio por su "1
+    entre N" (`server_odds`, o las reales sin `members`). Así el premio crece
+    con la dificultad y ninguna categoría paga más que la de encima (si las
+    reales no van en orden, como la 6ª y la 7ª de Euromillones, se iguala a la
+    de encima). Ninguna baja del precio: acertar algo nunca deja perder dinero.
+    """
+    odds = server_odds(game, members) if members is not None else real_odds(game)
+    shares = real_shares(game)
+    lower = [c for c in game.categories if not c.jackpot]
+    each = sum(shares[c.key] for c in lower) / len(lower)
+    prizes: dict[str, int] = {}
+    ceiling: int | None = None
+    for cat in lower:
+        prize = max(game.price, _nice(game.price * each * odds[cat.key]))
+        if ceiling is not None:
+            prize = min(prize, ceiling)
+        prizes[cat.key] = ceiling = prize
+    return prizes
 
 
 # -- Calendario -------------------------------------------------------------------------
@@ -939,6 +1016,7 @@ class Settlement:
         categories: Cómo ha quedado cada categoría (juegos de bote).
         carry: Bote que pasa al sorteo siguiente.
         topup: Lo que pone el Estado para llegar al bote garantizado.
+        jackpot: Bote que había en juego en el sorteo.
     """
 
     prizes: dict[int, int] = field(default_factory=dict)
@@ -946,6 +1024,7 @@ class Settlement:
     categories: list[CategoryResult] = field(default_factory=list)
     carry: int = 0
     topup: int = 0
+    jackpot: int = 0
 
     @property
     def paid(self) -> int:
@@ -997,15 +1076,23 @@ def settle_pool(
     guarantee: int,
     tickets: Iterable[tuple[int, Pick]],
     result: Mapping,
+    members: int | None = None,
 ) -> Settlement:
     """Reparte un sorteo de Primitiva, Bonoloto, Gordo o Euromillones.
+
+    Las categorías por debajo del bote pagan su premio fijo
+    (`category_prizes`) a cada acertante. El bote es lo acumulado más lo que le
+    toca de este sorteo (`jackpot_rate`), o el mínimo del Estado si es mayor y
+    hay acertante; se reparte a partes iguales. Sin acertante, se acumula.
 
     Args:
         sales: Recaudación del sorteo en Y$.
         carry: Bote que viene de sorteos anteriores.
-        guarantee: Bote mínimo que garantiza el Estado ahora (0 si ninguno).
+        guarantee: Bote mínimo que garantiza el Estado ahora (`guarantee_for`).
         tickets: `(id, apuesta)` de cada apuesta vendida.
         result: Combinación ganadora (`draw_result`).
+        members: Personas del servidor, para los premios fijos (`None`, los de
+            las probabilidades reales).
     """
     settlement = Settlement()
     by_category: dict[str, list[int]] = {c.key: [] for c in game.categories}
@@ -1016,54 +1103,16 @@ def settle_pool(
         if reintegro and game.reintegro:
             settlement.add(ticket_id, game.price, "Reintegro")
 
-    fixed_total = sum(
-        len(by_category[c.key]) * (c.fixed or 0) for c in game.categories if c.fixed is not None
-    )
-    pool = sales * game.variable_share
-    funds: dict[str, float] = {}
-    if game.kind is Kind.GORDO:
-        # Gordo: el 22 % de la recaudación es de la 1ª (la mitad va a la
-        # reserva, que aquí es el Estado) y el 23 % menos la 8ª, del resto.
-        first = sales * 0.22 * (1 - game.reserve)
-        rest = max(0.0, sales * 0.23 - fixed_total)
-        for cat in game.categories:
-            if cat.jackpot:
-                funds[cat.key] = first
-            elif cat.share is not None:
-                funds[cat.key] = rest * cat.share
-    else:
-        variable = max(0.0, pool - fixed_total)
-        for cat in game.categories:
-            if cat.share is not None:
-                funds[cat.key] = variable * cat.share
+    fixed = category_prizes(game, members)
     jackpot = next(c for c in game.categories if c.jackpot)
-    funds[jackpot.key] += carry
-
-    # Categorías desiertas: el bote pasa al sorteo siguiente; las demás bajan
-    # a la siguiente categoría variable y la última también va al bote.
-    variable_keys = [c.key for c in game.categories if c.share is not None or c.jackpot]
-    next_carry = 0.0
-    for index, key in enumerate(variable_keys):
-        if by_category[key]:
-            continue
-        moved, funds[key] = funds[key], 0.0
-        cat = game.category(key)
-        if cat.jackpot or game.key == "primitiva" and key == "1":
-            next_carry += moved
-        elif index + 1 < len(variable_keys):
-            funds[variable_keys[index + 1]] += moved
-        else:
-            next_carry += moved
-
-    if by_category[jackpot.key] and funds[jackpot.key] < guarantee:
-        settlement.topup = round(guarantee - funds[jackpot.key])
-        funds[jackpot.key] = float(guarantee)
+    fund = carry + sales * jackpot_rate(game)
+    if by_category[jackpot.key] and fund < guarantee:
+        settlement.topup = round(guarantee - fund)
+        fund = float(guarantee)
+    settlement.jackpot = math.floor(max(fund, guarantee))
 
     won = [c for c in game.categories if by_category[c.key]]
-    totals = [
-        float(len(by_category[c.key]) * c.fixed) if c.fixed is not None else funds[c.key]
-        for c in won
-    ]
+    totals = [fund if c.jackpot else float(len(by_category[c.key]) * fixed[c.key]) for c in won]
     per_winner = _no_inversion(totals, [len(by_category[c.key]) for c in won])
     paid = {c.key: math.floor(p) for c, p in zip(won, per_winner, strict=True)}
     for cat in game.categories:
@@ -1071,33 +1120,30 @@ def settle_pool(
         settlement.categories.append(CategoryResult(cat.key, len(by_category[cat.key]), prize))
         for ticket_id in by_category[cat.key]:
             settlement.add(ticket_id, prize, f"{cat.label} ({cat.rule})")
-    settlement.carry = math.floor(next_carry)
+    settlement.carry = 0 if by_category[jackpot.key] else math.floor(fund)
     return settlement
 
 
 def jackpot_estimate(game: Game, *, sales: int, carry: int, guarantee: int) -> int:
     """Bote que se anuncia para el próximo sorteo: acumulado más lo de este, o el mínimo."""
-    jackpot = next(c for c in game.categories if c.jackpot)
-    if game.kind is Kind.GORDO:
-        share = sales * 0.22 * (1 - game.reserve)
-    else:
-        share = sales * game.variable_share * (jackpot.share or 0)
-    return max(math.floor(carry + share), guarantee)
+    return max(math.floor(carry + sales * jackpot_rate(game)), guarantee)
 
 
-def guarantee_for(game: Game, state_balance: int, members: int | None = None) -> int:
+def jackpot_minimum(game: Game, days: float) -> int:
+    """Mínimo del bote tras `days` días sin acertante, sin mirar el saldo del Estado."""
+    grown = min(max(0, int(days)), JACKPOT_GROWTH_DAYS)
+    return game.jackpot_floor + game.jackpot_daily * grown
+
+
+def guarantee_for(game: Game, state_balance: int, days: float) -> int:
     """Bote mínimo que garantiza ahora el Estado, si le llega el dinero.
 
-    Con `members`, el real se encoge con `jackpot_scale`: el mínimo de la vida
-    real está pensado para un bote que cae cada varios meses entre millones
-    de jugadores; si aquí cae cada mes, garantizar 17 M€ vaciaría el Estado.
+    Sube `Game.jackpot_daily` cada día entero sin acertante (`days`), hasta
+    `JACKPOT_GROWTH_DAYS`. Nunca compromete más de `GUARANTEE_SHARE` de su saldo.
     """
-    if not game.guarantee:
+    if not game.jackpot_floor:
         return 0
-    guarantee = game.guarantee
-    if members is not None:
-        guarantee = round(guarantee * jackpot_scale(game, members))
-    return min(guarantee, max(0, int(state_balance * GUARANTEE_SHARE)))
+    return min(jackpot_minimum(game, days), max(0, int(state_balance * GUARANTEE_SHARE)))
 
 
 # -- Lotería Nacional --------------------------------------------------------------------
@@ -1223,17 +1269,16 @@ def scratch_odds(game: Game) -> float:
     return round(total / sum(p.count for p in prizes), 1)
 
 
-#: Importes que se pintan en las casillas de un rasca sin premio.
-_DECOYS = (2, 4, 10, 20, 40, 100, 200, 1_000, 2_000, 10_000)
-
-
 def scratch_grid(game: Game, prize: Prize | None, rng: random.Random) -> list[int]:
     """Las 9 casillas del rasca: tres iguales si hay premio, ninguna terna si no.
 
-    Es la mecánica clásica de "3 importes iguales"; los reales tienen cada
-    uno la suya, pero el premio sale de su tabla.
+    Es la mecánica clásica de "3 importes iguales"; los reales tienen cada uno la
+    suya, pero el premio sale de su tabla. Las casillas que no dan premio salen de
+    los importes de la propia tabla, como en un rasca de verdad: a veces se ven
+    dos del premio más alto (`lottery_render.scratch_near_miss`).
     """
-    decoys = [eur(e) for e in _DECOYS]
+    assert game.scratch is not None
+    decoys = sorted({p.amount for p in game.scratch[0]})
     cells: list[int] = []
     if prize is not None:
         cells += [prize.amount] * 3

@@ -6,21 +6,17 @@ Uso, desde la raíz del repositorio::
     PYTHONIOENCODING=utf-8 python docs/auditoria_loteria.py --dias 90 --miembros 10
 
 Para cada juego de bote (Primitiva, Bonoloto, Gordo y Euromillones) juega un servidor
-de `--miembros` personas donde cada una echa una apuesta automática en cada sorteo,
-con las probabilidades del servidor (`server_odds`), el bombo cargado
-(`draw_result`), el reparto (`settle_pool`) y el bote garantizado del Estado
-(`guarantee_for`, con el Estado holgado). Mide cuánto de su parte de premios
-reparte en todo el periodo (lo repartido más el bote que queda, frente a la parte de
-premios de lo vendido más lo que pone el Estado) y comprueba que en ningún sorteo
-una categoría cobra más que una superior. En un
-sorteo suelto sí puede repartirse algo más de su parte (muchos reintegros o premios
-fijos a la vez): lo cubre el Estado, como en la vida real, y se cuenta aparte.
-Saca:
+de `--miembros` personas en varios escenarios de participación (todo el servidor con
+una apuesta por sorteo, unas pocas personas con varias, una sola al tope), con las
+probabilidades del servidor (`server_odds`), el bombo cargado (`draw_result`), los
+premios fijos y el bote (`settle_pool`) y el mínimo del Estado que sube cada día
+(`guarantee_for`, con el Estado holgado). Saca:
 
-- el retorno al jugador (premios / recaudación), frente al `prize_rate` del juego;
-- cuántas veces cae el bote al mes (la meta es una, `JACKPOT_PERIOD_DAYS`);
-- lo que pone el Estado para llegar al bote garantizado;
-- el bote que queda al final.
+- lo que devuelve a los jugadores (premios / lo apostado): por encima del 100 %, el
+  Estado pone dinero de su bolsillo;
+- lo que pone o gana el Estado al mes (lo vendido menos lo pagado);
+- cuántas veces cae el bote al mes y de cuánto es cuando cae;
+- y comprueba que en ningún sorteo una categoría cobra más que una superior.
 
 Para la Nacional y los rascas, el retorno exacto de sus tablas
 (`nacional_expected_return` y la tabla de la emisión). El resultado comentado está en
@@ -38,47 +34,81 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from bot.services import lottery as lot  # noqa: E402
 
+#: Escenarios de participación: `(nombre, parte del servidor que juega, apuestas por sorteo)`.
+SCENARIOS = (
+    ("todos, 1 apuesta", 1.0, 1),
+    ("1 de cada 4, 3 apuestas", 0.25, 3),
+    ("1 persona al tope", 0.0, lot.POOL_MAX_PER_DRAW),
+)
 
-def simulate_pool(game: lot.Game, members: int, days: int, seed: int) -> dict[str, float]:
-    """Un servidor de `members` personas jugando `days` días a `game`."""
+
+def simulate_pool(
+    game: lot.Game,
+    members: int,
+    days: int,
+    seed: int,
+    *,
+    share: float = 1.0,
+    bets: int = 1,
+) -> dict[str, object]:
+    """Un servidor de `members` personas jugando `days` días a `game`.
+
+    Args:
+        share: Parte del servidor que juega (al menos una persona).
+        bets: Apuestas automáticas de cada una en cada sorteo.
+    """
     rng = random.Random(seed)
     odds = lot.server_odds(game, members)
-    draws = round(len(game.weekly) * days / 7)
-    jackpot = next(c for c in game.categories if c.jackpot)
-    totals = dict.fromkeys(("sales", "paid", "topup", "jackpots", "draws", "over"), 0.0)
-    carry = 0
+    players = max(1, round(members * share))
+    step = 7 / len(game.weekly)  # días entre sorteos, de media
+    draws = round(days / step)
+    jackpot = lot.jackpot_key(game)
+    totals: dict[str, object] = dict.fromkeys(("sales", "paid", "topup", "jackpots"), 0)
+    pots: list[int] = []
     problems: list[str] = []
-    for _ in range(draws):
-        tickets = [(i, lot.random_pick(game, rng)) for i in range(members)]
-        sales = game.price * members
+    carry = 0
+    since = 0.0
+    for index in range(draws):
+        now = index * step
+        tickets = [(i, lot.random_pick(game, rng)) for i in range(players * bets)]
+        sales = game.price * len(tickets)
         result = lot.draw_result(game, rng, tickets=[(p, 1) for _, p in tickets], odds=odds)
-        guarantee = lot.guarantee_for(game, 10**12, members)
+        guarantee = lot.guarantee_for(game, 10**12, now - since)
         settled = lot.settle_pool(
-            game, sales=sales, carry=carry, guarantee=guarantee, tickets=tickets, result=result
+            game,
+            sales=sales,
+            carry=carry,
+            guarantee=guarantee,
+            tickets=tickets,
+            result=result,
+            members=members,
         )
-        # Lo que puede repartirse: la recaudación por su parte de premios, el bote que
-        # venía y lo que ponga el Estado. El reintegro sale del 10 % de la Primitiva y
-        # la Bonoloto, que también está dentro de `prize_rate`.
-        available = sales * game.prize_rate + carry + settled.topup
-        totals["over"] += settled.paid + settled.carry > available + 1
         prizes = [c.prize for c in settled.categories if c.winners]
         if any(low > high for high, low in zip(prizes, prizes[1:], strict=False)):
             problems.append(f"inversión de premios: {prizes}")
-        won = next(c for c in settled.categories if c.key == jackpot.key).winners
-        totals["jackpots"] += bool(won)
-        totals["sales"] += sales
-        totals["paid"] += settled.paid
-        totals["topup"] += settled.topup
-        totals["draws"] += 1
+        if next(c for c in settled.categories if c.key == jackpot).winners:
+            totals["jackpots"] += 1  # type: ignore[operator]
+            pots.append(settled.jackpot)
+            since = now
+        totals["sales"] += sales  # type: ignore[operator]
+        totals["paid"] += settled.paid  # type: ignore[operator]
+        totals["topup"] += settled.topup  # type: ignore[operator]
         carry = settled.carry
-    totals["carry"] = carry
-    # Lo que se reparte (con el bote que queda) frente a la parte de premios de lo
-    # vendido: por encima de 1, el Estado pone la diferencia (ver el .md).
-    budget = totals["sales"] * game.prize_rate + totals["topup"]
-    totals["budget_used"] = (totals["paid"] + carry) / budget
-    totals["months"] = days / 30
-    totals["problems"] = problems  # type: ignore[assignment]
+    months = days / 30
+    totals.update(
+        draws=draws,
+        months=months,
+        carry=carry,
+        pots=pots,
+        problems=problems,
+        rtp=totals["paid"] / max(1, totals["sales"]),  # type: ignore[operator]
+        state_per_month=(totals["sales"] - totals["paid"]) / months,  # type: ignore[operator]
+    )
     return totals
+
+
+def _thousands(value: int) -> str:
+    return f"{value:+,}".replace(",", ".") if value < 0 else f"{value:,}".replace(",", ".")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -89,25 +119,26 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--semilla", type=int, default=1)
     args = parser.parse_args(argv)
     failed = False
-    print("Juegos de bote (cada miembro, una apuesta por sorteo):")
+    print("Juegos de bote (el Estado holgado; «Estado/mes» negativo es lo que pone él):")
     for game in lot.GAMES:
         if not game.categories:
             continue
+        print(f"  {game.name}")
         for members in args.miembros:
-            t = simulate_pool(game, members, args.dias, args.semilla)
-            rtp = t["paid"] / t["sales"]
-            per_month = t["jackpots"] / t["months"]
-            print(
-                f"  {game.name:<24} {members:>3} personas: devuelve {rtp:6.1%} "
-                f"(prize_rate {game.prize_rate:.0%}) · bote {per_month:.2f} veces al mes · "
-                f"el Estado pone {t['topup'] / t['sales']:.1%} de lo vendido y cubre "
-                f"{t['over'] / t['draws']:.0%} de los sorteos · "
-                f"reparte el {t['budget_used']:.1%} de su parte · "
-                f"bote final {int(t['carry']):,} Y$".replace(",", ".")
-            )
-            for problem in sorted(set(t["problems"]))[:5]:  # type: ignore[arg-type]
-                failed = True
-                print(f"    ⚠️ {problem}")
+            for name, share, bets in SCENARIOS:
+                t = simulate_pool(game, members, args.dias, args.semilla, share=share, bets=bets)
+                pots = sorted(t["pots"])  # type: ignore[arg-type]
+                median = pots[len(pots) // 2] if pots else 0
+                state = _thousands(int(t["state_per_month"]))  # type: ignore[call-overload]
+                print(
+                    f"    {members:>3} personas, {name:<24} devuelve {t['rtp']:7.1%} · "
+                    f"Estado/mes {state:>8} Y$ · "
+                    f"bote {t['jackpots'] / t['months']:.2f} veces al mes, "  # type: ignore[operator]
+                    f"mediana {_thousands(median)} Y$"
+                )
+                for problem in sorted(set(t["problems"]))[:5]:  # type: ignore[call-overload]
+                    failed = True
+                    print(f"      ⚠️ {problem}")
     print("\nLotería Nacional (retorno de la emisión en un sorteo):")
     rng = random.Random(args.semilla)
     for game in lot.GAMES:

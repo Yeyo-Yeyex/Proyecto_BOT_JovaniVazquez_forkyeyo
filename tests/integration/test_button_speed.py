@@ -2833,6 +2833,40 @@ async def press_bacara_double(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def _lottery_button(client: BotClient, owner: MagicMock, tab: str, custom_id: str) -> Click:
+    """Un botón del panel de la lotería en la pestaña `tab`, sin pintar por adelantado."""
+    cog = client.get_cog("Loteria")
+    cog.ahead = False  # pintar por adelantado no es lo que se mide
+    module = module_of(client, "Loteria")
+    module.REVEAL_MARGIN_SECONDS = 0  # sin esperar al final del GIF
+    panel = module.LotteryPanel(cog, owner.guild, owner)
+    panel.tab = tab
+    panel.rebuild()
+    (button,) = [c for c in panel.walk_children() if getattr(c, "custom_id", "") == custom_id]
+
+    async def click(interaction: MagicMock) -> None:
+        interaction.channel_id = 5  # el canal del anuncio se guarda con la compra
+        await button.callback(interaction)
+
+    return click
+
+
+async def press_lottery_scratch(client: BotClient, owner: MagicMock) -> Click:
+    return await _lottery_button(client, owner, "rasca", "loteria:rascar:x10")
+
+
+async def press_lottery_buy(client: BotClient, owner: MagicMock) -> Click:
+    return await _lottery_button(client, owner, "primitiva", "loteria:rapido:primitiva:5")
+
+
+async def press_lottery_tab(client: BotClient, owner: MagicMock) -> Click:
+    return await _lottery_button(client, owner, "primitiva", "loteria:tab:inicio")
+
+
+async def press_lottery_mine(client: BotClient, owner: MagicMock) -> Click:
+    return await _lottery_button(client, owner, "inicio", "loteria:tab:mios")
+
+
 CASES: dict[str, Press] = {
     "tragaperras: tirar": press_slots,
     "tragaperras: ×2": press_slots_double,
@@ -3019,6 +3053,10 @@ CASES: dict[str, Press] = {
     "lista: tachar": press_todo,
     "lista: pasar página": press_todo_page,
     "lista: elegir prioridad": press_todo_priority,
+    "lotería: rascar": press_lottery_scratch,
+    "lotería: comprar apuestas": press_lottery_buy,
+    "lotería: volver al cartel": press_lottery_tab,
+    "lotería: mis boletos": press_lottery_mine,
 }
 
 

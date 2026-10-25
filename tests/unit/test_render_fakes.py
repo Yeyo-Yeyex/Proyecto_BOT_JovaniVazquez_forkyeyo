@@ -14,6 +14,7 @@ import pytest
 from render_fakes import (
     FakeBusinessScene,
     FakeHoldWinScene,
+    FakeLotteryScene,
     FakePachinkoRenderer,
     FakeRentaScene,
     FakeSlotsScene,
@@ -23,6 +24,7 @@ from render_fakes import (
 
 from bot.services.business_scene import BusinessScene
 from bot.services.hold_win_scene import HoldWinScene
+from bot.services.lottery_scene import LotteryScene
 from bot.services.pachinko_render import PachinkoRenderer
 from bot.services.renta_scene import RentaScene
 from bot.services.roulette_render import WheelRenderer
@@ -40,6 +42,7 @@ from bot.services.sports_scene import SportsScene
         (FakeBusinessScene, BusinessScene),
         (FakeSportsScene, SportsScene),
         (FakeRentaScene, RentaScene),
+        (FakeLotteryScene, LotteryScene),
     ],
     ids=lambda cls: cls.__name__,
 )

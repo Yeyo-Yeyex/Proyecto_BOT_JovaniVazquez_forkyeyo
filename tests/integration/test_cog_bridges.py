@@ -2974,3 +2974,35 @@ async def test_donar_desde_la_renta_llega_al_cog_de_donativos(tmp_path: Path) ->
         assert interaction.followup.send.await_args.kwargs["ephemeral"] is False
     finally:
         await client.close()
+
+
+async def test_el_rasca_apunta_sus_logros_al_acabar_con_el_bot_real(tmp_path: Path) -> None:
+    """El rasca escribe el resultado y apunta los logros cuando acaba el GIF, en el cog real."""
+    client = await load_bot(tmp_path)
+    try:
+        module = importer("Loteria", client)
+        module.REVEAL_MARGIN_SECONDS = 0
+        cog = client.get_cog("Loteria")
+        cog.ahead = False
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = GUILD_ID
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.bot = False
+        owner.display_name = "Diego"
+        owner.guild = guild
+        panel = module.LotteryPanel(cog, guild, owner)
+        interaction = fake_interaction(owner)
+        interaction.guild = guild
+        interaction.channel = None
+
+        await cog.scratch(interaction, panel, module.GAME_BY_KEY["x10"])
+        while cog._later:  # noqa: SLF001
+            await asyncio.gather(*list(cog._later))  # noqa: SLF001
+
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["lottery_scratches"] == 1
+        assert "rasca_1" in profile.unlocked
+        assert any(stat.startswith("lottery_day_") for stat in profile.stats)
+    finally:
+        await client.close()

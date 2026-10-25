@@ -7,8 +7,8 @@ casillas de la ruleta o las piezas de cada tablero en segundo plano). Las prueba
 (`tests/integration/test_cog_bridges.py`) solo miran el orden de las respuestas, la
 base de datos, los logros y las jugadas: la imagen no entra en ninguna aserción.
 
-`use_fake_drawings` cambia esas clases (y las de la Torre del dragón, Allá tú, la Guerra, el
-blackjack y los negocios de `pala`) en sus módulos de
+`use_fake_drawings` cambia esas clases (y las de la Torre del dragón, Allá tú, la Guerra,
+la lotería, el blackjack y los negocios de `pala`) en sus módulos de
 servicio ANTES de cargar los cogs. `load_extension` vuelve a ejecutar cada cog y su
 `from ... import SlotsScene` recoge el doble, así que el cog, el bot y la base de datos
 son los reales y solo se sustituye el dibujo. Los dobles devuelven los mismos tipos
@@ -30,6 +30,7 @@ import bot.services.blackjack_scene as blackjack_scene
 import bot.services.business_scene as business_scene
 import bot.services.hold_win_render as hold_win_render
 import bot.services.hold_win_scene as hold_win_scene
+import bot.services.lottery_scene as lottery_scene
 import bot.services.pachinko_render as pachinko_render
 import bot.services.renta_scene as renta_scene
 import bot.services.roulette_render as roulette_render
@@ -42,6 +43,7 @@ import bot.services.war_scene as war_scene
 from bot.services.allatu_scene import Media as AllatuMedia
 from bot.services.bacara_render import Media as WarMedia
 from bot.services.blackjack_scene import Media as BlackjackMedia
+from bot.services.lottery_render import Media as LotteryMedia
 from bot.services.tower_scene import Media as TowerMedia
 
 
@@ -393,6 +395,30 @@ class FakeRentaScene:
         return None
 
 
+class FakeLotteryScene:
+    """`LotteryScene` sin dibujar: PNG y GIF de relleno; apunta los modos que le piden."""
+
+    def __init__(self) -> None:
+        self.modes: list[str] = []
+
+    @property
+    def disabled(self) -> bool:
+        return False
+
+    async def still(self, state: dict[str, object]) -> bytes | None:
+        self.modes.append(str(state["mode"]))
+        return b"PNG"
+
+    async def animate(
+        self, meta: dict[str, object], states: list[dict[str, object]], durations: object
+    ) -> LotteryMedia | None:
+        self.modes.append(str(meta["mode"]))
+        return LotteryMedia(gif=b"GIF", png=b"PNG", seconds=0.0)
+
+    async def close(self) -> None:
+        return None
+
+
 def use_fake_drawings(monkeypatch: pytest.MonkeyPatch) -> None:
     """Sustituye los dibujantes por sus dobles; llamar antes de cargar los cogs."""
     monkeypatch.setattr(slots_scene, "SlotsScene", FakeSlotsScene)
@@ -407,3 +433,4 @@ def use_fake_drawings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(business_scene, "BusinessScene", FakeBusinessScene)
     monkeypatch.setattr(sports_scene, "SportsScene", FakeSportsScene)
     monkeypatch.setattr(renta_scene, "RentaScene", FakeRentaScene)
+    monkeypatch.setattr(lottery_scene, "LotteryScene", FakeLotteryScene)

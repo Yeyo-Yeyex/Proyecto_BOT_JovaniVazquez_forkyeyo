@@ -8,6 +8,16 @@ criterio.
 
 ## 9.x
 
+### 9.25.0 · 2026-10-25
+
+- Lotería: todo dibujado, botes que crecen cada día y rasca animado
+- Lotería: el panel abre con el cartel de la administración (los cuatro botes en grande, lo que suben al día y los próximos sorteos de la Nacional); al comprar sale el décimo o el resguardo con las bolas, y 🎟️ Mis boletos enseña el último boleto sorteado con los aciertos marcados
+- Lotería: el rasca sale rascándose en un GIF, con las casillas que deciden al final, y el resultado llega cuando acaba; el siguiente rasca ya está pintado al pulsar. Las casillas sin premio salen de la propia tabla, así que a veces se ven dos del premio máximo
+- Lotería: los sorteos se anuncian con las bolas saliendo del bombo (en la Nacional, las cifras de los premios) y, al acabar, el resultado con los premiados
+- Lotería: el bote de Primitiva, Bonoloto, Gordo y Euromillones lo garantiza el Estado y sube cada día sin acertante (Primitiva desde 5.000 Y$ y +400 al día, Euromillones desde 15.000 y +1.000, hasta 90 días); antes anunciaban de 0 a 800 Y$
+- Lotería: las categorías por debajo del bote pagan premios fijos que crecen con la dificultad (acertar el bote de la Primitiva pagaba de mediana 6 Y$); máximo 10 apuestas por persona y sorteo en los juegos de bote
+- Logros: 20 nuevos de la lotería (el «casi» del rasca, botes grandes, diez apuestas, racha de días, comprobar el boleto, fechas y cuatro números con guasa en secreto)
+
 ### 9.24.0 · 2026-10-25
 
 - Renta: la declaración en una carta dibujada, con desglose y consejo de donar
