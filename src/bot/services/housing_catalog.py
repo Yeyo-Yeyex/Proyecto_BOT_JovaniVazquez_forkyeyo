@@ -3459,3 +3459,44 @@ REVIEW_LINES: dict[int, tuple[str, ...]] = {
         "Ni el Imserso nos habría mandado aquí.",
     ),
 }
+
+
+#: Lo que contesta un inquilino del catálogo cuando le ofrecen dinero por irse (9.23.0): `si`
+#: (acepta lo que le ofrecen), `buenas` (se va sin cobrar), `no` (contraoferta: `{price}` es lo
+#: que pide) y `trinchera` (ni se va ni paga).
+KEYS_LINES: dict[str, tuple[str, ...]] = {
+    "si": (
+        "Trato hecho. Te dejo las llaves en el buzón.",
+        "Vale. Con eso me da para la fianza del siguiente.",
+        "Me parece justo. Empiezo a hacer cajas.",
+        "Hecho. Que conste que el piso me gustaba.",
+        "Con esto pago la mudanza y me sobra para una pizza.",
+        "Acepto. Mi madre ya me estaba preparando el cuarto.",
+        "Hecho. Me llevo hasta las perchas, aviso.",
+        "¿Qué? ¿Qué? ¡Toma llaves! Me voy el viernes.",
+    ),
+    "buenas": (
+        "Justo estaba mirando otro piso. Me voy sin problema.",
+        "Sin rencores: ya estaba pensando en irme.",
+        "Me haces un favor, me ofrecían algo más cerca del trabajo.",
+        "Me iba igual: nos vamos a vivir juntos.",
+        "Vale, me vuelvo al pueblo. Allí la guagua pasa cada hora, pero pasa.",
+        "Yo soy yo… y me voy por las buenas. Que me echen de menos.",
+    ),
+    "no": (
+        "Por eso no me muevo. Por {price}, hablamos.",
+        "Me quedan años de contrato. Si me das {price}, me lo pienso.",
+        "No, gracias. Por {price} me voy esta semana.",
+        "Aquí estoy muy a gusto. Por {price}, igual cambio de opinión.",
+        "Con eso no pago ni el camión de la mudanza. {price} y te dejo las llaves.",
+        "Ni lo sueñes. Bueno… por {price} sí lo sueño.",
+        "Mi abogado dice que {price}. Mi abogado es mi primo, pero dice eso.",
+        "Esto no es una subasta de Wallapop. Mi precio: {price}.",
+    ),
+    "trinchera": (
+        "¿Que me vaya? Pues ahora no pago. Nos vemos en el juzgado.",
+        "Aquí me quedo, y la renta que la pague otro.",
+        "Ni me voy ni pago. Llama a quien quieras.",
+        "Me atrinchero como en el Álamo, pero con wifi.",
+    ),
+}

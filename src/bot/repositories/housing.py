@@ -33,6 +33,9 @@ Tablas del mercado (en el mismo archivo SQLite que el resto del bot):
   de existir. Por habitaciones (`clave~h1`) el piso sigue teniendo los dueños y su contrato
   queda en `housing.BY_ROOMS`; cada habitación tiene el suyo, y todo se deshace al juntarlas
   o cuando el piso vuelve al mercado.
+- `housing_reclaims`: los pisos que su dueño ha pedido para vivir (art. 9.3 LAU, 9.23.0):
+  quién, a qué miembro se lo pidió (si era uno), la indemnización si no vive ahí lo que debe
+  y hasta cuándo (`until` vacío mientras el inquilino aún no se ha ido).
 
 Hipotecas, banco, Euríbor, VPO, vivienda habitual, ofertas del fondo buitre y SOCIMI
 están en `bot.repositories.housing_finance`, la junta de copropietarios (votaciones,
@@ -113,6 +116,7 @@ from bot.services.taxes import (
     INCOME_PRIZE,
     INSURANCE_DEDUCTION_RENT_MAX,
     VACANT_RENTAL_DEDUCTION_MAX,
+    capital_gain_tax,
     igic,
     vacant_rental_deduction,
 )
@@ -199,6 +203,24 @@ class Split:
 
 
 @dataclass(frozen=True, slots=True)
+class Reclaim:
+    """Un piso que su dueño ha pedido para vivir en él (art. 9.3 LAU, `housing_reclaims`).
+
+    Attributes:
+        user_id: El dueño, que tiene que vivir ahí.
+        member: El miembro de alquiler al que se lo pidió (`None` si era del catálogo): cobra
+            la indemnización si el dueño se va antes de tiempo.
+        fine: La indemnización (`housing.need_fine`).
+        until: Hasta qué día tiene que vivir ahí; `None` mientras el inquilino no se ha ido.
+    """
+
+    user_id: int
+    member: int | None
+    fine: int
+    until: date | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class Market:
     """Todo el mercado de un servidor en un momento.
 
@@ -230,6 +252,9 @@ class Market:
         member_debts: `{(acreedor, deudor): importe}` de los reembolsos de los avales.
         splits: Los inmuebles divididos por plantas o por habitaciones.
         ipc: El IPC del crédito del servidor, en % (`credit.ipc`): encarece las obras.
+        keys_bought: Días en que cada miembro ha comprado unas llaves (las noticias `llaves` y
+            `llaves_gratis` que quedan), para su fama de casero (`fame`).
+        reclaims: Los pisos pedidos para vivir (art. 9.3 LAU), por inmueble.
     """
 
     indexes: dict[str, float] = field(default_factory=dict)
@@ -259,6 +284,8 @@ class Market:
     member_debts: dict[tuple[int, int], int] = field(default_factory=dict)
     splits: dict[str, Split] = field(default_factory=dict)
     ipc: int = 0
+    keys_bought: dict[int, tuple[date, ...]] = field(default_factory=dict)
+    reclaims: dict[str, Reclaim] = field(default_factory=dict)
     _units: dict[str, tuple[Listing, ...]] = field(default_factory=dict, repr=False, compare=False)
 
     def manager(self, key: str) -> int | None:
@@ -272,6 +299,31 @@ class Market:
         if admin is not None and admin in holders and len(holders) > 1:
             return admin
         return rules.manager(holders)
+
+    def fame(self, user_id: int, day: date) -> int:
+        """Pisos que ha recuperado comprando las llaves en los últimos `FAME_DAYS` días."""
+        since = day - timedelta(days=rules.FAME_DAYS)
+        return sum(1 for done in self.keys_bought.get(user_id, ()) if done > since)
+
+    def keys_quote(self, key: str, day: date) -> rules.KeysQuote | None:
+        """Lo que pide hoy por irse el inquilino del catálogo de un inmueble (o `None`)."""
+        listing = self.listing(key)
+        lease = self.leases.get(key)
+        if listing is None or lease is None or lease.tenant is None or lease.member is not None:
+            return None
+        if not rules.recoverable(lease):
+            return None
+        boss = self.manager(key)
+        fame = self.fame(boss, day) if boss is not None else 0
+        seed = f"{key}:{lease.tenant}:{lease.signed or lease.since}"
+        return rules.keys_quote(listing, lease, day, fame, seed, self.index(listing.barrio))
+
+    def reclaim_of(self, user_id: int) -> tuple[str, Reclaim] | None:
+        """El piso que alguien ha pedido para vivir y en el que aún tiene que vivir."""
+        for key, reclaim in self.reclaims.items():
+            if reclaim.user_id == user_id:
+                return key, reclaim
+        return None
 
     def votes_of(self, key: str) -> tuple[Vote, ...]:
         """Las votaciones abiertas de la junta de un inmueble."""
@@ -783,6 +835,38 @@ class Eviction:
 
 
 @dataclass(frozen=True, slots=True)
+class KeysDeal:
+    """Una oferta por las llaves a un inquilino del catálogo, con lo que contestó.
+
+    Attributes:
+        lease: El contrato después (con el día en que se va, o su contraoferta).
+        answer: Lo que contestó (`housing.KeysAnswer`).
+        quote: Lo que pedía (`housing.KeysQuote`); `None` al aceptar su contraoferta.
+        tenant: Quién es.
+    """
+
+    lease: rules.Lease
+    answer: rules.KeysAnswer
+    quote: rules.KeysQuote | None
+    tenant: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class MemberKeys:
+    """Las llaves que un casero le compra a un miembro de alquiler.
+
+    Attributes:
+        lease: El contrato después, con el día en que se va.
+        amount: Lo pagado.
+        tax: El IRPF de la ganancia patrimonial del miembro (19 %).
+    """
+
+    lease: rules.Lease
+    amount: int
+    tax: int
+
+
+@dataclass(frozen=True, slots=True)
 class Signing:
     """Un contrato firmado con un candidato elegido por el dueño.
 
@@ -959,6 +1043,11 @@ def _lease_from(row: sqlite3.Row) -> rules.Lease:
         reviews=int(row["reviews"]),
         license_until=_date(row["license_until"]),
         license_denied_until=_date(row["license_denied_until"]),
+        term=int(row["term"]),
+        leaving=str(row["leaving"]),
+        keys_ask=int(row["keys_ask"]),
+        keys_wait=_date(row["keys_wait"]),
+        signed=_date(row["signed"]),
     )
 
 
@@ -971,9 +1060,10 @@ def _save_lease_in(
             (guild_id, listing, status, level, tenant, rent, until, since, unpaid,
              eviction_at, arrears, arrears_ibi, member, bono, license, last_rent, reduction,
              pick, insured, claims, solvent, bonus, works_until, mood, home_claim_until,
-             rating, reviews, license_until, license_denied_until)
+             rating, reviews, license_until, license_denied_until, term, leaving, keys_ask,
+             keys_wait, signed)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?)
+                ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (guild_id, listing) DO UPDATE SET
             status = excluded.status, level = excluded.level, tenant = excluded.tenant,
             rent = excluded.rent, until = excluded.until, since = excluded.since,
@@ -986,7 +1076,9 @@ def _save_lease_in(
             works_until = excluded.works_until, mood = excluded.mood,
             home_claim_until = excluded.home_claim_until, rating = excluded.rating,
             reviews = excluded.reviews, license_until = excluded.license_until,
-            license_denied_until = excluded.license_denied_until
+            license_denied_until = excluded.license_denied_until, term = excluded.term,
+            leaving = excluded.leaving, keys_ask = excluded.keys_ask,
+            keys_wait = excluded.keys_wait, signed = excluded.signed
         """,
         (
             guild_id, listing, lease.status, lease.level, lease.tenant, lease.rent,
@@ -995,7 +1087,8 @@ def _save_lease_in(
             lease.last_rent, lease.reduction, lease.pick, int(lease.insured), lease.claims,
             int(lease.solvent), int(lease.bonus), _iso(lease.works_until), lease.mood,
             _iso(lease.home_claim_until), lease.rating, lease.reviews, _iso(lease.license_until),
-            _iso(lease.license_denied_until),
+            _iso(lease.license_denied_until), lease.term, lease.leaving, lease.keys_ask,
+            _iso(lease.keys_wait), _iso(lease.signed),
         ),
     )  # fmt: skip
 
@@ -1285,7 +1378,30 @@ def _market_in(connection: sqlite3.Connection, guild_id: int) -> Market:
             )
         },
         ipc=credit.ipc(guild_id),
+        keys_bought=_keys_in(connection, guild_id),
+        reclaims={
+            str(r["listing"]): Reclaim(
+                int(r["user_id"]), r["member"], int(r["fine"]), _date(r["until"])
+            )
+            for r in connection.execute(
+                "SELECT listing, user_id, member, fine, until FROM housing_reclaims "
+                "WHERE guild_id = ?",
+                (guild_id,),
+            )
+        },
     )
+
+
+def _keys_in(connection: sqlite3.Connection, guild_id: int) -> dict[int, tuple[date, ...]]:
+    """Los días en que cada miembro compró unas llaves (de las noticias que quedan)."""
+    days: dict[int, list[date]] = {}
+    for r in connection.execute(
+        "SELECT user_id, day FROM housing_news WHERE guild_id = ? AND kind IN (?, ?) "
+        "AND user_id IS NOT NULL",
+        (guild_id, "llaves", "llaves_gratis"),
+    ):
+        days.setdefault(int(r["user_id"]), []).append(date.fromisoformat(r["day"]))
+    return {member: tuple(found) for member, found in days.items()}
 
 
 def _credit_alive_in(connection: sqlite3.Connection, guild_id: int) -> tuple[int, int]:
@@ -1583,6 +1699,78 @@ def _move_shares_in(
         (guild_id, key, seller),
     )
     return moved_in
+
+
+def _keys_ready(market: Market, key: str, user_id: int) -> rules.Lease:
+    """El contrato al que se le puede pedir al inquilino que se vaya (lo decide la mayoría)."""
+    _listing(market, key)
+    if market.manager(key) != user_id:
+        raise HousingError("Eso lo decide quien tiene más de la mitad del inmueble.")
+    lease = market.leases.get(key)
+    if lease is None or not rules.recoverable(lease):
+        raise HousingError("No hay a quién pedirle que se vaya.")
+    return lease
+
+
+def _check_keys_wait(lease: rules.Lease, day: date) -> None:
+    """El inquilino que acaba de decir que no, no quiere volver a hablar del tema aún."""
+    if lease.keys_wait is not None and day < lease.keys_wait:
+        extra = (
+            f" Su precio, {format_amount(lease.keys_ask)}, sigue en pie." if lease.keys_ask else ""
+        )
+        raise HousingError(
+            f"No quiere ni oír hablar del tema hasta el {lease.keys_wait:%d/%m}.{extra}"
+        )
+
+
+def _improve_in(
+    connection: sqlite3.Connection, guild_id: int, key: str, user_id: int, amount: int
+) -> None:
+    """Suma una mejora a lo pagado y al coste de la parte de alguien (art. 35.1.b LIRPF)."""
+    connection.execute(
+        "UPDATE housing_holdings SET paid = paid + ?, cost = cost + ? "
+        "WHERE guild_id = ? AND listing = ? AND user_id = ?",
+        (amount, amount, guild_id, key, user_id),
+    )
+
+
+def _indemnity_move(payer: int, member: int | None, amount: int, reason: str) -> HousingMove:
+    """Lo que paga un casero a quien echa: al miembro, con el 19 % de su ganancia patrimonial
+    del ahorro (DGT V3259-23) al Estado; a un inquilino del catálogo, desaparece."""
+    if member is None:
+        return HousingMove(entries=((payer, LedgerEntry(-amount, reason)),))
+    return HousingMove(
+        entries=((payer, LedgerEntry(-amount, reason)), (member, LedgerEntry(amount, reason))),
+        taxes=(HousingTax(member, "plusvalia", amount, capital_gain_tax(amount)),),
+    )
+
+
+def _check_reclaim_wait(market: Market, user_id: int) -> None:
+    """Quien espera a que se vaya el inquilino del piso que pidió para vivir no se va a
+    vivir a otro sitio: la necesidad tiene que ser de verdad (art. 9.3 LAU)."""
+    found = market.reclaim_of(user_id)
+    if found is not None and found[1].until is None:
+        raise HousingError(
+            "Has pedido un piso tuyo para vivir en él: espera a que se vaya el inquilino."
+        )
+
+
+def _check_reclaim(market: Market, key: str, user_id: int) -> None:
+    """Lo que alguien pidió para vivir (art. 9.3 LAU) no lo vende por su voluntad hasta vivir
+    ahí lo que debe: si no, la necesidad sería una forma gratis de vaciarlo para venderlo. Las
+    ventas forzosas (una ejecución) no miran esto."""
+    reclaim = market.reclaims.get(key)
+    if reclaim is None or reclaim.user_id != user_id:
+        return
+    if reclaim.until is None:
+        raise HousingError(
+            "Lo has pedido para vivir (art. 9.3 LAU): no se vende hasta que vivas ahí "
+            f"{rules.NEED_STAY_DAYS} días."
+        )
+    raise HousingError(
+        f"Lo pediste para vivir (art. 9.3 LAU): hasta el {reclaim.until:%d/%m} no se vende. "
+        "Si te mudas antes, pagas la indemnización."
+    )
 
 
 def _check_free(
@@ -2209,6 +2397,17 @@ class HousingRepository:
                     PRIMARY KEY (guild_id, user_id, listing)
                 );
 
+                CREATE TABLE IF NOT EXISTS housing_reclaims (
+                    guild_id INTEGER NOT NULL,
+                    listing TEXT NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    member INTEGER,
+                    fine INTEGER NOT NULL CHECK (fine >= 0),
+                    until TEXT,
+                    created_at REAL NOT NULL,
+                    PRIMARY KEY (guild_id, listing)
+                );
+
                 CREATE TABLE IF NOT EXISTS housing_splits (
                     guild_id INTEGER NOT NULL,
                     listing TEXT NOT NULL,
@@ -2247,6 +2446,12 @@ class HousingRepository:
                 ("reviews", "reviews INTEGER NOT NULL DEFAULT 0"),
                 ("license_until", "license_until TEXT"),
                 ("license_denied_until", "license_denied_until TEXT"),
+                # 9.23.0: la duración elegida, por qué se va, las llaves y la firma.
+                ("term", "term INTEGER NOT NULL DEFAULT 0"),
+                ("leaving", "leaving TEXT NOT NULL DEFAULT ''"),
+                ("keys_ask", "keys_ask INTEGER NOT NULL DEFAULT 0"),
+                ("keys_wait", "keys_wait TEXT"),
+                ("signed", "signed TEXT"),
             ):
                 if name not in columns:
                     connection.execute(f"ALTER TABLE housing_leases ADD COLUMN {ddl}")
@@ -3372,6 +3577,7 @@ class HousingRepository:
             _check_free(market, key, user_id, day, market_sale=True)
             if not forced:
                 _check_no_advance(market, key, user_id)
+                _check_reclaim(market, key, user_id)
             lease = market.leases.get(key, rules.Lease())
             index = market.index(listing.barrio)
             agreed = None
@@ -3954,6 +4160,7 @@ class HousingRepository:
                 )
             )  # fmt: skip
         self._deposits_in(connection, guild_id, day, now, market, rents, entries, result)
+        self._reclaims_in(connection, guild_id, day, market)
         for key in [*market.keys(), *market.room_keys()]:
             lease = market.leases.get(key)
             # El piso que se alquila por habitaciones lo cobran y lo pagan sus habitaciones.
@@ -4170,7 +4377,9 @@ class HousingRepository:
         }
         barrio_news = market.news_of(listing.barrio, day)
         if lease.member is not None:
-            outcome = self._member_month(listing, lease, key, day, rng, paid, news, barrio_news)
+            outcome = self._member_month(
+                listing, lease, key, day, rng, paid, news, barrio_news, index
+            )
             if outcome.lease.member is None:
                 # Desahuciado: deja de vivir aquí y el casero se queda de la fianza lo que
                 # debía (art. 36 LAU); el resto se le devuelve mañana.
@@ -4185,6 +4394,8 @@ class HousingRepository:
                 boost = rules.rating_factor(lease.rating, lease.reviews)
             elif lease.level == rules.NOMAD_LEVEL:
                 boost = nomad_boost(mine)
+            if boss is not None:
+                boost *= rules.fame_find(market.fame(boss, day))
             outcome = rules.advance_day(listing, lease, day, index, rng, barrio_news, boost)
         # Los imprevistos que se deciden no se pagan hoy: esperan al dueño (o a la gestora).
         deferred = [e for e in outcome.events if e.key in rules.DECISIONS]
@@ -4198,6 +4409,14 @@ class HousingRepository:
         paid_now, mood, relapses, claim = self._decide_in(connection, guild_id, day, rng, market,
                                                           key, result)  # fmt: skip
         lease_after = outcome.lease
+        reclaim = market.reclaims.get(key)
+        if (
+            reclaim is not None and reclaim.until is None and lease.leaving == rules.LEAVE_NEED
+            and lease_after.status == rules.VACANT
+        ):  # fmt: skip
+            lease_after = self._move_in_in(
+                connection, guild_id, day, now, market, key, lease_after, reclaim, news
+            )
         if mood and lease_after.status in (rules.RENTED, rules.DEFAULTING):
             lease_after = replace(lease_after, mood=max(0, min(100, lease_after.mood + mood)))
         if claim:
@@ -4452,6 +4671,49 @@ class HousingRepository:
             )
 
     @staticmethod
+    def _move_in_in(
+        connection: sqlite3.Connection, guild_id: int, day: date, now: float, market: Market,
+        key: str, lease: rules.Lease, reclaim: Reclaim, news: list[News],
+    ) -> rules.Lease:  # fmt: skip
+        """El dueño que pidió el piso para vivir se muda en cuanto se va el inquilino.
+
+        Tiene que vivir ahí `housing.NEED_STAY_DAYS` días (`leave_home_paying`). Si ya no
+        puede (lo perdió en una subasta judicial, o la mitad es de otro), la petición se
+        olvida: el piso se queda vacío.
+        """
+        member = reclaim.user_id
+        if market.shares_of(key).get(member, 0) != rules.SHARES or member in market.homes:
+            connection.execute(
+                "DELETE FROM housing_reclaims WHERE guild_id = ? AND listing = ?", (guild_id, key)
+            )
+            return lease
+        finance.set_home_in(connection, guild_id, member, finance.HOME_OWN, key, now)
+        connection.execute(
+            "UPDATE housing_reclaims SET until = ? WHERE guild_id = ? AND listing = ?",
+            ((day + timedelta(days=rules.NEED_STAY_DAYS)).isoformat(), guild_id, key),
+        )
+        news.append(News(key, day, "se_muda", 0, member, None))
+        return replace(lease, status=rules.HABITUAL, since=day)
+
+    def _reclaims_in(
+        self, connection: sqlite3.Connection, guild_id: int, day: date, market: Market
+    ) -> None:
+        """Olvida los pisos pedidos para vivir que ya no obligan a nada: quien los pidió ya
+        ha vivido ahí lo que debía, se fue de otra forma (una subasta judicial) o el piso
+        volvió al mercado."""
+        for key, reclaim in market.reclaims.items():
+            if reclaim.until is None:
+                done = not market.shares_of(key)
+            else:
+                home = market.homes.get(reclaim.user_id)
+                done = day >= reclaim.until or home != (finance.HOME_OWN, key)
+            if done:
+                connection.execute(
+                    "DELETE FROM housing_reclaims WHERE guild_id = ? AND listing = ?",
+                    (guild_id, key),
+                )
+
+    @staticmethod
     def _member_month(
         listing: Listing,
         lease: rules.Lease,
@@ -4461,11 +4723,15 @@ class HousingRepository:
         paid: frozenset[str],
         news: list[News],
         barrio_news: BarrioNews | None = None,
+        index: float = 1.0,
     ) -> rules.DayOutcome:
         """Un mes con un miembro de alquiler: paga si le llega; si no, impago.
 
         Si deja de pagar y el seguro de impago le cubre, el seguro paga desde el segundo mes
-        (`housing.insure_month`).
+        (`housing.insure_month`). Al acabar el contrato renueva por lo que dure el que eligió
+        el dueño, salvo que el dueño no quiera (`Lease.leaving`): entonces se va, aunque en
+        zona tensionada pide antes la prórroga de un año de la Ley de Vivienda (un miembro
+        siempre la pide: es suya).
         """
         extra, events = rules.roll_events(
             listing, rng, repairs=barrio_news.repairs if barrio_news else 1.0,
@@ -4476,17 +4742,30 @@ class HousingRepository:
         if lease.status == rules.EVICTING:
             if lease.eviction_at is not None and day >= lease.eviction_at:
                 news.append(News(key, day, "desahucio", 0, member, None))
-                lease = replace(lease, status=rules.VACANT, member=None, bono=False, rent=0,
-                                last_rent=lease.rent,
-                                until=None, since=day, unpaid=0, eviction_at=None)  # fmt: skip
+                lease = rules.member_gone(lease, day)
         elif key in paid:
             rent = lease.rent
             if lease.status == rules.DEFAULTING:
                 news.append(News(key, day, "paga", rent, member, None))
             lease = replace(lease, status=rules.RENTED, unpaid=0, claims=0)
             if lease.until is not None and day >= lease.until:
-                lease = replace(lease, until=day + timedelta(days=60))
-                news.append(News(key, day, "renueva", 0, member, None))
+                if lease.leaving == rules.LEAVE_NO_RENEW and rules.tense(index):
+                    lease = replace(
+                        lease, until=day + timedelta(days=rules.EXTENSION_DAYS),
+                        leaving=rules.LEAVE_EXTENDED,
+                    )  # fmt: skip
+                    news.append(News(key, day, "prorroga", 0, member, None))
+                elif lease.leaving:
+                    gone = {
+                        rules.LEAVE_KEYS: "sale_llaves", rules.LEAVE_NEED: "sale_necesidad"
+                    }.get(lease.leaving, "no_renovado")  # fmt: skip
+                    news.append(News(key, day, gone, 0, member, None))
+                    lease = rules.member_gone(lease, day)
+                else:
+                    level = RENT_LEVELS["referencia"]
+                    months = rules.contract_months(listing, level, lease.term)
+                    lease = replace(lease, until=day + timedelta(days=months))
+                    news.append(News(key, day, "renueva", 0, member, None))
         else:
             if lease.status == rules.RENTED:
                 news.append(News(key, day, "impago", lease.rent, member, None))
@@ -4640,12 +4919,7 @@ class HousingRepository:
                 # Vivía de alquiler en el piso de otro miembro: se muda a su VPO.
                 lease = market.leases.get(home[1])
                 if lease is not None:
-                    _save_lease_in(
-                        connection, guild_id, home[1],
-                        replace(lease, status=rules.VACANT, member=None, bono=False, rent=0,
-                                last_rent=lease.rent,
-                                until=None, since=day, unpaid=0, eviction_at=None),
-                    )  # fmt: skip
+                    _save_lease_in(connection, guild_id, home[1], rules.member_gone(lease, day))
                     _news_in(connection, guild_id, News(home[1], day, "se_va", 0, user_id, None),
                              now)  # fmt: skip
             rate = market.euribor + rules.MORTGAGE_SPREAD
@@ -4760,6 +5034,7 @@ class HousingRepository:
             raise HousingError("En un trastero o un garaje no se empadrona nadie. Todavía.")
         if user_id in market.homes:
             raise HousingError("Ya vives en otro sitio: múdate primero.")
+        _check_reclaim_wait(market, user_id)
         lease = market.leases[key]
         if lease.status != rules.VACANT:
             raise HousingError("Está ocupado: tiene que estar vacío para que te mudes.")
@@ -4851,14 +5126,54 @@ class HousingRepository:
             El tipo de vivienda que deja.
 
         Raises:
-            HousingError: Si no vive en ningún sitio o vive en una VPO (se devuelve).
+            HousingError: Si no vive en ningún sitio, vive en una VPO (se devuelve) o pidió
+                el piso para vivir y aún no ha vivido ahí lo que debe (`leave_home_paying`).
         """
         return await self._run(self._write, self._leave_home_in, guild_id, user_id, day, now)
 
+    def leave_home_paying(
+        self, guild_id: int, user_id: int, day: date, now: float
+    ) -> Callable[[sqlite3.Connection], tuple[int, HousingMove]]:
+        """Deja antes de tiempo el piso que pidió para vivir: paga la indemnización del
+        art. 9.3 LAU al inquilino al que echó. Devuelve lo pagado.
+
+        Si era un miembro, la cobra él como ganancia patrimonial del ahorro (arts. 33.1 y 49
+        LIRPF, DGT V3259-23), con el 19 % descontado como la plusvalía del Rastro; si era del
+        catálogo, desaparece (no existe). No es una mejora ni un gasto del inmueble: no compra
+        nada ni sirve para obtener rentas.
+
+        Raises (dentro de la transacción):
+            HousingError: Si no hay nada que pagar o no se puede dejar la casa.
+            InsufficientFundsError: Si no le llega. No se muda.
+        """
+
+        def run(connection: sqlite3.Connection) -> tuple[int, HousingMove]:
+            market = _market_in(connection, guild_id)
+            found = market.reclaim_of(user_id)
+            home = market.homes.get(user_id)
+            if (
+                found is None or found[1].until is None or day >= found[1].until
+                or home != (finance.HOME_OWN, found[0])
+            ):  # fmt: skip
+                raise HousingError("No tienes ninguna indemnización que pagar.")
+            key, reclaim = found
+            self._leave_home_in(connection, guild_id, user_id, day, now, paying=True)
+            connection.execute(
+                "DELETE FROM housing_reclaims WHERE guild_id = ? AND listing = ?", (guild_id, key)
+            )
+            _news_in(connection, guild_id, News(key, day, "necesidad_multa", reclaim.fine,
+                                                user_id, None), now)  # fmt: skip
+            return reclaim.fine, _indemnity_move(
+                user_id, reclaim.member, reclaim.fine, "pisos:indemnizacion"
+            )
+
+        return run
+
     @staticmethod
     def _leave_home_in(
-        connection: sqlite3.Connection, guild_id: int, user_id: int, day: date, now: float
-    ) -> str:
+        connection: sqlite3.Connection, guild_id: int, user_id: int, day: date, now: float,
+        paying: bool = False,
+    ) -> str:  # fmt: skip
         market = _market_in(connection, guild_id)
         home = market.homes.get(user_id)
         if home is None:
@@ -4867,7 +5182,18 @@ class HousingRepository:
         if kind == finance.HOME_VPO:
             raise HousingError("De la VPO no se sale así: hay que devolverla.")
         lease = market.leases.get(ref)
-        if lease is not None:
+        reclaim = market.reclaims.get(ref)
+        if (
+            kind == finance.HOME_OWN and reclaim is not None and reclaim.user_id == user_id
+            and reclaim.until is not None and day < reclaim.until and not paying
+        ):  # fmt: skip
+            raise HousingError(
+                f"Lo pediste para vivir: hasta el {reclaim.until:%d/%m} tienes que vivir aquí. "
+                f"Si te vas antes, pagas {format_amount(reclaim.fine)} de indemnización."
+            )
+        if lease is not None and kind == finance.HOME_RENTED:
+            _save_lease_in(connection, guild_id, ref, rules.member_gone(lease, day))
+        elif lease is not None:
             _save_lease_in(
                 connection, guild_id, ref,
                 replace(lease, status=rules.VACANT, member=None, bono=False, rent=0,
@@ -4891,7 +5217,8 @@ class HousingRepository:
         income: int,
         aval: bool = False,
     ) -> Callable[[sqlite3.Connection], tuple[TenantDeal, HousingMove]]:
-        """Alquila un piso a un miembro con la renta que pide el inmueble, 5 años (60 días).
+        """Alquila un piso a un miembro con la renta que pide el inmueble, lo que dure el
+        contrato que eligió el dueño (`Lease.term`; 5 años, 60 días, si no eligió).
 
         El miembro deja la fianza de un mes y, si su nómina no llega a 3 veces la renta y
         no le avalan sus padres, la garantía adicional de dos meses más
@@ -4919,6 +5246,7 @@ class HousingRepository:
                 raise HousingError("No puedes alquilarle el piso a uno de sus dueños.")
             if member_id in market.homes:
                 raise HousingError("Ya vive en otro sitio.")
+            _check_reclaim_wait(market, member_id)
             lease = market.leases[key]
             if lease.status != rules.VACANT:
                 raise HousingError("Tiene que estar vacío para firmar con otro inquilino.")
@@ -4937,10 +5265,12 @@ class HousingRepository:
             # Pasa el estudio de solvencia de la aseguradora si su nómina llega a tres veces
             # la renta (sin aval: la aseguradora mira lo que gana él).
             bonus = _bonus_ready(market, key, listing, lease, day)
+            months = rules.contract_months(listing, RENT_LEVELS["referencia"], lease.term)
             lease = replace(lease, status=rules.RENTED, tenant=None, member=member_id,
-                            bono=bono, rent=rent, until=day + timedelta(days=60), since=day,
+                            bono=bono, rent=rent, until=day + timedelta(days=months), since=day,
                             unpaid=0, reduction=reduction, claims=0, solvent=not short,
-                            bonus=bonus)  # fmt: skip
+                            bonus=bonus, signed=day, leaving="", keys_ask=0,
+                            keys_wait=None)  # fmt: skip
             connection.execute(
                 "DELETE FROM housing_candidates WHERE guild_id = ? AND listing = ?",
                 (guild_id, key),
@@ -5615,6 +5945,7 @@ class HousingRepository:
                 raise HousingError("El vendedor ya no tiene esas participaciones.")
             _check_free(market, key, seller, day)
             _check_no_advance(market, key, seller)
+            _check_reclaim(market, key, seller)
             index = market.index(listing.barrio)
             try:
                 quote = rules.member_sale_quote(
@@ -5709,6 +6040,7 @@ class HousingRepository:
             )
         _check_free(market, key, seller, local_day(now))
         _check_no_advance(market, key, seller)
+        _check_reclaim(market, key, seller)
         if min_bid < 1:
             raise HousingError("La puja mínima tiene que ser de 1 Y$ o más.")
         number = trade.add_auction_in(
@@ -6387,6 +6719,255 @@ class HousingRepository:
             (guild_id, key, tenant),
         )
 
+    # -- 9.23.0: duración del contrato y recuperar el piso (`docs/pisos-llaves.md`) ---------
+
+    async def set_term(self, guild_id: int, user_id: int, key: str, term: int) -> rules.Lease:
+        """Cambia lo que dura el próximo contrato, como la renta (no mueve dinero).
+
+        Raises:
+            HousingError: Si no lo decide él o con esa renta la duración es fija.
+        """
+        return await self._run(self._write, self._set_term_in, guild_id, user_id, key, term)
+
+    @staticmethod
+    def _set_term_in(
+        connection: sqlite3.Connection, guild_id: int, user_id: int, key: str, term: int
+    ) -> rules.Lease:
+        market = _market_in(connection, guild_id)
+        listing = _listing(market, key)
+        if market.manager(key) != user_id:
+            raise HousingError("La duración la decide quien tiene más de la mitad del inmueble.")
+        lease = market.leases[key]
+        level = RENT_LEVELS.get(lease.level, RENT_LEVELS[DEFAULT_RENT_LEVEL])
+        if term not in rules.term_choices(listing, level):
+            raise HousingError("Con esa renta el contrato dura lo que dura: no se elige.")
+        lease = replace(lease, term=term)
+        _save_lease_in(connection, guild_id, key, lease)
+        return lease
+
+    async def set_no_renew(
+        self, guild_id: int, user_id: int, key: str, on: bool, day: date, now: float
+    ) -> rules.Lease:
+        """Avisa de que no renovará el contrato (o se lo piensa mejor). No mueve dinero.
+
+        El inquilino se va el día que acaba (art. 10.1 LAU); en zona tensionada puede pedir
+        antes la prórroga de la Ley de Vivienda (`housing.contract_end`).
+
+        Raises:
+            HousingError: Si no lo decide él, no hay contrato o ya se va por otra razón.
+        """
+        return await self._run(
+            self._write, self._set_no_renew_in, guild_id, user_id, key, on, day, now
+        )
+
+    @staticmethod
+    def _set_no_renew_in(
+        connection: sqlite3.Connection, guild_id: int, user_id: int, key: str, on: bool,
+        day: date, now: float,
+    ) -> rules.Lease:  # fmt: skip
+        market = _market_in(connection, guild_id)
+        lease = _keys_ready(market, key, user_id)
+        if on:
+            if lease.leaving:
+                raise HousingError("Ya se va: no hace falta avisarle de nada.")
+            lease = replace(lease, leaving=rules.LEAVE_NO_RENEW)
+            _news_in(connection, guild_id, News(key, day, "no_renueva", 0, user_id,
+                                                lease.tenant), now)  # fmt: skip
+        else:
+            if lease.leaving != rules.LEAVE_NO_RENEW:
+                raise HousingError("Eso ya no tiene vuelta atrás.")
+            lease = replace(lease, leaving="")
+        _save_lease_in(connection, guild_id, key, lease)
+        return lease
+
+    def offer_keys(
+        self, guild_id: int, user_id: int, key: str, offer: str, day: date, now: float,
+        rng: random.Random,
+    ) -> Callable[[sqlite3.Connection], tuple[KeysDeal, HousingMove]]:  # fmt: skip
+        """Le ofrece al inquilino del catálogo dinero (o nada) por irse.
+
+        Si acepta, se va en `housing.KEYS_MOVE_DAYS` días y lo pagado desaparece (el
+        inquilino no existe). Sin IGIC: quien cobra es un particular, no un empresario (art. 4
+        de la Ley 20/1991). Para el casero es una mejora y no un gasto deducible (DGT
+        V3259-23): suma a lo pagado y al coste de su parte, como una reforma. Si no acepta, se
+        enfada y contraoferta (`housing.keys_refused`), o se atrinchera.
+
+        Raises (dentro de la transacción):
+            HousingError: Si no le toca, no hay inquilino del catálogo o no quiere ni hablar.
+            InsufficientFundsError: Si no le llega para lo que ofrece. No se pregunta nada.
+        """
+
+        def run(connection: sqlite3.Connection) -> tuple[KeysDeal, HousingMove]:
+            market = _market_in(connection, guild_id)
+            lease = _keys_ready(market, key, user_id)
+            if lease.member is not None:
+                raise HousingError("Vive un miembro: la oferta se le hace a él.")
+            if offer not in rules.KEYS_OFFERS:
+                raise HousingError("Esa oferta no existe.")
+            _check_keys_wait(lease, day)
+            quote = market.keys_quote(key, day)
+            if quote is None:
+                raise HousingError("No hay a quién pedirle que se vaya.")
+            answer = rules.keys_answer(offer, quote.fair, quote.reserve, quote.free, quote.risk,
+                                       rng)  # fmt: skip
+            if answer.accepted:
+                return self._keys_paid_in(
+                    connection, guild_id, market, key, user_id, lease, answer, quote, day, now
+                )
+            lease = rules.keys_refused(lease, day, answer)
+            _save_lease_in(connection, guild_id, key, lease)
+            kind = "atrinchera" if answer.trench else "rechaza_llaves"
+            _news_in(connection, guild_id, News(key, day, kind, answer.ask, user_id,
+                                                lease.tenant), now)  # fmt: skip
+            return KeysDeal(lease, answer, quote, lease.tenant), HousingMove()
+
+        return run
+
+    def accept_keys_ask(
+        self, guild_id: int, user_id: int, key: str, day: date, now: float
+    ) -> Callable[[sqlite3.Connection], tuple[KeysDeal, HousingMove]]:
+        """Le paga al inquilino del catálogo lo que pidió al rechazar una oferta.
+
+        Mismo tratamiento que `offer_keys`.
+
+        Raises (dentro de la transacción):
+            HousingError: Si no hay contraoferta o ya caducó.
+            InsufficientFundsError: Si no le llega.
+        """
+
+        def run(connection: sqlite3.Connection) -> tuple[KeysDeal, HousingMove]:
+            market = _market_in(connection, guild_id)
+            lease = _keys_ready(market, key, user_id)
+            if lease.member is not None or not lease.keys_ask:
+                raise HousingError("No ha pedido nada: hazle una oferta.")
+            if lease.keys_wait is None or day >= lease.keys_wait:
+                raise HousingError("Su precio ya no vale: ha pasado una semana.")
+            answer = rules.KeysAnswer(True, paid=lease.keys_ask)
+            return self._keys_paid_in(
+                connection, guild_id, market, key, user_id, lease, answer, None, day, now
+            )
+
+        return run
+
+    @staticmethod
+    def _keys_paid_in(
+        connection: sqlite3.Connection, guild_id: int, market: Market, key: str, user_id: int,
+        lease: rules.Lease, answer: rules.KeysAnswer, quote: rules.KeysQuote | None,
+        day: date, now: float,
+    ) -> tuple[KeysDeal, HousingMove]:  # fmt: skip
+        tenant = lease.tenant
+        lease = rules.leaves_in(lease, day, rules.LEAVE_KEYS, rules.KEYS_MOVE_DAYS)
+        _save_lease_in(connection, guild_id, key, lease)
+        kind = "llaves" if answer.paid else "llaves_gratis"
+        _news_in(connection, guild_id, News(key, day, kind, answer.paid, user_id, tenant), now)
+        if not answer.paid:
+            return KeysDeal(lease, answer, quote, tenant), HousingMove()
+        _improve_in(connection, guild_id, market.owner_key(key), user_id, answer.paid)
+        move = HousingMove(entries=((user_id, LedgerEntry(-answer.paid, "pisos:llaves")),))
+        return KeysDeal(lease, answer, quote, tenant), move
+
+    async def drop_keys_ask(self, guild_id: int, user_id: int, key: str) -> rules.Lease:
+        """No acepta lo que pidió el inquilino: su precio se olvida (no mueve dinero).
+
+        Raises:
+            HousingError: Si no le toca o no hay contraoferta.
+        """
+        return await self._run(self._write, self._drop_keys_ask_in, guild_id, user_id, key)
+
+    @staticmethod
+    def _drop_keys_ask_in(
+        connection: sqlite3.Connection, guild_id: int, user_id: int, key: str
+    ) -> rules.Lease:
+        market = _market_in(connection, guild_id)
+        lease = _keys_ready(market, key, user_id)
+        if not lease.keys_ask:
+            raise HousingError("No ha pedido nada.")
+        lease = replace(lease, keys_ask=0)
+        _save_lease_in(connection, guild_id, key, lease)
+        return lease
+
+    def member_keys(
+        self, guild_id: int, owner_id: int, key: str, member_id: int, amount: int, day: date,
+        now: float,
+    ) -> Callable[[sqlite3.Connection], tuple[MemberKeys, HousingMove]]:  # fmt: skip
+        """Le compra las llaves a un miembro de alquiler, que ha aceptado `amount`.
+
+        Se va en `housing.KEYS_MOVE_DAYS` días y la fianza vuelve sola cuando se vaya. Para
+        el miembro es una ganancia patrimonial de la base del ahorro (arts. 33.1 y 49 LIRPF,
+        DGT V3259-23): sin retención en la ley; aquí se le descuenta el 19 % al cobrarla,
+        como la plusvalía del Rastro. Para el casero es una mejora del inmueble, como con
+        un inquilino del catálogo (`offer_keys`).
+
+        Raises (dentro de la transacción):
+            HousingError: Si ya no vive ahí, el casero ya no decide o el importe no vale.
+            InsufficientFundsError: Si al casero no le llega. No se firma nada.
+        """
+
+        def run(connection: sqlite3.Connection) -> tuple[MemberKeys, HousingMove]:
+            market = _market_in(connection, guild_id)
+            lease = _keys_ready(market, key, owner_id)
+            if lease.member != member_id:
+                raise HousingError("Ya no vive ahí de alquiler.")
+            if not 0 <= amount <= rules.KEYS_MAX:
+                raise HousingError(f"Como mucho, {format_amount(rules.KEYS_MAX)}.")
+            lease = rules.leaves_in(lease, day, rules.LEAVE_KEYS, rules.KEYS_MOVE_DAYS)
+            _save_lease_in(connection, guild_id, key, lease)
+            kind = "llaves" if amount else "llaves_gratis"
+            _news_in(connection, guild_id, News(key, day, kind, amount, owner_id, None), now)
+            if not amount:
+                return MemberKeys(lease, 0, 0), HousingMove()
+            _improve_in(connection, guild_id, market.owner_key(key), owner_id, amount)
+            tax = capital_gain_tax(amount)
+            return MemberKeys(lease, amount, tax), _indemnity_move(
+                owner_id, member_id, amount, "pisos:llaves"
+            )
+
+        return run
+
+    async def claim_need(
+        self, guild_id: int, user_id: int, key: str, day: date, now: float
+    ) -> tuple[rules.Lease, int]:
+        """Pide el piso para vivir en él (art. 9.3 LAU): el inquilino se va en
+        `housing.NEED_NOTICE_DAYS` días y esa noche se muda su dueño. No mueve dinero.
+
+        Returns:
+            `(el contrato, la indemnización si no vive ahí lo que debe)`.
+
+        Raises:
+            HousingError: Si no es todo suyo, ya vive en otro sitio, ya pidió otro o el
+                contrato no lo permite (`housing.need_problem`).
+        """
+        return await self._run(self._write, self._claim_need_in, guild_id, user_id, key, day, now)
+
+    @staticmethod
+    def _claim_need_in(
+        connection: sqlite3.Connection, guild_id: int, user_id: int, key: str, day: date,
+        now: float,
+    ) -> tuple[rules.Lease, int]:  # fmt: skip
+        market = _market_in(connection, guild_id)
+        listing = _listing(market, key)
+        if market.shares_of(key).get(user_id, 0) != rules.SHARES:
+            raise HousingError("Solo puedes pedirlo para vivir si es entero tuyo.")
+        lease = market.leases[key]
+        problem = rules.need_problem(listing, lease, day)
+        if problem is not None:
+            raise HousingError(problem)
+        if user_id in market.homes:
+            raise HousingError("Ya vives en otro sitio: la necesidad tiene que ser de verdad.")
+        if market.reclaim_of(user_id) is not None:
+            raise HousingError("Ya has pedido otro piso para vivir.")
+        fine = rules.need_fine(lease.rent, rules.days_left(lease, day))
+        tenant = lease.tenant
+        lease = rules.leaves_in(lease, day, rules.LEAVE_NEED, rules.NEED_NOTICE_DAYS)
+        _save_lease_in(connection, guild_id, key, lease)
+        connection.execute(
+            "INSERT INTO housing_reclaims (guild_id, listing, user_id, member, fine, until, "
+            "created_at) VALUES (?, ?, ?, ?, ?, NULL, ?)",
+            (guild_id, key, user_id, lease.member, fine, now),
+        )
+        _news_in(connection, guild_id, News(key, day, "necesidad", fine, user_id, tenant), now)
+        return lease, fine
+
     async def delete_guild_data(self, guild_id: int) -> None:
         """Borra todo lo de un servidor (al salir el bot)."""
         await self._run(self._delete_guild_data_sync, guild_id)
@@ -6408,6 +6989,7 @@ class HousingRepository:
                 "housing_reforms",
                 "housing_decisions",
                 "housing_reviews",
+                "housing_reclaims",
                 *finance.TABLES,
                 *trade.TABLES,
                 *junta.TABLES,

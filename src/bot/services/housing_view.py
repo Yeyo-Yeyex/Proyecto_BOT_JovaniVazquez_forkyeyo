@@ -150,6 +150,26 @@ NEWS_TEXT = {
     "plantas": "{who} lo divide por plantas: obra de {amount}",
     "habitaciones": "{who} lo prepara para alquilar por habitaciones: {amount} en muebles",
     "juntadas": "{who} junta las habitaciones: vuelve a alquilarse entero",
+    # 9.23.0: la duración del contrato y recuperar el piso.
+    "no_renueva": "{who} avisa: no renovará el contrato",
+    "prorroga": "{tenant} pide la prórroga de la Ley de Vivienda: un año más",
+    "no_renovado": "Se acaba el contrato y no se renueva: {tenant} se va",
+    "llaves": "{who} paga {amount} por las llaves",
+    "llaves_gratis": "{who} recupera el piso por las buenas",
+    "rechaza_llaves": "{tenant} no se va: pide {amount}",
+    "atrinchera": "{tenant} se atrinchera y deja de pagar",
+    "sale_llaves": "{tenant} se va con las llaves pagadas",
+    "sale_necesidad": "{tenant} deja el piso: su dueño lo necesita para vivir",
+    "necesidad": "{who} lo pide para vivir (art. 9.3 LAU)",
+    "necesidad_multa": "{who} se va antes de tiempo: {amount} de indemnización",
+}
+
+#: La etiqueta de la ficha cuando el inquilino se va al acabar el contrato (9.23.0).
+LEAVING_TAG = {
+    rules.LEAVE_NO_RENEW: "No renueva: se va el {day}",
+    rules.LEAVE_EXTENDED: "En prórroga hasta el {day}",
+    rules.LEAVE_KEYS: "Llaves pagadas: se va el {day}",
+    rules.LEAVE_NEED: "Lo pides para vivir: se va el {day}",
 }
 
 #: Cómo se llama cada noticia de las VPO (su `listing` es `vpo:<clave>`).
@@ -593,6 +613,9 @@ def listing_state(
         "tenant_line": tenant.line if tenant else "",
         "contract_rent": format_amount(lease.rent) + "/mes" if lease and lease.rent else "",
         "until": lease.until.strftime("%d/%m/%Y") if lease and lease.until else "",
+        "leaving": LEAVING_TAG[lease.leaving].format(day=f"{lease.until:%d/%m}")
+        if lease and lease.until and lease.leaving in LEAVING_TAG
+        else "",
         "eviction_at": lease.eviction_at.strftime("%d/%m/%Y")
         if lease and lease.eviction_at
         else "",
