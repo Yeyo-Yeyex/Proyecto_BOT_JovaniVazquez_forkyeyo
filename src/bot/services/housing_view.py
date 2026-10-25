@@ -722,6 +722,7 @@ def portfolio_state(
         if listing is None:
             continue
         lease = market.leases.get(holding.listing)
+        rent = tonight_rent(market, holding)
         items.append(
             {
                 "key": listing.key,
@@ -734,9 +735,7 @@ def portfolio_state(
                 "value": format_amount(market.value(holding)),
                 "status": STATUS_TEXT.get(lease.status, "") if lease else "",
                 "status_kind": lease.status if lease else "",
-                "rent": format_amount(lease.rent * holding.shares // rules.SHARES) + "/mes"
-                if lease and lease.rent
-                else "—",
+                "rent": format_amount(rent) + "/mes" if rent else "—",
                 "mortgage": _mortgage_line(market.mortgages_of(user_id, listing.key)),
                 "home": market.homes.get(user_id) == ("propia", listing.key),
                 "insured": bool(lease and lease.insured),
@@ -795,6 +794,24 @@ def portfolio_state(
         *(f"{i['title']} ({i['shares']} %): {i['value']} · {i['status']}" for i in items),
     ] if items else [f"{name} no tiene ningún piso. Generación inquilina."]  # fmt: skip
     return state
+
+
+def rent_keys(market: Market, key: str) -> tuple[str, ...]:
+    """Las claves que pagan renta a los dueños de `key`: él o, si va por habitaciones, cada una."""
+    if market.split_mode(key) == rules.ROOMS:
+        return tuple(unit.key for unit in market.units_of(key))
+    return (key,)
+
+
+def tonight_rent(market: Market, holding: Holding) -> int:
+    """La renta bruta que le toca a unas participaciones esta noche: solo la de quien está al
+    día (un impago no paga) y, en un piso por habitaciones, la de cada habitación alquilada."""
+    rent = sum(
+        lease.rent
+        for key in rent_keys(market, holding.listing)
+        if (lease := market.leases.get(key)) is not None and lease.status == rules.RENTED
+    )
+    return rent * holding.shares // rules.SHARES
 
 
 def _mortgage_line(mortgages: list) -> str:
@@ -1989,6 +2006,35 @@ def _place(market: Market, key: str) -> str:
     return listing.title if listing is not None else "un inmueble"
 
 
+def _arrears_and_decisions(
+    market: Market, user_id: int, key: str, items: list[Pending], tonight: float
+) -> None:
+    """Los gastos atrasados de un inmueble (o habitación) y sus imprevistos sin decidir."""
+    lease = market.leases.get(key)
+    if lease is not None and lease.arrears:
+        part = rules.split(lease.arrears, market.shares_of(key)).get(user_id, 0)
+        if part:
+            items.append(
+                Pending(
+                    Side.PAY, "arrears", "🧾",
+                    f"Gastos atrasados de {_place(market, key)}: {format_amount(part)} · "
+                    "salen de la renta o del monedero",
+                    part, tonight,
+                )
+            )  # fmt: skip
+    if market.manager(key) == user_id:
+        for decision in market.decisions.get(key, ()):
+            if decision.choice is None:
+                items.append(
+                    Pending(
+                        Side.PAY, "decision", "🔧",
+                        f"Imprevisto en {_place(market, key)} sin decidir: si no eliges en "
+                        "`pisos`, lo arregla la gestora",
+                        decision.cost, _midnight(decision.until + timedelta(days=1)),
+                    )
+                )  # fmt: skip
+
+
 def pending_items(
     market: Market, user_id: int, deposits: list[Deposit], today: date
 ) -> list[Pending]:
@@ -2114,34 +2160,10 @@ def pending_items(
         items.append(Pending(Side.PAY, "rent", "🔑", text, lease.rent, tonight))
     rents = 0
     for holding in market.of_member(user_id):
-        key = holding.listing
-        lease = market.leases.get(key)
-        if lease is None:
-            continue
-        if lease.status == rules.RENTED:
-            rents += lease.rent * holding.shares // rules.SHARES
-        if lease.arrears:
-            part = rules.split(lease.arrears, market.shares_of(key)).get(user_id, 0)
-            if part:
-                items.append(
-                    Pending(
-                        Side.PAY, "arrears", "🧾",
-                        f"Gastos atrasados de {_place(market, key)}: {format_amount(part)} · "
-                        "salen de la renta o del monedero",
-                        part, tonight,
-                    )
-                )  # fmt: skip
-        if market.manager(key) == user_id:
-            for decision in market.decisions.get(key, ()):
-                if decision.choice is None:
-                    items.append(
-                        Pending(
-                            Side.PAY, "decision", "🔧",
-                            f"Imprevisto en {_place(market, key)} sin decidir: si no eliges en "
-                            "`pisos`, lo arregla la gestora",
-                            decision.cost, _midnight(decision.until + timedelta(days=1)),
-                        )
-                    )  # fmt: skip
+        rents += tonight_rent(market, holding)
+        # Las habitaciones de un piso tienen sus propios atrasos e imprevistos.
+        for key in dict.fromkeys((holding.listing, *rent_keys(market, holding.listing))):
+            _arrears_and_decisions(market, user_id, key, items, tonight)
     for vote in market.votes:
         holders = market.shares_of(vote.listing)
         if user_id not in holders or vote.kind not in ("derrama", "reforma"):
