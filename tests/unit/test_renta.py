@@ -7,10 +7,14 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+import discord
 import pytest
 from interaction_fakes import fake_interaction
+from render_fakes import FakeRentaScene
 
 from bot.cogs.renta import (
+    ADVICE,
+    CONCEPTS,
     DETAIL,
     SEALED,
     SUMMARY,
@@ -46,6 +50,12 @@ from bot.services.taxes import (
 
 GUILD = 1
 USER = 10
+
+
+@pytest.fixture(autouse=True)
+def _sin_dibujo(monkeypatch: pytest.MonkeyPatch) -> None:
+    """La carta no se pinta de verdad: el cog usa el doble (un PNG de relleno)."""
+    monkeypatch.setattr("bot.services.renta_scene.RentaScene", FakeRentaScene)
 
 
 class Clock:
@@ -492,12 +502,13 @@ async def test_el_sobre_se_abre_y_pasa_del_resumen_al_detalle(
     await close(service, clock, 12)
     cog = Renta(MagicMock(), service)
     guild = SimpleNamespace(id=GUILD)
-    member = SimpleNamespace(id=USER)
+    member = SimpleNamespace(id=USER, display_name="Diego")
 
     view = await cog._view(guild, member)  # type: ignore[arg-type]  # noqa: SLF001
     assert view.mode == SEALED
-    assert "Solo hay una forma de saberlo" in (view.embed().description or "")
-    assert [item.custom_id for item in view.children] == ["renta:abrir"]  # type: ignore[attr-defined]
+    assert "Solo hay una forma de saberlo" in view.text()
+    assert ids(view) == ["renta:abrir"]
+    assert view.png is None and view.drawing is not None  # la carta se pinta con el sobre cerrado
 
     interaction = SimpleNamespace(
         guild=guild,
@@ -510,19 +521,35 @@ async def test_el_sobre_se_abre_y_pasa_del_resumen_al_detalle(
     )
     await view._open(interaction)  # type: ignore[arg-type]  # noqa: SLF001
     assert view.mode == SUMMARY
+    assert view.png == b"PNG"
+    (card,) = interaction.response.edit_message.await_args.kwargs["attachments"]
+    assert card.filename == "renta.png"
     statement = await service.irpf_statement(GUILD, USER)
     assert statement is not None and statement.opened
     opened = note.call_args.args[3].add
     assert opened["renta_opened"] == 1
     assert opened["renta_opened_refund"] == int(statement.filed.result < 0)
 
-    await view._detail(interaction)  # type: ignore[arg-type]  # noqa: SLF001
+    assert ids(view)[:4] == ["renta:resumen", "renta:desglose", "renta:detalle", "renta:consejo"]
+
+    await view._tab(DETAIL)(interaction)  # type: ignore[arg-type]  # noqa: SLF001
     assert view.mode == DETAIL
     assert note.call_args.args[3].add == {"renta_detail": 1}
-    text = view.embed().description or ""
+    text = view.text()
     assert "paso a paso" in text and "Casino" in text and "Premios" in text
-    await view._summary(interaction)  # type: ignore[arg-type]  # noqa: SLF001
-    assert view.mode == SUMMARY
+    # Cambiar de pestaña no vuelve a subir la carta.
+    assert "attachments" not in interaction.response.edit_message.await_args.kwargs
+
+    await view._tab(CONCEPTS)(interaction)  # type: ignore[arg-type]  # noqa: SLF001
+    assert note.call_args.args[3].add == {"renta_breakdown": 1}
+    assert "Por conceptos" in view.text() and "Premios y logros" in view.text()
+
+    await view._tab(ADVICE)(interaction)  # type: ignore[arg-type]  # noqa: SLF001
+    assert note.call_args.args[3].add == {"renta_advice": 1}
+    assert "consejo" in view.text() and "renta:donar" in ids(view)
+
+    await view._tab(SUMMARY)(interaction)  # type: ignore[arg-type]  # noqa: SLF001
+    assert view.mode == SUMMARY and "renta:donar" not in ids(view)
 
     # Una vez abierta, `renta` va directa al resumen.
     again = await cog._view(guild, member)  # type: ignore[arg-type]  # noqa: SLF001
@@ -603,8 +630,8 @@ async def test_aviso_efimero_una_vez_por_campana_y_presentar_es_publico(
 
 def test_la_vista_sin_declaracion_explica_lo_que_pasara() -> None:
     view = RentaView(MagicMock(), USER, None, [], mode=SUMMARY)
-    assert "Aún no tienes ninguna declaración" in (view.embed().description or "")
-    assert view.children == []
+    assert "Aún no tienes ninguna declaración" in view.text()
+    assert ids(view) == [] and view.files() == []
 
 
 # -- Embargo del 30 % y deuda (8.7.0) ----------------------------------------------------
@@ -738,11 +765,12 @@ async def test_el_embargo_se_avisa_una_vez(tmp_path: Path, monkeypatch: pytest.M
 
 
 def members() -> tuple[SimpleNamespace, SimpleNamespace]:
-    return SimpleNamespace(id=GUILD), SimpleNamespace(id=USER)
+    return SimpleNamespace(id=GUILD), SimpleNamespace(id=USER, display_name="Diego")
 
 
 def ids(view: RentaView) -> list[str]:
-    return [item.custom_id for item in view.children]  # type: ignore[attr-defined]
+    """Los `custom_id` de los botones del panel, en orden."""
+    return [b.custom_id for b in view.walk_children() if isinstance(b, discord.ui.Button)]  # type: ignore[misc]
 
 
 async def test_al_abrirla_se_paga_entera_o_fraccionada(
@@ -758,21 +786,25 @@ async def test_al_abrirla_se_paga_entera_o_fraccionada(
 
     view = await cog._view(guild, member)  # type: ignore[arg-type]  # noqa: SLF001
     assert ids(view) == ["renta:abrir"]  # el sobre no delata que sale a pagar
-    assert "hasta el final del lunes" in (view.embed().description or "")
+    assert "hasta el final del lunes" in view.text()
     interaction = fake_interaction(member)
     interaction.guild, interaction.channel_id = guild, 5
     await view._open(interaction)  # type: ignore[arg-type]  # noqa: SLF001
-    assert ids(view) == ["renta:detalle", "renta:pagar", "renta:fraccionar"]
-    assert "fraccionarla" in (view.embed().description or "")
+    tabs = ["renta:resumen", "renta:desglose", "renta:detalle", "renta:consejo"]
+    assert ids(view) == [*tabs, "renta:pagar", "renta:fraccionar"]
+    assert "fraccionarla" in view.text()
 
     interaction = fake_interaction(member)
     interaction.guild, interaction.channel_id = guild, 5
     await view._pay_split(interaction)  # type: ignore[arg-type]  # noqa: SLF001
 
     interaction.response.defer.assert_awaited_once()
-    fresh = interaction.edit_original_response.await_args.kwargs["view"]
-    assert ids(fresh) == ["renta:detalle"]
-    assert "Fraccionada" in (fresh.embed().description or "")
+    edited = interaction.edit_original_response.await_args.kwargs
+    fresh = edited["view"]
+    assert ids(fresh) == tabs
+    assert "Fraccionada" in fresh.text()
+    # El sello pasa de «PENDIENTE» a «FRACCIONADA»: la carta es otra y se vuelve a subir.
+    assert fresh.seal == "FRACCIONADA" and len(edited["attachments"]) == 1
     added = note.call_args.args[3].add
     assert added == {
         "renta_paid": filed.result - second_installment(filed.result),
@@ -793,14 +825,14 @@ async def test_liquidar_la_deuda_desde_la_renta(
 
     view = await cog._view(guild, member)  # type: ignore[arg-type]  # noqa: SLF001
     assert ids(view) == ["renta:liquidar"]
-    assert "Debes 500 Y$ a Hacienda" in (view.embed().description or "")
+    assert "Debes 500 Y$ a Hacienda" in view.text()
     interaction = fake_interaction(member)
     interaction.guild, interaction.channel_id = guild, 5
     await view._settle_debt(interaction)  # type: ignore[arg-type]  # noqa: SLF001
 
     assert await service.tax_debt(GUILD, USER) == 0
     fresh = interaction.edit_original_response.await_args.kwargs["view"]
-    assert ids(fresh) == [] and "Deuda liquidada" in (fresh.embed().description or "")
+    assert ids(fresh) == [] and "Deuda liquidada" in fresh.text()
     # Lo pagado a mano no se avisa como un embargo.
     assert await cog.hint_for(GUILD, USER) is None
 
@@ -866,3 +898,94 @@ async def test_saldo_ensena_la_renta_a_pagar_el_segundo_plazo_y_la_deuda(tmp_pat
     add_return(service, opened=True, payment=PAYMENT_SPLIT, second=200)
     second = next(i for i in await cog.pending_for(GUILD, USER) if i.kind == "renta_second")
     assert second.amount == 200 and second.when == 8e8
+
+
+# -- El panel nuevo: justificante al presentar y donar desde el consejo (9.24.0) -------------
+
+
+async def test_presentar_desde_el_panel_deja_el_justificante_con_su_sello(
+    tmp_path: Path,
+) -> None:
+    clock = Clock(day(5))
+    service = await make_service(tmp_path, clock)
+    await service.settle_bet(GUILD, USER, game="ruleta", stake=1_000, payout=36_000)
+    await close(service, clock, 12)
+    await service.open_irpf_return(GUILD, USER, WEEK)
+    cog = Renta(MagicMock(), service)
+    guild, member = members()
+    view = await cog._view(guild, member)  # type: ignore[arg-type]  # noqa: SLF001
+    assert view.seal == "" and "PENDIENTE" in view.card_key and "renta:presentar" in ids(view)
+    interaction = fake_interaction(member)
+    interaction.guild, interaction.channel_id = guild, 5
+    interaction.channel = SimpleNamespace(send=AsyncMock())
+
+    await view._present(interaction)  # type: ignore[arg-type]  # noqa: SLF001
+
+    interaction.response.defer.assert_awaited_once()
+    edited = interaction.edit_original_response.await_args.kwargs
+    fresh = edited["view"]
+    assert fresh.seal == "PRESENTADA" and len(edited["attachments"]) == 1
+    assert "Declaración presentada" in fresh.text() and "Ya la presentaste" in fresh.text()
+    assert "renta:presentar" not in ids(fresh)
+    assert "presenta la renta" in interaction.channel.send.await_args.args[0]
+
+
+async def test_donar_desde_el_consejo_dona_como_donar_y_lo_apunta(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from bot.cogs.donations import Donaciones
+
+    note = MagicMock()
+    monkeypatch.setattr("bot.cogs.renta.logros.note", note)
+    clock = Clock(day(5))
+    service = await make_service(tmp_path, clock)
+    await service.pay_salary(GUILD, USER, gross=200_000, concept="pala:obra")
+    await close(service, clock, 12)
+    await service.open_irpf_return(GUILD, USER, WEEK)
+    bot = MagicMock()
+    cog = Renta(bot, service)
+    cogs = {"Renta": cog, "Donaciones": Donaciones(bot, service)}
+    bot.get_cog = cogs.get
+    guild, member = members()
+    view = await cog._view(guild, member, mode=ADVICE)  # type: ignore[arg-type]  # noqa: SLF001
+    assert view.advice is not None and view.advice.more > 0
+
+    # El botón abre el formulario con la cantidad que más rinde ya escrita.
+    click = fake_interaction(member)
+    await view._donate(click)  # type: ignore[arg-type]  # noqa: SLF001
+    form = click.response.send_modal.await_args.args[0]
+    assert form.amount.default == str(view.advice.more)
+
+    before = await service.balance(GUILD, USER)
+    submit = fake_interaction(member)
+    submit.guild, submit.channel_id = guild, 5
+    await cog.donate(submit, "hambre", str(view.advice.more), suggested=view.advice.more)  # type: ignore[arg-type]
+
+    submit.response.defer.assert_awaited_once()
+    assert await service.balance(GUILD, USER) == before - view.advice.more
+    # Sale en el canal como con `/donar`.
+    posted = submit.followup.send.await_args.kwargs
+    assert posted["ephemeral"] is False and "dona" in posted["embed"].description
+    assert note.call_args.args[3].add == {"renta_advice_donated": 1, "renta_advice_exact": 1}
+
+
+async def test_donar_sin_saldo_no_apunta_nada(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from bot.cogs.donations import Donaciones
+
+    note = MagicMock()
+    monkeypatch.setattr("bot.cogs.renta.logros.note", note)
+    clock = Clock(day(5))
+    service = await make_service(tmp_path, clock)
+    bot = MagicMock()
+    cog = Renta(bot, service)
+    bot.get_cog = {"Renta": cog, "Donaciones": Donaciones(bot, service)}.get
+    guild, member = members()
+    submit = fake_interaction(member)
+    submit.guild, submit.channel_id = guild, 5
+
+    await cog.donate(submit, "hambre", str(10 * STARTING_BALANCE), suggested=0)  # type: ignore[arg-type]
+
+    assert submit.followup.send.await_args.kwargs["ephemeral"] is True
+    note.assert_not_called()

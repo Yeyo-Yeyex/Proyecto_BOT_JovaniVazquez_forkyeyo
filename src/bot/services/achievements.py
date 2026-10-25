@@ -9383,6 +9383,29 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (25, "renta_detalle_25", "Asesor fiscal de YouTube",
          "Mira el detalle de la Renta 25 veces. Ya podrías abrir un canal.", R),
     ])  # fmt: skip
+    # La carta por pestañas (cogs/renta.py: RentaView._tab y Renta.donate).
+    a += _tiers("economy", "renta_breakdown", [
+        (1, "renta_desglose", "Autopsia de la nómina",
+         "Mira el desglose por conceptos de tu declaración de la Renta.", C),
+        (25, "renta_desglose_25", "Despiece de taller",
+         "Mira el desglose por conceptos de la Renta 25 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("economy", "renta_advice", [
+        (1, "renta_consejo", "Consulta sin cita previa",
+         "Mira el consejo de Hacienda en tu declaración de la Renta.", C),
+        (25, "renta_consejo_25", "Consultorio de Elena Francis",
+         "Mira el consejo de Hacienda en la Renta 25 veces.", R),
+    ])  # fmt: skip
+    a += _tiers("economy", "renta_advice_donated", [
+        (1, "renta_dona_consejo", "Corazón deducible",
+         "Dona a una ONG con el botón del consejo de la Renta.", C),
+        (10, "renta_dona_consejo_10", "Filantropía con calculadora",
+         "Dona 10 veces con el botón del consejo de la Renta.", R),
+    ])  # fmt: skip
+    a += _tiers("economy", "renta_advice_exact", [
+        (1, "renta_dona_justo", "Simón dice: desgrava",
+         "Dona justo la cantidad que propone el consejo de la Renta.", C, True),
+    ])  # fmt: skip
     a += _tiers("economy", "renta_rate_max", [
         (20, "renta_tipo_20", "Clase media según el Gobierno",
          "Que tu declaración de una semana salga a un tipo del 20 % o más.", R),

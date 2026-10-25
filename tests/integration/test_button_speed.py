@@ -2646,7 +2646,7 @@ async def press_renta_open(client: BotClient, owner: MagicMock) -> Click:
             (GUILD_ID, OWNER_ID),
         )
     view = await client.get_cog("Renta")._view(owner.guild, owner)  # noqa: SLF001
-    (button,) = [c for c in view.children if getattr(c, "custom_id", "") == "renta:abrir"]
+    (button,) = [c for c in view.walk_children() if getattr(c, "custom_id", "") == "renta:abrir"]
 
     async def click(interaction: MagicMock) -> None:
         await button.callback(interaction)
@@ -2668,7 +2668,7 @@ async def _renta_button(client: BotClient, owner: MagicMock, custom_id: str) -> 
             (GUILD_ID, OWNER_ID),
         )
     view = await client.get_cog("Renta")._view(owner.guild, owner)  # noqa: SLF001
-    (button,) = [c for c in view.children if getattr(c, "custom_id", "") == custom_id]
+    (button,) = [c for c in view.walk_children() if getattr(c, "custom_id", "") == custom_id]
 
     async def click(interaction: MagicMock) -> None:
         await button.callback(interaction)
@@ -2686,6 +2686,15 @@ async def press_renta_split(client: BotClient, owner: MagicMock) -> Click:
 
 async def press_renta_debt(client: BotClient, owner: MagicMock) -> Click:
     return await _renta_button(client, owner, "renta:liquidar")
+
+
+async def press_renta_donate(client: BotClient, owner: MagicMock) -> Click:
+    """Enviar el formulario de Donar del consejo de la Renta."""
+
+    async def click(interaction: MagicMock) -> None:
+        await client.get_cog("Renta").donate(interaction, "hambre", "100", suggested=0)
+
+    return click
 
 
 async def press_todo(client: BotClient, owner: MagicMock) -> Click:
@@ -3006,6 +3015,7 @@ CASES: dict[str, Press] = {
     "renta: pagar todo": press_renta_pay,
     "renta: fraccionar": press_renta_split,
     "renta: liquidar deuda": press_renta_debt,
+    "renta: donar desde el consejo": press_renta_donate,
     "lista: tachar": press_todo,
     "lista: pasar página": press_todo_page,
     "lista: elegir prioridad": press_todo_priority,

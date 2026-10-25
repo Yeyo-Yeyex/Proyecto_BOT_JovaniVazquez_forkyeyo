@@ -25,10 +25,16 @@ sabe hasta el lunes si le toca pagar o le devuelven: `renta` no adelanta el resu
 de la semana en curso. El lunes el anuncio de `#chat-general` (o del canal del
 sistema) solo da los totales del servidor y a cada miembro le llega una vez, en su
 siguiente acción con dinero (`hint`), que ya tiene la declaración, sin la cifra. La
-abre en `renta`: un sobre con el botón **Abrir** y, al abrirlo, el **resumen** (las
-cuentas en cinco líneas) con un botón para ver el **detalle** (el porqué de cada cifra,
-con sus artículos) y otro para volver (`bot.services.renta_report`). `saldo` tampoco
-adelanta nada: de una declaración sin abrir solo dice que está sin abrir (`pending`).
+abre en `renta`: un sobre con el botón **Abrir** (la carta se pinta mientras tanto) y, al
+abrirlo, un panel con la **carta** dibujada (`bot.services.renta_scene`: de lo que ganó a
+su base, la cuota frente a lo retenido, el sello con el resultado y la tabla por
+conceptos) y cuatro pestañas (`bot.services.renta_report`): el **resumen**, el
+**desglose** por conceptos (lo que entró de cada fuente, la parte de la cuota que le toca,
+lo retenido y si faltó o sobró), el **paso a paso** (el porqué de cada cifra, con sus
+artículos) y el **consejo** (cuánto habría rendido donar esa semana, con el botón
+**Donar**, que dona con el `donar` de siempre). Pagar o presentar rehace la carta con
+su sello: es el justificante. `saldo` tampoco adelanta nada: de una declaración sin
+abrir solo dice que está sin abrir (`pending`).
 
 Cada semana el bot crea un evento de Discord ("📬 Campaña de la Renta") que dura hasta
 el domingo, para que se vea sin ocupar un canal. Necesita el permiso **Gestionar
@@ -40,20 +46,26 @@ el casino y los donativos, siempre a devolver), al vuelo.
 
 from __future__ import annotations
 
+import asyncio
+import io
+import json
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import discord
-from discord import app_commands
+from discord import app_commands, ui
 from discord.ext import commands, tasks
 
 from bot.cogs import achievements as logros
 from bot.cogs import intereses
 from bot.cogs import pets as mascotas
 from bot.repositories.economy import PAYMENT_PENDING, PAYMENT_SPLIT
+from bot.services import renta_scene
 from bot.services.achievements import StatDelta
+from bot.services.donations import ONGS
 from bot.services.economy import (
     Declaration,
     EconomyService,
@@ -70,10 +82,22 @@ from bot.services.economy import (
 from bot.services.levels import TIMEZONE, local_day
 from bot.services.pending import Pending, Side
 from bot.services.pets import Moment
-from bot.services.renta_report import detail_text, envelope_text, summary_text
+from bot.services.renta_report import (
+    DonationAdvice,
+    advice_text,
+    card_state,
+    concepts_text,
+    detail_text,
+    donation_advice,
+    envelope_text,
+    rate_note,
+    result_line,
+    seal_for,
+    summary_text,
+)
 from bot.services.taxes import CLAIM_WEEKS, TAX_COLLECTOR
 from bot.utils.cogs import find_cog
-from bot.utils.interactions import ack, edit
+from bot.utils.interactions import ack, edit, notify
 
 if TYPE_CHECKING:
     from bot.app import BotClient
@@ -84,13 +108,30 @@ EVENT_PREFIX = "📬 Campaña de la Renta"
 VIEW_TIMEOUT = 600
 ANNOUNCE_CHANNEL_NAME = "chat-general"
 COLOR = discord.Color.from_rgb(170, 21, 27)
-#: Límite del texto de un embed de Discord.
-EMBED_LIMIT = 4_096
+#: Límite del texto de un mensaje con componentes (todos los bloques juntos).
+TEXT_LIMIT = 4_000
 
-#: Modos de la vista de `renta`.
+#: Modos de la vista de `renta`: el sobre y las pestañas de la declaración abierta.
 SEALED = "sobre"
 SUMMARY = "resumen"
+CONCEPTS = "desglose"
 DETAIL = "detalle"
+ADVICE = "consejo"
+#: `(modo, emoji, etiqueta)` de cada pestaña; su `custom_id` es `renta:<modo>`.
+TABS: tuple[tuple[str, str, str], ...] = (
+    (SUMMARY, "📄", "Resumen"),
+    (CONCEPTS, "🧩", "Desglose"),
+    (DETAIL, "📜", "Paso a paso"),
+    (ADVICE, "🤝", "Consejo"),
+)
+#: Estadística de logros que suma cada pestaña al verla.
+TAB_STATS: dict[str, str] = {
+    CONCEPTS: "renta_breakdown",
+    DETAIL: "renta_detail",
+    ADVICE: "renta_advice",
+}
+#: Nombre del adjunto de la carta.
+CARD_PNG = "renta.png"
 
 #: Frases del anuncio del lunes, según cómo le haya ido a Hacienda.
 MONDAY_GOOD: tuple[str, ...] = (
@@ -223,7 +264,7 @@ def debt_payment_text(paid: int, left: int, balance: int) -> str:
     )
 
 
-def renta_embed(
+def renta_text(
     mode: str,
     statement: IrpfStatement | None,
     pending: list[Declaration],
@@ -231,11 +272,17 @@ def renta_embed(
     rate: float | None = None,
     extra: str = "",
     debt: int = 0,
-) -> discord.Embed:
-    """El embed de `renta` en un modo: el sobre, el resumen o el detalle.
+    seal: str = "",
+    advice: DonationAdvice | None = None,
+    drawn: bool = False,
+) -> str:
+    """El texto de `renta` en un modo: el sobre o una pestaña de la declaración.
 
     Args:
         debt: Lo que debe a Hacienda; sale fuera del sobre, con el botón para liquidarla.
+        seal: El sello de la declaración (`renta_report.seal_for`).
+        advice: El consejo de los donativos, para su pestaña.
+        drawn: Si encima va la carta dibujada: el resumen ya no repite sus cifras.
     """
     parts: list[str] = []
     if statement is None:
@@ -246,10 +293,16 @@ def renta_embed(
         )
     elif mode == SEALED:
         parts.append(envelope_text(statement))
+    elif mode == CONCEPTS:
+        parts.append(concepts_text(statement, seal))
     elif mode == DETAIL:
-        parts.append(detail_text(statement, rate=rate))
+        parts.append(detail_text(statement, rate=rate, seal=seal))
+    elif mode == ADVICE and advice is not None:
+        parts.append(advice_text(statement, advice))
+    elif drawn:
+        parts.append(f"{result_line(statement, seal)}\n{rate_note(statement)}")
     else:
-        parts.append(summary_text(statement))
+        parts.append(summary_text(statement, seal))
     if pending and mode != SEALED:
         parts.append(draft_text(pending))
     if debt and mode != SEALED:
@@ -257,9 +310,9 @@ def renta_embed(
     if extra:
         parts.append(extra)
     text = "\n\n".join(parts)
-    if len(text) > EMBED_LIMIT:
-        text = text[: EMBED_LIMIT - 2] + "…"
-    return discord.Embed(title="🧾 Renta", description=text, color=COLOR)
+    if len(text) > TEXT_LIMIT:
+        text = text[: TEXT_LIMIT - 2] + "…"
+    return text
 
 
 async def remind(bot: commands.Bot, interaction: discord.Interaction) -> None:
@@ -317,12 +370,18 @@ async def hint(
     return "\n".join(lines) if lines else None
 
 
-class RentaView(discord.ui.View):
-    """La declaración en `renta`: abrir el sobre, resumen o detalle, pagar y presentar.
+class RentaView(ui.LayoutView):
+    """La declaración en `renta`: el sobre y, abierta, la carta con sus pestañas.
 
-    Pasar del resumen al detalle solo cambia lo que se enseña (la declaración ya está
-    cargada): contesta en el acto. Abrir el sobre, pagar (entera o fraccionada),
-    liquidar la deuda y presentar tocan la base de datos.
+    Cambiar de pestaña solo cambia lo que se enseña (la declaración ya está cargada y la
+    carta ya está subida): contesta en el acto. Abrir el sobre, pagar (entera o
+    fraccionada), liquidar la deuda, presentar y donar tocan la base de datos.
+
+    Attributes:
+        png: La carta dibujada, o `None` si no se pudo (entonces el resumen va en texto).
+        card_key: Lo que se pintó en la carta: si no cambia, no se vuelve a subir.
+        changed: Si la carta es otra que la del panel de antes (`Renta._view`).
+        drawing: La carta pintándose mientras el sobre sigue cerrado.
     """
 
     def __init__(
@@ -336,6 +395,10 @@ class RentaView(discord.ui.View):
         rate: float | None = None,
         extra: str = "",
         debt: int = 0,
+        seal: str = "",
+        png: bytes | None = None,
+        card_key: str = "",
+        drawing: asyncio.Task[bytes | None] | None = None,
     ) -> None:
         super().__init__(timeout=VIEW_TIMEOUT)
         self.cog = cog
@@ -346,59 +409,110 @@ class RentaView(discord.ui.View):
         self.rate = rate
         self.extra = extra
         self.debt = debt
+        self.seal = seal
+        self.png = png
+        self.card_key = card_key
+        self.changed = png is not None
+        self.drawing = drawing
+        self.advice = donation_advice(statement) if statement is not None else None
         self._rebuild()
 
-    def embed(self) -> discord.Embed:
-        """El embed del modo en que está."""
-        return renta_embed(
+    def text(self) -> str:
+        """El texto del modo en que está."""
+        return renta_text(
             self.mode,
             self.statement,
             self.pending,
             rate=self.rate,
             extra=self.extra,
             debt=self.debt,
+            seal=self.seal,
+            advice=self.advice,
+            drawn=self.png is not None,
         )
+
+    def files(self) -> list[discord.File]:
+        """La carta como adjunto (vacío si no hay)."""
+        if self.png is None:
+            return []
+        return [discord.File(io.BytesIO(self.png), filename=CARD_PNG)]
+
+    def send_kwargs(self) -> dict[str, Any]:
+        """Para mandar el panel en un mensaje nuevo."""
+        files = self.files()
+        return {"view": self, "files": files} if files else {"view": self}
+
+    def edit_kwargs(self) -> dict[str, Any]:
+        """Para cambiar el panel: la carta solo se vuelve a subir si ha cambiado."""
+        return {"view": self, "attachments": self.files()} if self.changed else {"view": self}
 
     def _rebuild(self) -> None:
         self.clear_items()
+        box: ui.Container = ui.Container(accent_colour=COLOR)
+        if self.png is not None and self.mode != SEALED:
+            box.add_item(ui.MediaGallery(discord.MediaGalleryItem(f"attachment://{CARD_PNG}")))
+        box.add_item(ui.TextDisplay(self.text()))
+        rows = self._rows()
+        if rows:
+            box.add_item(ui.Separator())
+        for row in rows:
+            box.add_item(row)
+        self.add_item(box)
+
+    def _rows(self) -> list[ui.ActionRow]:
+        """Las pestañas y, debajo, lo que se puede hacer (pagar, presentar, donar…)."""
+        style = discord.ButtonStyle
+        if self.statement is not None and self.mode == SEALED:
+            opener: ui.ActionRow = ui.ActionRow()
+            opener.add_item(self._button("Abrir", "📑", style.primary, "renta:abrir", self._open))
+            return [opener]
+        rows = []
         if self.statement is not None:
-            if self.mode == SEALED:
-                self._button("Abrir", "📑", discord.ButtonStyle.primary, "renta:abrir", self._open)
-            elif self.mode == SUMMARY:
-                self._button(
-                    "Ver el detalle", "🔍", discord.ButtonStyle.secondary, "renta:detalle",
-                    self._detail,
-                )  # fmt: skip
-            else:
-                self._button(
-                    "Ver el resumen", "📄", discord.ButtonStyle.secondary, "renta:resumen",
-                    self._summary,
-                )  # fmt: skip
-        statement = self.statement if self.mode != SEALED else None
-        if statement is not None and statement.filed.payment == PAYMENT_PENDING:
-            self._button(
-                "Pagar todo", "💳", discord.ButtonStyle.success, "renta:pagar", self._pay_full
+            tabs: ui.ActionRow = ui.ActionRow()
+            for mode, emoji, label in TABS:
+                # Las de antes de guardar sus entradas no tienen desglose ni consejo.
+                if mode in (CONCEPTS, ADVICE) and self.advice is None:
+                    continue
+                current = style.primary if mode == self.mode else style.secondary
+                tabs.add_item(self._button(label, emoji, current, f"renta:{mode}", self._tab(mode)))
+            rows.append(tabs)
+        actions: ui.ActionRow = ui.ActionRow()
+        if self.statement is not None and self.statement.filed.payment == PAYMENT_PENDING:
+            actions.add_item(
+                self._button("Pagar todo", "💳", style.success, "renta:pagar", self._pay_full)
             )
-            self._button(
-                "Fraccionar", "✂️", discord.ButtonStyle.primary, "renta:fraccionar",
-                self._pay_split,
-            )  # fmt: skip
-        if self.pending and self.mode != SEALED:
-            self._button(
-                "Presentar", "📬", discord.ButtonStyle.success, "renta:presentar", self._present
+            actions.add_item(
+                self._button("Fraccionar", "✂️", style.primary, "renta:fraccionar", self._pay_split)
             )
-        if self.debt and self.mode != SEALED:
-            self._button(
-                "Liquidar deuda", "⚖️", discord.ButtonStyle.danger, "renta:liquidar",
-                self._settle_debt,
-            )  # fmt: skip
+        if self.pending:
+            actions.add_item(
+                self._button("Presentar", "📬", style.success, "renta:presentar", self._present)
+            )
+        if self.debt:
+            actions.add_item(
+                self._button(
+                    "Liquidar deuda", "⚖️", style.danger, "renta:liquidar", self._settle_debt
+                )
+            )
+        if self.mode == ADVICE and self.advice is not None:
+            actions.add_item(
+                self._button("Donar", "🤝", style.success, "renta:donar", self._donate)
+            )
+        if actions.children:
+            rows.append(actions)
+        return rows
 
     def _button(
-        self, label: str, emoji: str, style: discord.ButtonStyle, custom_id: str, callback
-    ) -> None:  # type: ignore[no-untyped-def]  # noqa: E501
-        button = discord.ui.Button(label=label, emoji=emoji, style=style, custom_id=custom_id)
+        self,
+        label: str,
+        emoji: str,
+        style: discord.ButtonStyle,
+        custom_id: str,
+        callback: Callable[[discord.Interaction], Awaitable[None]],
+    ) -> ui.Button:
+        button: ui.Button = ui.Button(label=label, emoji=emoji, style=style, custom_id=custom_id)
         button.callback = callback  # type: ignore[method-assign]
-        self.add_item(button)
+        return button
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.owner_id:
@@ -407,37 +521,39 @@ class RentaView(discord.ui.View):
         return True
 
     async def _open(self, interaction: discord.Interaction) -> None:
-        """Abre el sobre: marca la declaración como vista y enseña el resumen."""
+        """Abre el sobre: marca la declaración como vista y enseña la carta y el resumen."""
         await ack(interaction)
         if self.statement is not None and interaction.guild is not None:
             await self.cog.economy.open_irpf_return(
                 interaction.guild.id, self.owner_id, self.statement.week
             )
             self.cog.track_opened(interaction, self.statement)
+        if self.drawing is not None:
+            # Se pintó mientras el sobre estaba cerrado: casi nunca queda nada que esperar.
+            self.png = await self.drawing
+            self.drawing = None
         self.mode = SUMMARY
         self._rebuild()
-        await edit(interaction, embed=self.embed(), view=self)
+        await edit(interaction, view=self, attachments=self.files())
 
-    async def _detail(self, interaction: discord.Interaction) -> None:
-        self.mode = DETAIL
-        self._rebuild()
-        await interaction.response.edit_message(embed=self.embed(), view=self)
-        if interaction.guild is not None:
-            logros.note(
-                self.cog.bot,
-                interaction.guild.id,
-                self.owner_id,
-                StatDelta(add={"renta_detail": 1}),
-                interaction.channel_id,
-            )
+    def _tab(self, mode: str) -> Callable[[discord.Interaction], Awaitable[None]]:
+        async def callback(interaction: discord.Interaction) -> None:
+            self.mode = mode
+            self._rebuild()
+            await interaction.response.edit_message(view=self)
+            if (stat := TAB_STATS.get(mode)) and interaction.guild is not None:
+                logros.note(
+                    self.cog.bot,
+                    interaction.guild.id,
+                    self.owner_id,
+                    StatDelta(add={stat: 1}),
+                    interaction.channel_id,
+                )
 
-    async def _summary(self, interaction: discord.Interaction) -> None:
-        self.mode = SUMMARY
-        self._rebuild()
-        await interaction.response.edit_message(embed=self.embed(), view=self)
+        return callback
 
     async def _present(self, interaction: discord.Interaction) -> None:
-        await self.cog.present(interaction)
+        await self.cog.present(interaction, self)
 
     async def _pay_full(self, interaction: discord.Interaction) -> None:
         await self.cog.pay(interaction, self, split=False)
@@ -447,7 +563,49 @@ class RentaView(discord.ui.View):
 
     async def _settle_debt(self, interaction: discord.Interaction) -> None:
         await self.cog.settle_debt(interaction, self)
-        self.stop()
+
+    async def _donate(self, interaction: discord.Interaction) -> None:
+        """Abre el formulario (tiene que ser la primera respuesta: nada de `ack`)."""
+        suggested = self.advice.more if self.advice is not None else 0
+        await interaction.response.send_modal(DonateForm(self.cog, suggested))
+
+
+class DonateForm(ui.Modal):
+    """🤝 A qué ONG y cuánto, desde el consejo de la Renta (la cantidad que más rinde)."""
+
+    def __init__(self, cog: Renta, suggested: int) -> None:
+        super().__init__(title="🤝 Donar a una ONG", timeout=VIEW_TIMEOUT)
+        self.cog = cog
+        self.suggested = suggested
+        self.ong: ui.Select = ui.Select(
+            placeholder="Elige la ONG",
+            custom_id="renta:donar:ong",
+            options=[
+                discord.SelectOption(
+                    label=ong.name, value=ong.key, emoji=ong.emoji, description=ong.mission[:100]
+                )
+                for ong in ONGS
+            ],
+        )
+        self.amount: ui.TextInput = ui.TextInput(
+            placeholder="500, 2k, mitad…",
+            default=str(suggested) if suggested else None,
+            max_length=20,
+            required=True,
+        )
+        self.add_item(ui.Label(text="ONG", component=self.ong))
+        hint = (
+            f"La que más rinde según el consejo: {format_amount(suggested)}" if suggested else None
+        )
+        self.add_item(ui.Label(text="Cantidad", component=self.amount, description=hint))
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        if not self.ong.values:
+            await interaction.response.send_message("Elige a qué ONG donas.", ephemeral=True)
+            return
+        await self.cog.donate(
+            interaction, self.ong.values[0], self.amount.value, suggested=self.suggested
+        )
 
 
 class PresentView(discord.ui.View):
@@ -473,9 +631,16 @@ class PresentView(discord.ui.View):
 class Renta(commands.Cog):
     """Declaración semanal del IRPF: cierre de los lunes, avisos y evento de campaña."""
 
-    def __init__(self, bot: commands.Bot, economy: EconomyService) -> None:
+    def __init__(
+        self,
+        bot: commands.Bot,
+        economy: EconomyService,
+        scene: renta_scene.RentaScene | None = None,
+    ) -> None:
         self.bot = bot
         self.economy = economy
+        #: Quien pinta la carta; las pruebas pasan un doble (`render_fakes`).
+        self.scene = scene or renta_scene.RentaScene()
         #: `(servidor, usuario, lunes de la campaña)` a quienes ya se avisó con
         #: el efímero; en esta campaña solo verán la línea pequeña.
         self._reminded: set[tuple[int, int, date]] = set()
@@ -492,6 +657,7 @@ class Renta(commands.Cog):
 
     async def cog_unload(self) -> None:
         self._campaign_events.cancel()
+        await self.scene.close()
 
     # -- Recordatorios desde el casino -----------------------------------------------
 
@@ -647,8 +813,16 @@ class Renta(commands.Cog):
 
     # -- Presentar ---------------------------------------------------------------------
 
-    async def present(self, interaction: discord.Interaction) -> None:
-        """Cobra la devolución y lo anuncia en el canal."""
+    async def present(
+        self, interaction: discord.Interaction, view: RentaView | None = None
+    ) -> None:
+        """Cobra la devolución, enseña el justificante y lo anuncia en el canal.
+
+        Args:
+            view: El panel de `renta` desde el que se presenta: se rehace con el sello
+                «PRESENTADA». Sin él (el aviso del casino), el aviso se queda en una línea y
+                el justificante llega aparte, en privado.
+        """
         guild = interaction.guild
         if guild is None:
             return
@@ -656,17 +830,26 @@ class Renta(commands.Cog):
         await ack(interaction)
         claim = await self.economy.claim_declarations(guild.id, interaction.user.id)
         if not claim.declarations:
-            await edit(interaction, content="No tienes ninguna declaración pendiente.", view=None)
+            if view is not None:
+                await notify(interaction, "No tienes ninguna declaración pendiente.")
+            else:
+                await edit(
+                    interaction, content="No tienes ninguna declaración pendiente.", view=None
+                )
             return
-        await edit(
-            interaction,
-            content=(
-                f"✅ Declaración presentada: +{format_amount(claim.refunded)}. "
-                f"Saldo: **{format_amount(claim.balance)}**."
-            ),
-            embed=None,
-            view=None,
+        done = (
+            f"✅ Declaración presentada: +{format_amount(claim.refunded)}. "
+            f"Saldo: **{format_amount(claim.balance)}**."
         )
+        if view is not None:
+            fresh = await self._view(
+                guild, interaction.user, mode=SUMMARY, notice=done, previous=view
+            )
+            await edit(interaction, **fresh.edit_kwargs())
+        else:
+            await edit(interaction, content=done, embed=None, view=None)
+            fresh = await self._view(guild, interaction.user, mode=SUMMARY)
+            await notify(interaction, **fresh.send_kwargs())
         weeks = len(claim.declarations)
         extra = f" ({weeks} semanas)" if weeks > 1 else ""
         channel = interaction.channel
@@ -704,9 +887,9 @@ class Renta(commands.Cog):
             guild.id, interaction.user.id, view.statement.week, split=split
         )
         fresh = await self._view(
-            guild, interaction.user, mode=view.mode, notice=payment_text(payment)
+            guild, interaction.user, mode=view.mode, notice=payment_text(payment), previous=view
         )
-        await edit(interaction, embed=fresh.embed(), view=fresh)
+        await edit(interaction, **fresh.edit_kwargs())
         if payment is not None:
             self._note_payment(guild.id, payment, interaction.channel_id, split=split)
 
@@ -720,9 +903,13 @@ class Renta(commands.Cog):
         # Lo pagado a mano no es un embargo: que `hint` no lo avise como tal.
         self._seen[(guild.id, interaction.user.id)] = self.economy.now()
         fresh = await self._view(
-            guild, interaction.user, mode=view.mode, notice=debt_payment_text(paid, left, balance)
+            guild,
+            interaction.user,
+            mode=view.mode,
+            notice=debt_payment_text(paid, left, balance),
+            previous=view,
         )
-        await edit(interaction, embed=fresh.embed(), view=fresh)
+        await edit(interaction, **fresh.edit_kwargs())
         if paid:
             logros.note(
                 self.bot,
@@ -731,6 +918,38 @@ class Renta(commands.Cog):
                 StatDelta(add={"debt_paid": paid}, peak={"balance_max": balance}),
                 interaction.channel_id,
             )
+
+    async def donate(
+        self, interaction: discord.Interaction, ong_key: str, amount_text: str, *, suggested: int
+    ) -> None:
+        """Dona desde el consejo de la Renta con el `donar` de siempre (`donations.give`).
+
+        El donativo sale en el canal como con `/donar` (su tratamiento fiscal, en
+        `EconomyService.donate`) y desgrava en la Renta del lunes.
+
+        Args:
+            suggested: Lo que proponía el consejo (para el logro de hacerle caso al pie de
+                la letra).
+        """
+        guild = interaction.guild
+        if guild is None:
+            return
+        # Donar va a la base de datos: se acepta el formulario antes.
+        await ack(interaction)
+        # Import tardío: `donations` importa este módulo.
+        from bot.cogs import donations
+
+        donated = await donations.give(self.bot, interaction, ong_key, amount_text)
+        if not donated:
+            return
+        add = {"renta_advice_donated": 1}
+        if suggested and donated == suggested:
+            add["renta_advice_exact"] = 1
+        logros.note(
+            self.bot, guild.id, interaction.user.id, StatDelta(add=add), interaction.channel_id
+        )
+        # Donar es gastar: gancho de la Renta (ver Biblia.txt, sección 4).
+        await self.remind(interaction)
 
     def _note_payment(
         self, guild_id: int, payment: IrpfPayment, channel_id: int | None, *, split: bool = False
@@ -747,6 +966,17 @@ class Renta(commands.Cog):
 
     # -- Comando -----------------------------------------------------------------------
 
+    async def _draw(self, state: dict[str, Any]) -> bytes | None:
+        """La carta en PNG, o `None` si no se puede (la declaración sale en texto)."""
+        if self.scene.disabled:
+            return None
+        try:
+            return await self.scene.still(state)
+        except Exception:
+            # Una carta que falla no puede dejar a nadie sin ver su declaración.
+            logger.exception("No se pudo dibujar la carta de la renta")
+            return None
+
     async def _view(
         self,
         guild: discord.Guild,
@@ -754,12 +984,17 @@ class Renta(commands.Cog):
         *,
         mode: str | None = None,
         notice: str = "",
+        previous: RentaView | None = None,
     ) -> RentaView:
         """La vista de `renta` de un miembro: su última declaración, lo pendiente y la deuda.
+
+        Con el sobre cerrado, la carta se empieza a pintar ya y se espera al abrirlo.
 
         Args:
             mode: El modo en que se enseña (sin él, el sobre si está sin abrir).
             notice: Lo que acaba de pasar (un pago), arriba del resto de avisos.
+            previous: El panel que se va a sustituir: si la carta no ha cambiado, se usa
+                la suya y no se vuelve a pintar ni a subir.
         """
         statement = await self.economy.irpf_statement(guild.id, member.id)
         pending = await self.economy.pending_declarations(guild.id, member.id)
@@ -770,9 +1005,36 @@ class Renta(commands.Cog):
         if mode is None:
             mode = SEALED if statement is not None and not statement.opened else SUMMARY
         extra = "\n\n".join(part for part in (notice, savings) if part)
-        return RentaView(
-            self, member.id, statement, pending, mode=mode, rate=rate, extra=extra, debt=debt
+        seal = png = drawing = None
+        key = ""
+        if statement is not None:
+            weeks = {d.week_start for d in pending}
+            seal = seal_for(statement, weeks, self.economy.now())
+            state = card_state(statement, member.display_name, seal)
+            key = json.dumps(state, sort_keys=True, ensure_ascii=False, default=str)
+            if previous is not None and previous.card_key == key:
+                png = previous.png
+            elif mode == SEALED:
+                drawing = asyncio.create_task(self._draw(state))
+            else:
+                png = await self._draw(state)
+        view = RentaView(
+            self,
+            member.id,
+            statement,
+            pending,
+            mode=mode,
+            rate=rate,
+            extra=extra,
+            debt=debt,
+            seal=seal or "",
+            png=png,
+            card_key=key,
+            drawing=drawing,
         )
+        if previous is not None and previous.card_key == key:
+            view.changed = False
+        return view
 
     @app_commands.command(name="renta", description="Mira y presenta tu declaración de la renta.")
     @app_commands.guild_only()
@@ -786,7 +1048,7 @@ class Renta(commands.Cog):
         # Leer la declaración va a la base de datos: se contesta antes.
         await interaction.response.defer(ephemeral=True, thinking=True)
         view = await self._view(interaction.guild, interaction.user)
-        await interaction.followup.send(embed=view.embed(), view=view, ephemeral=True)
+        await interaction.followup.send(**view.send_kwargs(), ephemeral=True)
 
     @commands.command(name="renta")
     @commands.guild_only()
@@ -795,7 +1057,7 @@ class Renta(commands.Cog):
         if ctx.guild is None:
             return
         view = await self._view(ctx.guild, ctx.author)
-        await ctx.send(embed=view.embed(), view=view)
+        await ctx.send(**view.send_kwargs())
 
     # -- Cierre del lunes y evento semanal ---------------------------------------------
 

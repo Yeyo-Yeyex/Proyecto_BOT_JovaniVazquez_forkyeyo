@@ -38,6 +38,8 @@ from bot.services.economy import (
 from bot.services.levels import TIMEZONE
 from bot.services.pets import Event, Moment
 from bot.services.taxes import TAX_COLLECTOR
+from bot.utils.cogs import find_cog
+from bot.utils.interactions import notify
 from bot.utils.responder import CommandResponder, ContextResponder, InteractionResponder
 
 if TYPE_CHECKING:
@@ -85,25 +87,25 @@ class Donaciones(commands.Cog):
         user: discord.abc.User,
         ong_text: str | None,
         amount_text: str | None,
-    ) -> bool:
+    ) -> int:
         """Enseña el catálogo o dona.
 
         Returns:
-            Si se ha donado (para el aviso de la Renta).
+            Lo donado, o 0 si no se ha donado (para el aviso de la Renta).
         """
         guild = responder.guild
         if guild is None:
             await responder.send_error("Las ONGs solo aceptan donativos dentro de un servidor.")
-            return False
+            return 0
         if not ong_text or not amount_text:
             totals = await self.economy.ong_totals(guild.id)
             await responder.send(embed=catalog_embed(totals))
-            return False
+            return 0
         ong = find_ong(ong_text)
         if ong is None:
             keys = ", ".join(f"`{o.key}`" for o in ONGS)
             await responder.send_error(f"No conozco esa ONG. Prueba con {keys}.")
-            return False
+            return 0
         balance = await self.economy.balance(guild.id, user.id)
         try:
             amount = parse_amount(amount_text, balance)
@@ -112,10 +114,10 @@ class Donaciones(commands.Cog):
             )
         except ValueError as error:
             await responder.send_error(str(error))
-            return False
+            return 0
         except InsufficientFundsError as error:
             await responder.send_error(f"No te llega: tienes {format_amount(error.balance)}.")
-            return False
+            return 0
         name = discord.utils.escape_markdown(user.display_name)
         lines = [
             f"{ong.emoji} **{name}** dona **{format_amount(amount)}** a **{ong.name}**.",
@@ -144,7 +146,7 @@ class Donaciones(commands.Cog):
                 when=datetime.now(TIMEZONE),
             ),
         )
-        return True
+        return amount
 
     @app_commands.command(name="donar", description="Dona a una ONG y desgrava en la renta.")
     @app_commands.describe(
@@ -179,6 +181,24 @@ class Donaciones(commands.Cog):
     ) -> None:
         """Versión de texto: `.donar` para la lista, `.donar <ong> <cantidad>` para donar."""
         await self._donar_impl(ContextResponder(ctx), ctx.author, ong, cantidad)
+
+
+async def give(
+    bot: commands.Bot, interaction: discord.Interaction, ong_key: str, amount_text: str
+) -> int:
+    """Dona desde otro cog (el consejo de `renta`) igual que `/donar`: sale en el canal.
+
+    La interacción ya tiene que estar aceptada (`ack`): el resultado va de seguimiento.
+
+    Returns:
+        Lo donado, o 0 si no se pudo (sin saldo, cantidad mal escrita, cog sin cargar).
+    """
+    if (cog := find_cog(bot, Donaciones)) is None:
+        await notify(interaction, "Ahora mismo no se puede donar.")
+        return 0
+    return await cog._donar_impl(  # noqa: SLF001
+        InteractionResponder(interaction), interaction.user, ong_key, amount_text
+    )
 
 
 async def setup(bot: BotClient) -> None:  # type: ignore[override]
