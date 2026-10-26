@@ -423,8 +423,8 @@ def test_los_logros_de_un_donativo_con_cifras_y_fechas_con_guasa() -> None:
         when=datetime(2026, 4, 14, 3, tzinfo=TIMEZONE),
         given={"corona": 5_000, "mares": 100_000},
     )
-    # 1.000 + 4.000 = justo el Bronce; de madrugada y un 14 de abril.
-    for stat in ("donation_exact_level", "donation_dawn", "donation_republic"):
+    # 1.000 + 4.000 = justo el Bronce, y de madrugada.
+    for stat in ("donation_exact_level", "donation_dawn"):
         assert corona.add[stat] == 1, stat
     assert corona.peak["patron_level_max"] == 1
     assert corona.peak["patron_ongs"] == 2 and corona.peak["patron_gold_ongs"] == 1
@@ -635,7 +635,8 @@ def test_fechas_y_cifras_con_guasa_de_los_donativos() -> None:
         ).add
 
     assert stats("corona", 65_000, datetime(2026, 11, 13, 10, tzinfo=TIMEZONE))["donation_friday13"]
-    assert stats("corona", 65_000, day(6))["donation_corona_65k"] == 1
+    assert stats("corona", 5_300, day(6))["donation_corona_rescue"] == 1
+    assert stats("corona", 14_999, day(6))["donation_corona_minor"] == 1
     assert stats("buitre", 1_200, day(6))["donation_buitre_rent"] == 1
     assert stats("gamers", 1_337, day(6))["donation_gamers_1337"] == 1
     assert stats("hambre", 5, day(6, 15))["donation_hambre_lunch"] == 1

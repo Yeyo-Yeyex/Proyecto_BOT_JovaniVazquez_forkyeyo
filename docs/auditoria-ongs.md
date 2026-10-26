@@ -161,3 +161,18 @@ Entrada: 1202 Y$ por ONG y semana · 2 rivales por sorteo
   Pino y los Inocentes (secreto). **Cifras con guasa** (secretos): 1.202 Y$ justos, 65.000
   a la Corona, 1.200 al fondo buitre, 1.337 a los gamers y Cubiertos de Plata a la hora de
   comer. **Colección:** mirar la ficha de las 10 ONGs.
+
+### La Fundación Familia Primero (9.30.0)
+
+- Sustituye a la Fundación Ejemplaridad Borbónica. Es una ONG del cuñado de Perro Sanxe,
+  el presidente de broma del bot: lee el BOE la víspera, pide las ayudas para sus empresas
+  y se las adjudica él mismo. Es un familiar inventado de un personaje inventado; no se
+  nombra a ningún familiar real.
+- Mantiene la clave `corona` y el monedero `-9`, así que lo donado, el nivel de mecenas y
+  los logros siguen valiendo. Los logros conservan su clave: cambian nombre, descripción
+  y, en los dos secretos, la condición (14.999 Y$, el contrato menor troceado, y 5.300 Y$,
+  el rescate de 53 millones a escala).
+- Sus diez regalos llevan claves nuevas. La tienda no le cambia el nombre a un artículo
+  ya sembrado, así que los de la Corona se quedan como estaban en los servidores donde
+  ya estuvieran, ocultos, y no vuelven a salir en ningún sorteo.
+- Techo Para Todos pierde el «(patrocina un fondo buitre)» del nombre.

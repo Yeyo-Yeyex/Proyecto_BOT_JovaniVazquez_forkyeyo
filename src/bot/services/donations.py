@@ -37,6 +37,7 @@ from bot.services.taxes import (
     DONATION_FULL_LIMIT,
     DONATION_FULL_RATE,
     DONATION_REST_RATE,
+    TAX_COLLECTOR,
 )
 
 
@@ -229,31 +230,36 @@ ONGS: tuple[Ong, ...] = (
         ),
     ),
     Ong(
+        # La clave y el monedero son de la Fundación Ejemplaridad Borbónica (9.27.0): se
+        # cambió de ONG, pero no de clave, para que sigan valiendo lo donado y los logros.
         key="corona",
         account_id=-9,
-        name="Fundación Ejemplaridad Borbónica",
-        emoji="👑",
-        mission="Promover la transparencia y la ejemplaridad de la Casa Real.",
+        name="Fundación Familia Primero",
+        emoji="🐶",
+        mission=(
+            "Ayudar a las pymes y a los emprendedores a conseguir ayudas públicas. La preside "
+            f"el cuñado de {TAX_COLLECTOR}, por pura vocación."
+        ),
         reality=(
-            "Tu donativo viaja en un maletín a Suiza y de ahí a Abu Dabi, donde vive el "
-            "presidente de honor."
+            "El cuñado lee el BOE la víspera, pide todas las ayudas para sus empresas y luego "
+            "se las adjudica él mismo desde la Diputación. Lo raro sería no ganarlas."
         ),
         spending=(
-            "un safari en Botsuana para estudiar de cerca a los elefantes",
-            "una cuenta en Ginebra «para emergencias»",
-            "el alquiler de un palacete en Abu Dabi con vistas al golfo",
-            "una regata en Sanxenxo, que el pueblo lo agradece",
-            "un regalo de 65 millones a una «amiga entrañable», sin factura",
-            "la mudanza a los Emiratos con todo el patrimonio y nada de explicaciones",
-            "un comunicado de dos líneas que dice «lo siento mucho, no volverá a ocurrir»",
-            "la regularización con Hacienda, pagada antes de que pregunten",
-            "un libro de memorias que culpa de todo a los demás",
+            "una consultoría de 300.000 € a una empresa creada el martes",
+            "el chivatazo de lo que sale mañana en el BOE",
+            "una ayuda a fondo perdido para la empresa del primo, que no tiene actividad",
+            "un contrato troceado en 14.999 € para no tener que sacarlo a concurso",
+            "un puesto en la Diputación creado a medida, con el nombre ya puesto",
+            "mascarillas compradas al triple de precio a un amigo de toda la vida",
+            "el rescate de una aerolínea que tiene un solo avión",
+            "un máster que le convalidaron sin pisar el aula",
+            "el coche oficial para ir a por el pan los domingos",
         ),
     ),
     Ong(
         key="buitre",
         account_id=-10,
-        name="Fundación Techo Para Todos (patrocina un fondo buitre)",
+        name="Fundación Techo Para Todos",
         emoji="🦅",
         mission="Que nadie se quede sin vivienda.",
         reality=(
@@ -1035,78 +1041,80 @@ ONG_GIFTS: tuple[OngGift, ...] = (
             "Hazme café… ¡Quiero café! La de quien revisa los cambios del bot.",
         ),
     ),
+    # Los de la Fundación Familia Primero (9.30.0) llevan claves nuevas: los diez de la
+    # Ejemplaridad Borbónica ya podían estar sembrados con su nombre en algún servidor.
     *_gifts(
         "corona",
-        "lujo",
+        "moncloa",
         (
-            "elefante",
-            "🐘",
-            "Elefante de peluche de Botsuana",
-            250,
-            "El único elefante de la Casa al que no le pasó nada.",
+            "enchufe",
+            "🔌",
+            "Enchufe de la Diputación",
+            220,
+            "Viene con un puesto creado a medida. El puesto es para el cuñado.",
         ),
         (
-            "maletin",
-            "💼",
-            "Maletín vacío de Ginebra",
-            300,
-            "Lo que llevaba ya está regularizado. O eso dicen.",
-        ),
-        (
-            "postal",
-            "🏜️",
-            "Postal desde Abu Dabi",
-            70,
-            "«Aquí se está muy bien. No volveré pronto.» Sin remite.",
-        ),
-        (
-            "disculpa",
-            "🎙️",
-            "Grabación de «Lo siento mucho»",
-            150,
-            "Doce segundos. La disculpa más cara de la historia de España.",
-        ),
-        (
-            "regata",
-            "⛵",
-            "Gorra de la regata de Sanxenxo",
-            120,
-            "Con la firma del patrón y una mancha de albariño.",
-        ),
-        (
-            "sello",
-            "📮",
-            "Sello con un perfil ya retirado",
-            90,
-            "Correos dejó de usarlo. Los coleccionistas, no.",
-        ),
-        (
-            "comision",
-            "🚄",
-            "Billete del AVE a La Meca",
-            200,
-            "De los de la comisión. El billete es lo único que no la cobró.",
-        ),
-        (
-            "corinna",
-            "📇",
-            "Tarjeta de una «amiga entrañable»",
+            "boe",
+            "📰",
+            "BOE de mañana",
             180,
-            "Con un número de teléfono de Mónaco tachado.",
+            "Con las ayudas que saldrán, ya subrayadas. Para el cuñado, el de hoy es viejo.",
         ),
         (
-            "bastos",
-            "🃏",
-            "Baraja con el rey de bastos marcado",
+            "mascarilla",
+            "😷",
+            "Mascarilla al triple de precio",
+            90,
+            "De un lote comprado a un amigo. Protege poco y factura mucho.",
+        ),
+        (
+            "troceado",
+            "📝",
+            "Contrato troceado de 14.999 €",
+            150,
+            "Un euro más y habría que sacarlo a concurso.",
+        ),
+        (
+            "convalidado",
+            "🎓",
+            "Máster convalidado",
+            200,
+            "Por currículum y por apellido. Las clases eran opcionales.",
+        ),
+        (
+            "oficial",
+            "🚘",
+            "Llavero del coche oficial",
+            130,
+            "El coche lo usa para ir a por el pan los domingos.",
+        ),
+        (
+            "rescate",
+            "✈️",
+            "Avión de la aerolínea rescatada",
+            260,
+            "La única aeronave de una compañía que recibió 53 millones de rescate.",
+        ),
+        (
+            "whatsapp",
+            "💬",
+            "Captura de un WhatsApp con la UCO",
+            170,
+            "«Tú tranquilo, que eso lo arreglo yo». Ya no está en el móvil.",
+        ),
+        (
+            "giratoria",
+            "🚪",
+            "Puerta giratoria en miniatura",
+            240,
+            "De la consejería al consejo de administración sin tocar el suelo.",
+        ),
+        (
+            "cargos",
+            "🪪",
+            "Tarjeta de visita con 14 cargos",
             60,
-            "Siempre sale cuando más conviene. Como un rey.",
-        ),
-        (
-            "cetro",
-            "🦯",
-            "Cetro de atrezo del palacete",
-            280,
-            "De resina, pintado de oro. Lo de oro de verdad está en otra parte.",
+            "Asesor, consejero, delegado, vocal, patrono… y cuñado.",
         ),
     ),
     *_gifts(

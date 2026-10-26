@@ -8,6 +8,13 @@ criterio.
 
 ## 9.x
 
+### 9.30.0 · 2026-10-26
+
+- ONGs: la Fundación Familia Primero, del cuñado de Perro Sanxe
+- ONGs: la Fundación Ejemplaridad Borbónica pasa a ser 🐶 Fundación Familia Primero: la preside el cuñado de Perro Sanxe, que lee el BOE la víspera, pide las ayudas para sus empresas y se las adjudica él mismo. Lo donado y los niveles de mecenas se conservan
+- ONGs: diez regalos exclusivos nuevos para ella (el enchufe de la Diputación, el BOE de mañana, el contrato troceado…) y sus logros cambian de nombre; los dos secretos piden ahora 14.999 o 5.300 Y$ exactos
+- ONGs: Techo Para Todos ya no lleva «(patrocina un fondo buitre)» en el nombre
+
 ### 9.29.0 · 2026-10-26
 
 - Logros: 28 nuevos de las ONGs

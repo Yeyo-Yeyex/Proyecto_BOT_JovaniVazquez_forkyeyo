@@ -9404,8 +9404,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Dona el día del Pino (8 de septiembre).", C, False),
         ("donation_ticket_exact", "donate_ticket_exact", "Lo justo para la papeleta",
          f"Dona exactamente {RAFFLE_MIN:,} Y$.".replace(",", "."), C, True),
-        ("donation_corona_65k", "donate_corona_65k", "Amiga entrañable",
-         "Dona 65.000 Y$ exactos a la Fundación Ejemplaridad Borbónica.", R, True),
+        ("donation_corona_rescue", "donate_corona_65k", "Rescate con un solo avión",
+         "Dona 5.300 Y$ exactos a la Fundación Familia Primero.", R, True),
         ("donation_buitre_rent", "donate_buitre_rent", "Precio de mercado",
          "Dona 1.200 Y$ exactos a Techo Para Todos.", C, True),
         ("donation_gamers_1337", "donate_gamers_1337", "Donativo l33t",
@@ -9467,8 +9467,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Dona el Día de Canarias (30 de mayo).", C, False),
         ("donation_last_call", "donate_last_call", "Boleto de última hora",
          "Dona un viernes entre las 19:00 y las 20:00, justo antes del sorteo.", C, False),
-        ("donation_republic", "donate_republic", "Tricolor en la hucha real",
-         "Dona a la Fundación Ejemplaridad Borbónica un 14 de abril.", C, True),
+        ("donation_corona_minor", "donate_republic", "Contrato menor, cuñado mayor",
+         "Dona 14.999 Y$ exactos a la Fundación Familia Primero.", C, True),
     ):  # fmt: skip
         a += _tiers("economy", stat, [(1, key, title, text, rarity, secret)])
     a += _tiers("economy", "donations", [
@@ -9507,9 +9507,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
         ("jovani", "la Fundación Amigos del Bot Jovani",
          ("Mecenas del NAS", "Dueño de la RAM de Chromium",
           "Accionista mayoritario del bot")),
-        ("corona", "la Fundación Ejemplaridad Borbónica",
-         ("Amigo entrañable de la Casa", "Cuenta en Ginebra compartida",
-          "Vecino de Abu Dabi")),
+        ("corona", "la Fundación Familia Primero",
+         ("Enchufado de segunda", "Primo de libre designación",
+          "Familia política del año")),
         ("buitre", "Techo Para Todos",
          ("Inquilino agradecido", "Socio del fondo buitre",
           "Dueño de medio Lavapiés")),
@@ -26874,7 +26874,8 @@ def donation_stats(
         ("donation_canarias", when.month == 5 and when.day == 30),
         # La última hora antes del sorteo de los viernes a las 20:00.
         ("donation_last_call", when.weekday() == 4 and when.hour == 19),
-        ("donation_republic", ong == "corona" and when.month == 4 and when.day == 14),
+        # Los 14.999 € del contrato menor troceado y los 53 millones del rescate (a escala).
+        ("donation_corona_minor", ong == "corona" and amount == 14_999),
         ("donation_friday13", when.weekday() == 4 and when.day == 13),
         ("donation_halloween", when.month == 10 and when.day == 31),
         ("donation_innocents", when.month == 12 and when.day == 28),
@@ -26882,7 +26883,7 @@ def donation_stats(
         ("donation_kings", when.month == 1 and when.day == 6),
         ("donation_pino", when.month == 9 and when.day == 8),
         ("donation_ticket_exact", amount == RAFFLE_MIN),
-        ("donation_corona_65k", ong == "corona" and amount == 65_000),
+        ("donation_corona_rescue", ong == "corona" and amount == 5_300),
         ("donation_buitre_rent", ong == "buitre" and amount == 1_200),
         ("donation_gamers_1337", ong == "gamers" and amount == 1_337),
         ("donation_hambre_lunch", ong == "hambre" and 14 <= when.hour < 16),
