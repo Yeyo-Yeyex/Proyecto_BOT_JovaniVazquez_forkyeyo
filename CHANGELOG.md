@@ -8,6 +8,11 @@ criterio.
 
 ## 9.x
 
+### 9.31.2 · 2026-10-26
+
+- ONGs: la de la acogida pasa a ser el «Gran Hotel Emergencia ★★★★★»
+- ONGs: la broma es el resort de lujo que el Gobierno paga a precio de temporada alta: el minibar a 9 € el agua, la tasa turística que se cobra a sí mismo, el «módulo habitacional con vistas» y el consejero compareciendo desde la tumbona; regalos y logros nuevos a juego
+
 ### 9.31.1 · 2026-10-26
 
 - ONGs: la Fundación Acogida pasa a ser «Eso Es Cosa de Madrid»
