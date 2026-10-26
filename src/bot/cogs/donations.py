@@ -423,20 +423,23 @@ class Donaciones(commands.Cog):
             allowed_mentions=_NO_MENTIONS,
         )
         # Lo que no hace falta para enseñar el donativo va después: el nivel y su regalo.
-        given = (await self.economy.ong_member(guild.id, user.id)).get(ong.key, amount)
+        mine = await self.economy.ong_member(guild.id, user.id)
+        given = mine.get(ong.key, amount)
         reached = [lvl for lvl in PATRON_LEVELS if given - amount < lvl.threshold <= given]
         gifts = await self._level_gifts(responder, user, ong, reached)
-        level = patron_level(given)
         delta = donation_stats(
             ong=ong.key,
             amount=amount,
             ongs_supported=receipt.ongs_supported,
             balance_after=receipt.balance,
             when=datetime.now(TIMEZONE),
-            patron_level=PATRON_LEVELS.index(level) + 1 if level else 0,
+            given=mine,
         )
-        for gift in gifts:
-            delta.merge(ong_gift_stats(exclusive=gift.catalog_key in EXCLUSIVE_KEYS))
+        if gifts:
+            owned = await tienda.owned_keys(self.bot, guild.id, user.id)
+            for gift in gifts:
+                exclusive = gift.catalog_key in EXCLUSIVE_KEYS
+                delta.merge(ong_gift_stats(exclusive=exclusive, owned=owned))
         await logros.track(self.bot, guild.id, user, responder.channel, delta)
         return amount
 
@@ -539,7 +542,10 @@ class Donaciones(commands.Cog):
                 else "un abrazo (no quedaba nada que regalar)"
             )
             lines.append(f"{ong.emoji} {ong.name}: **{_name(guild, winner)}** se lleva {prize}")
-            delta = ong_gift_stats(exclusive=exclusive) if gift is not None else StatDelta()
+            delta = StatDelta()
+            if gift is not None:
+                owned = await tienda.owned_keys(self.bot, guild.id, winner)
+                delta = ong_gift_stats(exclusive=exclusive, owned=owned)
             delta.add["ong_raffle_won"] = 1
             logros.note(self.bot, guild.id, winner, delta)
         if not lines:

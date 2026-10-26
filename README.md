@@ -479,7 +479,7 @@ python -m bot
   tienda al 85 % de lo que pagaste o te presta el 55 % por empeñarlo (lo
   recuperas devolviendo un 5 % más en 3 días); paga con la caja de la tienda y no
   acepta lo regalado ni lo numerado. Hasta la 9.0.0 era un mostrador de `banco`.
-- **Donativos** (`donar`): ocho ONGs de broma que hacen lo contrario de lo
+- **Donativos** (`donar`): diez ONGs de broma que hacen lo contrario de lo
   que dicen, en un panel con la ficha de cada una y el muro de donantes. Donar
   es gastar (el dinero se queda en la ONG), pero desgrava en la renta del lunes:
   80 % de los primeros 250 € al año (unos 1.202 Y$ a la semana) y 40 % del

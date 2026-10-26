@@ -55,10 +55,21 @@ perseguir. Lo que se ha hecho:
   sorteo), así que un reinicio no lo repite.
 - **Regalos.** El premio suele ser algo de la tienda de hasta 500 Y$ (los mismos que da
   la caja botín, `shop.giftable`). Un 15 % de las veces, y siempre al llegar a Oro y a
-  Patrono, es uno de los 40 exclusivos de la ONG: artículos ocultos del surtido, como las
+  Patrono, es uno de los exclusivos de la ONG: artículos ocultos del surtido, como las
   piezas de las cajas, que no se venden. Los regalos no mueven dinero.
 - **Logros:** 15 más (42 en total): las 8 ONGs, los cuatro niveles de mecenas, los
   sorteos ganados, los regalos y los exclusivos.
 
 Se quedó fuera una deducción canaria por donativos (art. 4 ter del DL 1/2009, un 20 %
 más de los primeros 150 €). Es real, pero haría que donar el primer tramo saliera gratis.
+
+### Tercera tanda (9.27.0)
+
+- **Diez ONGs.** Dos más picantes, con sátira de instituciones y figuras públicas (Biblia,
+  «Personalidad»): 👑 Fundación Ejemplaridad Borbónica (el emérito, Abu Dabi, Botsuana) y
+  🦅 Fundación Techo Para Todos (un fondo buitre y la vivienda). Monederos `-9` y `-10`.
+- **100 exclusivos**, diez por ONG.
+- **91 logros de ONGs** (antes 42): Oro y Patrono de cada ONG, mecenas de varias ONGs,
+  colecciones de exclusivos (por ONG y en total), más sorteos y regalos, el mayor
+  donativo, fechas (madrugada, Día de Canarias, la hora antes del sorteo) y secretos (69,
+  420, justo lo que faltaba para subir de nivel, la Corona un 14 de abril).

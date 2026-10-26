@@ -76,7 +76,7 @@ mochila (uso `lootbox`) y pagan IGIC general, y las 82 piezas de colección
 (`visible=False`) con su valor como precio. La caja botín de siempre (`caja_botin`)
 está en `RETIRED_ITEMS`: ya no se vende, pero se sigue abriendo.
 
-**Regalos de las ONGs.** Salen de `bot.services.donations` (`ONG_GIFTS`): cinco por
+**Regalos de las ONGs.** Salen de `bot.services.donations` (`ONG_GIFTS`): diez por
 ONG, con la clave `ong_<ong>_<regalo>` en el pasillo de su tema. Son coleccionables
 ocultos (`visible=False`), como las piezas, con su valor como precio: no se venden y
 solo los dan las ONGs en su sorteo semanal y al subir de nivel de mecenas.

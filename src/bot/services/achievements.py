@@ -34,7 +34,7 @@ from __future__ import annotations
 import math
 import re
 from collections import OrderedDict
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from enum import Enum
@@ -235,6 +235,12 @@ if TYPE_CHECKING:
     from bot.services.negocio import NightRun, StaffTurn, TurnResult
     from bot.services.pala import ShiftOutcome
 
+from bot.services.donations import (
+    GIFTS_BY_ONG,
+    PATRON_LEVELS,
+    next_patron_level,
+    patron_level,
+)
 from bot.services.taxes import (
     BECKHAM_LIMIT_EUR,
     INSURANCE_DEDUCTION_MAX_EUR,
@@ -9303,7 +9309,22 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ], unit="money")  # fmt: skip
     a += _tiers("economy", "ongs_supported", [
         (4, "donate_all", "Accionista del tercer sector", "Dona a 4 ONGs distintas.", R),
-        (8, "donate_all_8", "Ocho apellidos solidarios", "Dona a las 8 ONGs.", E),
+        (8, "donate_all_8", "Ocho apellidos solidarios", "Dona a 8 ONGs distintas.", E),
+        (10, "donate_all_10", "Pleno al diez del tercer sector", "Dona a las 10 ONGs.", E),
+    ])  # fmt: skip
+    a += _tiers("economy", "patron_ongs", [
+        (3, "patron_ongs_3", "Bronceado en tres playas",
+         "Sé mecenas (Bronce o más) de 3 ONGs.", R),
+        (6, "patron_ongs_6", "Mecenas de polígono industrial",
+         "Sé mecenas (Bronce o más) de 6 ONGs.", E),
+        (10, "patron_ongs_10", "Tercer sector, primer donante",
+         "Sé mecenas (Bronce o más) de las 10 ONGs.", L),
+    ])  # fmt: skip
+    a += _tiers("economy", "patron_gold_ongs", [
+        (3, "patron_gold_3", "Corazón de oro de 24 quilates",
+         "Sé mecenas Oro (o Patrono) de 3 ONGs.", L),
+        (10, "patron_gold_10", "Fort Knox solidario",
+         "Sé mecenas Oro (o Patrono) de las 10 ONGs.", M),
     ])  # fmt: skip
     a += _tiers("economy", "patron_level_max", [
         (1, "patron_bronze", "Bronceado solidario",
@@ -9318,17 +9339,64 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("economy", "ong_raffle_won", [
         (1, "ong_raffle_1", "Me ha tocado la tómbola", "Gana el sorteo de una ONG.", R),
         (5, "ong_raffle_5", "Mano inocente del bombo", "Gana 5 sorteos de ONGs.", E),
+        (10, "ong_raffle_10", "El bombo te conoce por tu nombre", "Gana 10 sorteos de ONGs.", L),
+        (25, "ong_raffle_25", "Niño de San Ildefonso solidario", "Gana 25 sorteos de ONGs.", M),
     ])  # fmt: skip
     a += _tiers("economy", "ong_gifts", [
         (1, "ong_gift_1", "Detalle de la casa", "Recibe un regalo de una ONG.", C),
         (10, "ong_gift_10", "Bolsa de merchandising", "Recibe 10 regalos de ONGs.", E),
+        (25, "ong_gift_25", "Trastero de la caridad", "Recibe 25 regalos de ONGs.", L),
+        (50, "ong_gift_50", "Síndrome de Diógenes solidario", "Recibe 50 regalos de ONGs.", M),
     ])  # fmt: skip
     a += _tiers("economy", "ong_exclusive_gifts", [
         (1, "ong_exclusive_1", "Edición limitada solidaria",
          "Recibe un regalo exclusivo de una ONG.", R),
         (5, "ong_exclusive_5", "Vitrina del tercer sector",
          "Recibe 5 regalos exclusivos de ONGs.", E),
+        (15, "ong_exclusive_15", "Museo de la beneficencia",
+         "Recibe 15 regalos exclusivos de ONGs.", L),
     ])  # fmt: skip
+    a += _tiers("economy", "ong_exclusives_owned", [
+        (3, "ong_owned_3", "Tres de merchandising",
+         "Ten 3 regalos exclusivos distintos de ONGs.", E),
+        (10, "ong_owned_10", "Mercadillo solidario",
+         "Ten 10 regalos exclusivos distintos de ONGs.", L),
+        (25, "ong_owned_25", "Almacén de la fundación",
+         "Ten 25 regalos exclusivos distintos de ONGs.", M),
+        (100, "ong_owned_100", "Patronato universal",
+         "Ten los 100 regalos exclusivos de las ONGs.", M),
+    ])  # fmt: skip
+    a += _tiers("economy", "ong_exclusive_set_max", [
+        (5, "ong_set_5", "Media colección de chiringuito",
+         "Ten 5 regalos exclusivos distintos de una misma ONG.", L),
+        (10, "ong_set_10", "Colección completa con certificado",
+         "Ten los 10 regalos exclusivos de una misma ONG.", M),
+    ])  # fmt: skip
+    a += _tiers("economy", "donation_max", [
+        (10_000, "donate_single_10k", "Cheque gigante de cartón",
+         "Haz un solo donativo de 10.000 Y$ o más.", R),
+        (100_000, "donate_single_100k", "Foto con el cheque en el Telediario",
+         "Haz un solo donativo de 100.000 Y$ o más.", E),
+        (1_000_000, "donate_single_1m", "Resonancias de Amancio",
+         "Haz un solo donativo de 1.000.000 Y$ o más.", L),
+    ], unit="money")  # fmt: skip
+    for stat, key, title, text, rarity, secret in (
+        ("donation_69", "donate_69", "Caridad en posición comprometida",
+         "Dona 69 Y$ exactos.", C, True),
+        ("donation_420", "donate_420", "Donativo con humo",
+         "Dona 420 Y$ exactos.", C, True),
+        ("donation_exact_level", "donate_exact_level", "Al céntimo",
+         "Dona justo lo que te faltaba para subir de nivel de mecenas.", R, True),
+        ("donation_dawn", "donate_dawn", "Caridad con nocturnidad",
+         "Dona entre las 00:00 y las 06:00.", C, False),
+        ("donation_canarias", "donate_canarias", "Donativo con mojo picón",
+         "Dona el Día de Canarias (30 de mayo).", C, False),
+        ("donation_last_call", "donate_last_call", "Boleto de última hora",
+         "Dona un viernes entre las 19:00 y las 20:00, justo antes del sorteo.", C, False),
+        ("donation_republic", "donate_republic", "Tricolor en la hucha real",
+         "Dona a la Fundación Ejemplaridad Borbónica un 14 de abril.", C, True),
+    ):  # fmt: skip
+        a += _tiers("economy", stat, [(1, key, title, text, rarity, secret)])
     a += _tiers("economy", "donations", [
         (10, "donations_10", "Socio de cuota", "Haz 10 donativos.", C),
         (20, "donations_20", "Donativo fijo", "Haz 20 donativos.", C),
@@ -9339,26 +9407,45 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1_000, "donations_1k", "Benefactor de chiringuitos con nombre de calle",
          "Haz 1.000 donativos.", E),
     ])  # fmt: skip
-    for ong_key, title, text in (
-        ("desmontar", "Patrono de la Fundación Desmontando España",
-         "Dona 10.000 Y$ a desmontar España."),
-        ("ayudante", "Ayudante del Ayudante",
-         "Dona 10.000 Y$ a la Asociación Ayuda al Ayudante."),
-        ("mares", "Grumete del yate solidario",
-         "Dona 10.000 Y$ a Mares Limpios S. L."),
-        ("hambre", "Comensal del banquete contra el hambre",
-         "Dona 10.000 Y$ a Cubiertos de Plata."),
-        ("gamers", "Donante con pase de batalla",
-         "Dona 10.000 Y$ a Gamers Sin Fronteras."),
-        ("influencers", "Padrino de influencer en apuros",
-         "Dona 10.000 Y$ a la Protectora de Influencers Abandonados."),
-        ("platano", "Plátano de oro",
-         "Dona 10.000 Y$ a Salvemos el Plátano Canario."),
-        ("jovani", "Mecenas del NAS",
-         "Dona 10.000 Y$ a la Fundación Amigos del Bot Jovani."),
+    # Por ONG: 10.000 Y$, Oro (100.000) y Patrono (500.000) de cada una.
+    for ong_key, who, (bronze, gold, top) in (
+        ("desmontar", "la Fundación Desmontando España",
+         ("Patrono de la Fundación Desmontando España", "Destornillador de oro",
+          "Arquitecto del puzle de 17 piezas")),
+        ("ayudante", "la Asociación Ayuda al Ayudante",
+         ("Ayudante del Ayudante", "Ayudante del Ayudante del Ayudante",
+          "Vicepresidente segundo honorífico")),
+        ("mares", "Mares Limpios S. L.",
+         ("Grumete del yate solidario", "Contramaestre de la S. L.",
+          "Armador de la flota de yates")),
+        ("hambre", "Cubiertos de Plata",
+         ("Comensal del banquete contra el hambre", "El séptimo tenedor",
+          "Langosta perpetua")),
+        ("gamers", "Gamers Sin Fronteras",
+         ("Donante con pase de batalla", "Ballena de las microtransacciones",
+          "Silla gaming con masaje vitalicia")),
+        ("influencers", "la Protectora de Influencers Abandonados",
+         ("Padrino de influencer en apuros", "Mánager de influencers en Dubái",
+          "Dueño de la granja de seguidores")),
+        ("platano", "Salvemos el Plátano Canario",
+         ("Plátano de oro", "Racimo de oro con motitas",
+          "La rotonda del plátano lleva tu nombre")),
+        ("jovani", "la Fundación Amigos del Bot Jovani",
+         ("Mecenas del NAS", "Dueño de la RAM de Chromium",
+          "Accionista mayoritario del bot")),
+        ("corona", "la Fundación Ejemplaridad Borbónica",
+         ("Amigo entrañable de la Casa", "Cuenta en Ginebra compartida",
+          "Vecino de Abu Dabi")),
+        ("buitre", "Techo Para Todos",
+         ("Inquilino agradecido", "Socio del fondo buitre",
+          "Dueño de medio Lavapiés")),
     ):  # fmt: skip
         a += _tiers("economy", f"donated_{ong_key}", [
-            (10_000, f"donate_{ong_key}_10k", title, text, R),
+            (10_000, f"donate_{ong_key}_10k", bronze, f"Dona 10.000 Y$ a {who}.", R),
+            (100_000, f"donate_{ong_key}_100k", gold,
+             f"Dona 100.000 Y$ a {who} (mecenas Oro).", E),
+            (500_000, f"donate_{ong_key}_500k", top,
+             f"Dona 500.000 Y$ a {who} (Patrono).", L),
         ], unit="money")  # fmt: skip
     a += _tiers("economy", "donation_one", [
         (1, "donate_one", "La voluntad", "Dona 1 Y$.",
@@ -26670,7 +26757,7 @@ def donation_stats(
     ongs_supported: int,
     balance_after: int,
     when: datetime,
-    patron_level: int = 0,
+    given: Mapping[str, int] | None = None,
 ) -> StatDelta:
     """Estadísticas de un donativo a una ONG (`donar`).
 
@@ -26679,28 +26766,56 @@ def donation_stats(
         amount: Lo donado.
         ongs_supported: ONGs distintas a las que ha donado el miembro.
         balance_after: Saldo tras donar (0 si lo ha dado todo).
-        patron_level: Nivel de mecenas con esa ONG tras donar (0 sin nivel, 4 Patrono).
+        given: Lo donado a cada ONG desde siempre, ya con este donativo, para los niveles
+            de mecenas. Sin él, no cuentan.
     """
     delta = StatDelta(
         add={"donated": amount, "donations": 1, f"donated_{ong}": amount},
-        peak={"ongs_supported": ongs_supported},
+        peak={"ongs_supported": ongs_supported, "donation_max": amount},
     )
-    if patron_level:
-        delta.peak["patron_level_max"] = patron_level
+    exact = False
+    if given:
+        level = patron_level(given.get(ong, amount))
+        if level is not None:
+            delta.peak["patron_level_max"] = PATRON_LEVELS.index(level) + 1
+        delta.peak["patron_ongs"] = sum(patron_level(v) is not None for v in given.values())
+        gold = PATRON_LEVELS[2].threshold
+        delta.peak["patron_gold_ongs"] = sum(v >= gold for v in given.values())
+        before = given.get(ong, amount) - amount
+        target = next_patron_level(before)
+        exact = target is not None and amount == target.threshold - before
     for stat, hit in (
         ("donation_one", amount == 1),
         ("donation_allin", balance_after == 0),
         ("donation_666", amount == 666),
+        ("donation_69", amount == 69),
+        ("donation_420", amount == 420),
+        ("donation_exact_level", exact),
         ("donation_christmas", when.month == 12 and when.day in (24, 25)),
+        ("donation_dawn", when.hour < 6),
+        ("donation_canarias", when.month == 5 and when.day == 30),
+        # La última hora antes del sorteo de los viernes a las 20:00.
+        ("donation_last_call", when.weekday() == 4 and when.hour == 19),
+        ("donation_republic", ong == "corona" and when.month == 4 and when.day == 14),
     ):
         if hit:
             delta.add[stat] = 1
     return delta
 
 
-def ong_gift_stats(*, exclusive: bool) -> StatDelta:
-    """Estadísticas de un regalo de una ONG (por subir de nivel o en su sorteo)."""
-    return StatDelta(add={"ong_gifts": 1, "ong_exclusive_gifts": int(exclusive)})
+def ong_gift_stats(*, exclusive: bool, owned: Collection[str] = ()) -> StatDelta:
+    """Estadísticas de un regalo de una ONG (por subir de nivel o en su sorteo).
+
+    Args:
+        owned: Claves de lo que tiene en la mochila tras recibirlo, para las colecciones
+            de exclusivos (cuántos distintos y cuántos de la ONG de la que más tiene).
+    """
+    delta = StatDelta(add={"ong_gifts": 1, "ong_exclusive_gifts": int(exclusive)})
+    per_ong = [len({g.catalog_key for g in gifts} & set(owned)) for gifts in GIFTS_BY_ONG.values()]
+    if any(per_ong):
+        delta.peak["ong_exclusives_owned"] = sum(per_ong)
+        delta.peak["ong_exclusive_set_max"] = max(per_ong)
+    return delta
 
 
 def market_swap_stats(

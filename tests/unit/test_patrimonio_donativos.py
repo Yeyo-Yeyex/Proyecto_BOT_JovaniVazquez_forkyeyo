@@ -124,9 +124,9 @@ def test_deduccion_80_y_40_con_los_limites() -> None:
 
 def test_las_ongs_tienen_cuentas_negativas_y_distintas() -> None:
     accounts = [ong.account_id for ong in ONGS]
-    assert len(ONGS) == 8
+    assert len(ONGS) == 10
     assert all(a < 0 for a in accounts)
-    assert len(set(accounts)) == 8
+    assert len(set(accounts)) == 10
     assert find_ong("mares") is BY_KEY["mares"]
     assert find_ong("AYUDA") is BY_KEY["ayudante"]
     assert find_ong("cruz roja") is None
@@ -288,7 +288,12 @@ async def test_donar_por_texto_dona_y_cuenta_para_logros(
     delta = track.await_args.args[4]
     half = STARTING_BALANCE // 2
     assert delta.add == {"donated": half, "donations": 1, "donated_mares": half}
-    assert delta.peak == {"ongs_supported": 1}
+    assert delta.peak == {
+        "ongs_supported": 1,
+        "donation_max": half,
+        "patron_ongs": 0,
+        "patron_gold_ongs": 0,
+    }
 
 
 async def test_donar_mas_de_lo_que_tienes_no_mueve_nada(tmp_path: Path) -> None:
@@ -401,7 +406,20 @@ def test_los_logros_de_un_donativo_con_cifras_y_fechas_con_guasa() -> None:
     delta = donation_stats(ong="hambre", amount=666, ongs_supported=4, balance_after=0, when=xmas)
     assert delta.add["donation_666"] == delta.add["donation_allin"] == 1
     assert delta.add["donation_christmas"] == 1 and delta.add["donated_hambre"] == 666
-    assert delta.peak == {"ongs_supported": 4}
+    assert delta.peak == {"ongs_supported": 4, "donation_max": 666}
+    corona = donation_stats(
+        ong="corona",
+        amount=4_000,
+        ongs_supported=2,
+        balance_after=5,
+        when=datetime(2026, 4, 14, 3, tzinfo=TIMEZONE),
+        given={"corona": 5_000, "mares": 100_000},
+    )
+    # 1.000 + 4.000 = justo el Bronce; de madrugada y un 14 de abril.
+    for stat in ("donation_exact_level", "donation_dawn", "donation_republic"):
+        assert corona.add[stat] == 1, stat
+    assert corona.peak["patron_level_max"] == 1
+    assert corona.peak["patron_ongs"] == 2 and corona.peak["patron_gold_ongs"] == 1
     plain = donation_stats(
         ong="mares", amount=1, ongs_supported=1, balance_after=5, when=xmas.replace(month=3)
     )
@@ -427,8 +445,8 @@ def test_niveles_de_mecenas_y_boletos() -> None:
     # Cada nivel da más boletos y pide más que el anterior.
     pairs = list(zip(PATRON_LEVELS, PATRON_LEVELS[1:], strict=False))
     assert all(a.threshold < b.threshold and a.tickets < b.tickets for a, b in pairs)
-    # Cinco regalos exclusivos por ONG.
-    assert all(len(GIFTS_BY_ONG[ong.key]) == 5 for ong in ONGS)
+    # Diez regalos exclusivos por ONG.
+    assert all(len(GIFTS_BY_ONG[ong.key]) == 10 for ong in ONGS)
 
 
 def test_el_sorteo_es_el_viernes_a_las_ocho_de_la_tarde() -> None:
@@ -537,3 +555,15 @@ async def test_los_sorteos_se_anuncian_y_dan_logros(
     assert "Plátano" in text and "Diego" in text and "Calcetín" in text
     delta = note.call_args.args[3]
     assert delta.add == {"ong_gifts": 1, "ong_exclusive_gifts": 0, "ong_raffle_won": 1}
+
+
+def test_las_colecciones_de_regalos_exclusivos() -> None:
+    from bot.services.achievements import ong_gift_stats
+    from bot.services.donations import GIFTS_BY_ONG
+
+    corona = [g.catalog_key for g in GIFTS_BY_ONG["corona"]]
+    owned = {*corona, GIFTS_BY_ONG["mares"][0].catalog_key, "caja_carton"}
+    delta = ong_gift_stats(exclusive=True, owned=owned)
+    assert delta.add == {"ong_gifts": 1, "ong_exclusive_gifts": 1}
+    assert delta.peak == {"ong_exclusives_owned": 11, "ong_exclusive_set_max": 10}
+    assert ong_gift_stats(exclusive=False, owned={"caja_carton"}).peak == {}

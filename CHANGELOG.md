@@ -8,6 +8,13 @@ criterio.
 
 ## 9.x
 
+### 9.27.0 · 2026-10-26
+
+- ONGs: dos ONGs más picantes, 100 regalos exclusivos y 49 logros nuevos
+- ONGs: 👑 Fundación Ejemplaridad Borbónica (su donativo acaba en Abu Dabi) y 🦅 Fundación Techo Para Todos (patrocina un fondo buitre)
+- Tienda: 60 regalos exclusivos nuevos, diez por ONG (100 en total); siguen sin venderse
+- Logros: 49 nuevos de las ONGs: Oro y Patrono de cada ONG, mecenas de varias ONGs, colecciones de exclusivos, más sorteos y regalos, el mayor donativo, fechas y cifras secretas
+
 ### 9.26.0 · 2026-10-26
 
 - ONGs: `donar` con panel, ocho ONGs, mecenas y sorteo de los viernes

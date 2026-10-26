@@ -341,6 +341,7 @@ def test_caja_botin_pierde_dinero_pero_no_es_una_estafa_total() -> None:
         e.price
         for e in CATALOG
         if e.kind is Kind.TROPHY
+        and e.visible  # la caja solo sortea lo que se vende (`repository.items`)
         and e.use is None
         and e.stock is None
         and not e.title
