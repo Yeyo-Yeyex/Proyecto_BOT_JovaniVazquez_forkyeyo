@@ -188,3 +188,4 @@ Entrada: 1202 Y$ por ONG y semana · 2 rivales por sorteo
 - Diez regalos exclusivos (110 en total) y sus logros de 10.000, 100.000 y 500.000 Y$.
   «Dona a las 11 ONGs» es un escalón nuevo; los que decían «las 10» pasan a «10
   distintas» y la colección de exclusivos, a «100 distintos».
+- 9.31.1: la Fundación Acogida Cinco Estrellas pasa a llamarse Eso Es Cosa de Madrid, con textos y regalos más burros (misma clave `acogida`; el blanco sigue siendo la gestión, no quien llega).

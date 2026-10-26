@@ -8,6 +8,11 @@ criterio.
 
 ## 9.x
 
+### 9.31.1 · 2026-10-26
+
+- ONGs: la Fundación Acogida pasa a ser «Eso Es Cosa de Madrid»
+- ONGs: textos y regalos nuevos para la ONG de la acogida en Canarias: el pendrive del consejero de vacaciones, el «pulse 2 y espere cuatro años», el contrato en una servilleta y el croissant de la cumbre de crisis
+
 ### 9.31.0 · 2026-10-26
 
 - ONGs: la Fundación Acogida Cinco Estrellas
