@@ -2487,6 +2487,16 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (5, "todo_batch_5", "Limpieza de primavera", "Tacha 5 tareas de golpe.", C),
         (20, "todo_batch_20", "Marie Kondo de las tareas", "Tacha 20 tareas de golpe.", R),
     ])  # fmt: skip
+    a += _tiers("todo", "todo_edited", [
+        (1, "todo_edit_1", "Corregido y aumentado",
+         "Edita una tarea de la lista con el menú ✏️.", C),
+        (10, "todo_edit_10", "Lápiz y goma", "Edita 10 tareas de la lista.", C),
+        (50, "todo_edit_50", "Pasado a limpio", "Edita 50 tareas de la lista.", R),
+    ])  # fmt: skip
+    a += _tiers("todo", "todo_demoted", [
+        (1, "todo_demote_1", "Ya si eso, mañana",
+         "Pasa una tarea de prioridad alta a baja.", C, True),
+    ])  # fmt: skip
 
     # 🍻 Beernight (cogs/beernight.py: beernight_drink_stats y beernight_close_stats) ----
     a.append(Achievement(

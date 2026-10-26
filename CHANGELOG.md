@@ -8,6 +8,13 @@ criterio.
 
 ## 9.x
 
+### 9.32.0 · 2026-10-26
+
+- Lista: las tareas se editan con el menú ✏️
+- Lista: el menú ✏️, debajo del de tachar, abre un formulario con el nombre de la tarea ya escrito y su prioridad elegida; al guardar, la lista se actualiza en su sitio y dice qué cambió. Pueden editar quien la apuntó y los administradores, y la tarea conserva su antigüedad
+- Lista: el menú, las flechas y el formulario siguen funcionando tras reiniciar el bot, también un formulario que ya estaba abierto (el rescate de clics deja los formularios reclamados con `claim_custom_ids` a su listener)
+- Logros: 4 nuevos en 📝 Lista (editar 1, 10 y 50 tareas, y el secreto *Ya si eso, mañana*)
+
 ### 9.31.4 · 2026-10-26
 
 - ONGs: los médicos e ingenieros del Gran Hotel Emergencia, en la tumbona

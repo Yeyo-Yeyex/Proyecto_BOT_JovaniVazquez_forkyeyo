@@ -107,5 +107,5 @@ def sort_tasks(tasks: list[Task]) -> list[Task]:
 
 
 def can_complete(task: Task, user_id: int, *, is_admin: bool) -> bool:
-    """Si `user_id` puede tachar la tarea: quien la apuntó o un administrador."""
+    """Si `user_id` puede tachar o editar la tarea: quien la apuntó o un administrador."""
     return is_admin or task.author_id == user_id
