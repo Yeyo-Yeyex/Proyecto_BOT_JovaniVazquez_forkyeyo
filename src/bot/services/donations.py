@@ -287,9 +287,10 @@ ONGS: tuple[Ong, ...] = (
         emoji="🏨",
         mission="Gestionar la acogida en Canarias con austeridad y buen uso del dinero público.",
         reality=(
-            "El Gobierno alquiló un resort de cinco estrellas a precio de temporada alta, "
-            "con el minibar incluido, y en rueda de prensa lo llama «dispositivo de emergencia "
-            "con vistas». El único que está de vacaciones es el dueño del hotel."
+            "El Gobierno paga un resort de cinco estrellas a precio de temporada alta. Dentro "
+            "hay una cardióloga, dos ingenieros y un anestesista esperando a que les "
+            "homologuen el título desde 2023, mientras fuera faltan médicos en todas las islas. "
+            "El expediente está en la mesa de la tumbona del consejero."
         ),
         spending=(
             "el minibar entero, facturado al Ministerio a 9 € la botellita de agua",
@@ -298,8 +299,9 @@ ONGS: tuple[Ong, ...] = (
             "la rueda de prensa del consejero desde una tumbona, «para dar normalidad»",
             "un contrato de temporada alta firmado en noviembre",
             "el bufé libre del comité de seguimiento, que se reúne en el restaurante del hotel",
-            "una inspección de calidad que le puso al hotel un 9,4 en Booking",
-            "la sesión de spa del secretario de Estado, «para conocer las instalaciones»",
+            "la homologación del título de una cardióloga, en trámite desde 2023",
+            "un anuncio pidiendo médicos para La Gomera, colgado en el mismo hotel donde hay tres",
+            "un ingeniero de caminos al que no dejan firmar, mientras la carretera sigue sin hacer",
             "el yate nuevo del dueño del hotel, pagado con la primera transferencia",
         ),
     ),
@@ -1263,10 +1265,10 @@ ONG_GIFTS: tuple[OngGift, ...] = (
         ),
         (
             "app",
-            "⭐",
-            "Reseña de cinco estrellas del Ministerio",
+            "📂",
+            "Expediente de homologación sin abrir",
             70,
-            "«Personal muy amable, repetiremos». Firmado: la Secretaría de Estado.",
+            "El de la cardióloga del hotel. Lleva el pósit de «urgente» desde 2023.",
         ),
         (
             "foto",

@@ -8,6 +8,11 @@ criterio.
 
 ## 9.x
 
+### 9.31.3 · 2026-10-26
+
+- ONGs: en el Gran Hotel Emergencia esperan médicos e ingenieros sin homologar
+- ONGs: dentro del resort hay una cardióloga, dos ingenieros y un anestesista esperando desde 2023 a que les homologuen el título, mientras faltan médicos en todas las islas; nuevo regalo, el expediente de homologación sin abrir
+
 ### 9.31.2 · 2026-10-26
 
 - ONGs: la de la acogida pasa a ser el «Gran Hotel Emergencia ★★★★★»
