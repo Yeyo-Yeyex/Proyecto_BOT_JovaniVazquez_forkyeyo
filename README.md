@@ -479,11 +479,15 @@ python -m bot
   tienda al 85 % de lo que pagaste o te presta el 55 % por empeñarlo (lo
   recuperas devolviendo un 5 % más en 3 días); paga con la caja de la tienda y no
   acepta lo regalado ni lo numerado. Hasta la 9.0.0 era un mostrador de `banco`.
-- **Donativos** (`donar`): cuatro ONGs de broma que hacen lo contrario de lo
-  que dicen. Donar es gastar (el dinero se queda en la ONG), pero desgrava en
-  la renta del lunes: 80 % de los primeros 250 € al año (unos 1.202 Y$ a la
-  semana) y 40 % del resto, hasta el 10 % de tu base de esa semana. Rebaja lo
-  que sale a pagar o sube lo que sale a devolver.
+- **Donativos** (`donar`): ocho ONGs de broma que hacen lo contrario de lo
+  que dicen, en un panel con la ficha de cada una y el muro de donantes. Donar
+  es gastar (el dinero se queda en la ONG), pero desgrava en la renta del lunes:
+  80 % de los primeros 250 € al año (unos 1.202 Y$ a la semana) y 40 % del
+  resto, hasta el 10 % de tu base de esa semana. Lo donado a cada ONG te hace
+  mecenas suyo (🥉 Bronce a 🏛️ Patrono): cada nivel trae un regalo y más boletos
+  en el sorteo que hace cada ONG los viernes a las 20:00 entre quienes le
+  donaron esa semana. El premio suele ser algo barato de la tienda y, a veces,
+  uno de los regalos exclusivos de la ONG, que no se venden.
 - **Ruleta americana** (0 y 00, la casa gana el 5,26 %): `ruleta` abre una
   mesa con botones que solo puede usar quien la abre. Cada clic en una
   apuesta cobra, gira (GIF de ~4 s) y paga. En cada tirada caen de 1 a 5
@@ -1329,7 +1333,7 @@ src/bot/
 │   ├── casino.py        # Ruleta con botones, saldo y daily
 │   ├── patrimonio.py    # Impuesto sobre el Patrimonio de cada lunes
 │   ├── intereses.py     # Intereses diarios del monedero y liquidación del ahorro
-│   ├── donations.py     # donar: ONGs de broma y donativos deducibles
+│   ├── donations.py     # donar: panel de las ONGs, mecenas y sorteos
 │   ├── bizum.py         # bizum: transferencias entre miembros, exentas
 │   ├── shop.py          # tienda y mochila: compras y carrito con IGIC, deseos, alquileres
 │   ├── rastro.py        # vender (panel y atajo), trueque, rastro y el Monte de Piedad
@@ -1388,7 +1392,7 @@ src/bot/
 │   ├── lottery.py       # Loterías del Estado: reglas, probabilidades y reparto
 │   ├── lottery_render.py # Lo que se ve en cada imagen de la lotería
 │   ├── lottery_scene.py # Pinta la lotería (rasca, décimo, boleto, sorteo y cartel)
-│   ├── donations.py     # Catálogo de ONGs y texto de la deducción
+│   ├── donations.py     # ONGs, niveles de mecenas, sorteo y regalos
 │   ├── shop.py          # Reglas de la tienda: precio en caja, rebajas, factura
 │   ├── shop_catalog.py  # Surtido de serie de la tienda y sus pasillos
 │   ├── shop_uses.py     # Lo que hacen los objetos al usarlos desde la mochila

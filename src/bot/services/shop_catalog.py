@@ -76,6 +76,11 @@ mochila (uso `lootbox`) y pagan IGIC general, y las 82 piezas de colección
 (`visible=False`) con su valor como precio. La caja botín de siempre (`caja_botin`)
 está en `RETIRED_ITEMS`: ya no se vende, pero se sigue abriendo.
 
+**Regalos de las ONGs.** Salen de `bot.services.donations` (`ONG_GIFTS`): cinco por
+ONG, con la clave `ong_<ong>_<regalo>` en el pasillo de su tema. Son coleccionables
+ocultos (`visible=False`), como las piezas, con su valor como precio: no se venden y
+solo los dan las ONGs en su sorteo semanal y al subir de nivel de mecenas.
+
 **Herramientas de curro.** Las del pasillo 🛠️ Ferretería del curro no se usan
 desde la mochila: con tenerlas, `pala` las aplica al minijuego del oficio
 (`bot.services.work_tools`, con las mismas claves). Una por persona; cuestan
@@ -87,6 +92,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from bot.services.donations import ONG_GIFTS, OngGift
 from bot.services.lootboxes import BOXES, COLLECTION_BY_KEY, PIECES, Box, Piece
 from bot.services.pets_catalog import SPECIES, Species
 from bot.services.shop import Kind
@@ -335,6 +341,20 @@ def _piece(piece: Piece) -> CatalogEntry:
         price=piece.price,
         description=piece.description,
         min_level=piece.min_level,
+        visible=False,
+    )
+
+
+def _ong_gift(gift: OngGift) -> CatalogEntry:
+    """El artículo de un regalo de ONG: oculto, solo lo dan las ONGs de `donar`."""
+    return CatalogEntry(
+        key=gift.catalog_key,
+        kind=Kind.TROPHY,
+        aisle=gift.aisle,
+        emoji=gift.emoji,
+        name=gift.name,
+        price=gift.price,
+        description=gift.description,
         visible=False,
     )
 
@@ -1103,6 +1123,7 @@ CATALOG += tuple(_skin(skin) for skin in SKINS)
 #: Las cajas y sus piezas de colección, generadas desde `lootboxes`.
 CATALOG += tuple(_box(box) for box in BOXES)
 CATALOG += tuple(_piece(piece) for piece in PIECES)
+CATALOG += tuple(_ong_gift(gift) for gift in ONG_GIFTS)
 
 CATALOG_BY_KEY: dict[str, CatalogEntry] = {entry.key: entry for entry in CATALOG}
 

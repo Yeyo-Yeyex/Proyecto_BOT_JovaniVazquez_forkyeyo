@@ -124,9 +124,9 @@ def test_deduccion_80_y_40_con_los_limites() -> None:
 
 def test_las_ongs_tienen_cuentas_negativas_y_distintas() -> None:
     accounts = [ong.account_id for ong in ONGS]
-    assert len(ONGS) == 4
+    assert len(ONGS) == 8
     assert all(a < 0 for a in accounts)
-    assert len(set(accounts)) == 4
+    assert len(set(accounts)) == 8
     assert find_ong("mares") is BY_KEY["mares"]
     assert find_ong("AYUDA") is BY_KEY["ayudante"]
     assert find_ong("cruz roja") is None
@@ -256,9 +256,18 @@ async def test_donar_sin_argumentos_ensena_las_ongs(tmp_path: Path) -> None:
 
     await cog.donar_text.callback(cog, ctx)
 
-    embed = ctx.send.await_args.kwargs["embed"]
-    assert len(embed.fields) == 4
-    assert len(embed) <= 6000
+    panel = ctx.send.await_args.kwargs["view"]
+    assert isinstance(panel, donations_cog.DonarPanel) and panel.page is None
+    texts = [c.content for c in panel.walk_children() if isinstance(c, discord.ui.TextDisplay)]
+    assert "Muro de donantes" in texts[0]
+    # Cada ficha cabe en un mensaje de Discord (4.000 caracteres de texto).
+    for ong in ONGS:
+        panel.page = ong
+        panel.rebuild()
+        text = next(
+            c.content for c in panel.walk_children() if isinstance(c, discord.ui.TextDisplay)
+        )
+        assert ong.name in text and len(text) <= 4000
 
 
 async def test_donar_por_texto_dona_y_cuenta_para_logros(
@@ -397,3 +406,134 @@ def test_los_logros_de_un_donativo_con_cifras_y_fechas_con_guasa() -> None:
         ong="mares", amount=1, ongs_supported=1, balance_after=5, when=xmas.replace(month=3)
     )
     assert plain.add == {"donated": 1, "donations": 1, "donated_mares": 1, "donation_one": 1}
+
+
+# -- Mecenas y sorteos de las ONGs --------------------------------------------------------
+
+
+def test_niveles_de_mecenas_y_boletos() -> None:
+    from bot.services.donations import (
+        GIFTS_BY_ONG,
+        PATRON_LEVELS,
+        next_patron_level,
+        patron_level,
+        raffle_tickets,
+    )
+
+    assert patron_level(4_999) is None and raffle_tickets(4_999) == 1
+    assert patron_level(5_000) is PATRON_LEVELS[0] and raffle_tickets(5_000) == 2
+    assert next_patron_level(30_000) is PATRON_LEVELS[2]
+    assert patron_level(10**9) is PATRON_LEVELS[-1] and next_patron_level(10**9) is None
+    # Cada nivel da más boletos y pide más que el anterior.
+    pairs = list(zip(PATRON_LEVELS, PATRON_LEVELS[1:], strict=False))
+    assert all(a.threshold < b.threshold and a.tickets < b.tickets for a, b in pairs)
+    # Cinco regalos exclusivos por ONG.
+    assert all(len(GIFTS_BY_ONG[ong.key]) == 5 for ong in ONGS)
+
+
+def test_el_sorteo_es_el_viernes_a_las_ocho_de_la_tarde() -> None:
+    from bot.services.donations import raffle_window
+
+    # Viernes 23/10/2026: antes de las 20:00 vale el sorteo del viernes anterior.
+    start, end = raffle_window(datetime(2026, 10, 23, 19, 59, tzinfo=TIMEZONE))
+    assert end == datetime(2026, 10, 16, 20, tzinfo=TIMEZONE)
+    assert start == datetime(2026, 10, 9, 20, tzinfo=TIMEZONE)
+    _start, end = raffle_window(datetime(2026, 10, 23, 20, 0, tzinfo=TIMEZONE))
+    assert end == datetime(2026, 10, 23, 20, tzinfo=TIMEZONE)
+    _start, end = raffle_window(datetime(2026, 10, 26, 9, tzinfo=TIMEZONE))  # lunes
+    assert end == datetime(2026, 10, 23, 20, tzinfo=TIMEZONE)
+
+
+def test_los_mecenas_llevan_mas_boletos() -> None:
+    import random
+
+    from bot.services.donations import draw_winner
+
+    rng = random.Random(3)
+    entries = {1: (100, 100), 2: (100, 500_000)}  # el 2 es Patrono: 8 boletos contra 1
+    wins = sum(draw_winner(entries, rng) == 2 for _ in range(900))
+    assert 700 < wins < 900
+
+
+async def test_cada_ong_sortea_una_sola_vez_entre_los_donantes_de_la_semana(
+    tmp_path: Path,
+) -> None:
+    from bot.services.donations import raffle_window
+
+    clock = Clock(day(20))  # martes
+    service = await make_service(tmp_path, clock)
+    for user in (USER, RICH):
+        await service.repository.apply(GUILD, user, (LedgerEntry(10_000, "prueba"),))
+    await service.donate(GUILD, USER, ong_key="mares", ong_account=-3, amount=100)
+    await service.donate(GUILD, RICH, ong_key="hambre", ong_account=-4, amount=100)
+    clock.at(day(23, 21))  # viernes, después del sorteo: esta ya no entra
+    await service.donate(GUILD, RICH, ong_key="mares", ong_account=-3, amount=100)
+
+    window = raffle_window(day(23, 21))
+    seen: dict[str, dict[int, tuple[int, int]]] = {}
+
+    def draw(ong: str, entries: dict[int, tuple[int, int]]) -> int:
+        seen[ong] = entries
+        return min(entries)
+
+    drawn = await service.draw_ong_raffles(GUILD, window, draw)
+    assert sorted(drawn) == [("hambre", RICH), ("mares", USER)]
+    assert seen["mares"] == {USER: (100, 100)}
+    assert await service.draw_ong_raffles(GUILD, window, draw) == [], "no se repite"
+
+
+async def test_subir_de_nivel_de_mecenas_trae_un_regalo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from bot.services.donations import PATRON_LEVELS
+
+    track = AsyncMock()
+    gift = SimpleNamespace(catalog_key="ong_mares_gorra", emoji="🧢", name="Gorra")
+    grant = AsyncMock(return_value=gift)
+    monkeypatch.setattr(donations_cog.logros, "track", track)
+    monkeypatch.setattr(donations_cog.renta, "hint", AsyncMock(return_value=None))
+    monkeypatch.setattr(donations_cog.tienda, "grant_ong_gift", grant)
+    service = await make_service(tmp_path, Clock(day(6)))
+    await service.repository.apply(GUILD, USER, (LedgerEntry(30_000, "prueba"),))
+    cog = Donaciones(MagicMock(), service)
+    ctx = make_ctx()
+
+    await cog.donar_text.callback(cog, ctx, "mares", "4k")
+    assert grant.await_count == 0
+    # De 4.000 a 26.000: cruza Bronce y Plata de golpe, un regalo por cada uno.
+    await cog.donar_text.callback(cog, ctx, "mares", "22k")
+    levels = [c.kwargs["exclusive"] for c in grant.await_args_list]
+    assert levels == [PATRON_LEVELS[0].exclusive, PATRON_LEVELS[1].exclusive]
+    text = ctx.send.await_args.kwargs["embed"].description
+    assert "Plata" in text and "Gorra" in text and "exclusivo" in text
+    delta = track.await_args.args[4]
+    assert delta.peak["patron_level_max"] == 2
+    assert delta.add["ong_gifts"] == delta.add["ong_exclusive_gifts"] == 2
+
+
+async def test_los_sorteos_se_anuncian_y_dan_logros(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    note = MagicMock()
+    gift = SimpleNamespace(catalog_key="cosa_barata", emoji="🧦", name="Calcetín")
+    monkeypatch.setattr(donations_cog.logros, "note", note)
+    monkeypatch.setattr(donations_cog.tienda, "grant_ong_gift", AsyncMock(return_value=gift))
+    service = MagicMock()
+    service.draw_ong_raffles = AsyncMock(return_value=[("platano", USER)])
+    cog = Donaciones(MagicMock(), service)
+    channel = MagicMock()
+    channel.send = AsyncMock()
+    guild = MagicMock()
+    guild.id = GUILD
+    guild.text_channels = [channel]
+    channel.name = donations_cog.ANNOUNCE_CHANNEL_NAME
+    guild.get_member.return_value = SimpleNamespace(display_name="Diego")
+
+    await cog.run_raffles(guild)
+    await cog.run_raffles(guild)  # la misma semana no vuelve a sortear
+
+    assert service.draw_ong_raffles.await_count == 1
+    text = channel.send.await_args.kwargs["embed"].description
+    assert "Plátano" in text and "Diego" in text and "Calcetín" in text
+    delta = note.call_args.args[3]
+    assert delta.add == {"ong_gifts": 1, "ong_exclusive_gifts": 0, "ong_raffle_won": 1}

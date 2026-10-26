@@ -38,6 +38,7 @@ from bot.services.achievements import (
     shop_use_stats,
     with_derived,
 )
+from bot.services.donations import ONG_GIFTS
 from bot.services.economy import STARTING_BALANCE, EconomyService
 from bot.services.housing_furniture import FURNITURE, FURNITURE_KEYS
 from bot.services.levels import TIMEZONE
@@ -109,6 +110,9 @@ class Clock:
 # -- El surtido -------------------------------------------------------------------------
 
 
+ONG_GIFT_KEYS = {g.catalog_key for g in ONG_GIFTS}
+
+
 def test_surtido_cabe_en_los_limites_de_la_tienda() -> None:
     assert len(CATALOG) >= 120
     assert len(CATALOG_BY_KEY) == len(CATALOG), "claves repetidas"
@@ -132,10 +136,15 @@ def test_surtido_cabe_en_los_limites_de_la_tienda() -> None:
         elif is_piece(entry.key):
             # Las piezas de colección solo salen de las cajas: ocultas, con su valor de precio.
             assert not entry.visible and entry.kind is Kind.TROPHY and entry.use is None
+        elif entry.key in ONG_GIFT_KEYS:
+            # Los regalos de las ONGs no se venden: ocultos, con su valor de precio.
+            assert not entry.visible and entry.kind is Kind.TROPHY and entry.use is None
         elif entry.key in RETIRED_ITEMS:
             assert not entry.visible, "lo que ya no se vende se siembra oculto"
         else:
-            assert entry.visible, "solo mascotas, skins, piezas y lo retirado van ocultos"
+            assert entry.visible, (
+                "solo mascotas, skins, piezas, regalos de ONG y lo retirado van ocultos"
+            )
         if entry.food:
             assert entry.kind is Kind.TROPHY, entry.key
         if entry.kind is Kind.BOOST:
@@ -1187,6 +1196,25 @@ async def test_una_caja_gratis_entra_en_la_mochila_sin_cobrar_y_avisa(tmp_path: 
     assert await cog.economy.balance(GUILD, BUYER) == before, "regalar no mueve dinero"
     item = await cog.repository.item_by_key(GUILD, "caja_carton")
     assert item is not None and item.sold == 0
+
+
+async def test_las_ongs_regalan_su_exclusivo_o_algo_barato_de_la_tienda(tmp_path: Path) -> None:
+    cog = await make_cog(tmp_path, Clock())
+    keys = [g.catalog_key for g in ONG_GIFTS if g.ong == "platano"]
+    before = await cog.economy.balance(GUILD, BUYER)
+    # Seguro el exclusivo: sale uno de los suyos que aún no tiene, hasta tenerlos todos.
+    got = [await cog.grant_ong_gift(GUILD, BUYER, keys, cheap_max=500, exclusive=1.0) for _ in keys]
+    assert sorted(g.catalog_key for g in got if g) == sorted(keys)
+    # Sin exclusivo: algo de la tienda que se pueda regalar y no pase del tope.
+    for _ in range(10):
+        cheap = await cog.grant_ong_gift(GUILD, BUYER, keys, cheap_max=500, exclusive=0.0)
+        assert cheap is not None and cheap.visible and cheap.price <= 500
+        assert cheap.catalog_key not in ONG_GIFT_KEYS
+    assert await cog.economy.balance(GUILD, BUYER) == before, "regalar no mueve dinero"
+    # Los exclusivos no salen en el escaparate.
+    guild = make_guild()
+    view = await cog.storefront(guild, make_member(guild))
+    assert not {i.catalog_key for i in view.items_all} & ONG_GIFT_KEYS
 
 
 def test_el_aviso_de_una_caja_gratis_sale_una_sola_vez(tmp_path: Path) -> None:

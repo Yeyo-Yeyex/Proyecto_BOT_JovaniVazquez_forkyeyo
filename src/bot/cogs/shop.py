@@ -79,7 +79,7 @@ import random
 import time
 import unicodedata
 from collections import defaultdict
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -329,6 +329,25 @@ def _button(
 def local_now(epoch: float) -> datetime:
     """La hora de Canarias en `epoch`: la que manda en las temporadas."""
     return datetime.fromtimestamp(epoch, TIMEZONE)
+
+
+def giftable(item: ShopItem) -> bool:
+    """Si la tienda puede regalar `item` (caja botín, sorteos de las ONGs).
+
+    Coleccionables visibles, sin uso y de existencias ilimitadas, para no gastar unidades
+    numeradas de nadie. Los títulos no tocan: se lucen porque se han pagado. Los muebles
+    del vacacional tampoco: suben la renta de los pisos, y eso no se regala.
+    """
+    return (
+        item.visible
+        and item.kind is Kind.TROPHY
+        and item.stock is None
+        and use_of(item.catalog_key) is None
+        and not is_title(item.catalog_key)
+        and not is_skin(item.catalog_key)
+        and not is_piece(item.catalog_key)
+        and item.catalog_key not in FURNITURE_KEYS
+    )
 
 
 def season_name(item: ShopItem) -> str | None:
@@ -2052,6 +2071,39 @@ class Tienda(commands.Cog):
         logros.note(self.bot, guild_id, user_id, lootbox_free_stats(count))
         return free_box_line(box, because=because, count=count)
 
+    async def grant_ong_gift(
+        self,
+        guild_id: int,
+        user_id: int,
+        keys: Collection[str],
+        *,
+        cheap_max: int,
+        exclusive: float,
+    ) -> ShopItem | None:
+        """Mete en la mochila un regalo de una ONG: uno de los suyos o algo barato de la tienda.
+
+        Con probabilidad `exclusive`, uno de sus regalos exclusivos (`keys`, mejor uno que
+        aún no tenga); si no, un objeto que la tienda puede regalar (`giftable`) de
+        `cheap_max` Y$ o menos. Es un regalo, como `grant_free_box`: no mueve dinero ni
+        lleva IGIC.
+
+        Returns:
+            El artículo regalado, o `None` si el servidor ha retirado todos.
+        """
+        await self.stock_up(guild_id)
+        now = self.clock()
+        owned = {e.catalog_key for e in await self.repository.inventory(guild_id, user_id, now)}
+        items = await self.repository.items(guild_id, include_hidden=True)
+        own = [i for i in items if i.catalog_key in keys]
+        own = [i for i in own if i.catalog_key not in owned] or own
+        cheap = [i for i in items if giftable(i) and i.price <= cheap_max]
+        pool = own if own and (not cheap or self.rng.random() < exclusive) else cheap
+        if not pool:
+            return None
+        item = self.rng.choice(pool)
+        await self.repository.grant(guild_id, user_id, item, now)
+        return item
+
     def notices_for(self, guild_id: int, user_id: int) -> str | None:
         """Los avisos de cajas ganadas que aún no ha visto (se sirven una sola vez)."""
         lines = self.notices.pop((guild_id, user_id), None)
@@ -2070,14 +2122,7 @@ class Tienda(commands.Cog):
         candidates = [
             item
             for item in await self.repository.items(guild_id)
-            if item.kind is Kind.TROPHY
-            and item.stock is None
-            and item.id != box.item_id
-            and use_of(item.catalog_key) is None
-            and not is_title(item.catalog_key)
-            and not is_skin(item.catalog_key)
-            and not is_piece(item.catalog_key)
-            and item.catalog_key not in FURNITURE_KEYS
+            if giftable(item) and item.id != box.item_id
         ]
         if not candidates:
             return None
@@ -3239,6 +3284,30 @@ async def owned_keys(bot: commands.Bot, guild_id: int, user_id: int) -> frozense
     except Exception:
         logger.exception("No se pudo leer la mochila de %s para la pala", user_id)
         return frozenset()
+
+
+async def grant_ong_gift(
+    bot: commands.Bot,
+    guild_id: int,
+    user_id: int,
+    keys: Collection[str],
+    *,
+    cheap_max: int,
+    exclusive: float,
+) -> ShopItem | None:
+    """Regala un objeto de una ONG o de la tienda (`Tienda.grant_ong_gift`).
+
+    No lanza: si la tienda no está o falla, no hay regalo y queda en el log.
+    """
+    if (cog := find_cog(bot, Tienda)) is None:
+        return None
+    try:
+        return await cog.grant_ong_gift(
+            guild_id, user_id, keys, cheap_max=cheap_max, exclusive=exclusive
+        )
+    except Exception:
+        logger.exception("No se pudo dar un regalo de ONG a %s", user_id)
+        return None
 
 
 async def setup(bot: BotClient) -> None:  # type: ignore[override]

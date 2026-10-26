@@ -365,6 +365,8 @@ PRODUCED_STATS = {
     "market_swaps", "market_swap_money", "market_swap_lopsided", "market_swap_fleeced",
     "donations", "donated_desmontar", "donated_ayudante", "donated_mares", "donated_hambre",
     "donation_one", "donation_allin", "donation_666", "donation_christmas",
+    "donated_gamers", "donated_influencers", "donated_platano", "donated_jovani",
+    "patron_level_max", "ong_raffle_won", "ong_gifts", "ong_exclusive_gifts",
     "market_swap_titles",
     "market_loss", "market_gifts_given", "market_sold_one", "market_666", "market_sunday",
     "market_bought", "market_spent", "market_bought_max", "market_itp",

@@ -2654,6 +2654,35 @@ async def press_renta_open(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def _donar_panel(client: BotClient, owner: MagicMock) -> object:
+    cog = client.get_cog("Donaciones")
+    panel = await cog.panel(owner.guild, owner)
+    panel.page = module_of(client, "Donaciones").BY_KEY["mares"]
+    panel.rebuild()
+    return panel
+
+
+async def press_donar_choose(client: BotClient, owner: MagicMock) -> Click:
+    panel = await _donar_panel(client, owner)
+    (menu,) = [c for c in panel.walk_children() if getattr(c, "custom_id", "") == "donar:ong"]
+
+    async def click(interaction: MagicMock) -> None:
+        interaction.data = {"values": ["hambre"]}
+        await menu.callback(interaction)
+
+    return click
+
+
+async def press_donar_quick(client: BotClient, owner: MagicMock) -> Click:
+    panel = await _donar_panel(client, owner)
+    (button,) = [c for c in panel.walk_children() if getattr(c, "custom_id", "") == "donar:dar:500"]
+
+    async def click(interaction: MagicMock) -> None:
+        await button.callback(interaction)
+
+    return click
+
+
 async def _renta_button(client: BotClient, owner: MagicMock, custom_id: str) -> Click:
     """Un botón de la vista de `renta` con una declaración abierta que sale a pagar."""
     with client.economy.repository._transaction() as connection:  # noqa: SLF001
@@ -3050,6 +3079,8 @@ CASES: dict[str, Press] = {
     "renta: fraccionar": press_renta_split,
     "renta: liquidar deuda": press_renta_debt,
     "renta: donar desde el consejo": press_renta_donate,
+    "donar: elegir ONG": press_donar_choose,
+    "donar: donar 500": press_donar_quick,
     "lista: tachar": press_todo,
     "lista: pasar página": press_todo_page,
     "lista: elegir prioridad": press_todo_priority,

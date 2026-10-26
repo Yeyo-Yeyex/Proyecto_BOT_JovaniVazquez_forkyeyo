@@ -32,3 +32,33 @@ Repaso de `bot.services.donations`, `bot.cogs.donations` y la deducción de
   Waterloo, Koldo, los puros de Bibi, Davos, el tapón pegado y la motosierra de Milei.
 - **Mascota:** al donar hablaba de dinero en general (`Moment()`); ahora tiene su
   momento (`Event.DONATE`) con frases propias.
+
+## Segunda auditoría (26/10/2026): más juego
+
+La tarea de la lista pedía que donar fuera más interesante, no más fiscal. Donar solo
+servía para desgravar, y con cuatro ONGs y un embed fijo no había nada que mirar ni
+perseguir. Lo que se ha hecho:
+
+- **Ocho ONGs.** Cuatro nuevas con temas que no tenían las de antes: videojuegos
+  (🎮 Gamers Sin Fronteras), redes (🤳 Protectora de Influencers Abandonados), Canarias
+  (🍌 Salvemos el Plátano Canario) y el propio bot (🤖 Amigos del Bot Jovani). Monederos
+  `-5` a `-8`.
+- **Panel.** `donar` sin cantidad abre un `LayoutView` con la portada (regla, tus niveles
+  y el muro de donantes) y la ficha de cada ONG en un menú, con botones para donar. Los
+  botones aceptan el clic antes de leer la base de datos (`test_button_speed`).
+- **Mecenas.** Lo donado a cada ONG da un nivel con ella (Bronce 5.000, Plata 25.000, Oro
+  100.000 y Patrono 500.000 Y$). Es el objetivo a largo plazo que faltaba: cada nivel
+  regala algo y da más boletos en el sorteo.
+- **Sorteo de los viernes.** Cada ONG sortea un regalo entre quienes le donaron en los
+  siete días anteriores. Va los viernes a las 20:00 para no amontonarse con la Renta y el
+  Patrimonio de los lunes. Se apunta en `economy_ong_raffles` (una vez por ONG y
+  sorteo), así que un reinicio no lo repite.
+- **Regalos.** El premio suele ser algo de la tienda de hasta 500 Y$ (los mismos que da
+  la caja botín, `shop.giftable`). Un 15 % de las veces, y siempre al llegar a Oro y a
+  Patrono, es uno de los 40 exclusivos de la ONG: artículos ocultos del surtido, como las
+  piezas de las cajas, que no se venden. Los regalos no mueven dinero.
+- **Logros:** 15 más (42 en total): las 8 ONGs, los cuatro niveles de mecenas, los
+  sorteos ganados, los regalos y los exclusivos.
+
+Se quedó fuera una deducción canaria por donativos (art. 4 ter del DL 1/2009, un 20 %
+más de los primeros 150 €). Es real, pero haría que donar el primer tramo saliera gratis.

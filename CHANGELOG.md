@@ -8,6 +8,16 @@ criterio.
 
 ## 9.x
 
+### 9.26.0 · 2026-10-26
+
+- ONGs: `donar` con panel, ocho ONGs, mecenas y sorteo de los viernes
+- ONGs: cuatro nuevas: 🎮 Gamers Sin Fronteras, 🤳 Protectora de Influencers Abandonados, 🍌 Plataforma Salvemos el Plátano Canario y 🤖 Fundación Amigos del Bot Jovani
+- ONGs: `donar` sin cantidad abre un panel con tus niveles, el muro de donantes y la ficha de cada ONG (sus mayores donantes, tu progreso y sus regalos), con botones para donar 500, 5.000 u otra cantidad
+- ONGs: lo donado a cada ONG te hace mecenas suyo (🥉 Bronce 5.000 Y$, 🥈 Plata 25.000, 🥇 Oro 100.000, 🏛️ Patrono 500.000); cada nivel trae un regalo y tu mejor nivel sale en `perfil`
+- ONGs: cada viernes a las 20:00 cada ONG sortea un regalo entre quienes le donaron esa semana, con más boletos cuanto más alto es tu nivel
+- Tienda: 40 regalos exclusivos de las ONGs (cinco por ONG) que no se venden; salen pocas veces en el sorteo y siempre al llegar a Oro y a Patrono. Si no toca uno, la ONG regala algo de la tienda de hasta 500 Y$
+- Logros: 15 nuevos de las ONGs (las ocho ONGs, los niveles de mecenas, los sorteos y los regalos)
+
 ### 9.25.0 · 2026-10-25
 
 - Lotería: todo dibujado, botes que crecen cada día y rasca animado

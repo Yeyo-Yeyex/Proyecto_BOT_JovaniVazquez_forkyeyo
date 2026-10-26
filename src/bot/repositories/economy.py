@@ -1387,6 +1387,15 @@ class EconomyRepository:
                 CREATE INDEX IF NOT EXISTS economy_donations_member
                     ON economy_donations (guild_id, user_id, week_start);
 
+                CREATE TABLE IF NOT EXISTS economy_ong_raffles (
+                    guild_id INTEGER NOT NULL,
+                    draw_day TEXT NOT NULL,
+                    ong TEXT NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    created_at REAL NOT NULL,
+                    PRIMARY KEY (guild_id, draw_day, ong)
+                );
+
                 CREATE TABLE IF NOT EXISTS economy_bizums (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     guild_id INTEGER NOT NULL,
@@ -6846,6 +6855,112 @@ class EconomyRepository:
         finally:
             connection.close()
 
+    async def ong_board(
+        self, guild_id: int, ong: str | None = None, limit: int = 10
+    ) -> list[tuple[int, int]]:
+        """Los que más han donado (a `ong`, o a todas): `(user_id, total)`, de más a menos."""
+        return await self._run(self._ong_board_sync, guild_id, ong, limit)
+
+    def _ong_board_sync(self, guild_id: int, ong: str | None, limit: int) -> list[tuple[int, int]]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                SELECT user_id, SUM(amount) AS total FROM economy_donations
+                WHERE guild_id = ? AND (? IS NULL OR ong = ?)
+                GROUP BY user_id ORDER BY total DESC, MIN(created_at) LIMIT ?
+                """,
+                (guild_id, ong, ong, limit),
+            ).fetchall()
+            return [(int(r["user_id"]), int(r["total"])) for r in rows]
+        finally:
+            connection.close()
+
+    async def ong_member(self, guild_id: int, user_id: int) -> dict[str, int]:
+        """Lo que ha donado un miembro a cada ONG, desde siempre."""
+        return await self._run(self._ong_member_sync, guild_id, user_id)
+
+    def _ong_member_sync(self, guild_id: int, user_id: int) -> dict[str, int]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                SELECT ong, SUM(amount) AS total FROM economy_donations
+                WHERE guild_id = ? AND user_id = ? GROUP BY ong
+                """,
+                (guild_id, user_id),
+            ).fetchall()
+            return {str(r["ong"]): int(r["total"]) for r in rows}
+        finally:
+            connection.close()
+
+    async def draw_ong_raffles(
+        self,
+        guild_id: int,
+        draw_day: str,
+        window: tuple[float, float],
+        draw: Callable[[str, dict[int, tuple[int, int]]], int | None],
+        now: float,
+    ) -> list[tuple[str, int]]:
+        """Sortea, una sola vez por ONG y sorteo, entre quienes donaron en `window`.
+
+        Args:
+            draw_day: Día del sorteo (ISO); con la ONG, lo que no se repite.
+            window: `(desde, hasta)` en epoch: los donativos que dan boleto.
+            draw: Recibe la ONG y sus participantes, `{user_id: (donado en la ventana,
+                donado a esa ONG hasta el final de la ventana)}`, y devuelve el ganador.
+
+        Returns:
+            Los sorteos hechos ahora, `(ong, ganador)`. Los ya hechos no se repiten.
+        """
+        return await self._run(self._draw_ong_raffles_sync, guild_id, draw_day, window, draw, now)
+
+    def _draw_ong_raffles_sync(
+        self,
+        guild_id: int,
+        draw_day: str,
+        window: tuple[float, float],
+        draw: Callable[[str, dict[int, tuple[int, int]]], int | None],
+        now: float,
+    ) -> list[tuple[str, int]]:
+        start, end = window
+        with self._transaction() as connection:
+            done = {
+                str(row[0])
+                for row in connection.execute(
+                    "SELECT ong FROM economy_ong_raffles WHERE guild_id = ? AND draw_day = ?",
+                    (guild_id, draw_day),
+                )
+            }
+            entries: dict[str, dict[int, tuple[int, int]]] = {}
+            for ong, user_id, recent, total in connection.execute(
+                """
+                SELECT ong, user_id,
+                       SUM(CASE WHEN created_at >= ? THEN amount ELSE 0 END),
+                       SUM(amount)
+                FROM economy_donations
+                WHERE guild_id = ? AND created_at < ?
+                GROUP BY ong, user_id
+                """,
+                (start, guild_id, end),
+            ):
+                if recent > 0 and str(ong) not in done:
+                    entries.setdefault(str(ong), {})[int(user_id)] = (int(recent), int(total))
+            drawn = []
+            for ong in sorted(entries):
+                winner = draw(ong, entries[ong])
+                if winner is None:
+                    continue
+                connection.execute(
+                    """
+                    INSERT INTO economy_ong_raffles (guild_id, draw_day, ong, user_id, created_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (guild_id, draw_day, ong, winner, now),
+                )
+                drawn.append((ong, winner))
+            return drawn
+
     # -- IMV (recompensa diaria) ----------------------------------------------------
 
     async def claim_daily(
@@ -7576,6 +7691,7 @@ class EconomyRepository:
                 "economy_wealth_tax",
                 "economy_solidarity_tax",
                 "economy_donations",
+                "economy_ong_raffles",
                 "economy_bizums",
                 "economy_slots_jackpots",
                 "economy_slots_mystery",

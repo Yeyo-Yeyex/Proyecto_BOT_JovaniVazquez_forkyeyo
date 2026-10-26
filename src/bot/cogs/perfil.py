@@ -49,6 +49,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.cogs import achievements as logros
+from bot.cogs import donations as donaciones
 from bot.cogs import pets as mascotas
 from bot.cogs import shop as tienda
 from bot.cogs.achievements import Achievements, progress_bar
@@ -424,6 +425,8 @@ class Perfil(commands.Cog):
         if shop is not None:
             count = await shop.item_count(guild.id, target.id)
             lines.append(f"🎒 {count} {'cosa' if count == 1 else 'cosas'} en la mochila")
+        if patron := await donaciones.patron_line(self.bot, guild.id, target.id):
+            lines.append(patron)
         embed.description = "\n".join(lines) or "Nada que enseñar todavía."
         # Habla la mascota de quien mira su propio perfil (la de otro no es asunto suyo).
         line = None

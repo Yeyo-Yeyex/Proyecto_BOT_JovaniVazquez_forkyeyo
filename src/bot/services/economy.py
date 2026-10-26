@@ -1903,6 +1903,38 @@ class EconomyService:
         """Por ONG: `(recaudado, donantes)` en el servidor."""
         return await self.repository.ong_totals(guild_id)
 
+    async def ong_board(
+        self, guild_id: int, ong: str | None = None, limit: int = 10
+    ) -> list[tuple[int, int]]:
+        """El muro de donantes (ver `EconomyRepository.ong_board`)."""
+        return await self.repository.ong_board(guild_id, ong, limit)
+
+    async def ong_member(self, guild_id: int, user_id: int) -> dict[str, int]:
+        """Lo donado por un miembro a cada ONG (ver `EconomyRepository.ong_member`)."""
+        return await self.repository.ong_member(guild_id, user_id)
+
+    async def draw_ong_raffles(
+        self,
+        guild_id: int,
+        window: tuple[datetime, datetime],
+        draw: Callable[[str, dict[int, tuple[int, int]]], int | None],
+    ) -> list[tuple[str, int]]:
+        """Los sorteos semanales de las ONGs (ver `EconomyRepository.draw_ong_raffles`).
+
+        Args:
+            window: `(desde, hasta)` de `donations.raffle_window`; el sorteo es `hasta`.
+
+        No mueven dinero: el premio es un artículo de la tienda que regala la ONG.
+        """
+        start, end = window
+        return await self.repository.draw_ong_raffles(
+            guild_id,
+            end.date().isoformat(),
+            (start.timestamp(), end.timestamp()),
+            draw,
+            self._clock(),
+        )
+
     async def casino_ledger(
         self, guild_id: int, user_id: int | None = None
     ) -> tuple[list[tuple[str, int, int]], int, int, int, float | None]:
