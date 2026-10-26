@@ -287,9 +287,9 @@ ONGS: tuple[Ong, ...] = (
         emoji="🏨",
         mission="Gestionar la acogida en Canarias con austeridad y buen uso del dinero público.",
         reality=(
-            "El Gobierno alquiló un resort de cinco estrellas a precio de temporada alta, "
-            "con el minibar incluido, y en rueda de prensa lo llama «dispositivo de emergencia "
-            "con vistas». El único que está de vacaciones es el dueño del hotel."
+            "El Gobierno paga un resort de cinco estrellas a precio de temporada alta. Dentro "
+            "están los médicos e ingenieros que nos prometieron, parados en la tumbona sin "
+            "hacer nada, y el consejero comparece al lado «para dar normalidad»."
         ),
         spending=(
             "el minibar entero, facturado al Ministerio a 9 € la botellita de agua",
@@ -298,8 +298,9 @@ ONGS: tuple[Ong, ...] = (
             "la rueda de prensa del consejero desde una tumbona, «para dar normalidad»",
             "un contrato de temporada alta firmado en noviembre",
             "el bufé libre del comité de seguimiento, que se reúne en el restaurante del hotel",
-            "una inspección de calidad que le puso al hotel un 9,4 en Booking",
-            "la sesión de spa del secretario de Estado, «para conocer las instalaciones»",
+            "las tumbonas de los médicos e ingenieros, que siguen en el hotel sin hacer nada",
+            "un anuncio pidiendo médicos para La Gomera, colgado en el hotel donde hay tres",
+            "un ingeniero de caminos en la piscina, mientras la carretera sigue sin hacer",
             "el yate nuevo del dueño del hotel, pagado con la primera transferencia",
         ),
     ),
@@ -1263,10 +1264,10 @@ ONG_GIFTS: tuple[OngGift, ...] = (
         ),
         (
             "app",
-            "⭐",
-            "Reseña de cinco estrellas del Ministerio",
+            "🥼",
+            "Bata de médico en la tumbona",
             70,
-            "«Personal muy amable, repetiremos». Firmado: la Secretaría de Estado.",
+            "Lleva colgada desde que abrió el hotel. Pacientes atendidos: cero.",
         ),
         (
             "foto",

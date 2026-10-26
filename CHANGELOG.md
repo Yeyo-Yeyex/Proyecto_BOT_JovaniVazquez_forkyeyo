@@ -15,6 +15,16 @@ criterio.
 - Lista: el menú, las flechas y el formulario siguen funcionando tras reiniciar el bot, también un formulario que ya estaba abierto (el rescate de clics deja los formularios reclamados con `claim_custom_ids` a su listener)
 - Logros: 4 nuevos en 📝 Lista (editar 1, 10 y 50 tareas, y el secreto *Ya si eso, mañana*)
 
+### 9.31.4 · 2026-10-26
+
+- ONGs: los médicos e ingenieros del Gran Hotel Emergencia, en la tumbona
+- ONGs: textos más cortos: los médicos e ingenieros que nos prometieron están parados en el hotel sin hacer nada; el regalo del expediente pasa a ser la bata de médico en la tumbona
+
+### 9.31.3 · 2026-10-26
+
+- ONGs: en el Gran Hotel Emergencia esperan médicos e ingenieros sin homologar
+- ONGs: dentro del resort hay una cardióloga, dos ingenieros y un anestesista esperando desde 2023 a que les homologuen el título, mientras faltan médicos en todas las islas; nuevo regalo, el expediente de homologación sin abrir
+
 ### 9.31.2 · 2026-10-26
 
 - ONGs: la de la acogida pasa a ser el «Gran Hotel Emergencia ★★★★★»
