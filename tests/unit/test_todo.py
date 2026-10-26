@@ -10,7 +10,16 @@ import discord
 import pytest
 from interaction_fakes import fake_interaction
 
-from bot.cogs.todo import SELECT_ID, DoneSelect, Lista, PageButton, PriorityPicker, build_board
+from bot.cogs.todo import (
+    SELECT_ID,
+    DoneSelect,
+    EditSelect,
+    Lista,
+    PageButton,
+    PriorityPicker,
+    build_board,
+    form_values,
+)
 from bot.repositories.todo import TodoRepository
 from bot.services.todo import (
     MAX_TASK_LENGTH,
@@ -98,6 +107,21 @@ async def test_el_repositorio_apunta_lista_y_tacha(repo: TodoRepository) -> None
     assert [t.text for t in await repo.list_tasks(GUILD_ID)] == ["dos"]
 
 
+async def test_editar_cambia_texto_y_prioridad_sin_perder_la_antiguedad(
+    repo: TodoRepository,
+) -> None:
+    task = await repo.add_task(GUILD_ID, 2, "uno", Priority.BAJA)
+
+    edited = await repo.update_task(GUILD_ID, task.id, "uno bien escrito", Priority.ALTA)
+
+    assert edited == Task(task.id, GUILD_ID, 2, "uno bien escrito", Priority.ALTA, task.created_at)
+    assert await repo.list_tasks(GUILD_ID) == [edited]
+    # Ni una tachada ni una de otro servidor.
+    assert await repo.update_task(GUILD_ID + 1, task.id, "x", Priority.BAJA) is None
+    await repo.remove_tasks(GUILD_ID, [task.id])
+    assert await repo.update_task(GUILD_ID, task.id, "x", Priority.BAJA) is None
+
+
 async def test_no_se_pasa_del_tope_de_tareas(repo: TodoRepository) -> None:
     for i in range(MAX_TASKS):
         await repo.add_task(GUILD_ID, 2, f"t{i}", Priority.MEDIA)
@@ -180,6 +204,31 @@ async def test_el_menu_de_las_listas_antiguas_sigue_valiendo() -> None:
         select = discord.ui.Select(custom_id=custom_id)
         item = await DoneSelect.from_custom_id(MagicMock(), select, match)
         assert item.page == page
+
+
+def test_ningun_componente_de_la_lista_repite_custom_id_ni_se_pasa_de_filas() -> None:
+    """Discord rechaza entero (400) un mensaje con dos `custom_id` iguales o más de 5 filas."""
+    tasks = [_task(i, Priority(i % 3), i) for i in range(1, 3 * PAGE_SIZE + 1)]
+    for page in range(3):
+        _, view = build_board(_guild(), tasks, page=page)
+        assert view is not None
+        items = [child.item for child in view.children]  # type: ignore[attr-defined]
+        ids = [item.custom_id for item in items]
+        assert len(ids) == len(set(ids)), ids
+        rows: dict[int, int] = {}
+        for item in items:
+            width = 5 if isinstance(item, discord.ui.Select) else 1
+            rows[item.row or 0] = rows.get(item.row or 0, 0) + width
+        assert max(rows) <= 4 and max(rows.values()) <= 5, rows
+
+
+def test_el_menu_editar_lleva_la_tarea_su_prioridad_y_su_autor() -> None:
+    _, view = build_board(_guild(), [_task(7, Priority.BAJA, 0, author=3)], page=0)
+    assert view is not None
+    [menu] = [item for item in view.children if isinstance(item, EditSelect)]
+    assert menu.item.custom_id == "lista:editar:0"
+    assert menu.item.max_values == 1
+    assert [(o.label, o.value) for o in menu.item.options] == [("t7", "7:2:3")]
 
 
 def test_la_lista_vacia_no_lleva_menu() -> None:
@@ -434,3 +483,158 @@ async def test_slash_sin_tarea_acepta_antes_de_leer_la_lista(repo: TodoRepositor
 
     assert events == ["response.defer", "edit_original_response"]
     assert await repo.get_board(GUILD_ID) == (20, 700)
+
+
+# -- Editar -----------------------------------------------------------------------------
+
+
+async def test_editar_abre_el_formulario_con_lo_que_tenia(repo: TodoRepository) -> None:
+    cog = Lista(MagicMock(), repo)
+    task = await repo.add_task(GUILD_ID, 2, "regar", Priority.BAJA)
+    events: list[str] = []
+    interaction = fake_interaction(_member(2), events=events)
+    interaction.guild = _guild()
+    interaction.message.edit = AsyncMock()
+
+    await cog.open_edit_form(interaction, task.id, "regar", Priority.BAJA, 2, page=0)
+
+    # El formulario es la primera respuesta, sin esperar a la base de datos.
+    assert events == ["response.send_modal"]
+    form = interaction.response.send_modal.await_args.args[0]
+    assert form.custom_id == f"lista:form:{task.id}:0"
+    payload = form.to_dict()["components"]
+    assert payload[0]["component"]["value"] == "regar"
+    chosen = [o["value"] for o in payload[1]["component"]["options"] if o.get("default")]
+    assert chosen == [str(Priority.BAJA.value)]
+    # Y la lista se repone para soltar la tarea elegida en el menú.
+    interaction.message.edit.assert_awaited_once()
+
+
+async def test_editar_una_ajena_sin_ser_admin_no_abre_el_formulario(repo: TodoRepository) -> None:
+    cog = Lista(MagicMock(), repo)
+    interaction = _interaction(_member(2))
+    interaction.message.edit = AsyncMock()
+
+    await cog.open_edit_form(interaction, 1, "ajena", Priority.MEDIA, 3, page=0)
+
+    interaction.response.send_modal.assert_not_awaited()
+    assert interaction.response.send_message.await_args.kwargs["ephemeral"] is True
+
+
+async def test_guardar_el_formulario_edita_la_lista_en_su_sitio(repo: TodoRepository) -> None:
+    cog = Lista(MagicMock(), repo)
+    vieja = await repo.add_task(GUILD_ID, 2, "regar", Priority.BAJA)
+    await repo.add_task(GUILD_ID, 3, "nueva", Priority.ALTA)
+    events: list[str] = []
+    interaction = fake_interaction(_member(2), events=events)
+    interaction.guild = _guild()
+    tracked = AsyncMock()
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr("bot.cogs.todo.logros.track", tracked)
+        await cog.save_edit(interaction, vieja.id, "regar las plantas", Priority.ALTA)
+
+    assert events[0] == "response.defer"
+    embed = interaction.edit_original_response.await_args.kwargs["embed"]
+    lines = (embed.description or "").splitlines()
+    assert "cambió 💤 «regar» por 🔥 «regar las plantas»" in lines[0]
+    # Sube a alta y, por antigüedad, va delante de la otra alta.
+    assert "regar las plantas" in lines[2] and "nueva" in lines[3]
+    assert tracked.await_args.args[4].add == {"todo_edited": 1}
+
+
+async def test_solo_cambiar_la_prioridad_lo_dice_asi(repo: TodoRepository) -> None:
+    cog = Lista(MagicMock(), repo)
+    task = await repo.add_task(GUILD_ID, 2, "regar", Priority.ALTA)
+    interaction = _interaction(_member(2))
+    tracked = AsyncMock()
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr("bot.cogs.todo.logros.track", tracked)
+        await cog.save_edit(interaction, task.id, "regar", Priority.BAJA)
+
+    embed = interaction.edit_original_response.await_args.kwargs["embed"]
+    assert "pasó «regar» de 🔥 alta a 💤 baja" in (embed.description or "")
+    assert tracked.await_args.args[4].add == {"todo_edited": 1, "todo_demoted": 1}
+
+
+async def test_guardar_sin_cambios_no_toca_la_lista(repo: TodoRepository) -> None:
+    cog = Lista(MagicMock(), repo)
+    task = await repo.add_task(GUILD_ID, 2, "regar", Priority.ALTA)
+    interaction = _interaction(_member(2))
+
+    await cog.save_edit(interaction, task.id, " regar ", Priority.ALTA)
+
+    interaction.edit_original_response.assert_not_awaited()
+    interaction.followup.send.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("author", "admin", "texto", "aviso"),
+    [
+        (3, False, "otra cosa", "Solo puede editar"),
+        (3, True, "  ", "Escribe qué hay que hacer"),
+    ],
+)
+async def test_guardar_lo_que_no_vale_se_avisa_en_privado(
+    repo: TodoRepository, author: int, admin: bool, texto: str, aviso: str
+) -> None:
+    cog = Lista(MagicMock(), repo)
+    task = await repo.add_task(GUILD_ID, author, "regar", Priority.MEDIA)
+    interaction = _interaction(_member(2, admin=admin))
+
+    await cog.save_edit(interaction, task.id, texto, Priority.ALTA)
+
+    sent = interaction.followup.send.await_args
+    assert aviso in sent.args[0] and sent.kwargs["ephemeral"] is True
+    [kept] = await repo.list_tasks(GUILD_ID)
+    assert (kept.text, kept.priority) == ("regar", Priority.MEDIA)
+
+
+async def test_guardar_una_tarea_ya_tachada_avisa(repo: TodoRepository) -> None:
+    cog = Lista(MagicMock(), repo)
+    interaction = _interaction(_member(2, admin=True))
+
+    await cog.save_edit(interaction, 999, "regar", Priority.ALTA)
+
+    assert "ya no está" in interaction.followup.send.await_args.args[0]
+    assert await repo.list_tasks(GUILD_ID) == []
+
+
+async def test_un_formulario_de_antes_de_reiniciar_se_guarda_igual(repo: TodoRepository) -> None:
+    """Sin formulario vivo en discord.py, lo contesta `on_interaction` por su `custom_id`."""
+    cog = Lista(MagicMock(), repo)
+    task = await repo.add_task(GUILD_ID, 2, "regar", Priority.MEDIA)
+    interaction = _interaction(_member(2))
+    interaction.type = discord.InteractionType.modal_submit
+    interaction.data = {
+        "custom_id": f"lista:form:{task.id}:0",
+        "components": [
+            {"type": 18, "component": {"type": 4, "custom_id": "texto", "value": "regar ya"}},
+            {"type": 18, "component": {"type": 3, "custom_id": "prioridad", "values": ["0"]}},
+        ],
+    }
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr("bot.cogs.todo.logros.track", AsyncMock())
+        await cog.on_interaction(interaction)
+
+    [edited] = await repo.list_tasks(GUILD_ID)
+    assert (edited.text, edited.priority) == ("regar ya", Priority.ALTA)
+
+
+async def test_otros_formularios_no_los_toca_la_lista(repo: TodoRepository) -> None:
+    cog = Lista(MagicMock(), repo)
+    interaction = _interaction(_member(2))
+    interaction.type = discord.InteractionType.modal_submit
+    interaction.data = {"custom_id": "rastro:pujar:3", "components": []}
+
+    await cog.on_interaction(interaction)
+
+    interaction.response.defer.assert_not_awaited()
+
+
+def test_los_campos_del_formulario_se_leen_en_los_dos_formatos() -> None:
+    """Con `Label` (el de ahora) y en filas, como mandaba Discord antes."""
+    rows = {"components": [{"type": 1, "components": [{"custom_id": "texto", "value": "a"}]}]}
+    select = {"custom_id": "prioridad", "values": ["2"]}
+    labels = {"components": [{"type": 18, "component": select}]}
+    assert form_values(rows) == {"texto": "a"}
+    assert form_values(labels) == {"prioridad": "2"}

@@ -16,8 +16,16 @@ mensajes** (si no lo tiene, lo deja y sigue).
 
 Las tareas se tachan con el menú de la propia lista (el de cada página).
 Puede tacharlas quien las apuntó o un administrador; al tacharlas se borran.
+Los mismos pueden editarlas con el menú ✏️ de debajo: abre un formulario con
+el nombre ya escrito y la prioridad elegida, y al guardar la lista se
+actualiza en su sitio. La tarea conserva su antigüedad.
 
-Logros: apuntar (`todo_added`) y tachar (`todo_done`), categoría 📝 Lista.
+Todo sigue valiendo tras reiniciar el bot: los menús y las flechas son
+`DynamicItem` y el formulario lo contesta `Lista.on_interaction` por su
+`custom_id` (`lista:form:<tarea>:<página>`), aunque se abriera antes del reinicio.
+
+Logros: apuntar (`todo_added`), tachar (`todo_done`) y editar (`todo_edited`,
+`todo_demoted`), categoría 📝 Lista.
 """
 
 from __future__ import annotations
@@ -27,10 +35,10 @@ import logging
 import math
 import re
 from functools import partial
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import discord
-from discord import app_commands
+from discord import app_commands, ui
 from discord.ext import commands
 
 from bot.cogs import achievements as logros
@@ -50,7 +58,7 @@ from bot.services.todo import (
     sort_tasks,
 )
 from bot.utils.cogs import find_cog
-from bot.utils.interactions import ack, edit, notify
+from bot.utils.interactions import ack, claim_custom_ids, edit, notify
 
 if TYPE_CHECKING:
     from bot.app import BotClient
@@ -60,6 +68,9 @@ logger = logging.getLogger(__name__)
 COLOR = discord.Color.from_rgb(250, 190, 60)
 SELECT_ID = "lista:hecha"
 PAGE_ID = "lista:pag"
+EDIT_ID = "lista:editar"
+FORM_ID = "lista:form"
+FORM_RE = re.compile(r"lista:form:(?P<id>\d+):(?P<page>\d+)")
 NO_MENTIONS = discord.AllowedMentions.none()
 USAGE = "`lista <tarea> prioridad alta|media|baja`"
 #: Segundos para elegir la prioridad antes de apuntarla como media.
@@ -127,8 +138,25 @@ def build_board(
         ],
         row=0,
     )
+    # El valor lleva prioridad y autor: así ✏️ abre el formulario (y dice si no es
+    # tuya) sin esperar a la base de datos, como pide Discord antes de un formulario.
+    edit_select: discord.ui.Select = discord.ui.Select(
+        custom_id=f"{EDIT_ID}:{page}",
+        placeholder="✏️ Editar una tarea…",
+        options=[
+            discord.SelectOption(
+                label=task.text[:100],
+                value=f"{task.id}:{task.priority.value}:{task.author_id}",
+                emoji=task.priority.emoji,
+                description=f"Prioridad {task.priority.label}",
+            )
+            for task in shown
+        ],
+        row=1,
+    )
     view = discord.ui.View(timeout=None)
     view.add_item(DoneSelect(select, page))
+    view.add_item(EditSelect(edit_select, page))
     if pages > 1:
         # Cada flecha lleva su destino: Discord no admite dos custom_id iguales.
         for label, target, disabled in (
@@ -140,7 +168,7 @@ def build_board(
                 custom_id=f"{PAGE_ID}:{target}",
                 style=discord.ButtonStyle.secondary,
                 disabled=disabled,
-                row=1,
+                row=2,
             )
             view.add_item(PageButton(button, target))
     return embed, view
@@ -199,6 +227,90 @@ class PageButton(discord.ui.DynamicItem[discord.ui.Button], template=r"lista:pag
         cog = find_cog(interaction.client, Lista)  # type: ignore[arg-type]
         if cog is not None:
             await cog.show_page(interaction, self.page)
+
+
+class EditSelect(discord.ui.DynamicItem[discord.ui.Select], template=r"lista:editar:(?P<page>\d+)"):
+    """Menú ✏️ de la lista: abre el formulario para editar la tarea elegida."""
+
+    def __init__(self, item: discord.ui.Select, page: int) -> None:
+        super().__init__(item)
+        self.page = page
+
+    @classmethod
+    async def from_custom_id(
+        cls,
+        interaction: discord.Interaction,
+        item: discord.ui.Select,
+        match: re.Match[str],
+        /,
+    ) -> EditSelect:
+        return cls(item, int(match["page"]))
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        cog = find_cog(interaction.client, Lista)  # type: ignore[arg-type]
+        if cog is None or not self.item.values:
+            return
+        value = self.item.values[0]
+        # Tras reiniciar, `item` sale del mensaje y trae sus opciones: el texto es la etiqueta.
+        label = next((o.label for o in self.item.options if o.value == value), "")
+        task_id, priority, author_id = (int(part) for part in value.split(":"))
+        await cog.open_edit_form(
+            interaction, task_id, label, Priority(priority), author_id, self.page
+        )
+
+
+def edit_form(task_id: int, text: str, priority: Priority, page: int) -> ui.Modal:
+    """Formulario ✏️ con el nombre y la prioridad actuales ya puestos.
+
+    No tiene `on_submit`: lo contesta `Lista.on_interaction`, así vale igual si el
+    bot se reinicia mientras está abierto.
+    """
+    form = ui.Modal(
+        title="✏️ Editar tarea", custom_id=f"{FORM_ID}:{task_id}:{page}", timeout=PICK_TIMEOUT * 5
+    )
+    form.add_item(
+        ui.Label(
+            text="Tarea",
+            component=ui.TextInput(custom_id="texto", default=text, max_length=MAX_TASK_LENGTH),
+        )
+    )
+    form.add_item(
+        ui.Label(
+            text="Prioridad",
+            component=ui.Select(
+                custom_id="prioridad",
+                options=[
+                    discord.SelectOption(
+                        label=p.label.capitalize(),
+                        value=str(p.value),
+                        emoji=p.emoji,
+                        default=p is priority,
+                    )
+                    for p in Priority
+                ],
+            ),
+        )
+    )
+    return form
+
+
+def form_values(data: dict[str, Any]) -> dict[str, str]:
+    """Lo escrito o elegido en un formulario enviado, por `custom_id` de cada campo.
+
+    Los campos llegan dentro de una `Label` (`component`) o, en formularios antiguos,
+    de una fila (`components`); los desplegables traen `values` y las cajas, `value`.
+    """
+    found: dict[str, str] = {}
+    pending = list(data.get("components", []))
+    while pending:
+        node = pending.pop()
+        pending += node.get("components", [])
+        if "component" in node:
+            pending.append(node["component"])
+        if "custom_id" in node:
+            values = node.get("values")
+            found[node["custom_id"]] = values[0] if values else str(node.get("value") or "")
+    return found
 
 
 class PriorityPicker(discord.ui.View):
@@ -286,10 +398,11 @@ class Lista(commands.Cog):
         self._locks: dict[int, asyncio.Lock] = {}
 
     async def cog_load(self) -> None:
-        self.bot.add_dynamic_items(DoneSelect, PageButton)
+        self.bot.add_dynamic_items(DoneSelect, PageButton, EditSelect)
+        claim_custom_ids(f"{FORM_ID}:")
 
     async def cog_unload(self) -> None:
-        self.bot.remove_dynamic_items(DoneSelect, PageButton)
+        self.bot.remove_dynamic_items(DoneSelect, PageButton, EditSelect)
 
     def _lock(self, guild_id: int) -> asyncio.Lock:
         return self._locks.setdefault(guild_id, TimedLock("todo:Lista._locks"))
@@ -412,6 +525,125 @@ class Lista(commands.Cog):
         await ack(interaction)
         embed, view = build_board(guild, await self.repository.list_tasks(guild.id), page=page)
         await edit(interaction, embed=embed, view=view)
+
+    # -- Editar ----------------------------------------------------------------------
+
+    async def open_edit_form(
+        self,
+        interaction: discord.Interaction,
+        task_id: int,
+        text: str,
+        priority: Priority,
+        author_id: int,
+        page: int,
+    ) -> None:
+        """Menú ✏️: abre el formulario de la tarea elegida (si es tuya o eres admin)."""
+        guild, user = interaction.guild, interaction.user
+        if guild is None or not isinstance(user, discord.Member):
+            return
+        # `send_modal` tiene que ser la primera respuesta: aquí solo se mira memoria.
+        if not (user.guild_permissions.administrator or user.id == author_id):
+            await interaction.response.send_message(
+                "Solo puede editar una tarea quien la apuntó o un administrador.", ephemeral=True
+            )
+        else:
+            await interaction.response.send_modal(edit_form(task_id, text, priority, page))
+        # Discord deja el menú con la tarea elegida y no avisa si se vuelve a elegir la
+        # misma (al cerrar el formulario sin guardar): se repone la lista para soltarla.
+        if interaction.message is not None:
+            _, view = build_board(guild, await self.repository.list_tasks(guild.id), page=page)
+            try:
+                await interaction.message.edit(view=view)
+            except discord.HTTPException:
+                pass
+
+    @commands.Cog.listener()
+    async def on_interaction(self, interaction: discord.Interaction) -> None:
+        """Formulario ✏️ enviado, también si se abrió antes de reiniciar el bot."""
+        if interaction.type is not discord.InteractionType.modal_submit:
+            return
+        data: dict[str, Any] = dict(interaction.data or {})
+        match = FORM_RE.fullmatch(str(data.get("custom_id", "")))
+        if match is None:
+            return
+        values = form_values(data)
+        chosen = values.get("prioridad", "")
+        await self.save_edit(
+            interaction,
+            int(match["id"]),
+            values.get("texto", ""),
+            Priority(int(chosen)) if chosen.isdigit() else None,
+            int(match["page"]),
+        )
+
+    async def save_edit(
+        self,
+        interaction: discord.Interaction,
+        task_id: int,
+        raw: str,
+        priority: Priority | None,
+        page: int = 0,
+    ) -> None:
+        """Guarda lo del formulario ✏️ y actualiza la lista en su sitio.
+
+        `priority` es la del desplegable; si falta, vale la escrita en el texto
+        («… prioridad alta») o, si tampoco, la que tenía.
+        """
+        guild, user = interaction.guild, interaction.user
+        if guild is None or not isinstance(user, discord.Member):
+            return
+        # Guardar espera al candado y escribe: se acepta el formulario antes.
+        await ack(interaction)
+        try:
+            text, priority = parse_task(raw, priority)
+        except TaskError as error:
+            await notify(interaction, str(error))
+            return
+        async with self._lock(guild.id):
+            found = await self.repository.get_tasks(guild.id, [task_id])
+            if not found:
+                await notify(interaction, "Esa tarea ya no está: la tacharon mientras la editabas.")
+                return
+            before = found[0]
+            if not can_complete(before, user.id, is_admin=user.guild_permissions.administrator):
+                await notify(
+                    interaction, "Solo puede editar una tarea quien la apuntó o un administrador."
+                )
+                return
+            priority = before.priority if priority is None else priority
+            if (text, priority) == (before.text, before.priority):
+                return
+            after = await self.repository.update_task(guild.id, task_id, text, priority)
+            if after is None:
+                await notify(interaction, "Esa tarea ya no está: la tacharon mientras la editabas.")
+                return
+            note = self._edited_note(user, before, after)
+            embed, view = build_board(guild, await self.repository.list_tasks(guild.id), note, page)
+            # El formulario sale del menú de la lista: se edita ese mismo mensaje.
+            await edit(interaction, embed=embed, view=view)
+        demoted = before.priority is Priority.ALTA and after.priority is Priority.BAJA
+        await logros.track(
+            self.bot,
+            guild.id,
+            user,
+            interaction.channel,
+            StatDelta(add={"todo_edited": 1, **({"todo_demoted": 1} if demoted else {})}),
+        )
+
+    @staticmethod
+    def _edited_note(user: discord.Member, before: Task, after: Task) -> str:
+        name = discord.utils.escape_markdown(user.display_name)
+        old = discord.utils.escape_markdown(before.text)
+        new = discord.utils.escape_markdown(after.text)
+        if old == new:
+            return (
+                f"✏️ **{name}** pasó «{new}» de {before.priority.emoji} {before.priority.label}"
+                f" a {after.priority.emoji} {after.priority.label}."
+            )
+        return (
+            f"✏️ **{name}** cambió {before.priority.emoji} «{old}»"
+            f" por {after.priority.emoji} «{new}»."
+        )
 
     # -- Comandos --------------------------------------------------------------------
 

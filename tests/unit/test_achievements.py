@@ -288,7 +288,7 @@ PRODUCED_STATS = {
     # Bienvenida (botón 👋 de cogs/welcome.py)
     "welcomes_given", "welcomes_fast",
     # Lista de tareas (cogs/todo.py)
-    "todo_added", "todo_done",
+    "todo_added", "todo_done", "todo_edited", "todo_demoted",
     # Beernight (cogs/beernight.py): beber, cerrar la noche y los botones de cada uno
     *(stat for reason in BeerReason
       for stat in (*beernight_drink_stats(reason.value, 1, forgiven=1).add,

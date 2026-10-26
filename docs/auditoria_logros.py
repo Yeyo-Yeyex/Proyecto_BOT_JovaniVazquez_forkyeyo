@@ -171,7 +171,8 @@ RITMO: dict[str, float] = {
     "voice_music": 20, "voice_stream_crowd": 5, "voice_multitask": 2,
     "voice_joins": 4, "voice_hops": 2, "voice_ghost": 0.2, "voice_stream_starts": 1,
     # Funcionalidades sueltas
-    "todo_added": 1, "todo_done": 0.8, "music_queued": 10, "music_skips": 3,
+    "todo_added": 1, "todo_done": 0.8, "todo_edited": 0.3, "todo_demoted": 0.05,
+    "music_queued": 10, "music_skips": 3,
     "music_stops": 0.5, "music_removes": 0.3, "img_made": 3, "img_magik": 1,
     "img_video": 0.5, "img_on_others": 1.5, "img_self": 1, "babel_phrases": 1,
     "babel_renames": 0.3, "entrance_saved": 0.1, "entrance_played": 4, "hk_clock": 1,

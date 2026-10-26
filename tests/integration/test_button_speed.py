@@ -2755,6 +2755,27 @@ async def press_todo_priority(client: BotClient, owner: MagicMock) -> Click:
     return click
 
 
+async def press_todo_edit(client: BotClient, owner: MagicMock) -> Click:
+    task = await client.todo.add_task(GUILD_ID, OWNER_ID, "probar los botones", Priority.ALTA)
+
+    async def click(interaction: MagicMock) -> None:
+        interaction.message.edit = AsyncMock()
+        await client.get_cog("Lista").open_edit_form(
+            interaction, task.id, task.text, task.priority, OWNER_ID, 0
+        )
+
+    return click
+
+
+async def press_todo_edit_save(client: BotClient, owner: MagicMock) -> Click:
+    task = await client.todo.add_task(GUILD_ID, OWNER_ID, "probar los botones", Priority.ALTA)
+
+    async def click(interaction: MagicMock) -> None:
+        await client.get_cog("Lista").save_edit(interaction, task.id, "probar", Priority.BAJA)
+
+    return click
+
+
 async def admin_panel(client: BotClient, owner: MagicMock):  # noqa: ANN201
     await client.moderation.initialize()
     await client.last_seen.initialize()
@@ -3084,6 +3105,8 @@ CASES: dict[str, Press] = {
     "lista: tachar": press_todo,
     "lista: pasar página": press_todo_page,
     "lista: elegir prioridad": press_todo_priority,
+    "lista: abrir el formulario de editar": press_todo_edit,
+    "lista: guardar lo editado": press_todo_edit_save,
     "lotería: rascar": press_lottery_scratch,
     "lotería: comprar apuestas": press_lottery_buy,
     "lotería: volver al cartel": press_lottery_tab,

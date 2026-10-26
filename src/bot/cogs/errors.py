@@ -213,7 +213,8 @@ def _rescued_modal(original: Callable[..., None]) -> Callable[..., None]:
     @functools.wraps(original)
     def dispatch(self: ViewStore, custom_id: str, interaction: Any, *args: Any) -> None:
         original(self, custom_id, interaction, *args)
-        if custom_id not in self._modals:
+        # Uno reclamado lo contesta su listener aunque el formulario sea de antes de reiniciar.
+        if custom_id not in self._modals and not is_claimed(custom_id):
             _schedule(_answer_expired(interaction))
 
     return dispatch

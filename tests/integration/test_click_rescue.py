@@ -182,6 +182,16 @@ async def test_orphan_modal_gets_a_private_notice() -> None:
     assert events == ["response.send_message"]
 
 
+async def test_claimed_orphan_modal_is_left_to_its_listener() -> None:
+    events: list[str] = []
+    claim_custom_ids("escucha-form:")
+
+    ViewStore(MagicMock()).dispatch_modal("escucha-form:7", click(events, "escucha-form:7"), [], {})
+    await settle()
+
+    assert events == []
+
+
 async def test_a_button_that_raises_tells_who_clicked() -> None:
     events: list[str] = []
     view = discord.ui.View()

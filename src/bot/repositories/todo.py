@@ -134,6 +134,27 @@ class TodoRepository:
             ).fetchall()
             return [self._task(row) for row in rows]
 
+    async def update_task(
+        self, guild_id: int, task_id: int, text: str, priority: Priority
+    ) -> Task | None:
+        """Cambia el texto y la prioridad de una tarea; conserva su antigüedad.
+
+        Returns:
+            La tarea ya cambiada, o `None` si alguien la tachó antes.
+        """
+        return await self._run(self._update_task_sync, guild_id, task_id, text, priority)
+
+    def _update_task_sync(
+        self, guild_id: int, task_id: int, text: str, priority: Priority
+    ) -> Task | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "UPDATE todo_tasks SET text = ?, priority = ? WHERE guild_id = ? AND id = ?"
+                " RETURNING *",
+                (text, int(priority), guild_id, task_id),
+            ).fetchone()
+            return self._task(row) if row else None
+
     async def remove_tasks(self, guild_id: int, task_ids: list[int]) -> list[int]:
         """Tacha (borra) las tareas indicadas.
 
