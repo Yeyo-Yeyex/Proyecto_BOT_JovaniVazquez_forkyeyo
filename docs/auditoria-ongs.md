@@ -177,3 +177,14 @@ Entrada: 1202 Y$ por ONG y semana · 2 rivales por sorteo
   ya estuvieran, ocultos, y no vuelven a salir en ningún sorteo.
 - Techo Para Todos pierde el «(patrocina un fondo buitre)» del nombre.
 - 9.30.1: Techo Para Todos pasa a ser la Fundación Ningún Inversor Sin Casa (misma clave `buitre`).
+
+### La Fundación Acogida Cinco Estrellas (9.31.0)
+
+- Once ONGs. La nueva (`acogida`, monedero `-11`) se ríe de la gestión y la comunicación
+  de la acogida en Canarias: Madrid y Canarias pasándose la pelota, contratos de
+  emergencia sin concurso, hoteles pagados a precio de suite porque nadie negoció,
+  ruedas de prensa vacías y la foto del ministro en el muelle. La broma es siempre el
+  Gobierno y sus contratistas, nunca las personas migrantes (Biblia, «Personalidad»).
+- Diez regalos exclusivos (110 en total) y sus logros de 10.000, 100.000 y 500.000 Y$.
+  «Dona a las 11 ONGs» es un escalón nuevo; los que decían «las 10» pasan a «10
+  distintas» y la colección de exclusivos, a «100 distintos».

@@ -8,6 +8,12 @@ criterio.
 
 ## 9.x
 
+### 9.31.0 · 2026-10-26
+
+- ONGs: la Fundación Acogida Cinco Estrellas
+- ONGs: 🏨 Fundación Acogida Cinco Estrellas, sobre la gestión de la acogida en Canarias: Madrid y Canarias pasándose la pelota, contratos de emergencia sin concurso, el hotel pagado a precio de suite y las ruedas de prensa que no dicen nada
+- ONGs: diez regalos exclusivos para ella y 4 logros nuevos (sus tres escalones y donar a las 11 ONGs)
+
 ### 9.30.1 · 2026-10-26
 
 - ONGs: Techo Para Todos pasa a ser la Fundación Ningún Inversor Sin Casa

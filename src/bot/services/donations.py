@@ -278,6 +278,31 @@ ONGS: tuple[Ong, ...] = (
             "una litera en el rellano con «zona común compartida» (la escalera)",
         ),
     ),
+    Ong(
+        # La broma es la gestión y la comunicación del Gobierno y sus contratistas, nunca
+        # quien llega: ninguna frase se ríe de las personas migrantes.
+        key="acogida",
+        account_id=-11,
+        name="Fundación Acogida Cinco Estrellas",
+        emoji="🏨",
+        mission="Coordinar la acogida en Canarias con orden, previsión y transparencia.",
+        reality=(
+            "Madrid dice que es cosa de Canarias y Canarias que es cosa de Madrid. Mientras "
+            "se pasan la pelota, el hotel se paga a precio de suite porque nadie negoció y "
+            "el contrato de emergencia lo firma un amigo un viernes a las 23:59."
+        ),
+        spending=(
+            "una rueda de prensa para anunciar la próxima rueda de prensa",
+            "un contrato de emergencia de 20 millones adjudicado sin concurso",
+            "un hotel de cuatro estrellas pagado a precio de suite presidencial",
+            "un plan de acogida que llegó por fax con tres meses de retraso",
+            "una comisión de coordinación que aún no se ha puesto de acuerdo en el día",
+            "un comunicado que dice «situación bajo control» desde el muelle desbordado",
+            "el avión de un ministro que viene, se hace la foto y se vuelve esa tarde",
+            "una aplicación de gestión de plazas que se cae cada vez que alguien la abre",
+            "el catering de la reunión de crisis, más caro que la propia crisis",
+        ),
+    ),
 )
 BY_KEY: dict[str, Ong] = {ong.key: ong for ong in ONGS}
 
@@ -1189,6 +1214,74 @@ ONG_GIFTS: tuple[OngGift, ...] = (
             "Tienda de campaña «Primera vivienda»",
             110,
             "Lo único que se puede pagar con un sueldo medio.",
+        ),
+    ),
+    *_gifts(
+        "acogida",
+        "canarias",
+        (
+            "ruedaprensa",
+            "🎤",
+            "Micro de la rueda de prensa",
+            140,
+            "Para anunciar que habrá más información en próximas comparecencias.",
+        ),
+        (
+            "fax",
+            "📠",
+            "Fax con el plan de acogida",
+            120,
+            "Llegó tres meses tarde y con la última página en blanco.",
+        ),
+        (
+            "pulsera",
+            "🎫",
+            "Pulsera todo incluido del hotel",
+            80,
+            "La factura del todo incluido la paga el contribuyente, sin negociar.",
+        ),
+        (
+            "contrato",
+            "📄",
+            "Contrato de emergencia sin concurso",
+            220,
+            "Firmado un viernes a las 23:59. La empresa se creó el jueves.",
+        ),
+        (
+            "pelota",
+            "⚽",
+            "La pelota que se pasan Madrid y Canarias",
+            100,
+            "Lleva años de un lado a otro y nadie se la queda.",
+        ),
+        (
+            "comunicado",
+            "📢",
+            "Comunicado «situación bajo control»",
+            90,
+            "Redactado antes de saber cuál era la situación.",
+        ),
+        ("app", "📱", "App de plazas que no carga", 70, "Error 503 desde el día del lanzamiento."),
+        (
+            "foto",
+            "📸",
+            "Foto del ministro en el muelle",
+            180,
+            "Duró lo que tardó en salir el siguiente vuelo a Madrid.",
+        ),
+        (
+            "organigrama",
+            "🗂️",
+            "Organigrama de la comisión",
+            150,
+            "Doce administraciones, treinta cargos y ningún teléfono que conteste.",
+        ),
+        (
+            "catering",
+            "🥪",
+            "Bandeja del catering de crisis",
+            60,
+            "Cuesta más que la medida que se aprobó en la reunión.",
         ),
     ),
 )

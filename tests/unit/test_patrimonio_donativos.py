@@ -125,9 +125,9 @@ def test_deduccion_80_y_40_con_los_limites() -> None:
 
 def test_las_ongs_tienen_cuentas_negativas_y_distintas() -> None:
     accounts = [ong.account_id for ong in ONGS]
-    assert len(ONGS) == 10
+    assert len(ONGS) == 11
     assert all(a < 0 for a in accounts)
-    assert len(set(accounts)) == 10
+    assert len(set(accounts)) == 11
     assert find_ong("mares") is BY_KEY["mares"]
     assert find_ong("AYUDA") is BY_KEY["ayudante"]
     assert find_ong("cruz roja") is None

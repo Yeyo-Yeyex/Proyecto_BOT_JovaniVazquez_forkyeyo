@@ -367,7 +367,7 @@ PRODUCED_STATS = {
     "donation_one", "donation_allin", "donation_666", "donation_christmas",
     "donated_gamers", "donated_influencers", "donated_platano", "donated_jovani",
     "patron_level_max", "ong_raffle_won", "ong_gifts", "ong_exclusive_gifts",
-    "donated_corona", "donated_buitre", "patron_ongs", "patron_gold_ongs",
+    "donated_corona", "donated_buitre", "donated_acogida", "patron_ongs", "patron_gold_ongs",
     "ong_exclusives_owned", "ong_exclusive_set_max", "donation_max", "donation_69",
     "donation_420", "donation_exact_level", "donation_dawn", "donation_canarias",
     "donation_last_call", "donation_corona_minor",
@@ -378,7 +378,7 @@ PRODUCED_STATS = {
     "donation_gamers_1337", "donation_hambre_lunch",
     *(f"ong_seen_{key}" for key in (
         "desmontar", "ayudante", "mares", "hambre", "gamers", "influencers", "platano",
-        "jovani", "corona", "buitre",
+        "jovani", "corona", "buitre", "acogida",
     )),
     "market_swap_titles",
     "market_loss", "market_gifts_given", "market_sold_one", "market_666", "market_sunday",

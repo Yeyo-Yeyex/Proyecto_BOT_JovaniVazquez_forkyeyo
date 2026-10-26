@@ -9312,7 +9312,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a += _tiers("economy", "ongs_supported", [
         (4, "donate_all", "Accionista del tercer sector", "Dona a 4 ONGs distintas.", R),
         (8, "donate_all_8", "Ocho apellidos solidarios", "Dona a 8 ONGs distintas.", E),
-        (10, "donate_all_10", "Pleno al diez del tercer sector", "Dona a las 10 ONGs.", E),
+        (10, "donate_all_10", "Pleno al diez del tercer sector", "Dona a 10 ONGs distintas.", E),
+        (11, "donate_all_11", "Once titulares del tercer sector", "Dona a las 11 ONGs.", E),
     ])  # fmt: skip
     a += _tiers("economy", "patron_ongs", [
         (3, "patron_ongs_3", "Bronceado en tres playas",
@@ -9320,13 +9321,13 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (6, "patron_ongs_6", "Mecenas de polígono industrial",
          "Sé mecenas (Bronce o más) de 6 ONGs.", E),
         (10, "patron_ongs_10", "Tercer sector, primer donante",
-         "Sé mecenas (Bronce o más) de las 10 ONGs.", L),
+         "Sé mecenas (Bronce o más) de 10 ONGs.", L),
     ])  # fmt: skip
     a += _tiers("economy", "patron_gold_ongs", [
         (3, "patron_gold_3", "Corazón de oro de 24 quilates",
          "Sé mecenas Oro (o Patrono) de 3 ONGs.", L),
         (10, "patron_gold_10", "Fort Knox solidario",
-         "Sé mecenas Oro (o Patrono) de las 10 ONGs.", M),
+         "Sé mecenas Oro (o Patrono) de 10 ONGs.", M),
     ])  # fmt: skip
     a += _tiers("economy", "patron_level_max", [
         (1, "patron_bronze", "Bronceado solidario",
@@ -9380,7 +9381,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     a.append(Achievement(
         id="ong_seen_all",
         name="Turista del tercer sector",
-        description="Mira en `donar` la ficha de las 10 ONGs.",
+        description="Mira en `donar` la ficha de todas las ONGs.",
         category="economy",
         rarity=C,
         conditions=tuple((f"ong_seen_{ong.key}", 1) for ong in ONGS),
@@ -9438,7 +9439,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (25, "ong_owned_25", "Almacén de la fundación",
          "Ten 25 regalos exclusivos distintos de ONGs.", M),
         (100, "ong_owned_100", "Patronato universal",
-         "Ten los 100 regalos exclusivos de las ONGs.", M),
+         "Ten 100 regalos exclusivos distintos de ONGs.", M),
     ])  # fmt: skip
     a += _tiers("economy", "ong_exclusive_set_max", [
         (5, "ong_set_5", "Media colección de chiringuito",
@@ -9510,6 +9511,9 @@ def _build_catalog() -> tuple[Achievement, ...]:
         ("corona", "la Fundación Familia Primero",
          ("Enchufado de segunda", "Primo de libre designación",
           "Familia política del año")),
+        ("acogida", "la Fundación Acogida Cinco Estrellas",
+         ("Asistente a la rueda de prensa", "Contrato firmado un viernes a las 23:59",
+          "Suite presidencial a cargo del ministerio")),
         ("buitre", "la Fundación Ningún Inversor Sin Casa",
          ("Inquilino agradecido", "Socio del fondo buitre",
           "Dueño de medio Lavapiés")),
