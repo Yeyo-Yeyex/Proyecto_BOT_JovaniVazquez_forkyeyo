@@ -259,23 +259,23 @@ ONGS: tuple[Ong, ...] = (
     Ong(
         key="buitre",
         account_id=-10,
-        name="Fundación Techo Para Todos",
+        name="Fundación Ningún Inversor Sin Casa",
         emoji="🦅",
-        mission="Que nadie se quede sin vivienda.",
+        mission="Que nadie en España se quede sin vivienda.",
         reality=(
-            "Compra edificios enteros con tu donativo y los alquila por habitaciones a "
-            "1.200 € al mes. Techo para todos, pero de pago."
+            "Lo cumple: ningún inversor se ha quedado sin casa. Tienen catorce cada uno, y "
+            "a ti te alquilan el pasillo."
         ),
         spending=(
-            "un bloque entero en Lavapiés, con los vecinos dentro",
-            "un pisito de 20 m² dividido en tres «estudios con encanto»",
-            "las cerraduras de Airbnb para los pisos del centro",
-            "un abogado especialista en no renovar contratos",
-            "una campaña que culpa a los okupas de la subida de los alquileres",
-            "un ático en Barcelona con licencia turística para el consejo",
-            "un informe que demuestra que los alquileres bajan si suben",
-            "la subida del 10 % del alquiler de la sede social",
-            "un coliving de lujo con litera y «zona de networking»",
+            "un trastero de 4 m² anunciado como «loft industrial» a 750 € al mes",
+            "una habitación sin ventana con «luz indirecta»",
+            "un balcón cerrado alquilado como habitación individual, gastos aparte",
+            "un armario empotrado anunciado como «estudio para nómadas digitales»",
+            "un piso en el que hay que pasar por el baño para llegar a la cocina",
+            "seis meses de fianza, el aval de tus padres y un psicotécnico",
+            "un contrato que prohíbe cocinar, recibir visitas y respirar fuerte",
+            "la comisión de la inmobiliaria por enseñarte el piso por videollamada",
+            "una litera en el rellano con «zona común compartida» (la escalera)",
         ),
     ),
 )

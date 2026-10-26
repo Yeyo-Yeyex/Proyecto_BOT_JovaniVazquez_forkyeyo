@@ -176,3 +176,4 @@ Entrada: 1202 Y$ por ONG y semana · 2 rivales por sorteo
   ya sembrado, así que los de la Corona se quedan como estaban en los servidores donde
   ya estuvieran, ocultos, y no vuelven a salir en ningún sorteo.
 - Techo Para Todos pierde el «(patrocina un fondo buitre)» del nombre.
+- 9.30.1: Techo Para Todos pasa a ser la Fundación Ningún Inversor Sin Casa (misma clave `buitre`).

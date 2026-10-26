@@ -9407,7 +9407,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         ("donation_corona_rescue", "donate_corona_65k", "Rescate con un solo avión",
          "Dona 5.300 Y$ exactos a la Fundación Familia Primero.", R, True),
         ("donation_buitre_rent", "donate_buitre_rent", "Precio de mercado",
-         "Dona 1.200 Y$ exactos a Techo Para Todos.", C, True),
+         "Dona 1.200 Y$ exactos a la Fundación Ningún Inversor Sin Casa.", C, True),
         ("donation_gamers_1337", "donate_gamers_1337", "Donativo l33t",
          "Dona 1.337 Y$ exactos a Gamers Sin Fronteras.", C, True),
         ("donation_hambre_lunch", "donate_hambre_lunch", "Contra el hambre a la hora de comer",
@@ -9510,7 +9510,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         ("corona", "la Fundación Familia Primero",
          ("Enchufado de segunda", "Primo de libre designación",
           "Familia política del año")),
-        ("buitre", "Techo Para Todos",
+        ("buitre", "la Fundación Ningún Inversor Sin Casa",
          ("Inquilino agradecido", "Socio del fondo buitre",
           "Dueño de medio Lavapiés")),
     ):  # fmt: skip

@@ -8,6 +8,11 @@ criterio.
 
 ## 9.x
 
+### 9.30.1 · 2026-10-26
+
+- ONGs: Techo Para Todos pasa a ser la Fundación Ningún Inversor Sin Casa
+- ONGs: la ONG del fondo buitre cambia de nombre y de textos (trasteros como «lofts», balcones como habitaciones, el psicotécnico para alquilar); lo donado y los logros se conservan
+
 ### 9.30.0 · 2026-10-26
 
 - ONGs: la Fundación Familia Primero, del cuñado de Perro Sanxe
