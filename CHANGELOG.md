@@ -8,6 +8,12 @@ criterio.
 
 ## 9.x
 
+### 9.29.0 · 2026-10-26
+
+- Logros: 28 nuevos de las ONGs
+- Logros: sorteos jugados y perdidos, varios ganados el mismo viernes, ganar sin rivales o con un boleto contra un Patrono, ser el mayor donante de una ONG o del muro y mirar la ficha de las 10 ONGs
+- Logros: donar en fechas señaladas (viernes 13, Halloween, Nochevieja, Reyes, el Pino, los Inocentes) y cifras secretas por ONG
+
 ### 9.28.0 · 2026-10-26
 
 - ONGs: el sorteo pide donar 1.202 Y$ y los exclusivos son sorpresa

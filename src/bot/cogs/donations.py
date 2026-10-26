@@ -41,7 +41,12 @@ from bot.cogs import achievements as logros
 from bot.cogs import renta
 from bot.cogs import shop as tienda
 from bot.cogs.achievements import progress_bar
-from bot.services.achievements import StatDelta, donation_stats, ong_gift_stats
+from bot.services.achievements import (
+    StatDelta,
+    donation_stats,
+    ong_gift_stats,
+    ong_raffle_stats,
+)
 from bot.services.donations import (
     BY_KEY,
     GIFT_CHEAP_MAX,
@@ -292,6 +297,13 @@ class DonarPanel(ui.LayoutView):
         self.board = await self.cog.economy.ong_board(self.guild.id, ong.key, 5)
         self.rebuild()
         await edit(interaction, view=self, allowed_mentions=_NO_MENTIONS)
+        logros.note(
+            self.cog.bot,
+            self.guild.id,
+            self.owner.id,
+            StatDelta(add={f"ong_seen_{ong.key}": 1}),
+            interaction.channel_id,
+        )
 
     async def _home(self, interaction: discord.Interaction) -> None:
         if not await self._mine_only(interaction):
@@ -429,6 +441,8 @@ class Donaciones(commands.Cog):
         given = mine.get(ong.key, amount)
         reached = [lvl for lvl in PATRON_LEVELS if given - amount < lvl.threshold <= given]
         gifts = await self._level_gifts(responder, user, ong, reached)
+        top_ong = await self.economy.ong_board(guild.id, ong.key, 1)
+        top_all = await self.economy.ong_board(guild.id, None, 1)
         delta = donation_stats(
             ong=ong.key,
             amount=amount,
@@ -436,6 +450,8 @@ class Donaciones(commands.Cog):
             balance_after=receipt.balance,
             when=datetime.now(TIMEZONE),
             given=mine,
+            top_ong=bool(top_ong) and top_ong[0][0] == user.id,
+            top_all=bool(top_all) and top_all[0][0] == user.id,
         )
         if gifts:
             owned = await tienda.owned_keys(self.bot, guild.id, user.id)
@@ -515,17 +531,36 @@ class Donaciones(commands.Cog):
         key = (guild.id, window[1].isoformat())
         if key in self._done:
             return
+        played: dict[str, dict[int, tuple[int, int]]] = {}
+
+        def draw(ong: str, entries: dict[int, tuple[int, int]]) -> int | None:
+            played[ong] = {u: e for u, e in entries.items() if e[0] >= RAFFLE_MIN}
+            return draw_winner(entries, self.rng)
+
         try:
-            drawn = await self.economy.draw_ong_raffles(
-                guild.id, window, lambda _ong, entries: draw_winner(entries, self.rng)
-            )
+            drawn = await self.economy.draw_ong_raffles(guild.id, window, draw)
         except Exception:
             # Si saliera la excepción, `tasks.loop` dejaría de sortear para siempre.
             logger.exception("No se pudieron sortear los regalos de las ONGs en %s", guild.id)
             return
         self._done.add(key)
         lines = []
+        deltas: dict[int, StatDelta] = {}
+        wins: dict[int, int] = {}
         for ong_key, winner in drawn:
+            entrants = played.get(ong_key, {})
+            tickets = {u: raffle_tickets(total) for u, (_week, total) in entrants.items()}
+            for user in entrants:
+                rivals = [t for u, t in tickets.items() if u != user]
+                deltas.setdefault(user, StatDelta()).merge(
+                    ong_raffle_stats(
+                        won=user == winner,
+                        entrants=len(entrants),
+                        tickets=tickets[user],
+                        rival_tickets=max(rivals, default=0),
+                    )
+                )
+            wins[winner] = wins.get(winner, 0) + 1
             ong = BY_KEY.get(ong_key)
             if ong is None:
                 continue
@@ -544,12 +579,14 @@ class Donaciones(commands.Cog):
                 else "un abrazo (no quedaba nada que regalar)"
             )
             lines.append(f"{ong.emoji} {ong.name}: **{_name(guild, winner)}** se lleva {prize}")
-            delta = StatDelta()
             if gift is not None:
                 owned = await tienda.owned_keys(self.bot, guild.id, winner)
-                delta = ong_gift_stats(exclusive=exclusive, owned=owned)
-            delta.add["ong_raffle_won"] = 1
-            logros.note(self.bot, guild.id, winner, delta)
+                deltas.setdefault(winner, StatDelta()).merge(
+                    ong_gift_stats(exclusive=exclusive, owned=owned)
+                )
+        for user, delta in deltas.items():
+            delta.peak["ong_raffle_week_max"] = wins.get(user, 0)
+            logros.note(self.bot, guild.id, user, delta)
         if not lines:
             return
         channel = (
@@ -561,7 +598,8 @@ class Donaciones(commands.Cog):
         embed = discord.Embed(
             title="🎁 Sorteos de las ONGs",
             description="\n".join(lines)
-            + "\n-# Entra quien dona esa semana; los mecenas llevan más boletos. `/donar`",
+            + f"\n-# Entra quien le dona {format_amount(RAFFLE_MIN)} o más en la semana; los "
+            "mecenas llevan más boletos. `/donar`",
             color=COLOR,
         )
         try:

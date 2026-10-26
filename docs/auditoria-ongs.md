@@ -145,3 +145,19 @@ Entrada: 1202 Y$ por ONG y semana · 2 rivales por sorteo
 | ong_owned_100 | 100 | nunca (10 años) | Mítico | Mítico |
 | ong_set_5 | 5 | 399 | Mítico | Mítico |
 | ong_set_10 | 10 | 875 | Mítico | Mítico |
+
+### Más logros (9.29.0)
+
+- **Sorteos jugados, perdidos y ganados el mismo viernes:** la simulación cuenta ahora
+  también `ong_raffle_entered`, `ong_raffle_lost` y `ong_raffle_week_max`. Con 10 ONGs y 2
+  rivales: entrar 1 vez, 7 días (Raro); 50, 35 (Épico); 200, 140 (Legendario); 1.000, 700
+  (Mítico). Perder 10, 14 días (Raro); 50, 56 (Épico); 200, 210 (Legendario); 1.000, más
+  de 1.000 (Mítico). Ganar 2 el mismo viernes, 7 días (Raro); 5, 25 (Épico); 7, 228
+  (Legendario); 8, unos 1.300 (Mítico).
+- **Sin simular** (dependen de cuántos donan en el servidor): ganar sin rivales (Raro,
+  secreto), ganar con un boleto contra alguien con 5 o más (Épico, secreto), ser quien más
+  ha donado a una ONG (Raro) o encabezar el muro (Épico).
+- **Fechas** (Comunes, como pide la Biblia): viernes 13, Halloween, Nochevieja, Reyes, el
+  Pino y los Inocentes (secreto). **Cifras con guasa** (secretos): 1.202 Y$ justos, 65.000
+  a la Corona, 1.200 al fondo buitre, 1.337 a los gamers y Cubiertos de Plata a la hora de
+  comer. **Colección:** mirar la ficha de las 10 ONGs.

@@ -16,7 +16,7 @@ from bot.cogs import donations as donations_cog
 from bot.cogs.donations import Donaciones
 from bot.cogs.patrimonio import Patrimonio
 from bot.repositories.economy import STATE_ACCOUNT_ID, EconomyRepository, LedgerEntry
-from bot.services.donations import BY_KEY, ONGS, find_ong
+from bot.services.donations import BY_KEY, ONGS, RAFFLE_MIN, find_ong
 from bot.services.economy import STARTING_BALANCE, Declaration, EconomyService
 from bot.services.levels import TIMEZONE
 from bot.services.taxes import (
@@ -288,7 +288,14 @@ async def test_donar_por_texto_dona_y_cuenta_para_logros(
     assert "Mares Limpios" in text
     delta = track.await_args.args[4]
     half = STARTING_BALANCE // 2
-    assert delta.add == {"donated": half, "donations": 1, "donated_mares": half}
+    # Es el único donante: encabeza la ONG y el muro.
+    assert delta.add == {
+        "donated": half,
+        "donations": 1,
+        "donated_mares": half,
+        "donation_top_ong": 1,
+        "donation_top_all": 1,
+    }
     assert delta.peak == {
         "ongs_supported": 1,
         "donation_max": half,
@@ -560,7 +567,14 @@ async def test_los_sorteos_se_anuncian_y_dan_logros(
     monkeypatch.setattr(donations_cog.logros, "note", note)
     monkeypatch.setattr(donations_cog.tienda, "grant_ong_gift", AsyncMock(return_value=gift))
     service = MagicMock()
-    service.draw_ong_raffles = AsyncMock(return_value=[("platano", USER)])
+
+    async def draw_ong_raffles(_guild: int, _window: object, draw: object) -> list:
+        # Entran USER (Bronce) y RICH (Patrono): gana USER con un boleto de 2 contra 8.
+        entries = {USER: (RAFFLE_MIN, 5_000), RICH: (RAFFLE_MIN, 500_000), 99: (1, 10**9)}
+        draw("platano", entries)  # type: ignore[operator]
+        return [("platano", USER)]
+
+    service.draw_ong_raffles = AsyncMock(side_effect=draw_ong_raffles)
     cog = Donaciones(MagicMock(), service)
     channel = MagicMock()
     channel.send = AsyncMock()
@@ -576,8 +590,17 @@ async def test_los_sorteos_se_anuncian_y_dan_logros(
     assert service.draw_ong_raffles.await_count == 1
     text = channel.send.await_args.kwargs["embed"].description
     assert "Plátano" in text and "Diego" in text and "Calcetín" in text
-    delta = note.call_args.args[3]
-    assert delta.add == {"ong_gifts": 1, "ong_exclusive_gifts": 0, "ong_raffle_won": 1}
+    deltas = {c.args[2]: c.args[3] for c in note.call_args_list}
+    assert set(deltas) == {USER, RICH}, "quien no llega al mínimo no juega"
+    assert deltas[USER].add == {
+        "ong_raffle_entered": 1,
+        "ong_raffle_lost": 0,
+        "ong_raffle_won": 1,
+        "ong_gifts": 1,
+        "ong_exclusive_gifts": 0,
+    }
+    assert deltas[USER].peak["ong_raffle_week_max"] == 1
+    assert deltas[RICH].add == {"ong_raffle_entered": 1, "ong_raffle_lost": 1}
 
 
 def test_las_colecciones_de_regalos_exclusivos() -> None:
@@ -590,3 +613,33 @@ def test_las_colecciones_de_regalos_exclusivos() -> None:
     assert delta.add == {"ong_gifts": 1, "ong_exclusive_gifts": 1}
     assert delta.peak == {"ong_exclusives_owned": 11, "ong_exclusive_set_max": 10}
     assert ong_gift_stats(exclusive=False, owned={"caja_carton"}).peak == {}
+
+
+def test_los_logros_de_los_sorteos_de_las_ongs() -> None:
+    from bot.services.achievements import ong_raffle_stats
+
+    alone = ong_raffle_stats(won=True, entrants=1, tickets=1, rival_tickets=0)
+    assert alone.add["ong_raffle_alone"] == 1 and "ong_raffle_underdog" not in alone.add
+    david = ong_raffle_stats(won=True, entrants=3, tickets=1, rival_tickets=8)
+    assert david.add["ong_raffle_underdog"] == 1 and "ong_raffle_alone" not in david.add
+    lost = ong_raffle_stats(won=False, entrants=3, tickets=1, rival_tickets=8)
+    assert lost.add == {"ong_raffle_entered": 1, "ong_raffle_lost": 1}
+
+
+def test_fechas_y_cifras_con_guasa_de_los_donativos() -> None:
+    from bot.services.achievements import donation_stats
+
+    def stats(ong: str, amount: int, when: datetime, **kwargs: bool) -> dict[str, int]:
+        return donation_stats(
+            ong=ong, amount=amount, ongs_supported=1, balance_after=9, when=when, **kwargs
+        ).add
+
+    assert stats("corona", 65_000, datetime(2026, 11, 13, 10, tzinfo=TIMEZONE))["donation_friday13"]
+    assert stats("corona", 65_000, day(6))["donation_corona_65k"] == 1
+    assert stats("buitre", 1_200, day(6))["donation_buitre_rent"] == 1
+    assert stats("gamers", 1_337, day(6))["donation_gamers_1337"] == 1
+    assert stats("hambre", 5, day(6, 15))["donation_hambre_lunch"] == 1
+    assert stats("mares", RAFFLE_MIN, day(31))["donation_halloween"] == 1
+    assert stats("mares", RAFFLE_MIN, day(6))["donation_ticket_exact"] == 1
+    top = stats("mares", 5, day(6), top_ong=True, top_all=True)
+    assert top["donation_top_ong"] == top["donation_top_all"] == 1

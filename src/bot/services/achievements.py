@@ -237,7 +237,9 @@ if TYPE_CHECKING:
 
 from bot.services.donations import (
     GIFTS_BY_ONG,
+    ONGS,
     PATRON_LEVELS,
+    RAFFLE_MIN,
     next_patron_level,
     patron_level,
 )
@@ -9345,6 +9347,73 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (150, "ong_raffle_150", "El bombo está trucado y lo sabes",
          "Gana 150 sorteos de ONGs.", M),
     ])  # fmt: skip
+    # Rarezas de los sorteos jugados, perdidos y ganados en una semana: docs/auditoria_ongs.py.
+    a += _tiers("economy", "ong_raffle_entered", [
+        (1, "ong_entered_1", "Papeleta en el bolsillo", "Entra en el sorteo de una ONG.", R),
+        (50, "ong_entered_50", "Habitual de la tómbola", "Entra en 50 sorteos de ONGs.", E),
+        (200, "ong_entered_200", "Socio del bingo parroquial laico",
+         "Entra en 200 sorteos de ONGs.", L),
+        (1_000, "ong_entered_1k", "Mil papeletas y un sueño", "Entra en 1.000 sorteos de ONGs.", M),
+    ])  # fmt: skip
+    a += _tiers("economy", "ong_raffle_lost", [
+        (10, "ong_lost_10", "Siga participando", "Pierde 10 sorteos de ONGs.", R),
+        (50, "ong_lost_50", "Gafe certificado por la fundación", "Pierde 50 sorteos de ONGs.", E),
+        (200, "ong_lost_200", "El bombo te odia en persona", "Pierde 200 sorteos de ONGs.", L),
+        (1_000, "ong_lost_1k", "Donante sin premio y con orgullo",
+         "Pierde 1.000 sorteos de ONGs.", M),
+    ])  # fmt: skip
+    a += _tiers("economy", "ong_raffle_week_max", [
+        (2, "ong_week_2", "Doblete solidario", "Gana 2 sorteos de ONGs el mismo viernes.", R),
+        (5, "ong_week_5", "Manita de sorteos", "Gana 5 sorteos de ONGs el mismo viernes.", E),
+        (7, "ong_week_7", "Viernes de gloria", "Gana 7 sorteos de ONGs el mismo viernes.", L),
+        (8, "ong_week_8", "La lotería de Navidad, pero en viernes",
+         "Gana 8 sorteos de ONGs el mismo viernes.", M),
+    ])  # fmt: skip
+    a += _tiers("economy", "ong_raffle_alone", [
+        (1, "ong_raffle_alone", "Ganador por incomparecencia",
+         "Gana el sorteo de una ONG en el que solo entrabas tú.", R, True),
+    ])  # fmt: skip
+    a += _tiers("economy", "ong_raffle_underdog", [
+        (1, "ong_raffle_underdog", "David contra el Patrono",
+         "Gana un sorteo con un solo boleto contra alguien que llevaba 5 o más.", E, True),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="ong_seen_all",
+        name="Turista del tercer sector",
+        description="Mira en `donar` la ficha de las 10 ONGs.",
+        category="economy",
+        rarity=C,
+        conditions=tuple((f"ong_seen_{ong.key}", 1) for ong in ONGS),
+    ))  # fmt: skip
+    for stat, key, title, text, rarity, secret in (
+        ("donation_top_ong", "donate_top_ong", "Nombre en la placa de la sede",
+         "Sé quien más ha donado a una ONG en el servidor.", R, False),
+        ("donation_top_all", "donate_top_all", "Primero en el muro de donantes",
+         "Encabeza el muro de donantes de `donar`.", E, False),
+        ("donation_friday13", "donate_friday13", "Donativo gafado",
+         "Dona un viernes 13.", C, False),
+        ("donation_halloween", "donate_halloween", "Truco o donativo",
+         "Dona en Halloween (31 de octubre).", C, False),
+        ("donation_innocents", "donate_innocents", "El donativo era una broma",
+         "Dona el Día de los Inocentes (28 de diciembre).", C, True),
+        ("donation_new_year", "donate_new_year", "Desgravar antes de las uvas",
+         "Dona en Nochevieja.", C, False),
+        ("donation_kings", "donate_kings", "Los Reyes son los donantes",
+         "Dona el Día de Reyes (6 de enero).", C, False),
+        ("donation_pino", "donate_pino", "Promesa al Pino",
+         "Dona el día del Pino (8 de septiembre).", C, False),
+        ("donation_ticket_exact", "donate_ticket_exact", "Lo justo para la papeleta",
+         f"Dona exactamente {RAFFLE_MIN:,} Y$.".replace(",", "."), C, True),
+        ("donation_corona_65k", "donate_corona_65k", "Amiga entrañable",
+         "Dona 65.000 Y$ exactos a la Fundación Ejemplaridad Borbónica.", R, True),
+        ("donation_buitre_rent", "donate_buitre_rent", "Precio de mercado",
+         "Dona 1.200 Y$ exactos a Techo Para Todos.", C, True),
+        ("donation_gamers_1337", "donate_gamers_1337", "Donativo l33t",
+         "Dona 1.337 Y$ exactos a Gamers Sin Fronteras.", C, True),
+        ("donation_hambre_lunch", "donate_hambre_lunch", "Contra el hambre a la hora de comer",
+         "Dona a Cubiertos de Plata entre las 14:00 y las 16:00.", C, True),
+    ):  # fmt: skip
+        a += _tiers("economy", stat, [(1, key, title, text, rarity, secret)])
     a += _tiers("economy", "ong_gifts", [
         (1, "ong_gift_1", "Detalle de la casa", "Recibe un regalo de una ONG.", R),
         (10, "ong_gift_10", "Bolsa de merchandising", "Recibe 10 regalos de ONGs.", E),
@@ -26763,6 +26832,8 @@ def donation_stats(
     balance_after: int,
     when: datetime,
     given: Mapping[str, int] | None = None,
+    top_ong: bool = False,
+    top_all: bool = False,
 ) -> StatDelta:
     """Estadísticas de un donativo a una ONG (`donar`).
 
@@ -26773,6 +26844,8 @@ def donation_stats(
         balance_after: Saldo tras donar (0 si lo ha dado todo).
         given: Lo donado a cada ONG desde siempre, ya con este donativo, para los niveles
             de mecenas. Sin él, no cuentan.
+        top_ong: Si tras donar es quien más ha donado a esa ONG en el servidor.
+        top_all: Si tras donar encabeza el muro de donantes (todas las ONGs).
     """
     delta = StatDelta(
         add={"donated": amount, "donations": 1, f"donated_{ong}": amount},
@@ -26802,9 +26875,41 @@ def donation_stats(
         # La última hora antes del sorteo de los viernes a las 20:00.
         ("donation_last_call", when.weekday() == 4 and when.hour == 19),
         ("donation_republic", ong == "corona" and when.month == 4 and when.day == 14),
+        ("donation_friday13", when.weekday() == 4 and when.day == 13),
+        ("donation_halloween", when.month == 10 and when.day == 31),
+        ("donation_innocents", when.month == 12 and when.day == 28),
+        ("donation_new_year", when.month == 12 and when.day == 31),
+        ("donation_kings", when.month == 1 and when.day == 6),
+        ("donation_pino", when.month == 9 and when.day == 8),
+        ("donation_ticket_exact", amount == RAFFLE_MIN),
+        ("donation_corona_65k", ong == "corona" and amount == 65_000),
+        ("donation_buitre_rent", ong == "buitre" and amount == 1_200),
+        ("donation_gamers_1337", ong == "gamers" and amount == 1_337),
+        ("donation_hambre_lunch", ong == "hambre" and 14 <= when.hour < 16),
+        ("donation_top_ong", top_ong),
+        ("donation_top_all", top_all),
     ):
         if hit:
             delta.add[stat] = 1
+    return delta
+
+
+def ong_raffle_stats(*, won: bool, entrants: int, tickets: int, rival_tickets: int) -> StatDelta:
+    """Estadísticas de quien entra en el sorteo de una ONG.
+
+    Args:
+        won: Si lo ha ganado.
+        entrants: Cuántos entraban en ese sorteo (él incluido).
+        tickets: Sus boletos.
+        rival_tickets: Los boletos del rival con más (0 si iba solo).
+    """
+    delta = StatDelta(add={"ong_raffle_entered": 1, "ong_raffle_lost": int(not won)})
+    if won:
+        delta.add["ong_raffle_won"] = 1
+        if entrants == 1:
+            delta.add["ong_raffle_alone"] = 1
+        if tickets == 1 and rival_tickets >= 5:
+            delta.add["ong_raffle_underdog"] = 1
     return delta
 
 

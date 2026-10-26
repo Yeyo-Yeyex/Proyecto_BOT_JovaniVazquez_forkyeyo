@@ -39,6 +39,9 @@ from bot.services.donations import (  # noqa: E402
 
 #: Estadísticas de suerte que se miden aquí.
 STATS = (
+    "ong_raffle_entered",
+    "ong_raffle_lost",
+    "ong_raffle_week_max",
     "ong_raffle_won",
     "ong_gifts",
     "ong_exclusive_gifts",
@@ -70,6 +73,7 @@ def simulate(ongs: int, rivals: int, weeks: int, rng: random.Random) -> dict[str
             stats["ong_exclusive_gifts"] += 1
 
     for _week in range(weeks):
+        won = 0
         for ong in keys:
             before = total[ong]
             total[ong] += RAFFLE_MIN
@@ -78,9 +82,14 @@ def simulate(ongs: int, rivals: int, weeks: int, rng: random.Random) -> dict[str
                     gift(ong, level.exclusive)
             entries = {ME: (RAFFLE_MIN, total[ong])}
             entries |= {i: (RAFFLE_MIN, total[ong]) for i in range(1, rivals + 1)}
+            stats["ong_raffle_entered"] += 1
             if draw_winner(entries, rng) == ME:
+                won += 1
                 stats["ong_raffle_won"] += 1
                 gift(ong, RAFFLE_EXCLUSIVE)
+            else:
+                stats["ong_raffle_lost"] += 1
+        stats["ong_raffle_week_max"] = max(stats["ong_raffle_week_max"], won)
         stats["ong_exclusives_owned"] = sum(owned.values())
         stats["ong_exclusive_set_max"] = max(owned.values())
         for stat in STATS:
