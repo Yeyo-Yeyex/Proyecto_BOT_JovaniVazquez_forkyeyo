@@ -17,12 +17,13 @@ ids no se cambian nunca: son los que guardan el dinero.
 
 Además de desgravar, donar mucho a una ONG te hace mecenas suyo (`PATRON_LEVELS`, por
 lo donado a esa ONG desde siempre) y cada viernes a las 20:00 cada ONG sortea un regalo
-entre quienes le donaron en los siete días anteriores (`raffle_window`, `draw_winner`):
-un boleto por donar y más cuanto más alto es tu nivel de mecenas. Al subir de nivel, la
-ONG también te regala algo. El premio suele ser un objeto barato de la tienda; el
-exclusivo de la ONG (`ONG_GIFTS`) sale pocas veces (`RAFFLE_EXCLUSIVE`) y seguro al
-llegar a Oro y a Patrono. Los exclusivos no se venden, y ningún regalo mueve dinero
-(como las cajas por jugar).
+entre quienes le donaron al menos `RAFFLE_MIN` en los siete días anteriores
+(`raffle_window`, `draw_winner`): un boleto por donar y más cuanto más alto es tu nivel
+de mecenas. Al subir de nivel, la ONG también te regala algo. El premio suele ser un
+objeto barato de la tienda; el exclusivo de la ONG (`ONG_GIFTS`) sale pocas veces
+(`RAFFLE_EXCLUSIVE`) y seguro al llegar a Oro y a Patrono. Los exclusivos no se venden
+ni se enseñan antes de tenerlos, y ningún regalo mueve dinero (como las cajas por
+jugar).
 """
 
 from __future__ import annotations
@@ -328,6 +329,9 @@ class PatronLevel:
 #: un objeto de la tienda de `GIFT_CHEAP_MAX` Y$ o menos.
 RAFFLE_EXCLUSIVE = 0.15
 GIFT_CHEAP_MAX = 500
+#: Lo que hay que donar a una ONG en la semana del sorteo para entrar: el tramo que
+#: desgrava al 80 %. Con menos, donar 1 Y$ a cada ONG daba diez regalos a la semana.
+RAFFLE_MIN = DONATION_FULL_LIMIT
 PATRON_LEVELS: tuple[PatronLevel, ...] = (
     PatronLevel("Bronce", "🥉", 5_000, 1, RAFFLE_EXCLUSIVE),
     PatronLevel("Plata", "🥈", 25_000, 2, RAFFLE_EXCLUSIVE),
@@ -370,13 +374,17 @@ def raffle_tickets(total: int) -> int:
     return 1 + (level.tickets if level else 0)
 
 
-def draw_winner(entries: dict[int, tuple[int, int]], rng: random.Random | None = None) -> int:
-    """Saca el ganador del sorteo de una ONG.
+def draw_winner(
+    entries: dict[int, tuple[int, int]], rng: random.Random | None = None
+) -> int | None:
+    """Saca el ganador del sorteo de una ONG, o `None` si nadie llega a `RAFFLE_MIN`.
 
     Args:
         entries: `{user_id: (donado esa semana, donado a la ONG desde siempre)}`.
     """
-    users = sorted(entries)
+    users = sorted(u for u, (week, _total) in entries.items() if week >= RAFFLE_MIN)
+    if not users:
+        return None
     weights = [raffle_tickets(entries[user][1]) for user in users]
     return (rng or random).choices(users, weights)[0]
 

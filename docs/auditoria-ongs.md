@@ -73,3 +73,75 @@ más de los primeros 150 €). Es real, pero haría que donar el primer tramo sa
   colecciones de exclusivos (por ONG y en total), más sorteos y regalos, el mayor
   donativo, fechas (madrugada, Día de Canarias, la hora antes del sorteo) y secretos (69,
   420, justo lo que faltaba para subir de nivel, la Corona un 14 de abril).
+
+### Entrada al sorteo y rarezas calculadas (9.28.0)
+
+- **Entrada:** hasta la 9.27.0 bastaba con donar 1 Y$ para entrar en el sorteo de una ONG.
+  Donar 1 Y$ a cada una costaba 10 Y$ a la semana y daba hasta diez regalos de hasta 500
+  Y$, que se podían vender. Ahora hay que donarle en la semana al menos el tramo que
+  desgrava al 80 % (`RAFFLE_MIN` = `DONATION_FULL_LIMIT`, 1.202 Y$).
+- **Sorpresa:** los exclusivos ya no salen en la ficha de la ONG. Se sabe que existen,
+  pero no cuáles son.
+- **Rarezas:** `docs/auditoria_ongs.py` juega diez años de sorteos con las reglas reales y
+  saca la rareza de la escala de la Biblia. Se calibra con quien dona la entrada a las 10
+  ONGs cada semana, que es quien persigue estos logros, con 2 rivales por sorteo (el
+  informe del 17/10 tenía 3 personas usando `donar` en un mes). Cambiaron: 5 sorteos (de
+  Épico a Raro), 10 (de Legendario a Épico), 25 (de Mítico a Épico), el primer regalo (de
+  Común a Raro: el primer sorteo llega el viernes), 25 regalos (de Legendario a Épico), 50
+  regalos (de Mítico a Legendario) y 5 exclusivos de una ONG (de Legendario a Mítico).
+  Se añadieron 50 y 150 sorteos y 200 regalos. Con más rivales todo tarda más: se vuelve a
+  pasar si cambia mucho el número de donantes.
+  `tests/unit/test_patrimonio_donativos.py` comprueba que el catálogo cuadra con la
+  simulación.
+
+Entrada: 1202 Y$ por ONG y semana · 2 rivales por sorteo
+
+## Donando a 10 ONGs (12020 Y$ a la semana)
+
+| Logro | Meta | Días (mediana) | Pide | Tiene |
+|---|---|---|---|---|
+| ong_raffle_1 | 1 | 7 | Raro | Raro |
+| ong_raffle_5 | 5 | 14 | Raro | Raro |
+| ong_raffle_10 | 10 | 21 | Épico | Épico |
+| ong_raffle_25 | 25 | 56 | Épico | Épico |
+| ong_raffle_50 | 50 | 105 | Legendario | Legendario |
+| ong_raffle_150 | 150 | 315 | Mítico | Mítico |
+| ong_gift_1 | 1 | 7 | Raro | Raro |
+| ong_gift_10 | 10 | 21 | Épico | Épico |
+| ong_gift_25 | 25 | 35 | Épico | Épico |
+| ong_gift_50 | 50 | 84 | Legendario | Legendario |
+| ong_gift_200 | 200 | 378 | Mítico | Mítico |
+| ong_exclusive_1 | 1 | 14 | Raro | Raro |
+| ong_exclusive_5 | 5 | 42 | Épico | Épico |
+| ong_exclusive_15 | 15 | 161 | Legendario | Legendario |
+| ong_owned_3 | 3 | 35 | Épico | Épico |
+| ong_owned_10 | 10 | 112 | Legendario | Legendario |
+| ong_owned_25 | 25 | 301 | Mítico | Mítico |
+| ong_owned_100 | 100 | 1866 | Mítico | Mítico |
+| ong_set_5 | 5 | 270 | Mítico | Mítico |
+| ong_set_10 | 10 | 672 | Mítico | Mítico |
+
+## Donando a 3 ONGs (3606 Y$ a la semana)
+
+| Logro | Meta | Días (mediana) | Pide | Tiene |
+|---|---|---|---|---|
+| ong_raffle_1 | 1 | 7 | Raro | Raro |
+| ong_raffle_5 | 5 | 35 | Épico | Raro ⚠️ |
+| ong_raffle_10 | 10 | 70 | Legendario | Épico ⚠️ |
+| ong_raffle_25 | 25 | 175 | Legendario | Épico ⚠️ |
+| ong_raffle_50 | 50 | 350 | Mítico | Legendario ⚠️ |
+| ong_raffle_150 | 150 | 1050 | Mítico | Mítico |
+| ong_gift_1 | 1 | 7 | Raro | Raro |
+| ong_gift_10 | 10 | 49 | Épico | Épico |
+| ong_gift_25 | 25 | 147 | Legendario | Épico ⚠️ |
+| ong_gift_50 | 50 | 308 | Mítico | Legendario ⚠️ |
+| ong_gift_200 | 200 | 1337 | Mítico | Mítico |
+| ong_exclusive_1 | 1 | 35 | Épico | Raro ⚠️ |
+| ong_exclusive_5 | 5 | 168 | Legendario | Épico ⚠️ |
+| ong_exclusive_15 | 15 | 588 | Mítico | Legendario ⚠️ |
+| ong_owned_3 | 3 | 98 | Legendario | Épico ⚠️ |
+| ong_owned_10 | 10 | 410 | Mítico | Legendario ⚠️ |
+| ong_owned_25 | 25 | 1043 | Mítico | Mítico |
+| ong_owned_100 | 100 | nunca (10 años) | Mítico | Mítico |
+| ong_set_5 | 5 | 399 | Mítico | Mítico |
+| ong_set_10 | 10 | 875 | Mítico | Mítico |

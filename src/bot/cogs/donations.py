@@ -14,9 +14,10 @@
   la ONG te regala algo de la tienda (`tienda.grant_ong_gift`): casi siempre algo barato
   y, a veces (seguro en Oro y Patrono), uno de sus regalos exclusivos, que no se venden.
 - **Sorteo:** cada viernes a las 20:00 (tarea de 10 minutos), cada ONG sortea un regalo
-  entre quienes le donaron en los siete días anteriores, con más boletos cuanto más
-  alto es su nivel (el lunes ya tiene la Renta y el Patrimonio). Cada sorteo se apunta
-  una sola vez (`economy_ong_raffles`) y se anuncia en el canal. Ningún regalo mueve dinero.
+  entre quienes le donaron al menos el tramo del 80 % (`RAFFLE_MIN`) en los siete días
+  anteriores, con más boletos cuanto más alto es su nivel (el lunes ya tiene la Renta y
+  el Patrimonio). Cada sorteo se apunta una sola vez (`economy_ong_raffles`) y se anuncia
+  en el canal. Ningún regalo mueve dinero.
 
 El resultado de donar es público, para presumir de generosidad. Donar gasta dinero, así
 que en `/donar` y en los botones del panel lleva el aviso de la Renta y la mascota habla
@@ -49,6 +50,7 @@ from bot.services.donations import (
     ONGS,
     PATRON_LEVELS,
     RAFFLE_EXCLUSIVE,
+    RAFFLE_MIN,
     Ong,
     PatronLevel,
     deduction_rule_text,
@@ -118,7 +120,7 @@ def home_text(
         f"pagas menos a {TAX_COLLECTOR}.",
         f"**Mecenas:** lo que donas a cada ONG sube tu nivel con ella ({levels}). Cada "
         "nivel trae un regalo y más boletos en el sorteo que hace cada ONG los viernes "
-        "a las 20:00 entre quienes le donaron esa semana.",
+        f"a las 20:00 entre quienes le donaron {format_amount(RAFFLE_MIN)} o más esa semana.",
         "### Tus ONGs",
     ]
     mine_lines = [
@@ -160,18 +162,18 @@ def ong_text(
     else:
         lines.append("Eres Patrono: tu nombre va en la placa de la sede.")
     tickets = raffle_tickets(given)
+    word = "boleto" if tickets == 1 else "boletos"
     lines.append(
-        f"-# Si le donas antes del viernes a las 20:00, entras en su sorteo con {tickets} "
-        f"{'boleto' if tickets == 1 else 'boletos'}."
+        f"-# Si le donas {format_amount(RAFFLE_MIN)} o más en la semana (de viernes a viernes "
+        f"a las 20:00), entras en su sorteo con {tickets} {word}."
     )
     lines.append("### 🏆 Sus mayores donantes")
     lines.append(_board_lines(guild, board) or "Nadie le ha donado todavía.")
-    lines.append("### 🎁 Regalos exclusivos")
-    lines.append(" · ".join(f"{g.emoji} {g.name}" for g in GIFTS_BY_ONG[ong.key]))
+    lines.append("### 🎁 Regalos")
     lines.append(
-        f"-# No se venden. Salen pocas veces en el sorteo y al subir a 🥉 o 🥈, y seguro al "
-        f"llegar a 🥇 Oro y a 🏛️ Patrono. Si no, la ONG regala algo de la tienda de hasta "
-        f"{format_amount(GIFT_CHEAP_MAX)}."
+        f"Casi siempre, algo de la tienda de hasta {format_amount(GIFT_CHEAP_MAX)}. A veces, "
+        "un regalo exclusivo de la ONG que no se vende en ningún sitio: cuál, es sorpresa. "
+        "Al llegar a 🥇 Oro y a 🏛️ Patrono, seguro que es exclusivo."
     )
     return "\n".join(lines)
 

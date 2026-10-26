@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random as random_module
 import sqlite3
 from datetime import date, datetime
 from pathlib import Path
@@ -465,12 +466,34 @@ def test_el_sorteo_es_el_viernes_a_las_ocho_de_la_tarde() -> None:
 def test_los_mecenas_llevan_mas_boletos() -> None:
     import random
 
-    from bot.services.donations import draw_winner
+    from bot.services.donations import RAFFLE_MIN, draw_winner
 
     rng = random.Random(3)
-    entries = {1: (100, 100), 2: (100, 500_000)}  # el 2 es Patrono: 8 boletos contra 1
+    entries = {1: (RAFFLE_MIN, RAFFLE_MIN), 2: (RAFFLE_MIN, 500_000)}  # 2 es Patrono: 8 a 1
     wins = sum(draw_winner(entries, rng) == 2 for _ in range(900))
     assert 700 < wins < 900
+    # Quien no llega al tramo del 80 % en la semana no entra, aunque sea Patrono.
+    assert draw_winner({1: (RAFFLE_MIN - 1, 10**9)}, rng) is None
+    assert draw_winner({1: (RAFFLE_MIN - 1, 10**9), 2: (RAFFLE_MIN, 0)}, rng) == 2
+
+
+def test_las_rarezas_de_suerte_de_las_ongs_salen_de_la_simulacion() -> None:
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[2] / "docs" / "auditoria_ongs.py"
+    spec = importlib.util.spec_from_file_location("auditoria_ongs", path)
+    assert spec is not None and spec.loader is not None
+    audit = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(audit)
+    rng = random_module.Random(1)
+    runs = [audit.simulate(10, 2, 520, rng) for _ in range(100)]
+    for achievement in audit.CATALOG:
+        if len(achievement.conditions) != 1 or achievement.stat not in audit.STATS:
+            continue
+        stat, goal = achievement.conditions[0]
+        days = audit.days_to([r[stat] for r in runs], goal)
+        wanted = audit.rarity_for(days) if days is not None else audit.Rarity.MYTHIC
+        assert wanted is achievement.rarity, (achievement.id, days)
 
 
 async def test_cada_ong_sortea_una_sola_vez_entre_los_donantes_de_la_semana(

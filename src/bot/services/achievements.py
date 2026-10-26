@@ -9338,15 +9338,20 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("economy", "ong_raffle_won", [
         (1, "ong_raffle_1", "Me ha tocado la tómbola", "Gana el sorteo de una ONG.", R),
-        (5, "ong_raffle_5", "Mano inocente del bombo", "Gana 5 sorteos de ONGs.", E),
-        (10, "ong_raffle_10", "El bombo te conoce por tu nombre", "Gana 10 sorteos de ONGs.", L),
-        (25, "ong_raffle_25", "Niño de San Ildefonso solidario", "Gana 25 sorteos de ONGs.", M),
+        (5, "ong_raffle_5", "Mano inocente del bombo", "Gana 5 sorteos de ONGs.", R),
+        (10, "ong_raffle_10", "El bombo te conoce por tu nombre", "Gana 10 sorteos de ONGs.", E),
+        (25, "ong_raffle_25", "Niño de San Ildefonso solidario", "Gana 25 sorteos de ONGs.", E),
+        (50, "ong_raffle_50", "Abonado a la tómbola", "Gana 50 sorteos de ONGs.", L),
+        (150, "ong_raffle_150", "El bombo está trucado y lo sabes",
+         "Gana 150 sorteos de ONGs.", M),
     ])  # fmt: skip
     a += _tiers("economy", "ong_gifts", [
-        (1, "ong_gift_1", "Detalle de la casa", "Recibe un regalo de una ONG.", C),
+        (1, "ong_gift_1", "Detalle de la casa", "Recibe un regalo de una ONG.", R),
         (10, "ong_gift_10", "Bolsa de merchandising", "Recibe 10 regalos de ONGs.", E),
-        (25, "ong_gift_25", "Trastero de la caridad", "Recibe 25 regalos de ONGs.", L),
-        (50, "ong_gift_50", "Síndrome de Diógenes solidario", "Recibe 50 regalos de ONGs.", M),
+        (25, "ong_gift_25", "Trastero de la caridad", "Recibe 25 regalos de ONGs.", E),
+        (50, "ong_gift_50", "Síndrome de Diógenes solidario", "Recibe 50 regalos de ONGs.", L),
+        (200, "ong_gift_200", "Mudanza de regalos al trastero de mamá",
+         "Recibe 200 regalos de ONGs.", M),
     ])  # fmt: skip
     a += _tiers("economy", "ong_exclusive_gifts", [
         (1, "ong_exclusive_1", "Edición limitada solidaria",
@@ -9368,7 +9373,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("economy", "ong_exclusive_set_max", [
         (5, "ong_set_5", "Media colección de chiringuito",
-         "Ten 5 regalos exclusivos distintos de una misma ONG.", L),
+         "Ten 5 regalos exclusivos distintos de una misma ONG.", M),
         (10, "ong_set_10", "Colección completa con certificado",
          "Ten los 10 regalos exclusivos de una misma ONG.", M),
     ])  # fmt: skip

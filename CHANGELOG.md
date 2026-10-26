@@ -8,6 +8,13 @@ criterio.
 
 ## 9.x
 
+### 9.28.0 · 2026-10-26
+
+- ONGs: el sorteo pide donar 1.202 Y$ y los exclusivos son sorpresa
+- ONGs: para entrar en el sorteo de una ONG hay que donarle en la semana al menos 1.202 Y$ (lo que desgrava al 80 %); antes bastaba con 1 Y$
+- ONGs: la ficha de cada ONG ya no enseña sus regalos exclusivos: cuál te toca es sorpresa
+- Logros: rarezas de los sorteos y los regalos de las ONGs recalculadas con una simulación de los sorteos, y 3 nuevos (50 y 150 sorteos ganados y 200 regalos)
+
 ### 9.27.0 · 2026-10-26
 
 - ONGs: dos ONGs más picantes, 100 regalos exclusivos y 49 logros nuevos
