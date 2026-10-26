@@ -288,9 +288,8 @@ ONGS: tuple[Ong, ...] = (
         mission="Gestionar la acogida en Canarias con austeridad y buen uso del dinero público.",
         reality=(
             "El Gobierno paga un resort de cinco estrellas a precio de temporada alta. Dentro "
-            "hay una cardióloga, dos ingenieros y un anestesista esperando a que les "
-            "homologuen el título desde 2023, mientras fuera faltan médicos en todas las islas. "
-            "El expediente está en la mesa de la tumbona del consejero."
+            "están los médicos e ingenieros que nos prometieron, parados en la tumbona sin "
+            "hacer nada, y el consejero comparece al lado «para dar normalidad»."
         ),
         spending=(
             "el minibar entero, facturado al Ministerio a 9 € la botellita de agua",
@@ -299,9 +298,9 @@ ONGS: tuple[Ong, ...] = (
             "la rueda de prensa del consejero desde una tumbona, «para dar normalidad»",
             "un contrato de temporada alta firmado en noviembre",
             "el bufé libre del comité de seguimiento, que se reúne en el restaurante del hotel",
-            "la homologación del título de una cardióloga, en trámite desde 2023",
-            "un anuncio pidiendo médicos para La Gomera, colgado en el mismo hotel donde hay tres",
-            "un ingeniero de caminos al que no dejan firmar, mientras la carretera sigue sin hacer",
+            "las tumbonas de los médicos e ingenieros, que siguen en el hotel sin hacer nada",
+            "un anuncio pidiendo médicos para La Gomera, colgado en el hotel donde hay tres",
+            "un ingeniero de caminos en la piscina, mientras la carretera sigue sin hacer",
             "el yate nuevo del dueño del hotel, pagado con la primera transferencia",
         ),
     ),
@@ -1265,10 +1264,10 @@ ONG_GIFTS: tuple[OngGift, ...] = (
         ),
         (
             "app",
-            "📂",
-            "Expediente de homologación sin abrir",
+            "🥼",
+            "Bata de médico en la tumbona",
             70,
-            "El de la cardióloga del hotel. Lleva el pósit de «urgente» desde 2023.",
+            "Lleva colgada desde que abrió el hotel. Pacientes atendidos: cero.",
         ),
         (
             "foto",

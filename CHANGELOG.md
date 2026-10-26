@@ -8,6 +8,11 @@ criterio.
 
 ## 9.x
 
+### 9.31.4 · 2026-10-26
+
+- ONGs: los médicos e ingenieros del Gran Hotel Emergencia, en la tumbona
+- ONGs: textos más cortos: los médicos e ingenieros que nos prometieron están parados en el hotel sin hacer nada; el regalo del expediente pasa a ser la bata de médico en la tumbona
+
 ### 9.31.3 · 2026-10-26
 
 - ONGs: en el Gran Hotel Emergencia esperan médicos e ingenieros sin homologar

@@ -191,3 +191,4 @@ Entrada: 1202 Y$ por ONG y semana · 2 rivales por sorteo
 - 9.31.1: la Fundación Acogida Cinco Estrellas pasa a llamarse Eso Es Cosa de Madrid, con textos y regalos más burros (misma clave `acogida`; el blanco sigue siendo la gestión, no quien llega).
 - 9.31.2: pasa a ser la Fundación Gran Hotel Emergencia ★★★★★. La broma es el resort de lujo que el Gobierno paga a precio de temporada alta (el minibar, la tasa turística, el «módulo con vistas»), sin el ping-pong Madrid-Canarias.
 - 9.31.3: en el Gran Hotel Emergencia hay médicos e ingenieros que esperan desde 2023 a que el Gobierno les homologue el título mientras faltan médicos en las islas. La broma es la burocracia, no ellos.
+- 9.31.4: fuera lo del título; los médicos e ingenieros que nos prometieron están parados en la tumbona del hotel. Es ironía contra quien se ríe de los migrantes, a propuesta de los autores del bot.
