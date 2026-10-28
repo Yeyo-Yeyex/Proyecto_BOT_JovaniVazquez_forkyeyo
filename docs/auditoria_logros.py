@@ -57,6 +57,8 @@ from bot.services import (  # noqa: E402
     hold_win_scene,
     mines,
     pachinko,
+    picar,
+    picar_physics,
     poker,
     roulette,
     slots,
@@ -88,6 +90,7 @@ from bot.services.achievements import (  # noqa: E402
     horses_stats,
     mines_stats,
     pachinko_stats,
+    picar_stats,
     poker_stats,
     roulette_stats,
     slots_bonus_stats,
@@ -139,6 +142,8 @@ RITMO_CASINO = {
     "poker": 40,
     "dice": 50,
     "pachinko": 60,
+    # Una tirada del pozo dura de 8 s (madera) a más de un minuto (netherite).
+    "picar": 25,
     "horses": 30,
     "baccarat": 60,
     "allatu": 20,
@@ -372,6 +377,34 @@ def _jugar_pachinko(j: Jugador) -> StatDelta:
     )
     delta.add["pachinko_burst"] = 1 if rng.random() < 0.03 else 0
     return _con_casino(delta, stake=APUESTA, net=won - APUESTA)
+
+
+#: Picos que elige un jugador normal del pozo: casi siempre los baratos.
+_PICOS = (("wood", 30), ("stone", 25), ("iron", 20), ("gold", 10), ("diamond", 12),
+          ("netherite", 3))  # fmt: skip
+_PICAR_CAL = picar.Calibration.load()
+
+
+def _jugar_picar(j: Jugador) -> StatDelta:
+    """Una tirada del pozo con una semilla de la biblioteca, como en el juego."""
+    rng = j.rng
+    key = str(_elegir(rng, _PICOS))
+    run = picar_physics.simulate(rng.randrange(_PICAR_CAL.library), key, record=False)
+    outcome = picar.settle(key, run, _PICAR_CAL)
+    cost = picar.OFFERS[key].cost
+    best: dict[str, int] = j.extra.setdefault("picar_best", {})  # type: ignore[assignment]
+    new_record = run.max_row > best.get(key, -1)
+    best[key] = max(best.get(key, -1), run.max_row)
+    plays = int(j.extra.get("picar_plays", 0)) + 1  # type: ignore[call-overload]
+    j.extra["picar_plays"] = plays
+    delta = picar_stats(
+        run, pick=key, cost=cost, payout=outcome.payout, new_record=new_record, when=NOON,
+        capped=outcome.capped,
+        # Juega todos los días a su ritmo; la retención, al 19 % de lo ganado.
+        streak=(plays - 1) // RITMO_CASINO["picar"] + 1,
+        tax=max(0, outcome.payout - cost) * 19 // 100,
+    )  # fmt: skip
+    return _con_casino(delta, stake=cost, net=outcome.payout - cost)
 
 
 _MINAS = ((1, 10), (2, 30), (3, 20), (5, 20), (8, 10), (12, 10))
@@ -766,6 +799,7 @@ JUEGOS: dict[str, Callable[[Jugador], StatDelta]] = {
     "slots": _jugar_slots,
     "botes": _jugar_botes,
     "pachinko": _jugar_pachinko,
+    "picar": _jugar_picar,
     "mines": _jugar_minas,
     "tower": _jugar_torre,
     "war": _jugar_guerra,

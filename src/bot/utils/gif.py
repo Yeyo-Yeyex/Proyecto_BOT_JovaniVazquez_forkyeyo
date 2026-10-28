@@ -356,3 +356,88 @@ def _quantize(window: np.ndarray | None, box: Box, region: Image.Image) -> _Code
     colors = (palette.getpalette() or [])[: LOCAL_COLORS * 3]
     colors += [0] * (768 - len(colors))
     return _image(indices, box, None if window is None else colors), colors
+
+
+class GifStream:
+    """GIF con paleta local en cada fotograma que se escribe por tramos.
+
+    Hace lo mismo que `local_palette_gif`, pero sin tener todos los fotogramas a la
+    vez: cada `add` codifica un tramo (en paralelo, aprovechando lo que `precode` ya
+    empezó) y solo se guardan sus bytes y el último fotograma, que es contra el que se
+    compara el primero del tramo siguiente. Para animaciones largas (el juego del
+    pico): con `local_palette_gif`, cientos de fotogramas de 288 × 512 ocupaban cientos
+    de MB a la vez. `size` dice cuánto pesa ya el GIF, para cortarlo antes de que pase
+    del límite de Discord. Juntar tramos da los mismos bytes que pasar todos los
+    fotogramas de una vez a `local_palette_gif`.
+    """
+
+    def __init__(self, size: tuple[int, int], *, loop: bool = True) -> None:
+        self.dimensions = size
+        self.loop = loop
+        self.frames = 0
+        self._last: Image.Image | None = None
+        self._palette: list[int] | None = None
+        self._blocks: list[tuple[int, bytes]] = []
+        self._bytes = 0
+
+    @property
+    def size(self) -> int:
+        """Bytes que ocupa ya el GIF (sin la cabecera ni el cierre, que son unos pocos)."""
+        return self._bytes
+
+    @property
+    def duration(self) -> int:
+        """Milisegundos que dura el GIF entero."""
+        return sum(ms for ms, _ in self._blocks)
+
+    @property
+    def last(self) -> Image.Image | None:
+        """El último fotograma añadido."""
+        return self._last
+
+    def add(self, frames: Sequence[Image.Image], durations: Durations) -> None:
+        """Codifica un tramo de fotogramas detrás de los que ya hay."""
+        if not frames:
+            return
+        with ThreadPoolExecutor(max_workers=QUANTIZE_THREADS) as pool:
+            jobs: list[Future[_Coded]] = []
+            before = self._last
+            previous: np.ndarray | None = None
+            for frame in frames:
+                if frame.size != self.dimensions:
+                    raise ValueError("Todos los fotogramas tienen que tener el tamaño del GIF.")
+                job = _precoded(before, frame)
+                if job is not None:
+                    previous = None
+                else:
+                    rgb = _rgb(frame)
+                    packed = _packed(rgb)
+                    if before is not None and previous is None:
+                        previous = _packed(_rgb(before))
+                    job = _submit(pool, previous, packed, rgb)
+                    previous = packed
+                jobs.append(job)
+                before = frame
+            coded = [job.result() for job in jobs]
+        for part, duration in zip(coded, _durations(durations, len(frames)), strict=True):
+            if part is None:
+                ms, image = self._blocks[-1]
+                self._blocks[-1] = (ms + duration, image)
+            else:
+                if self._palette is None:
+                    self._palette = part[1]
+                self._blocks.append((duration, part[0]))
+                self._bytes += len(part[0]) + 8
+        self.frames += len(frames)
+        self._last = frames[-1]
+
+    def finish(self) -> bytes:
+        """Los bytes del GIF.
+
+        Raises:
+            ValueError: Si no se ha añadido ningún fotograma.
+        """
+        if self._palette is None:
+            raise ValueError("Hace falta al menos un fotograma.")
+        blocks = [_control(ms, LOCAL_TRANSPARENT) + image for ms, image in self._blocks]
+        return _write(self.dimensions, self._palette, blocks, self.loop)

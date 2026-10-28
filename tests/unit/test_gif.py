@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from bot.utils.gif import local_palette_gif, shared_palette_gif
+from bot.utils.gif import GifStream, local_palette_gif, shared_palette_gif
 
 SIZE = (60, 40)
 
@@ -138,3 +138,27 @@ def test_paleta_local_todo_quieto_es_un_fotograma() -> None:
 def test_paleta_local_rechaza_ninguno() -> None:
     with pytest.raises(ValueError):
         local_palette_gif([], 50)
+
+
+@pytest.mark.parametrize("cuts", [[9], [1, 8], [4, 1, 4], [2, 2, 2, 2, 1]])
+def test_por_tramos_da_los_mismos_bytes_que_de_una_vez(cuts: list[int]) -> None:
+    frames = moving_square(9)
+    frames.insert(4, frames[3].copy())  # uno quieto, que cae a veces al empezar un tramo
+    frames = frames[:9]
+    durations = [40, 50, 60, 70, 80, 40, 50, 60, 70]
+    stream = GifStream(SIZE)
+    start = 0
+    for size in cuts:
+        stream.add(frames[start : start + size], durations[start : start + size])
+        start += size
+    assert stream.frames == 9 and stream.last is frames[-1]
+    assert stream.finish() == local_palette_gif(frames, durations)
+    assert 0 < stream.size < len(stream.finish())
+
+
+def test_por_tramos_rechaza_ninguno_y_otro_tamano() -> None:
+    stream = GifStream(SIZE)
+    with pytest.raises(ValueError):
+        stream.finish()
+    with pytest.raises(ValueError):
+        stream.add([Image.new("RGB", (10, 10))], 50)

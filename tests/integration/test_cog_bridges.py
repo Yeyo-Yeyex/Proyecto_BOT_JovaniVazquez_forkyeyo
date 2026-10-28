@@ -56,6 +56,7 @@ GAMES = (
     "Moneda",
     "Dados",
     "Pachinko",
+    "Pico",
     "Caballos",
     "Bacará",
     "Gallos",
@@ -98,6 +99,7 @@ async def load_bot(tmp_path: Path) -> BotClient:
     await client.porras.initialize()
     await client.sports.initialize()
     await client.slots_repository.initialize()
+    await client.picar.initialize()
     for extension in INITIAL_EXTENSIONS:
         await client.load_extension(extension)
     return client
@@ -326,6 +328,64 @@ async def test_auto_del_pachinko_apunta_sus_logros_con_el_bot_real(tmp_path: Pat
             GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
         )
         assert plays.by_game["pachinko"].plays == view.session_volleys
+    finally:
+        await client.close()
+
+
+async def test_el_pico_apunta_la_tirada_sus_logros_y_su_jugada_con_el_bot_real(
+    tmp_path: Path,
+) -> None:
+    """Una tirada de `picar` con el bot cargado: dinero, tirada, logros, apuestas y repicar."""
+    client = await load_bot(tmp_path)
+    try:
+        picar = importer("Pico", client)
+        picar.REVEAL_MARGIN_SECONDS = 0
+        cog = client.get_cog("Pico")
+        await cog._check_task
+        assert cog.disabled_reason is None, cog.disabled_reason
+        await client.economy.grant(GUILD_ID, OWNER_ID, amount=1_000, reason="prueba")
+        owner = MagicMock(spec=discord.Member)
+        owner.id = OWNER_ID
+        owner.display_name = "Diego"
+        owner.mention = f"<@{OWNER_ID}>"
+        owner.bot = False
+        view = picar.PicarView(cog, guild_id=GUILD_ID, owner=owner)
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.send = AsyncMock()
+        interaction = fake_interaction()
+        interaction.user = owner
+        interaction.guild = None
+        interaction.channel = channel
+
+        await view._dig(interaction, "stone")
+
+        record = await client.picar.get(GUILD_ID, 1)
+        assert record is not None and record.pick == "stone" and record.user_id == OWNER_ID
+        assert record.cost == 50 and record.params == cog.calibration.params
+        profile = await client.achievements.profile(GUILD_ID, OWNER_ID)
+        assert profile.stats["picar_digs"] == 1 and profile.stats["picar_dig_stone"] == 1
+        assert "picar_1" in profile.unlocked
+        plays = await client.casino_stats.report(
+            GUILD_ID, OWNER_ID, since=None, today=date(2026, 10, 6)
+        )
+        assert plays.by_game["picar"].plays == 1
+
+        # `repicar` (Admin) encuentra el pozo con `find_cog` y vuelve a jugar la semilla.
+        admin = client.get_cog("Admin")
+        responder = MagicMock()
+        responder.guild = MagicMock(spec=discord.Guild)
+        responder.guild.id = GUILD_ID
+        responder.guild.filesize_limit = 10 * 1024 * 1024
+        responder.channel = MagicMock(spec=discord.TextChannel)
+        replayed = MagicMock()
+        replayed.edit = AsyncMock()
+        responder.channel.send = AsyncMock(return_value=replayed)
+        responder.send = AsyncMock()
+        responder.send_error = AsyncMock()
+        await admin._replay_dig_impl(responder, record.id)
+        responder.send_error.assert_not_awaited()
+        embed = responder.channel.send.await_args.kwargs["embed"]
+        assert "Sale igual" in embed.description
     finally:
         await client.close()
 

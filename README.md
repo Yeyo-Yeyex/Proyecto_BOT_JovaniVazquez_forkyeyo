@@ -73,7 +73,7 @@ python -m bot
   | Categoría | Comandos |
   |---|---|
   | 👤 Perfil | `pala` · `perfil [miembro]` · `ranking [pagina]` |
-  | 🎰 Casino | `4enraya [miembro] [cantidad]` · `allatu [cantidad] [tabla]` · `apuestas [miembro]` · `backgammon [miembro] [cantidad]` · `bacara [cantidad] [lado]` · `blackjack [cantidad]` (atajo `.bj`) · `caballo [cantidad] [caballos] [tipo]` · `cohete [cantidad] [auto]` · `dados [cantidad] [apuesta] [mesa]` · `deportes` · `gallos [cantidad] [miembro]` · `guagua [cantidad]` · `guerra [cantidad]` · `loteria` · `minas [cantidad] [minas]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `poker [modo] [cantidad]` · `pollo [cantidad] [dificultad] [autocobro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `ruleta [cantidad] [apuesta]` · `torre [cantidad] [nivel]` · `tragas [cantidad] [máquina]` |
+  | 🎰 Casino | `4enraya [miembro] [cantidad]` · `allatu [cantidad] [tabla]` · `apuestas [miembro]` · `backgammon [miembro] [cantidad]` · `bacara [cantidad] [lado]` · `blackjack [cantidad]` (atajo `.bj`) · `caballo [cantidad] [caballos] [tipo]` · `cohete [cantidad] [auto]` · `dados [cantidad] [apuesta] [mesa]` · `deportes` · `gallos [cantidad] [miembro]` · `guagua [cantidad]` · `guerra [cantidad]` · `loteria` · `minas [cantidad] [minas]` · `moneda [cantidad] [lado]` · `pachinko [cantidad]` · `picar` · `poker [modo] [cantidad]` · `pollo [cantidad] [dificultad] [autocobro]` · `porra [miembro] [juego] [propuesta] [jugadas] [apuesta]` · `ruleta [cantidad] [apuesta]` · `torre [cantidad] [nivel]` · `tragas [cantidad] [máquina]` |
   | 🏦 Dinero | `banco [mostrador]` · `bizum <miembro> <cantidad> [concepto]` · `donar [ong] [cantidad]` · `fortunas` · `hacienda [miembro]` · `imv` · `patrimonio [miembro]` · `renta` · `saldo [miembro]` |
   | 🛍️ Tienda | `mascota [miembro]` · `pieles [miembro] [imagen]` · `rastro` · `tienda` · `trueque <objeto> <miembro> <a cambio> [dinero]` · `vender <objeto> <precio> [comprador]` |
   | 🎵 Música | `cola` · `parar` · `pausar` · `poner <consulta>` · `quitar <posicion>` · `saltar` · `seguir` · `vaciar` · `volumen <1-200>` |
@@ -778,6 +778,21 @@ python -m bot
   La mano siguiente se pinta mientras se ve la anterior, así que sale al
   instante. Ventaja de la casa: 1,06 % en Banca, 1,24 % en Jugador y 14,36 % en
   Empate (`docs/rtp_bacara.py`). Tributa como el resto del casino.
+- **Pico** (`/picar`, `.picar`): un pozo propio con un botón por pico (🪵 Madera
+  10 Y$, 🪨 Piedra 50, ⛓️ Hierro 200, 🥇 Oro 200, 💎 Diamante 1.000 y 🖤 Netherite
+  5.000). El pico cae por un mundo de bloques con físicas: rebota, gira y rompe lo
+  que pilla. Cada golpe le quita vida; cada mineral suma premio, y los bloques de
+  oro (×2), diamante (×3), netherite (×5) y la baliza (×10) multiplican todo lo
+  acumulado. Los cofres devuelven vida y las mesas de crafteo la devuelven entera;
+  la TNT revienta lo de alrededor, en cadena. Si baja lo bastante pasa al Nether
+  (capa −250) y al End (−500); en el fondo espera el dragón, que paga el tope del
+  pico (de ×50 con madera a ×5.000 con netherite). Todos devuelven el 99,5 %:
+  cambia el riesgo. La partida se ve entera en uno o varios GIF seguidos (uno por
+  dimensión, con un rótulo entre ellas) y al final queda un PNG con el premio, la
+  capa a la que llegó y el récord. 📋 Premios y 🏆 Récords (los tuyos y el ranking
+  del servidor). Las texturas son de Pixel Perfection CE (CC BY-SA 4.0,
+  `assets/picar/LICENCIA.md`). Cómo se calcula todo, en `docs/plan-picar.md` y
+  `docs/picar-calibracion.md`.
 - **Pachinko** (`/pachinko`, `.pachinko [cantidad] [mapa]`): una máquina
   japonesa propia con botones. Cada 🎯 Lanzar cobra la apuesta y suelta 10
   bolas que rebotan por las filas de clavos hasta los bolsillos (los de las
@@ -1359,6 +1374,7 @@ src/bot/
 │   ├── craps.py         # dados: craps con Pase, No pase, punto, Odds y la mano
 │   ├── craps_mesa.py    # dados mesa: la mesa compartida del canal, con tirador
 │   ├── pachinko.py      # Pachinko con botones, Ráfaga, Auto y turbo
+│   ├── picar.py         # El pozo: un pico que cae rompiendo bloques
 │   ├── horses.py        # caballo: carrera por canal, parrilla, boletos y Gran Premio
 │   ├── bacara.py        # bacara: mesa por canal, zapato compartido, fichas y reparto
 │   ├── gallos.py        # gallos: reñidero contra la casa, retos, grada y la pelea
@@ -1441,6 +1457,10 @@ src/bot/
 │   ├── pachinko.py      # Tableros, clavos, bolsillos, sorteo, rush y retorno exacto
 │   ├── pachinko_render.py # GIF neón de cada tanda, con un tema por tablero
 │   ├── pachinko_physics.py # Clavos, paredes y caída con física de las bolas del pachinko
+│   ├── picar.py         # Precios, valores de los minerales, premios y calibración del pozo
+│   ├── picar_physics.py # Motor del pico: rebotes, golpes, TNT, cofres y el dragón
+│   ├── picar_scene.py   # GIF del pozo por partes, con transiciones entre dimensiones
+│   ├── picar_world.py   # Mundo del pozo: bloques, capas, cuevas y barrancos
 │   ├── pachinko_motion.py # Movimiento de una tanda: las bolas chocan y cada una acaba en su bolsillo
 │   ├── horses.py        # Establo, simulación por tramos, cuotas, boletos y Gran Premio
 │   ├── horses_render.py # Dibujo con Pillow (plan B) y ritmo de los fotogramas

@@ -184,6 +184,8 @@ from bot.services.pachinko import CLASSIC, Ball, Draw, build_volley
 from bot.services.pachinko import Kind as PachinkoKind
 from bot.services.pachinko_motion import motion_for
 from bot.services.pets_catalog import SPECIES as PET_SPECIES
+from bot.services.picar_physics import Run as PicarRun
+from bot.services.picar_world import MINERALS as PICAR_MINERALS
 from bot.services.poker import Rank as PokerRank
 from bot.services.robuso import DAILY as ROBUSO_DAILY
 from bot.services.robuso import ECHOES as ROBUSO_ECHOES
@@ -538,6 +540,23 @@ PRODUCED_STATS = {
     "crash_close", "crash_last_out", "crash_instant", "crash_greedy", "crash_moon",
     "crash_party_max",
     # Pachinko (cogs/pachinko.py: pachinko_stats, pachinko_autoplay_stats y el botón de Ráfaga)
+    # ⛏️ Pico (`picar_stats`)
+    "picar_digs", "picar_blocks", "picar_minerals", "picar_diamonds", "picar_debris",
+    "picar_crystals", "picar_tnt", "picar_chests", "picar_treasures", "picar_crafts",
+    "picar_mults", "picar_beacons", "picar_nether", "picar_end", "picar_dragon", "picar_zero",
+    "picar_records", "picar_wood_shallow", "picar_gold_shallow", "picar_netherite_no_end",
+    "picar_row_42", "picar_row_69", "picar_row_666", "picar_depth_max",
+    "picar_diamonds_run_max", "picar_chain_max", "picar_multiplier_max", "picar_mult_x100_max",
+    "picar_win_max", "picar_obsidian", "picar_shulkers", "picar_near_nether", "picar_near_end",
+    "picar_near_dragon", "picar_tourist_nether", "picar_tourist_end", "picar_capped",
+    "picar_even", "picar_almost", "picar_server_records", "picar_blocks_run_max",
+    "picar_chests_run_max", "picar_tnt_run_max", "picar_crafts_run_max", "picar_seconds_max",
+    "picar_days_max", "picar_tax_max",
+    *(f"picar_row_{row}" for row in (13, 112, 300, 404)),
+    *(f"picar_min_{key}" for key in PICAR_MINERALS),
+    *(f"picar_mult_{key}" for key in ("gold_block", "diamond_block", "netherite_block")),
+    *(f"picar_{kind}_{pick}" for kind in ("dig", "nether", "end", "dragon")
+      for pick in ("wood", "stone", "iron", "gold", "diamond", "netherite")),
     "pachinko_volleys", "pachinko_starts", "pachinko_reach", "pachinko_fake_reach",
     "pachinko_atari", "pachinko_rush", "pachinko_super", "pachinko_renchan_max",
     "pachinko_corners", "pachinko_full_hold", "pachinko_wasted", "pachinko_blank",
@@ -990,8 +1009,9 @@ def test_todos_los_juegos_del_casino_van_en_una_sola_entrada_del_menu() -> None:
     keys = {key for key, _title in menu_entries()}
     assert CASINO_GROUP.key in keys
     assert not keys & sections
-    # Un segundo desplegable lista las secciones (más la portada).
-    assert len(sections) + 1 <= 25
+    # Un segundo desplegable lista las secciones (más la portada); si no caben, un tercero
+    # con el resto (`SectionSelect`, `part=1`). Más de dos no caben en la vista.
+    assert len(sections) + 1 <= 2 * 25 - 1
 
 
 def test_la_portada_del_casino_cabe_en_un_embed() -> None:
@@ -2341,3 +2361,30 @@ def test_negocio_cuenta_sectores_temas_e_islas_distintos() -> None:
     assert full["biz_themes_tried"] == 1
     assert full["biz_islands_tried"] == 1
     assert "biz_streak_365" in newly_unlocked({"biz_streak_max": 365}, [])
+
+
+def test_el_pozo_cuenta_lo_que_se_queda_cerca_y_lo_de_cada_tirada() -> None:
+    from bot.services.achievements import picar_stats
+
+    def stats(row: int, **extra: object) -> dict[str, int]:
+        run = PicarRun(seed=1, pick="diamond", max_row=row, ticks=125 * 60, explosions=3)
+        run.broken = {"coal": 2, "quartz": 1, "gold_block": 1, "chest": 4, "crafting_table": 3}
+        args = {"pick": "diamond", "cost": 1_000, "payout": 950, "new_record": False}
+        args.update(extra)
+        delta = picar_stats(run, when=datetime(2026, 10, 28, 12), **args)  # type: ignore[arg-type]
+        return {**delta.add, **delta.peak}
+
+    near = stats(245, streak=9, tax=300)
+    assert near["picar_near_nether"] == 1 and "picar_tourist_nether" not in near
+    assert near["picar_almost"] == 1 and "picar_even" not in near
+    assert near["picar_min_coal"] == 2 and near["picar_min_quartz"] == 1
+    assert near["picar_mult_gold_block"] == 1 and near["picar_chests_run_max"] == 4
+    assert near["picar_crafts_run_max"] == 3 and near["picar_tnt_run_max"] == 3
+    assert near["picar_seconds_max"] == 125 and near["picar_days_max"] == 9
+    assert near["picar_tax_max"] == 300 and near["picar_blocks_run_max"] == 11
+    inside = stats(252, payout=1_000, capped=True, server_record=True)
+    assert inside["picar_tourist_nether"] == 1 and "picar_near_nether" not in inside
+    assert inside["picar_even"] == inside["picar_capped"] == inside["picar_server_records"] == 1
+    assert "picar_tax_max" not in inside
+    assert stats(404)["picar_row_404"] == 1
+    assert stats(690)["picar_near_dragon"] == 1

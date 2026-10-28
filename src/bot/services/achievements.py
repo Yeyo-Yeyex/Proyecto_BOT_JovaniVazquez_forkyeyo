@@ -175,6 +175,11 @@ from bot.services.pachinko_motion import VolleyMotion as PachinkoMotion
 from bot.services.pending import Pending, Side
 from bot.services.pets_catalog import SPAWNING as PET_SPAWNING
 from bot.services.pets_catalog import SPECIES as PET_SPECIES
+from bot.services.picar_physics import TICKS_PER_SECOND as PICAR_TICKS_PER_SECOND
+from bot.services.picar_physics import Run as PicarRun
+from bot.services.picar_world import DRAGON_ROW as PICAR_DRAGON_ROW
+from bot.services.picar_world import LAYERS as PICAR_LAYERS
+from bot.services.picar_world import MINERALS as PICAR_MINERALS
 from bot.services.poker import MAX_SEATS as POKER_MAX_SEATS
 from bot.services.poker import Outcome as PokerOutcome
 from bot.services.poker import PokerHand
@@ -375,6 +380,7 @@ CATEGORIES: tuple[Category, ...] = (
     Category("timba", "♣️ Timba", group=_CG),
     Category("dice", "🎲 Dados", group=_CG),
     Category("pachinko", "🌸 Pachinko", group=_CG),
+    Category("picar", "⛏️ Pico", group=_CG),
     Category("horses", "🏇 Caballos", group=_CG),
     Category("baccarat", "🍸 Bacará", group=_CG),
     Category("gallos", "🐓 Gallos", group=_CG),
@@ -672,6 +678,28 @@ SPORTS_ROUT = 4
 
 _R = Rarity
 C, R, E, L, M = _R.COMMON, _R.RARE, _R.EPIC, _R.LEGENDARY, _R.MYTHIC
+
+#: `picar`: filas en las que empiezan el Nether y el End (de `picar_world.LAYERS`).
+PICAR_NETHER_ROW = next(layer.top for layer in PICAR_LAYERS if layer.key == "nether")
+PICAR_END_ROW = next(layer.top for layer in PICAR_LAYERS if layer.key == "end")
+#: Bloques de `picar` que cuentan como cofre y como multiplicador.
+PICAR_CHESTS = ("chest", "treasure", "shulker")
+PICAR_PICKS = ("wood", "stone", "iron", "gold", "diamond", "netherite")
+PICAR_PICK_NAMES = {
+    "wood": "madera",
+    "stone": "piedra",
+    "iron": "hierro",
+    "gold": "oro",
+    "diamond": "diamante",
+    "netherite": "netherite",
+}
+PICAR_MULTS = ("gold_block", "diamond_block", "netherite_block", "beacon")
+#: Filas que se quedan «a las puertas» de una dimensión (y el doble antes del dragón).
+PICAR_NEAR = 10
+#: Filas dentro de una dimensión nueva que cuentan como «solo de visita».
+PICAR_TOURIST = 5
+#: Filas con guasa donde acabar una tirada (además de 42, 69 y 666).
+PICAR_FUNNY_ROWS = (13, 112, 300, 404)
 
 
 def _tiers(category: str, stat: str, rows: Iterable[tuple], *, unit: str = "") -> list[Achievement]:
@@ -21509,6 +21537,350 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Vuelve de la excedencia.", R),
     ])  # fmt: skip
 
+    # ⛏️ Pico (`picar`). Rarezas de `docs/auditoria_logros.py --juego picar` (28/10/2026),
+    # con un jugador que reparte sus tiradas entre los picos, sobre todo los baratos.
+    a += _tiers("picar", "picar_digs", [
+        (1, "picar_1", "Picado por la curiosidad", "Juega tu primera tirada en el pozo.", C),
+        (10, "picar_10", "Picapedrero en prácticas", "Juega 10 tiradas en el pozo.", C),
+        (100, "picar_100", "El pozo de los deseos", "Juega 100 tiradas en el pozo.", R),
+        (500, "picar_500", "Hullera vocación", "Juega 500 tiradas en el pozo.", E),
+        (1_000, "picar_1000", "Mil y una galerías", "Juega 1.000 tiradas en el pozo.", E),
+        (5_000, "picar_5000", "Cara de grisú", "Juega 5.000 tiradas en el pozo.", L),
+        (10_000, "picar_10000", "Patrimonio de la minería",
+         "Juega 10.000 tiradas en el pozo.", M),
+    ])  # fmt: skip
+    a.append(Achievement(
+        id="picar_all_picks",
+        name="Caja de herramientas",
+        description="Juega al menos una tirada con cada uno de los seis picos.",
+        category="picar",
+        rarity=C,
+        conditions=tuple((f"picar_dig_{key}", 1) for key in PICAR_PICKS),
+    ))  # fmt: skip
+    a += _tiers("picar", "picar_depth_max", [
+        (50, "picar_depth_50", "Bajar a por tabaco", "Llega a la capa −50.", C),
+        (120, "picar_depth_120", "Sótano del sótano", "Llega a la capa −120.", C),
+        (250, "picar_depth_250", "Infierno fiscal", "Llega al Nether (capa −250).", C),
+        (500, "picar_depth_500", "Y colorín colorado", "Llega al End (capa −500).", E),
+        (650, "picar_depth_650", "Casi en el fondo", "Llega a la capa −650.", M),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_nether", [
+        (10, "picar_nether_10", "Abono transporte al infierno", "Llega al Nether 10 veces.", R),
+        (50, "picar_nether_50", "Empadronado en el Nether", "Llega al Nether 50 veces.", E),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_end", [
+        (10, "picar_end_10", "Fin de semana en el End", "Llega al End 10 veces.", L),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_dragon", [
+        (1, "picar_dragon_1", "Dracarys al revés", "Mata al dragón del fondo del End.", M),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_nether_iron", [
+        (1, "picar_nether_iron", "Hierro candente", "Llega al Nether con el pico de hierro.", M),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_end_diamond", [
+        (1, "picar_end_diamond", "Un diamante es para el fin",
+         "Llega al End con el pico de diamante.", L),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_end_netherite", [
+        (1, "picar_end_netherite", "Netherite sin fronteras",
+         "Llega al End con el pico de netherite.", E),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_minerals", [
+        (100, "picar_minerals_100", "Veta madre", "Rompe 100 minerales en el pozo.", C),
+        (1_000, "picar_minerals_1000", "Fiebre del oro", "Rompe 1.000 minerales en el pozo.", C),
+        (10_000, "picar_minerals_10000", "Rodalquilar se te queda corto",
+         "Rompe 10.000 minerales en el pozo.", E),
+        (50_000, "picar_minerals_50000", "Ministerio de Industria y Minería",
+         "Rompe 50.000 minerales en el pozo.", L),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_diamonds", [
+        (1, "picar_diamonds_1", "Diamante en bruto", "Rompe tu primer diamante en el pozo.", C),
+        (50, "picar_diamonds_50", "Diamantes de sangre fría", "Rompe 50 diamantes en el pozo.", R),
+        (500, "picar_diamonds_500", "Joyería con licencia de obras",
+         "Rompe 500 diamantes en el pozo.", L),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_diamonds_run_max", [
+        (3, "picar_diamonds_run_3", "Tres en raya de diamantes",
+         "Rompe 3 diamantes en una tirada.", C),
+        (10, "picar_diamonds_run_10", "Escaparate de Tiffany",
+         "Rompe 10 diamantes en una tirada.", M),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_debris", [
+        (1, "picar_debris_1", "Escombros con pedigrí", "Rompe un escombro ancestral.", R),
+        (25, "picar_debris_25", "Arqueología de derribo", "Rompe 25 escombros ancestrales.", L),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_crystals", [
+        (1, "picar_crystals_1", "Cristalería fina", "Rompe un cristal del End.", L),
+        (25, "picar_crystals_25", "Cristal de Bohemia… del End", "Rompe 25 cristales del End.", M),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_tnt", [
+        (1, "picar_tnt_1", "La chispa adecuada", "Haz explotar una TNT en el pozo.", C),
+        (100, "picar_tnt_100", "Mascletà en la mina", "Haz explotar 100 TNT en el pozo.", C),
+        (1_000, "picar_tnt_1000", "Nitroglicerina en vena",
+         "Haz explotar 1.000 TNT en el pozo.", E),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_chain_max", [
+        (3, "picar_chain_3", "Traca final", "Encadena 3 TNT en una explosión.", C),
+        (5, "picar_chain_5", "Fallas subterráneas", "Encadena 5 TNT en una explosión.", E),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_chests", [
+        (1, "picar_chests_1", "El arcón de la abuela", "Abre un cofre en el pozo.", C),
+        (50, "picar_chests_50", "Baúl de los recuerdos", "Abre 50 cofres en el pozo.", C),
+        (500, "picar_chests_500", "Ali Babá y los cuarenta cofres",
+         "Abre 500 cofres en el pozo.", E),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_treasures", [
+        (1, "picar_treasures_1", "El tesoro de Sierra Madre", "Abre un cofre del tesoro.", C),
+        (25, "picar_treasures_25", "Tesorero del Reino", "Abre 25 cofres del tesoro.", R),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_crafts", [
+        (1, "picar_crafts_1", "Hágalo usted mismo", "Rompe una mesa de crafteo.", C),
+        (25, "picar_crafts_25", "Carpintería metálica", "Rompe 25 mesas de crafteo.", C),
+        (250, "picar_crafts_250", "Ebanista del inframundo", "Rompe 250 mesas de crafteo.", E),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_mults", [
+        (1, "picar_mults_1", "Panes y peces", "Rompe un bloque de multiplicador.", C),
+        (50, "picar_mults_50", "Tabla del dos de memoria", "Rompe 50 bloques de multiplicador.", R),
+        (500, "picar_mults_500", "Multiplicación de los mineros",
+         "Rompe 500 bloques de multiplicador.", L),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_beacons", [
+        (1, "picar_beacons_1", "Faro de Alejandría", "Rompe una baliza (×10).", M),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_multiplier_max", [
+        (10, "picar_multiplier_10", "De diez en diez", "Multiplica una tirada por 10 o más.", C),
+        (30, "picar_multiplier_30", "Treinta y tantos", "Multiplica una tirada por 30 o más.", R),
+        (100, "picar_multiplier_100", "Ciento volando", "Multiplica una tirada por 100 o más.", E),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_mult_x100_max", [
+        (1_000, "picar_x10", "Pepita de oro", "Cobra 10 veces el precio del pico.", R),
+        (5_000, "picar_x50", "Filón madre", "Cobra 50 veces el precio del pico.", E),
+        (20_000, "picar_x200", "Vale un Potosí", "Cobra 200 veces el precio del pico.", M),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_win_max", [
+        (10_000, "picar_win_10k", "Picotazo de oro", "Gana 10.000 Y$ netos en una tirada.", R),
+        (100_000, "picar_win_100k", "Mina de oro", "Gana 100.000 Y$ netos en una tirada.", M),
+        (1_000_000, "picar_win_1m", "Bonanza", "Gana 1.000.000 Y$ netos en una tirada.", M),
+    ], unit="money")  # fmt: skip
+    a += _tiers("picar", "picar_zero", [
+        (1, "picar_zero_1", "Polvo eres", "Termina una tirada sin premio.", C),
+        (50, "picar_zero_50", "Y en polvo te convertirás", "Termina 50 tiradas sin premio.", E),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_records", [
+        (10, "picar_records_10", "Guinness subterráneo",
+         "Bate 10 veces tu récord de profundidad.", C),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_wood_shallow", [
+        (1, "picar_wood_shallow", "Ni al sótano",
+         "Rompe el pico de madera antes de la capa −5.", L, True),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_gold_shallow", [
+        (1, "picar_gold_shallow", "Oro parece, mina no es",
+         "Rompe el pico de oro antes de la capa −25.", L, True),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_netherite_no_end", [
+        (50_000, "picar_netherite_50k", "Lujo para nada",
+         "Gasta 50.000 Y$ en picos de netherite que no llegan al End.", R),
+        (500_000, "picar_netherite_500k", "Lujo asiático, resultado de saldo",
+         "Gasta 500.000 Y$ en picos de netherite que no llegan al End.", L, True),
+    ], unit="money")  # fmt: skip
+    a += _tiers("picar", "picar_row_42", [
+        (1, "picar_row_42", "La respuesta está bajo tierra",
+         "Termina una tirada justo en la capa −42.", R, True),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_row_69", [
+        (1, "picar_row_69", "Postura del minero",
+         "Termina una tirada justo en la capa −69.", R, True),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_row_666", [
+        (1, "picar_row_666", "El número de la bestia… y de la capa",
+         "Termina una tirada justo en la capa −666.", M, True),
+    ])  # fmt: skip
+    for row, achievement_id, name, rarity in (
+        (13, "picar_row_13", "Martes y trece metros", R),
+        (112, "picar_row_112", "Emergencias bajo tierra", E),
+        (300, "picar_row_300", "¡Esto es el Nether!", E),
+        (404, "picar_row_404", "Capa no encontrada", M),
+    ):  # fmt: skip
+        a += _tiers("picar", f"picar_row_{row}", [
+            (1, achievement_id, name, f"Termina una tirada justo en la capa −{row}.", rarity, True),
+        ])  # fmt: skip
+    a += _tiers("picar", "picar_nether_stone", [
+        (1, "picar_nether_stone", "Piedra que arde", "Llega al Nether con el pico de piedra.", M),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_nether_gold", [
+        (1, "picar_nether_gold", "Oro fundido", "Llega al Nether con el pico de oro.", M),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_nether_diamond", [
+        (1, "picar_nether_diamond", "Diamante en el purgatorio",
+         "Llega al Nether con el pico de diamante.", C),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_nether_netherite", [
+        (1, "picar_nether_netherite", "Vuelta a casa por Navidad",
+         "Llega al Nether con el pico de netherite.", C),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_dragon_netherite", [
+        (1, "picar_dragon_netherite", "Sant Jordi de netherite",
+         "Mata al dragón con el pico de netherite.", M),
+    ])  # fmt: skip
+    for pick, achievement_id, name in (
+        ("wood", "picar_wood_100", "¡Más madera!"),
+        ("stone", "picar_stone_100", "Like a Rolling Stone"),
+        ("iron", "picar_iron_100", "La Dama de Hierro"),
+        ("gold", "picar_gold_100", "Ricitos de Oro"),
+        ("diamond", "picar_diamond_100", "Los diamantes son eternos"),
+        ("netherite", "picar_netherite_100", "Netherite y manta"),
+    ):  # fmt: skip
+        label = PICAR_PICK_NAMES[pick]
+        rarity = E if pick == "netherite" else R
+        a += _tiers("picar", f"picar_dig_{pick}", [
+            (100, achievement_id, name, f"Juega 100 tiradas con el pico de {label}.", rarity),
+        ])  # fmt: skip
+    a += _tiers("picar", "picar_blocks", [
+        (1_000, "picar_blocks_1000", "Tetris al revés", "Rompe 1.000 bloques en el pozo.", C),
+        (10_000, "picar_blocks_10000", "Muro de Berlín", "Rompe 10.000 bloques en el pozo.", R),
+        (100_000, "picar_blocks_100000", "Las minas de Moria",
+         "Rompe 100.000 bloques en el pozo.", E),
+        (1_000_000, "picar_blocks_1m", "Derribos y Contratas, S. A.",
+         "Rompe 1.000.000 de bloques en el pozo.", M),
+    ])  # fmt: skip
+    for key, achievement_id, goal, name, label, rarity in (
+        ("coal", "picar_coal_1000", 1_000, "Carbón para los Reyes Magos", "carbones", R),
+        ("iron", "picar_iron_ore_1000", 1_000, "Edad de Hierro", "menas de hierro", R),
+        ("gold", "picar_gold_ore_500", 500, "El oro de Moscú", "menas de oro", E),
+        ("redstone", "picar_redstone_500", 500, "Redstone Temple Pilots", "redstones", R),
+        ("lapis", "picar_lapis_500", 500, "Lapis de colores", "lapislázulis", E),
+        ("emerald", "picar_emerald_1", 1, "Ciudad Esmeralda", "esmeralda", C),
+        ("emerald", "picar_emerald_50", 50, "Más verde que Hulk", "esmeraldas", E),
+        ("quartz", "picar_quartz_500", 500, "Cuarzo de hora", "cuarzos del Nether", E),
+        ("nether_gold", "picar_nether_gold_500", 500, "Lingotes al rojo vivo",
+         "menas de oro del Nether", E),
+    ):  # fmt: skip
+        amount = "tu primera" if goal == 1 else f"{goal:,}".replace(",", ".")
+        a += _tiers("picar", f"picar_min_{key}", [
+            (goal, achievement_id, name, f"Rompe {amount} {label} en el pozo.", rarity),
+        ])  # fmt: skip
+    a.append(Achievement(
+        id="picar_all_minerals",
+        category="picar",
+        name="Tabla periódica de bolsillo",
+        description="Rompe al menos un bloque de cada mineral del pozo (son 11).",
+        rarity=L,
+        conditions=tuple((f"picar_min_{key}", 1) for key in PICAR_MINERALS),
+    ))  # fmt: skip
+    for key, achievement_id, name, description, rarity in (
+        ("gold_block", "picar_gold_block", "Por duplicado", "Rompe un bloque de oro (×2).", C),
+        ("diamond_block", "picar_diamond_block", "Triple de Curry",
+         "Rompe un bloque de diamante (×3).", C),
+        ("netherite_block", "picar_netherite_block", "Cinco lobitos",
+         "Rompe un bloque de netherite (×5).", R),
+    ):  # fmt: skip
+        a += _tiers("picar", f"picar_mult_{key}", [(1, achievement_id, name, description, rarity)])
+    a.append(Achievement(
+        id="picar_all_mults",
+        category="picar",
+        name="Tabla de multiplicar completa",
+        description="Rompe un bloque de cada multiplicador: oro, diamante, netherite y baliza.",
+        rarity=M,
+        conditions=tuple(
+            (f"picar_mult_{key}", 1) for key in PICAR_MULTS[:-1]
+        ) + (("picar_beacons", 1),),
+    ))  # fmt: skip
+    a += _tiers("picar", "picar_obsidian", [
+        (100, "picar_obsidian_100", "Corazón de obsidiana", "Rompe 100 bloques de obsidiana.", M),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_shulkers", [
+        (1, "picar_shulkers_1", "Kinder Sorpresa", "Abre una caja de shulker en el End.", M),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_blocks_run_max", [
+        (150, "picar_run_blocks_150", "Demolición exprés",
+         "Rompe 150 bloques en una sola tirada.", C),
+        (700, "picar_run_blocks_700", "La piqueta de Florentino",
+         "Rompe 700 bloques en una sola tirada.", R),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_chests_run_max", [
+        (5, "picar_run_chests_5", "Cofradía del cofre", "Abre 5 cofres en una sola tirada.", C),
+        (13, "picar_run_chests_13", "Día de mudanza", "Abre 13 cofres en una sola tirada.", R),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_tnt_run_max", [
+        (10, "picar_run_tnt_10", "Petardeo de barrio",
+         "Haz explotar 10 TNT en una sola tirada.", C),
+        (25, "picar_run_tnt_25", "Santa Bárbara bendita",
+         "Haz explotar 25 TNT en una sola tirada.", L),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_crafts_run_max", [
+        (3, "picar_run_crafts_3", "Ikea de las profundidades",
+         "Rompe 3 mesas de crafteo en una sola tirada.", C),
+        (5, "picar_run_crafts_5", "Manitas de plata",
+         "Rompe 5 mesas de crafteo en una sola tirada.", R),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_seconds_max", [
+        (60, "picar_seconds_60", "Minuto de gloria", "Juega una tirada que dure un minuto.", C),
+        (120, "picar_seconds_120", "Interstellar en vertical",
+         "Juega una tirada que dure dos minutos.", L),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_near_nether", [
+        (1, "picar_near_nether", "A las puertas del infierno",
+         "Termina una tirada a menos de 10 capas del Nether.", R),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_near_end", [
+        (1, "picar_near_end", "El fin que nunca llegó",
+         "Termina una tirada a menos de 10 capas del End.", L, True),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_near_dragon", [
+        (1, "picar_near_dragon", "Dragon Khan sin montar",
+         "Termina una tirada a menos de 20 capas del dragón sin llegar a él.", M, True),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_tourist_nether", [
+        (1, "picar_tourist_nether", "Infierno exprés",
+         "Termina una tirada en las 5 primeras capas del Nether.", E, True),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_tourist_end", [
+        (1, "picar_tourist_end", "Apaga y vámonos",
+         "Termina una tirada en las 5 primeras capas del End.", E, True),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_capped", [
+        (1, "picar_capped", "Techo de cemento",
+         "Cobra el premio máximo de un pico sin llegar al dragón.", M, True),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_even", [
+        (1, "picar_even", "Ni pa' ti ni pa' mí",
+         "Cobra justo lo que costó el pico.", R, True),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_almost", [
+        (1, "picar_almost", "Por un pelo de topo",
+         "Cobra entre el 90 % y el 99 % de lo que costó el pico.", C, True),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_server_records", [
+        (1, "picar_server_record_1", "Plusmarquista del barrio",
+         "Bate el récord de profundidad del servidor con un pico.", R),
+        (10, "picar_server_record_10", "Bob Beamon del pozo",
+         "Bate 10 veces el récord de profundidad del servidor.", E),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_days_max", [
+        (7, "picar_days_7", "Mina de lunes a domingo", "Juega en el pozo 7 días seguidos.", R),
+        (30, "picar_days_30", "30 días de oscuridad", "Juega en el pozo 30 días seguidos.", E),
+        (100, "picar_days_100", "Cien años de minería", "Juega en el pozo 100 días seguidos.", L),
+        (365, "picar_days_365", "Topo del año", "Juega en el pozo 365 días seguidos.", M),
+    ])  # fmt: skip
+    a += _tiers("picar", "picar_tax_max", [
+        (1_000, "picar_tax_1000", "Diezmo minero",
+         "Te retienen 1.000 Y$ de IRPF por una sola tirada del pozo.", R),
+        (100_000, "picar_tax_100000", "Hacienda baja al pozo",
+         "Te retienen 100.000 Y$ de IRPF por una sola tirada del pozo.", M),
+    ], unit="money")  # fmt: skip
+    for prefix, achievement_id, name, description, secret in (
+        (CASINO_NIGHT_PREFIX, "picar_madrugada", "Turno de noche en la mina",
+         "Juega en el pozo de madrugada (de 2 a 6).", False),
+        (CASINO_FRIDAY13_PREFIX, "picar_viernes13", "Grisú en viernes 13",
+         "Pierde en el pozo un viernes 13.", True),
+        (CASINO_CANARIAS_PREFIX, "picar_canarias", "Picón canario",
+         "Juega en el pozo el 30 de mayo, Día de Canarias.", False),
+        (CASINO_NOCHEVIEJA_PREFIX, "picar_nochevieja", "Uvas y pico",
+         "Juega en el pozo en Nochevieja.", False),
+    ):  # fmt: skip
+        a += _tiers("picar", f"{prefix}picar", [(1, achievement_id, name, description, C, secret)])
+
     countable = sum(
         1
         for x in a
@@ -23977,6 +24349,107 @@ PACHINKO_SLOW_FRAMES = 40
 PACHINKO_SWIFT_FRAMES = 23
 #: Una bola «baja sin tocar casi nada» si rebota en los clavos esto o menos.
 PACHINKO_CLEAN_BOUNCES = 5
+
+
+def picar_stats(
+    run: PicarRun,
+    *,
+    pick: str,
+    cost: int,
+    payout: int,
+    new_record: bool,
+    when: datetime,
+    capped: bool = False,
+    server_record: bool = False,
+    streak: int = 1,
+    tax: int = 0,
+) -> StatDelta:
+    """Contadores de una tirada de `picar` (sin lo común del casino).
+
+    Args:
+        run: La partida (`picar_physics.Run`), con lo roto y hasta dónde llegó.
+        pick: Clave del pico.
+        cost: Lo que costó la tirada.
+        payout: Lo que pagó (0 si nada).
+        new_record: Si es la tirada más honda del miembro con ese pico.
+        when: Hora local de la tirada.
+        capped: Si el premio se quedó en el tope sin llegar al dragón.
+        server_record: Si bate el récord de profundidad que ya tenía el servidor con ese
+            pico.
+        streak: Días seguidos que lleva jugando en el pozo, contando hoy.
+        tax: Lo que sube la retención del IRPF por esta tirada.
+    """
+    delta = StatDelta(add={"picar_digs": 1, f"picar_dig_{pick}": 1}, peak={})
+    add = delta.add
+
+    def bump(stat: str, condition: bool = True, amount: int = 1) -> None:
+        if condition and amount:
+            add[stat] = add.get(stat, 0) + amount
+
+    broken = run.broken
+    nether, end = run.max_row >= PICAR_NETHER_ROW, run.max_row >= PICAR_END_ROW
+    minerals = sum(broken.get(key, 0) for key in PICAR_MINERALS)
+    bump("picar_blocks", amount=sum(broken.values()))
+    bump("picar_minerals", amount=minerals)
+    bump("picar_diamonds", amount=broken.get("diamond", 0))
+    bump("picar_debris", amount=broken.get("ancient_debris", 0))
+    bump("picar_crystals", amount=broken.get("end_crystal", 0))
+    bump("picar_tnt", amount=run.explosions)
+    bump("picar_chests", amount=sum(broken.get(key, 0) for key in PICAR_CHESTS))
+    bump("picar_treasures", amount=broken.get("treasure", 0))
+    bump("picar_crafts", amount=broken.get("crafting_table", 0))
+    bump("picar_mults", amount=sum(broken.get(key, 0) for key in PICAR_MULTS))
+    bump("picar_beacons", amount=broken.get("beacon", 0))
+    bump("picar_nether", nether)
+    bump("picar_end", end)
+    bump("picar_dragon", run.dragon)
+    bump(f"picar_nether_{pick}", nether)
+    bump(f"picar_end_{pick}", end)
+    bump(f"picar_dragon_{pick}", run.dragon)
+    bump("picar_zero", payout == 0)
+    bump("picar_records", new_record)
+    bump("picar_wood_shallow", pick == "wood" and run.max_row < 5)
+    bump("picar_gold_shallow", pick == "gold" and run.max_row < 25)
+    bump("picar_netherite_no_end", pick == "netherite" and not end, amount=cost)
+    bump("picar_row_42", run.max_row == 42)
+    bump("picar_row_69", run.max_row == 69)
+    bump("picar_row_666", run.max_row == 666)
+    for row in PICAR_FUNNY_ROWS:
+        bump(f"picar_row_{row}", run.max_row == row)
+    for key in PICAR_MINERALS:
+        bump(f"picar_min_{key}", amount=broken.get(key, 0))
+    for key in PICAR_MULTS[:-1]:  # la baliza ya tiene `picar_beacons`
+        bump(f"picar_mult_{key}", amount=broken.get(key, 0))
+    bump("picar_obsidian", amount=broken.get("obsidian", 0))
+    bump("picar_shulkers", amount=broken.get("shulker", 0))
+    depth = run.max_row
+    bump("picar_near_nether", PICAR_NETHER_ROW - PICAR_NEAR <= depth < PICAR_NETHER_ROW)
+    bump("picar_near_end", PICAR_END_ROW - PICAR_NEAR <= depth < PICAR_END_ROW)
+    bump("picar_near_dragon", not run.dragon and depth >= PICAR_DRAGON_ROW - 2 * PICAR_NEAR)
+    bump("picar_tourist_nether", PICAR_NETHER_ROW <= depth < PICAR_NETHER_ROW + PICAR_TOURIST)
+    bump("picar_tourist_end", PICAR_END_ROW <= depth < PICAR_END_ROW + PICAR_TOURIST)
+    bump("picar_capped", capped)
+    bump("picar_even", cost > 0 and payout == cost)
+    bump("picar_almost", cost * 9 <= payout * 10 and payout < cost)
+    bump("picar_server_records", server_record)
+    peak = delta.peak
+    peak["picar_depth_max"] = run.max_row
+    peak["picar_diamonds_run_max"] = broken.get("diamond", 0)
+    peak["picar_chain_max"] = run.longest_chain
+    peak["picar_multiplier_max"] = run.multiplier
+    if cost:
+        peak["picar_mult_x100_max"] = payout * 100 // cost
+    if payout > cost:
+        peak["picar_win_max"] = payout - cost
+    peak["picar_blocks_run_max"] = sum(broken.values())
+    peak["picar_chests_run_max"] = sum(broken.get(key, 0) for key in PICAR_CHESTS)
+    peak["picar_tnt_run_max"] = run.explosions
+    peak["picar_crafts_run_max"] = broken.get("crafting_table", 0)
+    peak["picar_seconds_max"] = run.ticks // PICAR_TICKS_PER_SECOND
+    peak["picar_days_max"] = streak
+    if tax > 0:
+        peak["picar_tax_max"] = tax
+    return delta
 
 
 def pachinko_stats(

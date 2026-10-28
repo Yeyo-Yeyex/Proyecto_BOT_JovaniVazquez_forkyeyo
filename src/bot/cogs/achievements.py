@@ -453,19 +453,32 @@ class CategorySelect(discord.ui.Select):
         await self.achievements_view.show(interaction, self.values[0])
 
 
-class SectionSelect(discord.ui.Select):
-    """Segundo menú dentro de un grupo (💬 Chat, 🎙️ Voz, 🎰 Casino): una sección por opción."""
+#: Secciones que caben en un desplegable (Discord admite 25 opciones; la primera es la portada).
+SECTIONS_PER_MENU = 24
 
-    def __init__(self, view: AchievementsView, group_key: str, current: str) -> None:
-        options = [
-            discord.SelectOption(
-                label="Todo el casino" if group_key == "casino_group" else "Portada",
-                value=group_key,
-                emoji="📊",
-                default=current == group_key,
+
+class SectionSelect(discord.ui.Select):
+    """Segundo menú dentro de un grupo (💬 Chat, 🎙️ Voz, 🎰 Casino): una sección por opción.
+
+    Un grupo con más de `SECTIONS_PER_MENU` secciones (el casino, desde el pico) se parte
+    en dos desplegables: el primero con la portada y las 24 primeras, el segundo
+    (`part=1`, en la fila de abajo) con el resto.
+    """
+
+    def __init__(self, view: AchievementsView, group_key: str, current: str, part: int = 0) -> None:
+        options = []
+        if part == 0:
+            options.append(
+                discord.SelectOption(
+                    label="Todo el casino" if group_key == "casino_group" else "Portada",
+                    value=group_key,
+                    emoji="📊",
+                    default=current == group_key,
+                )
             )
-        ]
-        for section in group_sections(group_key):
+        sections = group_sections(group_key)
+        start = part * SECTIONS_PER_MENU
+        for section in sections[start : start + SECTIONS_PER_MENU]:
             emoji, _, title = section.title.partition(" ")
             options.append(
                 discord.SelectOption(
@@ -473,8 +486,13 @@ class SectionSelect(discord.ui.Select):
                 )
             )
         placeholder = "Elige un juego" if group_key == "casino_group" else "Elige una sección"
+        if part:
+            placeholder = "Más juegos" if group_key == "casino_group" else "Más secciones"
         super().__init__(
-            placeholder=placeholder, options=options, row=1, custom_id="logros:seccion"
+            placeholder=placeholder,
+            options=options,
+            row=1 if part == 0 else 3,
+            custom_id="logros:seccion" if part == 0 else f"logros:seccion{part + 1}",
         )
         self.achievements_view = view
 
@@ -548,7 +566,9 @@ class AchievementsView(discord.ui.View):
         if group is None and key in CATEGORY_BY_KEY:
             group = CATEGORY_BY_KEY[key].group
         if group is not None:
-            self.add_item(SectionSelect(self, group, key))
+            menus = -(-len(group_sections(group)) // SECTIONS_PER_MENU)
+            for part in range(menus):
+                self.add_item(SectionSelect(self, group, key, part))
 
     def _sheets(self) -> int:
         category = CATEGORY_BY_KEY.get(self.key)
