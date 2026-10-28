@@ -9,9 +9,12 @@ El juego elige cada tirada de una biblioteca fija de semillas (de 0 a N - 1), as
 el RTP no se estima: se cuenta. Pasos:
 
 1. **Simular la biblioteca.** Cada semilla con cada pico, sin fotogramas, en todos los
-   núcleos. De cada partida se guarda cuántos minerales de cada tipo rompe, el producto
-   de sus bloques de multiplicador, si llega al dragón, la fila más honda y cuántos
-   ticks dura. La tabla va a `--tabla` (fuera del repo, ~30 MB por pico con un
+   núcleos, con el motor en C (`docs/picar_rapido.c`, unas 20-30 veces más rápido) si hay
+   compilador; antes de empezar se comprueba que da lo mismo que el de Python en 200
+   semillas de cada pico, y si no coincide no se calibra. Sin compilador, con el de
+   Python (`--motor python`). De cada partida se guarda cuántos minerales de cada tipo
+   rompe, el producto de sus bloques de multiplicador, si llega al dragón, la fila más
+   honda y cuántos ticks dura. La tabla va a `--tabla` (fuera del repo, ~30 MB por pico con un
    millón): con `--reusar` se usa la que haya si se hizo con los mismos parámetros, para
    cambiar valores, costes o topes sin volver a simular.
 2. **Buscar `k`.** Lo que suma cada mineral (en diezmilésimas del coste, `picar.SCALE`)
@@ -53,7 +56,8 @@ from bot.services.picar import (  # noqa: E402
     TARGET_RTP,
     fingerprint,
 )
-from bot.services.picar_physics import PICKS, TICKS_PER_SECOND, params_hash, simulate  # noqa: E402
+from bot.services.picar_physics import PICKS, TICKS_PER_SECOND, params_hash  # noqa: E402
+from bot.services.picar_physics import simulate as simulate_python  # noqa: E402
 from bot.services.picar_world import LAYERS, MINERALS  # noqa: E402
 
 REPORT = Path(__file__).resolve().parent / "picar-calibracion.md"
@@ -65,8 +69,19 @@ END_ROW = next(layer.top for layer in LAYERS if layer.key == "end")
 Chunk = tuple[int, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
 
 
-def _chunk(args: tuple[str, int, int]) -> Chunk:
-    key, start, stop = args
+def _engine(name: str):  # noqa: ANN202
+    """`simulate(seed, pick)` del motor elegido (`c` o `python`)."""
+    if name == "c":
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import picar_rapido
+
+        return picar_rapido.simulate
+    return lambda seed, key: simulate_python(seed, key, record=False)
+
+
+def _chunk(args: tuple[str, int, int, str]) -> Chunk:
+    key, start, stop, engine = args
+    simulate = _engine(engine)
     n = stop - start
     counts = np.zeros((n, len(MINERALS)), dtype=np.uint16)
     dragon = np.zeros(n, dtype=bool)
@@ -74,7 +89,7 @@ def _chunk(args: tuple[str, int, int]) -> Chunk:
     ticks = np.zeros(n, dtype=np.uint32)
     mult = np.zeros(n, dtype=np.int64)
     for i, seed in enumerate(range(start, stop)):
-        run = simulate(seed, key, record=False)
+        run = simulate(seed, key)
         for j, mineral in enumerate(MINERALS):
             counts[i, j] = run.broken.get(mineral, 0)
         dragon[i], rows[i], ticks[i] = run.dragon, run.max_row, run.ticks
@@ -82,7 +97,9 @@ def _chunk(args: tuple[str, int, int]) -> Chunk:
     return start, counts, dragon, rows, ticks, mult
 
 
-def library(key: str, seeds: int, table: Path, reuse: bool, procs: int) -> dict[str, np.ndarray]:
+def library(
+    key: str, seeds: int, table: Path, reuse: bool, procs: int, engine: str
+) -> dict[str, np.ndarray]:
     """La tabla de la biblioteca de un pico (la simula o la lee de `table`)."""
     path = table / f"{key}.npz"
     if reuse and path.exists():
@@ -96,7 +113,7 @@ def library(key: str, seeds: int, table: Path, reuse: bool, procs: int) -> dict[
     rows = np.zeros(seeds, dtype=np.uint16)
     ticks = np.zeros(seeds, dtype=np.uint32)
     mult = np.zeros(seeds, dtype=np.int64)
-    jobs = [(key, s, min(seeds, s + CHUNK)) for s in range(0, seeds, CHUNK)]
+    jobs = [(key, s, min(seeds, s + CHUNK), engine) for s in range(0, seeds, CHUNK)]
     start = time.perf_counter()
     done = 0
     with Pool(procs) as pool:
@@ -203,13 +220,18 @@ def stats(key: str, data: dict[str, np.ndarray], values: dict[str, int]) -> dict
     }
 
 
+def _es(text: str) -> str:
+    """Un número con los separadores en español: 1.000.000 y 99,5 %."""
+    return text.replace(",", "\0").replace(".", ",").replace("\0", ".")
+
+
 def report(result: dict[str, dict], seeds: int, elapsed: float) -> str:
     lines = [
         "# Calibración del juego del pico (`picar`)",
         "",
         f"Sacada con `docs/calibrar_picar.py` el {date.today():%d/%m/%Y}, con una biblioteca "
-        f"de {seeds:,} semillas por pico ({elapsed / 60:.0f} min). El RTP es exacto: es la "
-        "media de los premios de todas las semillas de la biblioteca, que es de donde sale "
+        f"de {_es(f'{seeds:,}')} semillas por pico ({elapsed / 60:.0f} min). El RTP es exacto: "
+        "es la media de los premios de todas las semillas de la biblioteca, que es de donde sale "
         "cada tirada. Los multiplicadores son el premio entre el coste, ya redondeado a Y$.",
         "",
         "| Pico | Coste | Tope | RTP | Gana algo | ×10 o más | Nada "
@@ -219,9 +241,11 @@ def report(result: dict[str, dict], seeds: int, elapsed: float) -> str:
     for key, item in result.items():
         s, offer = item["stats"], OFFERS[key]
         lines.append(
-            f"| {offer.name} | {offer.cost:,} | ×{offer.top:,} | {float(item['rtp']):.4%} | "
-            f"{s['win']:.1%} | {s['x10']:.2%} | {s['zero']:.1%} | ×{s['p50']:.2f} | "
-            f"×{s['p90']:.2f} | ×{s['p99']:.1f} | ×{s['p999']:.1f} | ×{s['max']:.0f} |"
+            _es(
+                f"| {offer.name} | {offer.cost:,} | ×{offer.top:,} | {float(item['rtp']):.4%} | "
+                f"{s['win']:.1%} | {s['x10']:.2%} | {s['zero']:.1%} | ×{s['p50']:.2f} | "
+                f"×{s['p90']:.2f} | ×{s['p99']:.1f} | ×{s['p999']:.1f} | ×{s['max']:.0f} |"
+            )
         )
     lines += [
         "",
@@ -232,8 +256,11 @@ def report(result: dict[str, dict], seeds: int, elapsed: float) -> str:
         s = item["stats"]
         dragon = f"1 de cada {1 / s['dragon']:,.0f}" if s["dragon"] else "nunca"
         lines.append(
-            f"| {OFFERS[key].name} | {s['rows']:.0f} | {s['nether']:.2%} | {s['end']:.3%} | "
-            f"{dragon} | {s['dragon_rtp']:.2%} | {s['seconds']:.0f} s | {s['seconds_p90']:.0f} s |"
+            _es(
+                f"| {OFFERS[key].name} | {s['rows']:.0f} | {s['nether']:.2%} | {s['end']:.3%} | "
+                f"{dragon} | {s['dragon_rtp']:.2%} | {s['seconds']:.0f} s | "
+                f"{s['seconds_p90']:.0f} s |"
+            )
         )
     lines += ["", "Lo que suma cada mineral, en diezmilésimas del coste (10.000 es ×1):", ""]
     lines.append("| Pico | " + " | ".join(MINERALS) + " |")
@@ -251,13 +278,30 @@ def main() -> None:
     parser.add_argument("--tabla", type=Path, required=True)
     parser.add_argument("--reusar", action="store_true")
     parser.add_argument("--procesos", type=int, default=os.cpu_count() or 1)
+    parser.add_argument("--motor", choices=("auto", "c", "python"), default="auto")
     args = parser.parse_args()
+    engine = args.motor
+    if engine != "python":
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import picar_rapido
+
+        try:
+            picar_rapido.build()
+        except RuntimeError as error:
+            if engine == "c":
+                raise SystemExit(str(error)) from error
+            print(f"{error} Se calibra con el motor de Python (mucho más lento).", flush=True)
+            engine = "python"
+        else:
+            print("Comprobando que el motor en C juega igual que el de Python…", flush=True)
+            picar_rapido.check(200)
+            engine = "c"
 
     start = time.perf_counter()
     result: dict[str, dict] = {}
     for key in OFFERS:
         print(f"{OFFERS[key].name}:", flush=True)
-        data = library(key, args.semillas, args.tabla, args.reusar, args.procesos)
+        data = library(key, args.semillas, args.tabla, args.reusar, args.procesos, engine)
         values, rtp = solve(key, data)
         result[key] = {"values": values, "rtp": rtp, "stats": stats(key, data, values)}
         print(f"  RTP {float(rtp):.5%}  valores {values}", flush=True)

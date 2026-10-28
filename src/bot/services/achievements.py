@@ -21559,7 +21559,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "picar_dragon_1", "Dracarys al revés", "Mata al dragón del fondo del End.", M),
     ])  # fmt: skip
     a += _tiers("picar", "picar_nether_iron", [
-        (1, "picar_nether_iron", "Hierro candente", "Llega al Nether con el pico de hierro.", L),
+        (1, "picar_nether_iron", "Hierro candente", "Llega al Nether con el pico de hierro.", M),
     ])  # fmt: skip
     a += _tiers("picar", "picar_end_diamond", [
         (1, "picar_end_diamond", "Un diamante es para el fin",
