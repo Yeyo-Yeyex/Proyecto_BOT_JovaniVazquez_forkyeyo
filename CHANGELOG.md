@@ -8,6 +8,10 @@ criterio.
 
 ## 9.x
 
+### 9.33.1 · 2026-10-28
+
+- Hotfix: arreglo menor de la 9.33.0
+
 ### 9.33.0 · 2026-10-28
 
 - Pico: `picar`, un pico que cae rompiendo bloques hasta el dragón
