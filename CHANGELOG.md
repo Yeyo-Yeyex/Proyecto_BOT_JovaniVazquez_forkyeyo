@@ -18,6 +18,7 @@ criterio.
 - Logros: 8 nuevos en ⛏️ Pico (bloque misterioso, ×10 del misterioso, multiplicadores en una tirada, premios menores que el precio); los de capas se ajustan al mundo nuevo y las capas −300, −404 y −666, que ya no existen, pasan a 300 golpes y a cobrar 404 y 666 Y$
 - Interno: el calibrador del pico ya no se para antes de tiempo con los picos baratos
 - Administración: `dinero` también quita yapdollars con `quitar` (si no le llega, deja el saldo a cero)
+- Administración: `repicar` va solo con punto (`.repicar`), sin comando de barra
 
 ### 9.33.1 · 2026-10-28
 
