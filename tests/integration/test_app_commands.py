@@ -105,6 +105,8 @@ ADMIN_COMMANDS = {
 
 # Comandos de imagen: solo de texto, para reservar los slash commands al resto.
 TEXT_ONLY_COMMANDS = {"magik", "memes"}
+# De administración solo de texto: tampoco gastan slash commands.
+ADMIN_TEXT_ONLY_COMMANDS = {"repicar"}
 
 # Utilidades de mantenimiento para unos pocos IDs: no salen en la ayuda.
 HIDDEN_COMMANDS = {"reinicio", "bloquear", "crear", "dinero"}
@@ -130,8 +132,17 @@ def test_comandos_slash_y_texto_comparten_nombres_cortos_y_sin_alias(tmp_path: P
             text_names = {c.name for c in client.commands}
             effects = {c.name for c in client.commands if "help_group" in c.extras}
 
-            assert slash_names == EXPECTED_COMMANDS | ADMIN_COMMANDS | HIDDEN_COMMANDS
-            assert text_names == slash_names | TEXT_ONLY_COMMANDS | set(EFFECTS) | SECRET_COMMANDS
+            assert (
+                slash_names
+                == (EXPECTED_COMMANDS | ADMIN_COMMANDS | HIDDEN_COMMANDS) - ADMIN_TEXT_ONLY_COMMANDS
+            )
+            assert text_names == (
+                slash_names
+                | TEXT_ONLY_COMMANDS
+                | ADMIN_TEXT_ONLY_COMMANDS
+                | set(EFFECTS)
+                | SECRET_COMMANDS
+            )
             # Los efectos conservan el nombre de Dank Memer (algunos de más de
             # 8 letras), no ocupan slash commands y la ayuda los lista en bloque.
             assert effects == set(EFFECTS)
