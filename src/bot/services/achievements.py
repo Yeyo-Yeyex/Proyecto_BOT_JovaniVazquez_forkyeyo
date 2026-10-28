@@ -21588,7 +21588,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Rompe 500 diamantes en el pozo.", L),
     ])  # fmt: skip
     a += _tiers("picar", "picar_diamonds_run_max", [
-        (3, "picar_diamonds_run_3", "Trío de ases", "Rompe 3 diamantes en una tirada.", C),
+        (3, "picar_diamonds_run_3", "Tres en raya de diamantes",
+         "Rompe 3 diamantes en una tirada.", C),
         (10, "picar_diamonds_run_10", "Escaparate de Tiffany",
          "Rompe 10 diamantes en una tirada.", M),
     ])  # fmt: skip
@@ -21607,12 +21608,12 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Haz explotar 1.000 TNT en el pozo.", R),
     ])  # fmt: skip
     a += _tiers("picar", "picar_chain_max", [
-        (3, "picar_chain_3", "Efecto dominó", "Encadena 3 TNT en una explosión.", C),
+        (3, "picar_chain_3", "Traca final", "Encadena 3 TNT en una explosión.", C),
         (5, "picar_chain_5", "Fallas subterráneas", "Encadena 5 TNT en una explosión.", E),
     ])  # fmt: skip
     a += _tiers("picar", "picar_chests", [
         (1, "picar_chests_1", "El arcón de la abuela", "Abre un cofre en el pozo.", C),
-        (50, "picar_chests_50", "Arca de Noé", "Abre 50 cofres en el pozo.", C),
+        (50, "picar_chests_50", "Baúl de los recuerdos", "Abre 50 cofres en el pozo.", C),
         (500, "picar_chests_500", "Ali Babá y los cuarenta cofres",
          "Abre 500 cofres en el pozo.", R),
     ])  # fmt: skip
@@ -21622,7 +21623,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("picar", "picar_crafts", [
         (1, "picar_crafts_1", "Hágalo usted mismo", "Rompe una mesa de crafteo.", C),
-        (25, "picar_crafts_25", "Bricomanía", "Rompe 25 mesas de crafteo.", C),
+        (25, "picar_crafts_25", "Carpintería metálica", "Rompe 25 mesas de crafteo.", C),
         (250, "picar_crafts_250", "Ebanista del inframundo", "Rompe 250 mesas de crafteo.", E),
     ])  # fmt: skip
     a += _tiers("picar", "picar_mults", [
@@ -21645,7 +21646,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (20_000, "picar_x200", "Vale un Potosí", "Cobra 200 veces el precio del pico.", M),
     ])  # fmt: skip
     a += _tiers("picar", "picar_win_max", [
-        (10_000, "picar_win_10k", "Pico de oro", "Gana 10.000 Y$ netos en una tirada.", R),
+        (10_000, "picar_win_10k", "Picotazo de oro", "Gana 10.000 Y$ netos en una tirada.", R),
         (100_000, "picar_win_100k", "Mina de oro", "Gana 100.000 Y$ netos en una tirada.", M),
         (1_000_000, "picar_win_1m", "Bonanza", "Gana 1.000.000 Y$ netos en una tirada.", M),
     ], unit="money")  # fmt: skip

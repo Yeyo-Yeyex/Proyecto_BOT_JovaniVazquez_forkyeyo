@@ -47,6 +47,7 @@ EXPECTED_COMMANDS = {
     "poker",
     "dados",
     "pachinko",
+    "picar",
     "loteria",
     "babel",
     "hongkong",
@@ -99,6 +100,7 @@ ADMIN_COMMANDS = {
     "tajo",
     "robuso",
     "informe",
+    "repicar",
 }
 
 # Comandos de imagen: solo de texto, para reservar los slash commands al resto.
