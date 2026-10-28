@@ -19,7 +19,9 @@ depender de él (ver `docs/plan-picar.md`), y los premios salen de la calibraci�
 
 Las capas (`Layer`) fijan qué sale en cada franja de filas, cuántas cuevas hay y
 cuántos barrancos. Las cuevas son huecos en forma de elipse dentro de un trozo y dan
-ritmo a la caída. Los barrancos (`Ravine`) son grietas de 1 o 2 columnas y de 20 a 60
+ritmo a la caída. Los bloques de multiplicador (oro ×2, diamante ×3, netherite ×5 y la
+baliza ×10, `Kind.MULT`) multiplican todo el premio y se multiplican entre sí: son lo que
+da colas largas a los premios. Los barrancos (`Ravine`) son grietas de 1 o 2 columnas y de 20 a 60
 filas por las que el pico cae libre: junto con los cofres del tesoro y las mesas de
 crafteo, son lo que de vez en cuando deja a un pico bajar mucho más de lo normal (las
 colas largas de las metas de profundidad, `docs/plan-picar.md`). Un barranco cruza
@@ -63,6 +65,8 @@ class Kind(Enum):
     CHEST = "chest"
     #: Mesa de crafteo: le devuelve al pico toda su vida inicial.
     CRAFT = "craft"
+    #: Multiplica todo el premio de la partida por `Block.mult`.
+    MULT = "mult"
 
 
 class Dimension(Enum):
@@ -88,6 +92,8 @@ class Block:
     #: Solo cofres: vida que dan, en tanto por ciento de la vida inicial del pico
     #: (un número al azar entre los dos, ambos incluidos).
     life: tuple[int, int] = (0, 0)
+    #: Solo bloques de multiplicador: por cuánto multiplican el premio.
+    mult: int = 1
 
 
 BLOCKS: tuple[Block, ...] = (
@@ -104,6 +110,10 @@ BLOCKS: tuple[Block, ...] = (
     Block("chest", "Cofre", 1, 3, kind=Kind.CHEST, life=(15, 40)),
     Block("treasure", "Cofre del tesoro", 1, 4, kind=Kind.CHEST, life=(80, 120)),
     Block("crafting_table", "Mesa de crafteo", 1, 3, kind=Kind.CRAFT),
+    Block("gold_block", "Bloque de oro", 2, 6, kind=Kind.MULT, mult=2),
+    Block("diamond_block", "Bloque de diamante", 3, 8, kind=Kind.MULT, mult=3),
+    Block("netherite_block", "Bloque de netherite", 4, 10, kind=Kind.MULT, mult=5),
+    Block("beacon", "Baliza", 2, 6, kind=Kind.MULT, mult=10),
     # Profundidad.
     Block("deepslate", "Pizarra profunda", 3, 7),
     Block("diamond", "Diamante", 5, 10, mineral=True),
@@ -169,6 +179,7 @@ LAYERS: tuple[Layer, ...] = (
             ("chest", 8),
             ("treasure", 2),
             ("crafting_table", 4),
+            ("gold_block", 3),
         ),
         caves=(1, 3),
         ravine=300,
@@ -190,6 +201,8 @@ LAYERS: tuple[Layer, ...] = (
             ("chest", 10),
             ("treasure", 2),
             ("crafting_table", 3),
+            ("gold_block", 2),
+            ("diamond_block", 2),
         ),
         caves=(1, 2),
         ravine=300,
@@ -200,26 +213,30 @@ LAYERS: tuple[Layer, ...] = (
         250,
         Dimension.NETHER,
         (
-            ("netherrack", 650),
-            ("blackstone", 150),
+            ("netherrack", 550),
+            ("blackstone", 300),
             ("quartz", 80),
             ("nether_gold", 60),
             ("ancient_debris", 6),
-            ("tnt", 15),
-            ("chest", 3),
-            ("treasure", 1),
+            ("tnt", 10),
+            ("netherite_block", 2),
         ),
-        caves=(2, 3),
-        ravine=250,
+        caves=(1, 2),
+        ravine=120,
     ),
     Layer(
         "end",
         "End",
         500,
         Dimension.END,
-        (("end_stone", 900), ("obsidian", 40), ("end_crystal", 8), ("shulker", 4)),
-        caves=(1, 2),
-        ravine=150,
+        (
+            ("end_stone", 880),
+            ("obsidian", 80),
+            ("end_crystal", 8),
+            ("shulker", 2),
+            ("beacon", 1),
+        ),
+        caves=(0, 1),
     ),
 )
 

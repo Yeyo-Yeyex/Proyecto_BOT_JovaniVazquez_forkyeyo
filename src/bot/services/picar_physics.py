@@ -21,8 +21,9 @@ fijo `DT`. Las paredes de los lados no se rompen. Contra un bloque:
   gasta vida.
 - Un cofre roto le devuelve al pico una parte de su vida inicial (`Block.life`: entre
   el 15 y el 40 % el normal, entre el 80 y el 120 % el del tesoro). Una mesa de crafteo
-  rota le devuelve toda la vida inicial; si ya tenía más, se queda como estaba. Los
-  cofres y las mesas que revienta una TNT cuentan igual.
+  rota le devuelve toda la vida inicial; si ya tenía más, se queda como estaba. Un bloque
+  de multiplicador roto multiplica el premio de la partida (`Run.multiplier`). Los
+  cofres, las mesas y los multiplicadores que revienta una TNT cuentan igual.
 
 La partida acaba cuando la vida llega a 0 o cuando el pico llega a la fila del dragón.
 
@@ -100,7 +101,7 @@ WALL_BOUNCE = 0.6
 #: Lo que conserva la componente tangencial en cada rebote.
 FRICTION = 0.85
 #: Ruido tangencial de cada rebote, en proporción a la velocidad del golpe.
-NOISE = 0.35
+NOISE = 1.4
 #: Una normal con la componente vertical por debajo de esto (hacia arriba) es suelo.
 FLOOR_NORMAL = -0.5
 #: Lo que conserva el pico de la velocidad hacia un bloque que rompe.
@@ -134,15 +135,18 @@ class Pick:
     bounce: float
 
 
+#: Vidas ajustadas el 28/10/2026 (`docs/plan-picar.md`, «Calibración»): los picos
+#: pequeños por lo que dura una partida (madera ~8 s, oro ~10, piedra ~13, hierro ~18) y
+#: los grandes por cuántos llegan al Nether (diamante ~25 %, netherite ~60 %).
 PICKS: dict[str, Pick] = {
     pick.key: pick
     for pick in (
-        Pick("wood", "Madera", 40, 1, 0.45),
-        Pick("stone", "Piedra", 70, 2, 0.45),
-        Pick("iron", "Hierro", 120, 3, 0.4),
-        Pick("gold", "Oro", 30, 4, 0.5),
-        Pick("diamond", "Diamante", 250, 4, 0.4),
-        Pick("netherite", "Netherite", 450, 5, 0.35),
+        Pick("wood", "Madera", 130, 1, 0.45),
+        Pick("stone", "Piedra", 210, 2, 0.45),
+        Pick("iron", "Hierro", 235, 3, 0.4),
+        Pick("gold", "Oro", 145, 4, 0.5),
+        Pick("diamond", "Diamante", 435, 4, 0.4),
+        Pick("netherite", "Netherite", 590, 5, 0.35),
     )
 }
 
@@ -154,7 +158,8 @@ class Event:
     `kind` es uno de: `hit` (golpe a un bloque que aguanta), `break` (golpe que lo
     rompe), `blast` (bloque reventado por una TNT), `explode` (centro de una TNT),
     `chest` (vida que da un cofre, en `amount`), `craft` (vida que devuelve una mesa
-    de crafteo, en `amount`), `layer` (el pico entra en una capa
+    de crafteo, en `amount`), `mult` (bloque de multiplicador, por cuánto multiplica en
+    `amount`), `layer` (el pico entra en una capa
     nueva, en `layer`), `nudge` (empujón por atasco), `dragon` y `death`.
     """
 
@@ -194,6 +199,8 @@ class Run:
     explosions: int = 0
     #: TNT de la cadena más larga (una TNT sola es una cadena de 1).
     longest_chain: int = 0
+    #: Producto de los bloques de multiplicador rotos.
+    multiplier: int = 1
     nudges: int = 0
     #: Ticks en que no salió de los bloques y volvió a donde estaba (debería ser 0).
     stalls: int = 0
@@ -220,6 +227,7 @@ class Run:
             self.max_row,
             self.dragon,
             self.hits,
+            self.multiplier,
             [repr(v) for v in self.final],
         ]
         return hashlib.sha256(json.dumps(data).encode()).hexdigest()
@@ -258,7 +266,8 @@ def params_hash() -> str:
             for p in sorted(PICKS.values(), key=lambda p: p.key)
         ],
         "blocks": [
-            [b.key, b.hardness, b.resistance, b.mineral, b.kind.value, list(b.life)] for b in BLOCKS
+            [b.key, b.hardness, b.resistance, b.mineral, b.kind.value, list(b.life), b.mult]
+            for b in BLOCKS
         ],
         "layers": [{**asdict(layer), "dimension": layer.dimension.value} for layer in LAYERS],
         "world": [COLUMNS, DRAGON_ROW, CHUNK, RAVINE_REGION, list(RAVINE_ROWS)],
@@ -299,9 +308,9 @@ def _explode(
 ) -> tuple[list[tuple[int, int, int]], list[tuple[int, int, str]]]:
     """Revienta una TNT ya quitada del mundo y las que pille, en cadena.
 
-    Devuelve los centros con su radio (para empujar al pico) y los cofres reventados
-    (fila, columna, clave), cuya vida suma quien llama. Los bloques reventados cuentan
-    como rotos y no gastan vida del pico.
+    Devuelve los centros con su radio (para empujar al pico) y los bloques reventados
+    que hacen algo (cofres, mesas y multiplicadores: fila, columna, bloque), que aplica
+    quien llama. Los bloques reventados cuentan como rotos y no gastan vida del pico.
     """
     centres: list[tuple[int, int, int]] = []
     rewards: list[tuple[int, int, Block]] = []
@@ -435,6 +444,11 @@ def simulate(seed: int, pick: Pick | str, *, record: bool = True) -> Run:
                 elif block.kind is not Kind.PLAIN:
                     rewards = [(r, c, block)]
                 for cr, cc, prize in rewards:
+                    if prize.kind is Kind.MULT:
+                        run.multiplier *= prize.mult
+                        if record:
+                            events.append(Event(tick, "mult", cr, cc, prize.key, prize.mult))
+                        continue
                     gained = reward(prize, life)
                     life += gained
                     run.life_gained += gained

@@ -1,0 +1,584 @@
+<!doctype html>
+<!--
+Escena del juego del pico (picar): el pico cae por el mundo de bloques. La pinta Node
+con Skia (assets/escena_node.cjs) y, si no hay Node, un Chromium sin ventana (ver
+bot/services/picar_scene.py).
+
+No decide nada: la partida ya está jugada (bot/services/picar_physics.simulate) y
+Python le pasa el trozo de mundo que hace falta y, fotograma a fotograma, dónde están la
+cámara y el pico, qué efectos se ven y qué dice el marcador. Funciones que llama Python:
+
+- loadFonts()                 espera a las fuentes (canvas no las carga solo).
+- setup(meta)                 el trozo de mundo: casillas, cuándo se rompe cada una y
+                              las grietas, los fondos de cada fila y las texturas.
+- renderFrames(states, first) dibuja los fotogramas y devuelve cada uno entero (PNG en
+                              Chromium, píxeles crudos en Node). Cada fotograma se pinta
+                              solo a partir de su estado y de la meta: nada pasa de un
+                              fotograma al siguiente, así que se puede repartir entre
+                              procesos. El azar de los efectos sale de rng(semilla), con
+                              la semilla sacada del propio efecto o de la casilla, y el
+                              ambiente (brasas, estrellas, destellos) del número de
+                              fotograma: sin Math.random.
+
+Cómo se ve, de atrás adelante:
+
+1. Mundo. Cada bloque con su textura (16 px pintados a 32, sin suavizar) y relieve: luz
+   en la cara de arriba y sombra en las de los lados y abajo cuando dan al aire. Los
+   huecos enseñan la pared de la capa, oscurecida y con sombra junto a los bloques que
+   los rodean (oclusión ambiental). Cada capa tiñe un poco lo suyo: la profundidad, de
+   azul frío; el End es vacío con estrellas que titilan. Arriba, el cielo con sol y nubes.
+   Todo esto solo cambia cuando se rompe un bloque, así que apenas pesa en el GIF.
+2. Ambiente: brasas que suben en el Nether y destellos en los minerales.
+3. Efectos: trozos de bloque, chispas de cada golpe, explosiones con humo, ráfagas de
+   cofres, mesas y multiplicadores.
+4. El pico, con estela cuando va deprisa y brillo de encantamiento (diamante y netherite).
+5. Textos flotantes, marcador (vida por segmentos, premio, multiplicador, capa) y el
+   medidor de profundidad del borde derecho, con las dimensiones y el dragón al fondo.
+6. Rótulos en cinta (cambio de dimensión) y la tarjeta del final.
+
+Coordenadas de mundo en píxeles: la columna c empieza en c * B y la fila r en r * B, con
+B = 32. Sin emojis: el Chromium del Docker no trae su fuente.
+-->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: "Luckiest"; src: url("../botes/fonts/luckiest-guy.woff"); }
+  @font-face { font-family: "Montserrat"; src: url("../memes/fonts/MontserratBold.ttf"); font-weight: 700; }
+  html, body { margin: 0; padding: 0; background: transparent; }
+</style>
+</head>
+<body>
+<script>
+"use strict";
+window.exportFrame ??= (c) => c.toDataURL("image/png");
+const B = 32, T = 16, COLS = 9;
+const W = COLS * B, H = 512;
+const HUD = 40;
+const GAUGE_X = W - 9, GAUGE_TOP = HUD + 10, GAUGE_BOTTOM = H - 12;
+
+const out = document.createElement("canvas"); out.width = W; out.height = H;
+const g = out.getContext("2d");
+const tool = document.createElement("canvas"); tool.width = B; tool.height = B;
+const tg = tool.getContext("2d");
+
+let META = null;
+let ATLAS = null, ATLAS_KEY = null;
+let DRAGON = null, DRAGON_KEY = null;
+let CRACKS = new Map();            // r * COLS + c -> [[tick, stage], ...] en orden
+let SHINY = new Set();             // casillas del atlas que destellan (minerales)
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function rng(seed) {
+  return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+const hash = (a, b) => rng(a * 73856093 ^ b * 19349663)();
+
+function image(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+async function loadFonts() {
+  await document.fonts.load('30px "Luckiest"');
+  await document.fonts.load('700 14px "Montserrat"');
+}
+
+async function setup(meta) {
+  META = meta;
+  // Las imágenes solo se decodifican si cambian: la meta viaja en cada tramo.
+  if (ATLAS_KEY !== meta.atlasKey) {
+    ATLAS = await image(meta.atlas); DRAGON = await image(meta.dragon); ATLAS_KEY = meta.atlasKey;
+  }
+  CRACKS = new Map();
+  for (const [r, c, tick, stage] of meta.cracks) {
+    const key = r * COLS + c;
+    if (!CRACKS.has(key)) CRACKS.set(key, []);
+    CRACKS.get(key).push([tick, stage]);
+  }
+  SHINY = new Set(meta.shiny);
+  g.imageSmoothingEnabled = false;
+}
+
+function tile(index, x, y, size = B, ctx = g) {
+  ctx.drawImage(ATLAS, index * T, 0, T, T, x, y, size, size);
+}
+
+// -- Mundo ----------------------------------------------------------------------------------
+
+function crackAt(r, c, t) {
+  const list = CRACKS.get(r * COLS + c);
+  if (!list) return -1;
+  let stage = -1;
+  for (const [tick, s] of list) { if (tick <= t) stage = s; else break; }
+  return stage;
+}
+
+function solid(row, c, t) {
+  if (c < 0 || c >= COLS) return true;            // las paredes de los lados
+  if (row < 0 || row >= META.dragonRow) return false;
+  const i = row - META.top;
+  const cells = META.grid[i];
+  if (!cells) return true;
+  return cells[c] >= 0 && (META.gone[i][c] === 0 || META.gone[i][c] > t);
+}
+
+function layerOf(row) {
+  let key = META.layers[0][1];
+  for (const [top, k] of META.layers) if (row >= top) key = k;
+  return key;
+}
+
+function drawSky(s) {
+  const top = -s.cam;                               // y de pantalla de la fila 0
+  if (top <= 0) return;
+  const grad = g.createLinearGradient(0, top - 220, 0, top);
+  grad.addColorStop(0, "#3d7fd6"); grad.addColorStop(0.7, "#8cc4f5"); grad.addColorStop(1, "#cfe9ff");
+  g.fillStyle = grad; g.fillRect(0, 0, W, top);
+  // Sol y nubes de pixel art, quietos.
+  const sx = 56, sy = top - 150;
+  g.fillStyle = "rgba(255,244,190,0.35)"; g.fillRect(sx - 6, sy - 6, 36, 36);
+  g.fillStyle = "#fff3a6"; g.fillRect(sx, sy, 24, 24);
+  g.fillStyle = "#ffe066"; g.fillRect(sx + 4, sy + 4, 16, 16);
+  for (const [cx, cy, w] of [[150, 120, 64], [214, 74, 48], [20, 64, 40]]) {
+    const y = top - cy;
+    g.fillStyle = "#ffffff"; g.fillRect(cx, y, w, 12); g.fillRect(cx + 8, y - 8, w - 24, 8);
+    g.fillStyle = "#dcecff"; g.fillRect(cx, y + 12, w, 4);
+  }
+}
+
+function drawVoid(row, sy, s) {
+  // El vacío del End: negro morado con estrellas fijas por fila; algunas titilan.
+  g.fillStyle = "#0b0712"; g.fillRect(0, sy, W, B);
+  const r = rng(row * 7919 + 17);
+  for (let i = 0; i < 6; i++) {
+    const x = Math.floor(r() * W), y = sy + Math.floor(r() * B), kind = r(), phase = Math.floor(r() * 40);
+    const twinkle = (s.frame + phase) % 40 < 4;
+    g.fillStyle = kind < 0.4 ? "#e4dbff" : kind < 0.75 ? "#8b7bb5" : "#5a4a80";
+    g.fillRect(x, y, twinkle ? 3 : 2, twinkle ? 3 : 2);
+  }
+}
+
+function shadeBlock(row, c, x, sy, t) {
+  // Relieve: luz arriba y sombra abajo y a los lados donde el bloque da al aire.
+  if (!solid(row - 1, c, t)) { g.fillStyle = "rgba(255,255,255,0.22)"; g.fillRect(x, sy, B, 2); }
+  if (!solid(row + 1, c, t)) { g.fillStyle = "rgba(0,0,0,0.42)"; g.fillRect(x, sy + B - 4, B, 4); }
+  if (!solid(row, c - 1, t)) { g.fillStyle = "rgba(255,255,255,0.10)"; g.fillRect(x, sy, 2, B); }
+  if (!solid(row, c + 1, t)) { g.fillStyle = "rgba(0,0,0,0.28)"; g.fillRect(x + B - 3, sy, 3, B); }
+}
+
+function shadeHole(row, c, x, sy, t) {
+  // Oclusión ambiental: el hueco se oscurece junto a los bloques que lo rodean.
+  if (solid(row - 1, c, t)) {
+    const grad = g.createLinearGradient(0, sy, 0, sy + 14);
+    grad.addColorStop(0, "rgba(0,0,0,0.55)"); grad.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = grad; g.fillRect(x, sy, B, 14);
+  }
+  if (solid(row, c - 1, t)) {
+    const grad = g.createLinearGradient(x, 0, x + 10, 0);
+    grad.addColorStop(0, "rgba(0,0,0,0.35)"); grad.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = grad; g.fillRect(x, sy, 10, B);
+  }
+  if (solid(row, c + 1, t)) {
+    const grad = g.createLinearGradient(x + B, 0, x + B - 10, 0);
+    grad.addColorStop(0, "rgba(0,0,0,0.35)"); grad.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = grad; g.fillRect(x + B - 10, sy, 10, B);
+  }
+}
+
+const TINT = {
+  soil: null,
+  caves: "rgba(10,10,20,0.06)",
+  deep: "rgba(20,32,70,0.20)",
+  nether: "rgba(90,10,0,0.08)",
+  end: null,
+};
+
+function drawWorld(s) {
+  const m = META;
+  drawSky(s);
+  const first = Math.floor(s.cam / B), last = Math.floor((s.cam + H - 1) / B);
+  for (let row = Math.max(first, 0); row <= last; row++) {
+    const sy = row * B - s.cam;
+    if (row >= m.dragonRow) { drawVoid(row, sy, s); continue; }
+    const i = row - m.top;
+    const cells = m.grid[i], gone = m.gone[i], bg = m.bg[i];
+    if (!cells) { g.fillStyle = "#000"; g.fillRect(0, sy, W, B); continue; }
+    for (let c = 0; c < COLS; c++) {
+      const x = c * B;
+      if (solid(row, c, s.t)) {
+        tile(cells[c], x, sy);
+        const stage = crackAt(row, c, s.t);
+        if (stage >= 0) tile(m.tiles["crack_" + stage], x, sy);
+        shadeBlock(row, c, x, sy, s.t);
+        if (SHINY.has(cells[c])) {
+          // Destello de los minerales: una crucecita blanca de vez en cuando.
+          const phase = Math.floor(hash(row, c) * 60);
+          const k = (s.frame + phase) % 60;
+          if (k < 4) {
+            const px = x + 6 + Math.floor(hash(c, row) * 20), py = sy + 6 + Math.floor(hash(row + 7, c) * 20);
+            const size = k === 1 || k === 2 ? 3 : 2;
+            g.fillStyle = "#ffffff";
+            g.fillRect(px - size, py, size * 2 + 1, 1); g.fillRect(px, py - size, 1, size * 2 + 1);
+          }
+        }
+      } else if (bg === -2) {
+        drawVoid(row, sy, s);
+      } else {
+        tile(bg, x, sy);
+        g.fillStyle = "rgba(0,0,0,0.52)"; g.fillRect(x, sy, B, B);
+        shadeHole(row, c, x, sy, s.t);
+      }
+    }
+    const tint = TINT[layerOf(row)];
+    if (tint) { g.fillStyle = tint; g.fillRect(0, sy, W, B); }
+    if (row > 4 && row < 250) {
+      // Cuanto más hondo, más oscuro.
+      g.fillStyle = `rgba(0,0,0,${Math.min(0.22, row / 900).toFixed(3)})`; g.fillRect(0, sy, W, B);
+    }
+  }
+  if (last >= m.dragonRow) drawDragon(s);
+}
+
+function drawAmbient(s) {
+  // Brasas que suben en el Nether (en pantalla, sin estado: salen del número de fotograma).
+  const mid = layerOf(Math.floor((s.cam + H / 2) / B));
+  if (mid !== "nether") return;
+  for (let i = 0; i < 12; i++) {
+    const speed = 1.5 + hash(i, 3) * 2.5;
+    const x = Math.floor(hash(i, 1) * W + Math.sin((s.frame + i * 13) / 9) * 6);
+    const y = H - ((s.frame * speed + hash(i, 2) * (H + 40)) % (H + 40)) + 20;
+    g.fillStyle = i % 3 ? "#ff9b3d" : "#ffd36b";
+    g.fillRect(x, Math.floor(y), 2, 2);
+  }
+}
+
+// -- Dragón ---------------------------------------------------------------------------------
+
+function drawDragon(s) {
+  const k = 4, w = DRAGON.width * k, h = DRAGON.height * k;
+  const y0 = META.dragonRow * B - s.cam + 6;
+  const bob = Math.round(Math.sin(s.t / 9) * 2) * 2;
+  const cx = W / 2, cy = y0 + h * 0.4 + bob;
+  // Aura morada detrás.
+  const aura = g.createRadialGradient(cx, cy, 10, cx, cy, w * 0.6);
+  aura.addColorStop(0, "rgba(160,70,255,0.35)"); aura.addColorStop(1, "rgba(160,70,255,0)");
+  g.fillStyle = aura; g.fillRect(0, y0 - 40, W, h + 80);
+  if (s.slain) {
+    // Muerte del dragón: rayos de luz que giran y el dragón que se desvanece en blanco.
+    const k2 = clamp(s.slain / 30, 0, 1);
+    g.save();
+    g.translate(cx, cy);
+    for (let i = 0; i < 12; i++) {
+      const a = i * Math.PI / 6 + s.slain * 0.05;
+      const len = 60 + 260 * k2;
+      g.fillStyle = `rgba(255,240,255,${(0.55 * (1 - k2 * 0.6)).toFixed(3)})`;
+      g.beginPath(); g.moveTo(0, 0);
+      g.lineTo(Math.cos(a - 0.07) * len, Math.sin(a - 0.07) * len);
+      g.lineTo(Math.cos(a + 0.07) * len, Math.sin(a + 0.07) * len);
+      g.closePath(); g.fill();
+    }
+    g.restore();
+    g.save(); g.globalAlpha = clamp(1 - k2, 0, 1);
+  }
+  g.drawImage(DRAGON, Math.round(cx - w / 2), y0 + bob, w, h);
+  if (s.slain) g.restore();
+}
+
+// -- Efectos --------------------------------------------------------------------------------
+
+function drawDebris(x, y, age, index, seed) {
+  // Trozos de la textura del bloque que saltan, giran un poco y caen.
+  const r = rng(seed);
+  for (let i = 0; i < 8; i++) {
+    const vx = (r() - 0.5) * 7, vy = -2 - r() * 4, sx = Math.floor(r() * 12), sy = Math.floor(r() * 12);
+    const size = r() < 0.5 ? 6 : 8;
+    const px = x + vx * age, py = y + vy * age + 0.45 * age * age;
+    g.drawImage(ATLAS, index * T + sx, sy, 4, 4, Math.round(px - size / 2), Math.round(py - size / 2), size, size);
+  }
+}
+
+function drawSparks(x, y, age, seed) {
+  // Chispas del golpe: pocas, rápidas y amarillas; y una nube de polvo.
+  const r = rng(seed);
+  if (age < 4) {
+    for (let i = 0; i < 5; i++) {
+      const a = r() * Math.PI * 2, d = 3 + age * (3 + r() * 3);
+      g.fillStyle = r() < 0.5 ? "#fff7c2" : "#ffc94a";
+      g.fillRect(Math.round(x + Math.cos(a) * d), Math.round(y + Math.sin(a) * d), 2, 2);
+    }
+  }
+  g.fillStyle = `rgba(200,190,180,${(0.35 * (1 - age / 6)).toFixed(3)})`;
+  const puff = 3 + age * 2;
+  g.fillRect(Math.round(x - puff), Math.round(y - puff / 2), puff * 2, puff);
+}
+
+function drawBoom(x, y, age, radius, seed) {
+  const r = rng(seed);
+  const reach = (radius + 0.5) * B;
+  const k = clamp(age / 6, 0, 1);
+  g.save();
+  // Fogonazo.
+  g.globalAlpha = clamp(1 - age / 8, 0, 1);
+  const flash = g.createRadialGradient(x, y, 0, x, y, reach * (0.5 + 0.6 * k));
+  flash.addColorStop(0, "#ffffff"); flash.addColorStop(0.35, "#ffe27a"); flash.addColorStop(0.7, "#ff8a1f"); flash.addColorStop(1, "rgba(255,80,0,0)");
+  g.fillStyle = flash; g.beginPath(); g.arc(x, y, reach * (0.5 + 0.6 * k), 0, Math.PI * 2); g.fill();
+  // Humo de pixel art que se abre y se apaga.
+  g.globalAlpha = clamp(1 - age / 12, 0, 1);
+  for (let i = 0; i < 14; i++) {
+    const a = r() * Math.PI * 2, d = reach * (0.3 + r() * 0.9) * clamp(age / 8, 0, 1);
+    const grey = Math.floor(70 + r() * 90);
+    g.fillStyle = `rgb(${grey},${grey},${grey})`;
+    const size = 6 + Math.floor(r() * 4) * 2;
+    g.fillRect(Math.round(x + Math.cos(a) * d - size / 2), Math.round(y + Math.sin(a) * d - size / 2 - age), size, size);
+  }
+  g.restore();
+}
+
+function drawBurst(x, y, age, colour, seed, count = 12) {
+  // Ráfaga de cofres, mesas y multiplicadores: un aro que se abre y estrellitas.
+  const r = rng(seed);
+  const k = clamp(age / 10, 0, 1);
+  g.save();
+  g.globalAlpha = clamp(1 - age / 14, 0, 1);
+  g.strokeStyle = colour; g.lineWidth = 3;
+  g.beginPath(); g.arc(x, y, 6 + 40 * k, 0, Math.PI * 2); g.stroke();
+  for (let i = 0; i < count; i++) {
+    const a = i * Math.PI * 2 / count + r() * 0.4, d = 8 + age * (3 + r() * 2);
+    const px = Math.round(x + Math.cos(a) * d), py = Math.round(y + Math.sin(a) * d);
+    g.fillStyle = i % 2 ? colour : "#ffffff";
+    g.fillRect(px - 1, py - 3, 2, 6); g.fillRect(px - 3, py - 1, 6, 2);
+  }
+  g.restore();
+}
+
+function drawEffects(s, under) {
+  for (const [kind, x, y, age, p, seed] of s.fx) {
+    const sy = y - s.cam;
+    if (under) {
+      if (kind === "d") drawDebris(x, sy, age, p, seed);
+      else if (kind === "h") drawSparks(x, sy, age, seed);
+    } else if (kind === "b") drawBoom(x, sy, age, p, seed);
+    else if (kind === "c") drawBurst(x, sy, age, p, seed);
+    else if (kind === "m") drawBurst(x, sy, age, p, seed, 18);
+  }
+}
+
+// -- Pico -----------------------------------------------------------------------------------
+
+function pickImage(s) {
+  // El pico en su propio lienzo, con el brillo de encantamiento si lo tiene.
+  tg.clearRect(0, 0, B, B);
+  tg.imageSmoothingEnabled = false;
+  tile(META.tiles[META.pick], 0, 0, B, tg);
+  if (META.glint) {
+    tg.save();
+    tg.globalCompositeOperation = "source-atop";
+    const shift = (s.frame * 3) % 64 - 32;
+    const grad = tg.createLinearGradient(shift, 0, shift + 32, 32);
+    grad.addColorStop(0, "rgba(170,90,255,0)"); grad.addColorStop(0.5, "rgba(200,140,255,0.55)"); grad.addColorStop(1, "rgba(170,90,255,0)");
+    tg.fillStyle = grad; tg.fillRect(0, 0, B, B);
+    tg.restore();
+  }
+  return tool;
+}
+
+function drawPick(s) {
+  const img = pickImage(s);
+  for (const [i, [tx, ty, ta]] of (s.trail || []).entries()) {
+    g.save(); g.globalAlpha = 0.28 - i * 0.12;
+    g.translate(tx, ty - s.cam); g.rotate(ta * Math.PI / 180);
+    g.drawImage(img, -B / 2, -B / 2);
+    g.restore();
+  }
+  g.save();
+  // Sombra dura de pixel art.
+  g.translate(s.x + 2, s.y - s.cam + 3); g.rotate(s.a * Math.PI / 180);
+  g.globalAlpha = 0.35;
+  g.drawImage(img, -B / 2, -B / 2);
+  g.restore();
+  g.save();
+  g.translate(s.x, s.y - s.cam); g.rotate(s.a * Math.PI / 180);
+  g.drawImage(img, -B / 2, -B / 2);
+  g.restore();
+}
+
+// -- Textos ---------------------------------------------------------------------------------
+
+function outlined(text, x, y, size, fill, align = "center", font = "Montserrat", maxWidth = W - 20) {
+  g.save();
+  const face = (px) => font === "Luckiest" ? `${px}px Luckiest` : `700 ${px}px Montserrat`;
+  g.font = face(size);
+  // Lo que no cabe a lo ancho se encoge (el rótulo de la dimensión).
+  const width = g.measureText(text).width;
+  if (width > maxWidth) { size = Math.floor(size * maxWidth / width); g.font = face(size); }
+  // Los textos centrados no se salen por los lados (los de los bloques del borde).
+  if (align === "center") {
+    const half = Math.min(width, maxWidth) / 2 + 4;
+    x = clamp(x, half, W - half - 12);
+  }
+  g.textAlign = align; g.textBaseline = "middle"; g.lineJoin = "round";
+  g.lineWidth = Math.max(3, size * 0.24); g.strokeStyle = "#0b0b0f"; g.strokeText(text, x, y);
+  if (Array.isArray(fill)) {
+    const grad = g.createLinearGradient(0, y - size / 2, 0, y + size / 2);
+    grad.addColorStop(0, fill[0]); grad.addColorStop(1, fill[1]);
+    g.fillStyle = grad;
+  } else {
+    g.fillStyle = fill;
+  }
+  g.fillText(text, x, y);
+  g.restore();
+}
+
+function drawTexts(s) {
+  for (const [x, y, text, age, colour, size] of s.txt) {
+    const pop = age < 3 ? 1 + (3 - age) * 0.12 : 1;
+    g.save(); g.globalAlpha = clamp(1.4 - age / 18, 0, 1);
+    outlined(text, x, y - s.cam - age * 1.6, Math.round((size || 14) * pop), colour);
+    g.restore();
+  }
+}
+
+// -- Marcador y medidor ---------------------------------------------------------------------
+
+function heart(x, y, colour) {
+  const rows = ["0110110", "1111111", "1111111", "0111110", "0011100", "0001000"];
+  g.fillStyle = "#000"; g.fillRect(x - 1, y - 1, 16, 14);
+  rows.forEach((row, j) => [...row].forEach((v, i) => {
+    if (v === "1") { g.fillStyle = j === 1 && i === 1 ? "#ffb3b3" : colour; g.fillRect(x + i * 2, y + j * 2, 2, 2); }
+  }));
+}
+
+function coin(x, y) {
+  g.fillStyle = "#6b4a00"; g.fillRect(x + 2, y, 10, 14); g.fillRect(x, y + 2, 14, 10);
+  g.fillStyle = "#ffd75e"; g.fillRect(x + 2, y + 2, 10, 10);
+  g.fillStyle = "#fff1a8"; g.fillRect(x + 4, y + 3, 3, 3);
+  g.fillStyle = "#c99712"; g.fillRect(x + 6, y + 6, 4, 4);
+}
+
+function drawHud(s) {
+  const grad = g.createLinearGradient(0, 0, 0, HUD);
+  grad.addColorStop(0, "rgba(34,32,44,0.95)"); grad.addColorStop(1, "rgba(16,15,22,0.95)");
+  g.fillStyle = grad; g.fillRect(0, 0, W, HUD);
+  g.fillStyle = "#4b4760"; g.fillRect(0, HUD - 3, W, 1);
+  g.fillStyle = "#000000"; g.fillRect(0, HUD - 2, W, 2);
+  // Pico, corazón y vida por segmentos.
+  g.fillStyle = "rgba(0,0,0,0.45)"; g.fillRect(4, 4, 32, 32);
+  g.strokeStyle = "#5c5873"; g.lineWidth = 1; g.strokeRect(4.5, 4.5, 31, 31);
+  tile(META.tiles[META.pick], 4, 4, B);
+  const k = clamp(s.life / s.max, 0, 1);
+  const colour = k > 0.5 ? "#e8373d" : k > 0.25 ? "#f08a24" : "#ff2b2b";
+  heart(42, 7, colour);
+  const bx = 60, by = 8, segments = 10, sw = 8;
+  for (let i = 0; i < segments; i++) {
+    const fill = clamp(k * segments - i, 0, 1);
+    g.fillStyle = "#1d0b0e"; g.fillRect(bx + i * (sw + 1), by, sw, 10);
+    if (fill > 0) {
+      g.fillStyle = colour; g.fillRect(bx + i * (sw + 1), by, Math.round(sw * fill), 10);
+      g.fillStyle = "rgba(255,255,255,0.35)"; g.fillRect(bx + i * (sw + 1), by, Math.round(sw * fill), 3);
+    }
+  }
+  if (s.life > s.max) {
+    const extra = clamp((s.life - s.max) / s.max, 0, 1);
+    g.fillStyle = "#7fe0ff"; g.fillRect(bx, by + 11, Math.round(segments * (sw + 1) * extra), 2);
+  }
+  // La vida en número va dentro de la barra: fuera chocaba con el premio.
+  outlined(`${Math.max(0, s.life)}`, bx + segments * (sw + 1) / 2, by + 5, 9, "#ffffff", "center", "Montserrat", 80);
+  outlined(s.depth, 42, 29, 11, "#cfcbe0", "left", "Montserrat", 130);
+  // Premio con su moneda y el multiplicador debajo.
+  g.font = '700 16px Montserrat';
+  const pw = Math.min(100, g.measureText(s.prize).width);
+  coin(W - 16 - pw - 18, 6);
+  outlined(s.prize, W - 14, 13, 16, ["#fff3b0", "#ffc531"], "right", "Montserrat", 100);
+  outlined(s.mult, W - 14, 30, 10, "#e8dca8", "right", "Montserrat", 100);
+}
+
+function drawGauge(s) {
+  // Medidor de profundidad: las capas a escala, el dragón al fondo y el pico donde va.
+  const total = META.dragonRow, span = GAUGE_BOTTOM - GAUGE_TOP;
+  const yOf = (row) => GAUGE_TOP + span * clamp(row, 0, total) / total;
+  g.fillStyle = "rgba(0,0,0,0.55)"; g.fillRect(GAUGE_X - 3, GAUGE_TOP - 3, 9, span + 6);
+  for (const [top, , colour] of META.layers) {
+    const next = META.layers.find(([t]) => t > top);
+    g.fillStyle = colour;
+    g.fillRect(GAUGE_X, Math.round(yOf(top)), 3, Math.ceil(yOf(next ? next[0] : total) - yOf(top)));
+  }
+  g.fillStyle = "#c46bff"; g.fillRect(GAUGE_X - 2, GAUGE_BOTTOM - 1, 7, 4);
+  const best = Math.round(yOf(s.row));
+  g.fillStyle = "#ffffff"; g.fillRect(GAUGE_X - 4, best - 1, 11, 3);
+  g.fillStyle = "#000000"; g.fillRect(GAUGE_X - 4, best + 2, 11, 1);
+}
+
+// -- Rótulos y tarjeta final ----------------------------------------------------------------
+
+function drawBanner(s) {
+  if (s.dark) { g.fillStyle = `rgba(0,0,0,${s.dark})`; g.fillRect(0, 0, W, H); }
+  if (!s.banner) return;
+  const [title, sub, alpha, colour] = s.banner;
+  g.save(); g.globalAlpha = alpha;
+  const cy = H / 2;
+  const band = g.createLinearGradient(0, 0, W, 0);
+  band.addColorStop(0, "rgba(0,0,0,0)"); band.addColorStop(0.15, "rgba(8,6,12,0.85)");
+  band.addColorStop(0.85, "rgba(8,6,12,0.85)"); band.addColorStop(1, "rgba(0,0,0,0)");
+  g.fillStyle = band; g.fillRect(0, cy - 34, W, 68);
+  g.fillStyle = colour; g.fillRect(16, cy - 34, W - 32, 2); g.fillRect(16, cy + 32, W - 32, 2);
+  outlined(title, W / 2, cy - (sub ? 6 : 0), 28, ["#ffffff", colour], "center", "Luckiest", W - 40);
+  if (sub) outlined(sub, W / 2, cy + 20, 12, "#ffffff");
+  g.restore();
+}
+
+function roundRect(x, y, w, h, r) {
+  g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+}
+
+function drawCard(s) {
+  if (!s.card) return;
+  const { title, sub, info, colour, alpha } = s.card;
+  g.save(); g.globalAlpha = alpha;
+  g.fillStyle = `rgba(0,0,0,${(0.5 * alpha).toFixed(3)})`; g.fillRect(0, 0, W, H);
+  const w = 232, h = 168, x = (W - w) / 2, y = (H - h) / 2 + 10;
+  roundRect(x, y, w, h, 12); g.fillStyle = "rgba(20,18,30,0.94)"; g.fill();
+  g.lineWidth = 3; g.strokeStyle = colour; g.stroke();
+  roundRect(x + 5, y + 5, w - 10, h - 10, 9); g.lineWidth = 1; g.strokeStyle = "rgba(255,255,255,0.12)"; g.stroke();
+  g.fillStyle = "rgba(255,255,255,0.06)"; g.fillRect(W / 2 - 30, y - 26, 60, 60);
+  tile(META.tiles[META.pick], W / 2 - 24, y - 22, 48);
+  outlined(title, W / 2, y + 52, 30, ["#ffffff", colour], "center", "Luckiest", w - 24);
+  outlined(sub, W / 2, y + 86, 15, "#ffffff", "center", "Montserrat", w - 24);
+  g.fillStyle = "rgba(255,255,255,0.15)"; g.fillRect(x + 24, y + 106, w - 48, 1);
+  outlined(info, W / 2, y + 126, 11, "#cfcbe0", "center", "Montserrat", w - 24);
+  if (s.card.extra) outlined(s.card.extra, W / 2, y + 146, 11, "#9f9ab8", "center", "Montserrat", w - 24);
+  g.restore();
+}
+
+function paint(s) {
+  g.imageSmoothingEnabled = false;
+  g.globalAlpha = 1;
+  drawWorld(s);
+  drawAmbient(s);
+  drawEffects(s, true);
+  if (!s.hidePick) drawPick(s);
+  drawEffects(s, false);
+  drawTexts(s);
+  drawGauge(s);
+  drawHud(s);
+  drawBanner(s);
+  drawCard(s);
+}
+
+function renderFrames(states, first) {
+  const frames = [];
+  for (const s of states) {
+    paint(s);
+    frames.push({ x: 0, y: 0, u: window.exportFrame(out) });
+  }
+  return frames;
+}
+</script>
+</body>
+</html>
