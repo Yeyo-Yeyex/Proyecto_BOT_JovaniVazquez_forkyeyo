@@ -535,13 +535,13 @@ Cuando un comando falla, el bot responde con un mensaje breve y seguro en lugar 
   | Pico | Precio | Dragón (tope) | Vida | Potencia |
   |---|---|---|---|---|
   | 🪵 Madera | 10 Y$ | ×50 | 130 | 1 |
-  | 🪨 Piedra | 50 Y$ | ×150 | 210 | 2 |
+  | 🪨 Piedra | 50 Y$ | ×150 | 230 | 2 |
   | ⛓️ Hierro | 200 Y$ | ×500 | 235 | 3 |
   | 🥇 Oro | 200 Y$ | ×1.500 | 145 | 4 |
-  | 💎 Diamante | 1.000 Y$ | ×2.500 | 435 | 4 |
-  | 🖤 Netherite | 5.000 Y$ | ×5.000 | 590 | 5 |
+  | 💎 Diamante | 1.000 Y$ | ×2.500 | 365 | 4 |
+  | 🖤 Netherite | 5.000 Y$ | ×5.000 | 495 | 5 |
 
-- **Mundo** (`bot.services.picar_world`): 9 columnas, capas de superficie, cuevas (hasta la −120), profundidad (−250), Nether (−500) y End, con el dragón en la −700. Cuevas, barrancos de 20 a 60 filas, TNT, cofres (15-40 % de la vida), cofres del tesoro (80-120 %), mesas de crafteo (toda la vida) y bloques de multiplicador. Sale entero de la semilla, por trozos de 16 filas.
+- **Mundo** (`bot.services.picar_world`): 9 columnas, capas de superficie, cuevas (hasta la −120), profundidad (−250), Nether (−500) y End, con el dragón en la −700. Cuevas, barrancos de 30 a 128 filas, TNT, cofres (15-40 % de la vida), cofres del tesoro (80-120 %), mesas de crafteo (toda la vida) y bloques de multiplicador. Sale entero de la semilla, por trozos de 16 filas.
 - **Física** (`bot.services.picar_physics`): el pico es un círculo con gravedad a 60 ticks por segundo; cada golpe quita al bloque la potencia del pico y al pico la dureza del bloque. Solo usa `+ - * /` y raíces, para que el PC donde se calibra y el NAS jueguen igual bit a bit. Siempre termina y nunca atraviesa un bloque (lo comprueban las pruebas).
 - **Premio**: la suma de lo que vale cada mineral roto, por el producto de los multiplicadores, en veces el precio y con el tope del dragón. Matar al dragón paga el tope.
 - **RTP exacto del 99,5 % en todos los picos.** Cada tirada sale de una biblioteca fija de semillas, y `docs/calibrar_picar.py` simula todas y elige el valor de cada mineral para que la media de la biblioteca quede en el 99,5 % sin pasarse. La calibración (`assets/picar/calibracion.json`) guarda el hash de la física y el mundo y una huella de unas semillas: si al arrancar el bot no cuadran, el pozo no abre y el log dice por qué. Cifras e informe en `docs/picar-calibracion.md`.

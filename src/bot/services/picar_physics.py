@@ -135,18 +135,18 @@ class Pick:
     bounce: float
 
 
-#: Vidas ajustadas el 28/10/2026 (`docs/plan-picar.md`, «Calibración»): los picos
-#: pequeños por lo que dura una partida (madera ~8 s, oro ~10, piedra ~13, hierro ~18) y
-#: los grandes por cuántos llegan al Nether (diamante ~25 %, netherite ~60 %).
+#: Vidas ajustadas el 28/10/2026 (`docs/plan-picar.md`, «Metas de profundidad»): los
+#: picos pequeños por lo que dura una partida (madera ~8 s, oro ~10, piedra ~15, hierro
+#: ~18) y los grandes por cuántos llegan al Nether (diamante ~21 %, netherite ~52 %).
 PICKS: dict[str, Pick] = {
     pick.key: pick
     for pick in (
         Pick("wood", "Madera", 130, 1, 0.45),
-        Pick("stone", "Piedra", 210, 2, 0.45),
+        Pick("stone", "Piedra", 230, 2, 0.45),
         Pick("iron", "Hierro", 235, 3, 0.4),
         Pick("gold", "Oro", 145, 4, 0.5),
-        Pick("diamond", "Diamante", 435, 4, 0.4),
-        Pick("netherite", "Netherite", 590, 5, 0.35),
+        Pick("diamond", "Diamante", 365, 4, 0.4),
+        Pick("netherite", "Netherite", 495, 5, 0.35),
     )
 }
 

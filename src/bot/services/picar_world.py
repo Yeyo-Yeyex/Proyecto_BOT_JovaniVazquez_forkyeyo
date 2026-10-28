@@ -21,7 +21,7 @@ Las capas (`Layer`) fijan qué sale en cada franja de filas, cuántas cuevas hay
 cuántos barrancos. Las cuevas son huecos en forma de elipse dentro de un trozo y dan
 ritmo a la caída. Los bloques de multiplicador (oro ×2, diamante ×3, netherite ×5 y la
 baliza ×10, `Kind.MULT`) multiplican todo el premio y se multiplican entre sí: son lo que
-da colas largas a los premios. Los barrancos (`Ravine`) son grietas de 1 o 2 columnas y de 20 a 60
+da colas largas a los premios. Los barrancos (`Ravine`) son grietas de 1 o 2 columnas y de 30 a 128
 filas por las que el pico cae libre: junto con los cofres del tesoro y las mesas de
 crafteo, son lo que de vez en cuando deja a un pico bajar mucho más de lo normal (las
 colas largas de las metas de profundidad, `docs/plan-picar.md`). Un barranco cruza
@@ -51,8 +51,8 @@ CHUNK = 16
 DRAGON_ROW = 700
 #: Filas por región de barrancos y alto de un barranco (ambos incluidos). El alto
 #: máximo no puede pasar de la región (ver la docstring del módulo).
-RAVINE_REGION = 64
-RAVINE_ROWS = (20, 60)
+RAVINE_REGION = 128
+RAVINE_ROWS = (30, 128)
 
 
 class Kind(Enum):
@@ -182,7 +182,7 @@ LAYERS: tuple[Layer, ...] = (
             ("gold_block", 3),
         ),
         caves=(1, 3),
-        ravine=300,
+        ravine=1000,
     ),
     Layer(
         "deep",
@@ -205,7 +205,7 @@ LAYERS: tuple[Layer, ...] = (
             ("diamond_block", 2),
         ),
         caves=(1, 2),
-        ravine=300,
+        ravine=1000,
     ),
     Layer(
         "nether",
@@ -213,16 +213,17 @@ LAYERS: tuple[Layer, ...] = (
         250,
         Dimension.NETHER,
         (
-            ("netherrack", 550),
-            ("blackstone", 300),
+            ("netherrack", 350),
+            ("blackstone", 500),
             ("quartz", 80),
             ("nether_gold", 60),
             ("ancient_debris", 6),
             ("tnt", 10),
             ("netherite_block", 2),
+            ("chest", 4),
         ),
         caves=(1, 2),
-        ravine=120,
+        ravine=450,
     ),
     Layer(
         "end",

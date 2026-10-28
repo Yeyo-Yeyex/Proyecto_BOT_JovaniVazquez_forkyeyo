@@ -252,3 +252,35 @@ Lo que se aprende para calibrar:
   `docs/auditoria_logros.py`; meter el pico allí es lo siguiente para afinarlas.
 - Fase 7, en el NAS: 20 partidas seguidas con varias de netherite, mirando memoria, CPU,
   «Bloqueos del bucle» y «Subidas a Discord» en el informe.
+
+### Metas de profundidad (28/10/2026)
+
+Acordadas en el chat y conseguidas con el millón de semillas (`docs/picar-calibracion.md`):
+
+| Pico | Nether | End |
+|---|---|---|
+| Madera | nunca (su techo son las cuevas) | nunca |
+| Piedra | ~1 de cada 20.000 | nunca |
+| Hierro | ~1 de cada 2.000 | nunca |
+| Oro | ~1 de cada 2.500 | nunca |
+| Diamante | ~21 % | ~0,25 % (meta, 1 %) |
+| Netherite | ~53 % | ~5 % |
+
+- La cola de los picos pequeños sale de **barrancos hondos** (de 30 a 128 filas, uno por
+  cada región de 128 filas en las cuevas y la profundidad), no de más vida: así no se
+  alargan las partidas. Diamante y netherite bajan de vida (365 y 495).
+- El Nether lleva más piedra negra (500 de cada 1.000) y algún cofre y barranco. El
+  netherite cruza el Nether unas cinco veces mejor que el diamante porque llega con más
+  vida; por eso el End del diamante se queda en el 0,25 % y no en el 1 %: subirlo dispara
+  el del netherite.
+- **Motor en C para calibrar** (`docs/picar_rapido.c`): mismos resultados bit a bit que el
+  de Python y 15-28 veces más rápido. Una calibración completa con un millón de semillas
+  de los seis picos tarda ~9 minutos en 4 núcleos (antes, ~4 horas). Cada barrido de
+  parámetros de 300.000 partidas, ~20 s.
+- **Pendiente: el dragón.** El End es hoy una muralla y el dragón no sale en el millón.
+  Su frecuencia y los topes están por decidir.
+- **Fiscalidad de los premios gordos.** El pico es juego de casino (operador privado), no
+  una lotería del Estado: el gravamen especial del 20 % de la DA 33ª LIRPF no aplica. El
+  premio es ganancia patrimonial de la base general (art. 33.1 y 46 LIRPF): retención
+  diaria del 19 % y la declaración de los lunes, con la escala progresiva (hasta el 50,5 %
+  marginal, estatal 24,5 % y canaria 26 %).

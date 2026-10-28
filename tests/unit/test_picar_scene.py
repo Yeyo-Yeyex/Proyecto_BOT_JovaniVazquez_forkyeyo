@@ -43,10 +43,12 @@ def cal() -> Calibration:
 
 @pytest.fixture(scope="module")
 def deep(cal: Calibration) -> Outcome:
-    """Una tirada de diamante que cruza al Nether (semilla 0)."""
-    outcome = play("diamond", cal, seed=0)
-    assert outcome.run.max_row >= 250
-    return outcome
+    """La primera tirada de diamante de la biblioteca que cruza al Nether (y no al End)."""
+    for seed in range(500):
+        outcome = play("diamond", cal, seed=seed)
+        if 250 <= outcome.run.max_row < 500:
+            return outcome
+    raise AssertionError("ninguna de las 500 primeras semillas de diamante llega al Nether")
 
 
 def mean_difference(a: Image.Image, b: Image.Image) -> float:
