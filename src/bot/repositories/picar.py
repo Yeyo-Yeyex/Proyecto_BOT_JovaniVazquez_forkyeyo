@@ -10,8 +10,10 @@ Tabla (en el mismo archivo SQLite que el resto del bot):
 
 Se guarda antes de dibujar (el dinero ya se ha movido): si el bot se cae a mitad del GIF,
 la tirada está apuntada. De aquí salen el récord de profundidad de cada miembro con cada
-pico, el ranking del servidor y la reproducción de una tirada para auditarla (la semilla y
-el hash bastan para volver a jugarla igual, `bot.services.picar.play`). Las reglas viven en
+pico y el ranking del servidor, contando solo las tiradas de la calibración que se pida
+(con otra física o con otro mundo, las capas no son las mismas), y la reproducción de una
+tirada para auditarla (la semilla y el hash bastan para volver a jugarla igual,
+`bot.services.picar.play`). Las reglas viven en
 `bot.services.picar`; el dinero, en la economía.
 """
 
@@ -142,14 +144,14 @@ class PicarRepository:
         )  # fmt: skip
 
     def _record_sync(self, values: tuple[object, ...], day: date) -> Saved:
-        guild_id, user_id, pick = values[:3]
+        guild_id, user_id, pick, _seed, params = values[:5]
         with self._connect() as connection:
             best, server_best = connection.execute(
                 """
                 SELECT MAX(CASE WHEN user_id = ? THEN max_row END), MAX(max_row)
-                FROM picar_plays WHERE guild_id = ? AND pick = ?
+                FROM picar_plays WHERE guild_id = ? AND pick = ? AND params = ?
                 """,
-                (user_id, guild_id, pick),
+                (user_id, guild_id, pick, params),
             ).fetchone()
             row = connection.execute(
                 "SELECT last_day, streak FROM picar_days WHERE guild_id = ? AND user_id = ?",
@@ -213,34 +215,40 @@ class PicarRepository:
             created_at=float(row["created_at"]),
         )
 
-    async def records(self, guild_id: int, user_id: int) -> dict[str, int]:
-        """Fila más honda a la que ha llegado un miembro con cada pico que ha usado."""
-        return await self._run(self._records_sync, guild_id, user_id)
+    async def records(self, guild_id: int, user_id: int, params: str) -> dict[str, int]:
+        """Fila más honda a la que ha llegado un miembro con cada pico que ha usado, con la
+        calibración `params`."""
+        return await self._run(self._records_sync, guild_id, user_id, params)
 
-    def _records_sync(self, guild_id: int, user_id: int) -> dict[str, int]:
+    def _records_sync(self, guild_id: int, user_id: int, params: str) -> dict[str, int]:
         with self._connect() as connection:
             rows = connection.execute(
                 """
                 SELECT pick, MAX(max_row) AS best FROM picar_plays
-                WHERE guild_id = ? AND user_id = ? GROUP BY pick
+                WHERE guild_id = ? AND user_id = ? AND params = ? GROUP BY pick
                 """,
-                (guild_id, user_id),
+                (guild_id, user_id, params),
             ).fetchall()
         return {str(row["pick"]): int(row["best"]) for row in rows}
 
-    async def ranking(self, guild_id: int, pick: str, limit: int = 5) -> list[tuple[int, int]]:
-        """Los miembros que más hondo han llegado con un pico: (miembro, fila)."""
-        return await self._run(self._ranking_sync, guild_id, pick, limit)
+    async def ranking(
+        self, guild_id: int, pick: str, params: str, limit: int = 5
+    ) -> list[tuple[int, int]]:
+        """Los miembros que más hondo han llegado con un pico y la calibración `params`:
+        (miembro, fila)."""
+        return await self._run(self._ranking_sync, guild_id, pick, params, limit)
 
-    def _ranking_sync(self, guild_id: int, pick: str, limit: int) -> list[tuple[int, int]]:
+    def _ranking_sync(
+        self, guild_id: int, pick: str, params: str, limit: int
+    ) -> list[tuple[int, int]]:
         with self._connect() as connection:
             rows = connection.execute(
                 """
                 SELECT user_id, MAX(max_row) AS best FROM picar_plays
-                WHERE guild_id = ? AND pick = ? GROUP BY user_id
+                WHERE guild_id = ? AND pick = ? AND params = ? GROUP BY user_id
                 ORDER BY best DESC, MIN(id) LIMIT ?
                 """,
-                (guild_id, pick, limit),
+                (guild_id, pick, params, limit),
             ).fetchall()
         return [(int(row["user_id"]), int(row["best"])) for row in rows]
 

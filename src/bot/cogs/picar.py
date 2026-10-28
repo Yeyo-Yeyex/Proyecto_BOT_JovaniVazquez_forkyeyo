@@ -670,7 +670,8 @@ class Picar(commands.Cog, name="Pico"):
         embed = discord.Embed(title="🏆 Récords del pozo", color=COLOR_IDLE)
         if guild is None:
             return embed
-        mine = await self.repository.records(guild.id, owner.id)
+        params = self.calibration.params if self.calibration is not None else ""
+        mine = await self.repository.records(guild.id, owner.id, params)
         lines = []
         for key, offer in OFFERS.items():
             best = mine.get(key)
@@ -680,7 +681,7 @@ class Picar(commands.Cog, name="Pico"):
             )
         embed.add_field(name=f"Los de {owner.display_name}", value="\n".join(lines), inline=False)
         for key, offer in OFFERS.items():
-            top = await self.repository.ranking(guild.id, key, limit=3)
+            top = await self.repository.ranking(guild.id, key, params, limit=3)
             if not top:
                 continue
             value = "\n".join(
@@ -756,7 +757,8 @@ class Picar(commands.Cog, name="Pico"):
             await send_error("El pozo está cerrado por mantenimiento.")
             return
         balance = await self.economy.balance(guild.id, user.id)
-        records = await self.repository.records(guild.id, user.id)
+        assert self.calibration is not None  # sin calibración, `disabled_reason` lo para
+        records = await self.repository.records(guild.id, user.id, self.calibration.params)
         view = PicarView(self, guild_id=guild.id, owner=user)
         view.message = await send(
             embed=panel_embed(user.display_name, balance=balance, records=records), view=view
