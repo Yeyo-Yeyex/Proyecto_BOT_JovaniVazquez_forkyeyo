@@ -7,8 +7,8 @@ casillas de la ruleta o las piezas de cada tablero en segundo plano). Las prueba
 (`tests/integration/test_cog_bridges.py`) solo miran el orden de las respuestas, la
 base de datos, los logros y las jugadas: la imagen no entra en ninguna aserción.
 
-`use_fake_drawings` cambia esas clases (y las de la Torre del dragón, Allá tú, la Guerra,
-la lotería, el blackjack y los negocios de `pala`) en sus módulos de
+`use_fake_drawings` cambia esas clases (y las del pozo de `picar`, la Torre del dragón,
+Allá tú, la Guerra, la lotería, el blackjack y los negocios de `pala`) en sus módulos de
 servicio ANTES de cargar los cogs. `load_extension` vuelve a ejecutar cada cog y su
 `from ... import SlotsScene` recoge el doble, así que el cog, el bot y la base de datos
 son los reales y solo se sustituye el dibujo. Los dobles devuelven los mismos tipos
@@ -32,6 +32,7 @@ import bot.services.hold_win_render as hold_win_render
 import bot.services.hold_win_scene as hold_win_scene
 import bot.services.lottery_scene as lottery_scene
 import bot.services.pachinko_render as pachinko_render
+import bot.services.picar_scene as picar_scene
 import bot.services.renta_scene as renta_scene
 import bot.services.roulette_render as roulette_render
 import bot.services.roulette_scene as roulette_scene
@@ -44,6 +45,7 @@ from bot.services.allatu_scene import Media as AllatuMedia
 from bot.services.bacara_render import Media as WarMedia
 from bot.services.blackjack_scene import Media as BlackjackMedia
 from bot.services.lottery_render import Media as LotteryMedia
+from bot.services.picar_scene import Part as PicarPart
 from bot.services.tower_scene import Media as TowerMedia
 
 
@@ -246,6 +248,24 @@ class FakeWarScene:
         return None
 
 
+class FakePicarScene:
+    """El pozo de `picar` sin dibujo: un solo GIF de relleno que dura 0 s y un PNG."""
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        self.calls: list[tuple[object, ...]] = []
+
+    async def parts(self, outcome: object, values: object, *, budget: int):  # noqa: ANN201
+        self.calls.append(("parts", outcome, budget))
+        yield PicarPart(gif=b"gif", ms=0, hold_ms=0, last=True, frames=1)
+
+    async def still(self, outcome: object, values: object) -> bytes:
+        self.calls.append(("still", outcome))
+        return b"png"
+
+    async def close(self) -> None:
+        return None
+
+
 class FakeTowerScene:
     """La Torre del dragón sin dibujo: un PNG y un GIF de relleno que duran 0 s.
 
@@ -426,6 +446,7 @@ def use_fake_drawings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(roulette_render, "WheelRenderer", FakeWheelRenderer)
     monkeypatch.setattr(roulette_scene, "RouletteScene", FakeRouletteScene)
     monkeypatch.setattr(pachinko_render, "PachinkoRenderer", FakePachinkoRenderer)
+    monkeypatch.setattr(picar_scene, "PicarScene", FakePicarScene)
     monkeypatch.setattr(war_scene, "WarScene", FakeWarScene)
     monkeypatch.setattr(blackjack_scene, "BlackjackScene", FakeBlackjackScene)
     monkeypatch.setattr(tower_scene, "TowerScene", FakeTowerScene)

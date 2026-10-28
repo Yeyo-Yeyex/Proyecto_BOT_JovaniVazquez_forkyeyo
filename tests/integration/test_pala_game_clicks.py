@@ -49,6 +49,7 @@ async def load_bot(tmp_path: Path) -> BotClient:
     await client.porras.initialize()
     await client.todo.initialize()
     await client.slots_repository.initialize()
+    await client.picar.initialize()
     for extension in INITIAL_EXTENSIONS:
         await client.load_extension(extension)
     return client

@@ -83,6 +83,7 @@ async def load_bot(tmp_path: Path) -> BotClient:
     await client.sports.initialize()
     await client.todo.initialize()
     await client.slots_repository.initialize()
+    await client.picar.initialize()
     for extension in INITIAL_EXTENSIONS:
         await client.load_extension(extension)
     return client
@@ -198,6 +199,35 @@ async def press_slots_autoplay(client: BotClient, owner: MagicMock) -> Click:
     async def click(interaction: MagicMock) -> None:
         await view._autoplay_click(interaction)
         await view.autoplay.task
+
+    return click
+
+
+async def picar_view(client: BotClient, owner: MagicMock):  # noqa: ANN201
+    """El pozo de `picar` con la calibración ya comprobada y saldo para el pico más caro."""
+    cog = client.get_cog("Pico")
+    module = module_of(client, "Pico")
+    module.REVEAL_MARGIN_SECONDS = 0
+    await cog._check_task
+    assert cog.disabled_reason is None, cog.disabled_reason
+    await client.economy.grant(GUILD_ID, owner.id, amount=10_000, reason="prueba")
+    return module.PicarView(cog, guild_id=GUILD_ID, owner=owner)
+
+
+async def press_picar_dig(client: BotClient, owner: MagicMock) -> Click:
+    view = await picar_view(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await view._dig(interaction, "wood")
+
+    return click
+
+
+async def press_picar_records(client: BotClient, owner: MagicMock) -> Click:
+    view = await picar_view(client, owner)
+
+    async def click(interaction: MagicMock) -> None:
+        await view._records(interaction)
 
     return click
 
@@ -2926,6 +2956,8 @@ CASES: dict[str, Press] = {
     "tragaperras: giro del día": press_slots_daily,
     "pachinko: lanzar": press_pachinko_launch,
     "pachinko: auto": press_pachinko_autoplay,
+    "pico: picar": press_picar_dig,
+    "pico: récords": press_picar_records,
     "moneda: cara": press_coin_flip,
     "moneda: cobrar": press_coin_cash_out,
     "gallos: pelear contra la casa": press_gallos_fight,

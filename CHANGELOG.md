@@ -8,6 +8,14 @@ criterio.
 
 ## 9.x
 
+### 9.33.0 · 2026-10-28
+
+- Pico: `picar`, un pico que cae rompiendo bloques hasta el dragón
+- Pico: seis picos con precio fijo (de 10 a 5.000 Y$) que caen por un mundo de bloques con físicas: minerales que suman premio, bloques que lo multiplican, TNT en cadena, cofres y mesas de crafteo que devuelven vida, barrancos, el Nether, el End y el dragón, que paga el tope. Todos devuelven el 99,5 % exacto. La partida se ve entera en GIF, con rótulos entre dimensiones, y deja una tarjeta con el premio y el récord. 📋 Premios y 🏆 Récords con el ranking del servidor
+- Pico: cada tirada se guarda con su semilla; `repicar` (administración) la vuelve a jugar para auditarla
+- Logros: 74 nuevos en ⛏️ Pico; el desplegable de 🎰 Casino se reparte en dos porque ya no cabía
+- Interno: `GifStream` monta GIF largos por tramos sin tener todos los fotogramas en memoria
+
 ### 9.32.0 · 2026-10-26
 
 - Lista: las tareas se editan con el menú ✏️

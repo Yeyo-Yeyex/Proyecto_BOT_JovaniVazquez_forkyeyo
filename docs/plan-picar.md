@@ -211,3 +211,44 @@ Lo que se aprende para calibrar:
   entra en la biblioteca con una semilla buscada a propósito y un peso pequeño.
 - La partida se alarga: el netherite con 600 de vida dura 5.000 ticks de media, 83 s de
   simulación. Cuánto se ve de eso en el GIF lo dice el prototipo del dibujo.
+
+### Fases 2 a 6 (28/10/2026)
+
+- **Texturas**: Pixel Perfection CE (CC BY-SA 4.0), recortadas a un atlas con
+  `docs/picar_texturas.py`; lo que el pack no trae (pizarra, minerales hondos, cristal del
+  End, cofres) sale de sus texturas, y el dragón es dibujo propio. Licencia y cambios en
+  `src/bot/assets/picar/LICENCIA.md`.
+- **Dibujo** (`picar_scene`, `assets/picar/escena.html`): 288 × 512 (bloques de 32 px, el
+  doble exacto de las texturas), 20 fotogramas por segundo en tiempo real.
+  - La cámara se queda quieta mientras el pico está en una franja y se desplaza deprisa
+    cuando sale: con la cámara siguiendo al pico cada fotograma, el GIF pesaba ~800 KB por
+    segundo; así, ~200-300 KB.
+  - Un GIF por dimensión, con el rótulo y una pausa al cambiar; si no cabe en el 80 % del
+    límite de subida, se parte con una pausa corta. El primero dura ~4 s para que el clic
+    responda enseguida. Se monta por tramos con `GifStream` (memoria del proceso: ~365 MB
+    frente a ~800 MB montándolo entero).
+  - Medido: una partida de netherite que llega al End son 6 GIF de 1-8 MB y unos 3 min;
+    cada parte se pinta en 2-4 s, mucho menos de lo que dura la anterior.
+- **Bloques de multiplicador** (oro ×2, diamante ×3, netherite ×5, baliza ×10): sin ellos
+  el juego no tenía riesgo (el netherite pagaba como mucho ×4, mediana ×0,99). Con ellos,
+  el diamante llega a ×237 y el netherite a ×622 en 4.000 tiradas.
+- **Vidas**: los picos pequeños por duración (madera ~8 s, oro ~10, piedra ~13, hierro
+  ~18) y los grandes por llegar al Nether (diamante ~26 %, netherite ~61 %). El Nether
+  lleva piedra negra y no tiene mesas ni cofres, y el End es una muralla: el dragón tiene
+  que salir muy poco para caber en el 99,5 %.
+- **Valores** en diezmilésimas del coste (`picar.SCALE`): con céntimos, un céntimo más
+  movía el RTP varios puntos.
+- **Discord** (`cogs/picar.py`): `picar`, un botón por pico, 📋 Premios y 🏆 Récords;
+  `settle_bet` y la tirada apuntada (`picar_plays`) antes de dibujar; `repicar` en Admin.
+- **Logros**: 74 en ⛏️ Pico. El desplegable de 🎰 Casino se parte en dos.
+
+### Pendiente
+
+- Calibración definitiva con un millón de semillas (la del repo puede ser la de prueba
+  hasta que acabe). Con `--reusar` se retoma si se corta.
+- **El netherite llega al End en el ~14 % de las tiradas** (meta inicial: 5 %). Bajarlo
+  pide un Nether que cueste más al netherite que al diamante; se decide jugando.
+- Las rarezas de los logros salen de 3.000 tiradas por pico, no de
+  `docs/auditoria_logros.py`; meter el pico allí es lo siguiente para afinarlas.
+- Fase 7, en el NAS: 20 partidas seguidas con varias de netherite, mirando memoria, CPU,
+  «Bloqueos del bucle» y «Subidas a Discord» en el informe.

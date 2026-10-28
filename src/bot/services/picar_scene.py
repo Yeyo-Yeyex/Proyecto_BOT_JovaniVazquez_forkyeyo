@@ -125,6 +125,13 @@ RESULT_FRAMES = 8
 FINAL_HOLD_MS = 4_000
 #: Pausa al cortar un GIF que se pasaría de peso en mitad de una dimensión.
 CUT_HOLD_MS = 900
+#: Lo que tarda en verse el GIF siguiente: subirlo a Discord cuesta ~1,1 s fijos y
+#: ~0,4 s por MB a partir del primero (informe del 14/10/2026), y el cliente tarda un
+#: poco más en descargarlo. La pausa del final de cada GIF dura al menos eso, para que
+#: el siguiente llegue mientras está quieta y no vuelva a empezar el anterior.
+UPLOAD_FIXED_MS = 1_100
+UPLOAD_PER_MB_MS = 400
+CLIENT_MARGIN_MS = 700
 #: Fotogramas del primer GIF y de cada tramo que se pinta de una vez.
 FIRST_PART_FRAMES = 80
 CHUNK_FRAMES = 90
@@ -167,6 +174,24 @@ def assets() -> dict[str, Any]:
         "atlasKey": hashlib.sha1(atlas + dragon).hexdigest()[:12],
         "tiles": json.loads((ASSETS / "texturas.json").read_text(encoding="utf-8")),
     }
+
+
+@functools.cache
+def see_through() -> list[int]:
+    """Casillas del atlas con algún píxel transparente (los cofres): debajo va la pared."""
+    atlas = Image.open(ASSETS / "texturas.png").convert("RGBA")
+    alpha = atlas.getchannel("A")
+    return [
+        index
+        for index in range(atlas.width // 16)
+        if alpha.crop((index * 16, 0, index * 16 + 16, 16)).getextrema()[0] < 255
+        and not assets_key(index).startswith(("pick_", "crack_"))
+    ]
+
+
+def assets_key(index: int) -> str:
+    """La clave de una casilla del atlas por su posición."""
+    return next(key for key, i in assets()["tiles"].items() if i == index)
 
 
 def tile_key(block: str, row: int) -> str:
@@ -509,6 +534,7 @@ def segment_meta(tl_run: Run, gone: dict, cracks: list, rows: range, *, pick: st
             {tiles[tile_key(b.key, row)] for b in BLOCKS if b.mineral for row in (5, 130)}
         ),
         "glint": pick in _GLINT,
+        "seeThrough": see_through(),
     }
 
 
@@ -534,6 +560,12 @@ class Part:
     hold_ms: int
     last: bool
     frames: int
+
+
+def swap_ms(size: int) -> int:
+    """Milisegundos desde que se pide cambiar el GIF hasta que se ve el nuevo."""
+    megabytes = size / (1024 * 1024)
+    return round(UPLOAD_FIXED_MS + UPLOAD_PER_MB_MS * max(0.0, megabytes - 1) + CLIENT_MARGIN_MS)
 
 
 class PicarScene:
@@ -591,7 +623,7 @@ class PicarScene:
         shots, tl = story(outcome, values)
         # Un primer GIF corto solo compensa si luego queda bastante partida.
         first = FIRST_PART_FRAMES if len(shots) > FIRST_PART_FRAMES * 3 // 2 else 0
-        stream = GifStream((WIDTH, HEIGHT))
+        stream = GifStream((WIDTH, HEIGHT), loop=False)
         i = 0
         while i < len(shots):
             limit = first or CHUNK_FRAMES
@@ -605,26 +637,34 @@ class PicarScene:
                 per_frame = stream.size / stream.frames
                 if stream.size + per_frame * len(chunk) * BUDGET_MARGIN > budget:
                     yield await self._finish(stream, CUT_HOLD_MS, last=False, pause=True)
-                    stream = GifStream((WIDTH, HEIGHT))
+                    stream = GifStream((WIDTH, HEIGHT), loop=False)
             images = await self._paint(outcome, tl, [shot.state for shot in chunk])
             if images is None:
                 return
             await asyncio.to_thread(stream.add, images, [shot.ms for shot in chunk])
             if chunk[-1].end or i >= len(shots):
                 yield await self._finish(stream, chunk[-1].ms, last=i >= len(shots))
-                stream = GifStream((WIDTH, HEIGHT))
+                stream = GifStream((WIDTH, HEIGHT), loop=False)
             elif first:
                 yield await self._finish(stream, CUT_HOLD_MS, last=False, pause=True)
-                stream = GifStream((WIDTH, HEIGHT))
+                stream = GifStream((WIDTH, HEIGHT), loop=False)
             first = 0
 
     @staticmethod
     async def _finish(stream: GifStream, hold: int, *, last: bool, pause: bool = False) -> Part:
-        """Cierra un GIF. Con `pause`, alarga el último fotograma `hold` (un corte a mitad
-        de dimensión); si no, `hold` es lo que ya dura el último fotograma del guion."""
+        """Cierra un GIF.
+
+        Con `pause`, alarga el último fotograma `hold` (un corte a mitad de dimensión); si
+        no, `hold` es lo que ya dura el último fotograma del guion. Si no es el último
+        GIF, la pausa dura al menos lo que tarda en verse el siguiente (`swap_ms`).
+        """
+        assert stream.last is not None
         if pause:
-            assert stream.last is not None
             await asyncio.to_thread(stream.add, [stream.last], hold)
+        if not last and (extra := swap_ms(stream.size) - hold) > 0:
+            # El mismo fotograma otra vez: el GIF solo suma su tiempo al anterior.
+            await asyncio.to_thread(stream.add, [stream.last], extra)
+            hold += extra
         data = await asyncio.to_thread(stream.finish)
         return Part(data, stream.duration, hold, last, stream.frames)
 

@@ -67,6 +67,7 @@ let ATLAS = null, ATLAS_KEY = null;
 let DRAGON = null, DRAGON_KEY = null;
 let CRACKS = new Map();            // r * COLS + c -> [[tick, stage], ...] en orden
 let SHINY = new Set();             // casillas del atlas que destellan (minerales)
+let SEE_THROUGH = new Set();       // casillas con píxeles transparentes (cofres)
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 function rng(seed) {
@@ -102,6 +103,7 @@ async function setup(meta) {
     CRACKS.get(key).push([tick, stage]);
   }
   SHINY = new Set(meta.shiny);
+  SEE_THROUGH = new Set(meta.seeThrough);
   g.imageSmoothingEnabled = false;
 }
 
@@ -212,6 +214,11 @@ function drawWorld(s) {
     for (let c = 0; c < COLS; c++) {
       const x = c * B;
       if (solid(row, c, s.t)) {
+        if (SEE_THROUGH.has(cells[c]) && bg >= 0) {
+          // Por los huecos del cofre se ve la pared, no lo que hubiera antes.
+          tile(bg, x, sy);
+          g.fillStyle = "rgba(0,0,0,0.52)"; g.fillRect(x, sy, B, B);
+        }
         tile(cells[c], x, sy);
         const stage = crackAt(row, c, s.t);
         if (stage >= 0) tile(m.tiles["crack_" + stage], x, sy);
@@ -559,6 +566,9 @@ function drawCard(s) {
 function paint(s) {
   g.imageSmoothingEnabled = false;
   g.globalAlpha = 1;
+  // Cada fotograma empieza de cero: lo que no se pinte no puede venir del anterior
+  // (si viniera, cada proceso pintaría otra cosa al repartir el dibujo).
+  g.fillStyle = "#000"; g.fillRect(0, 0, W, H);
   drawWorld(s);
   drawAmbient(s);
   drawEffects(s, true);

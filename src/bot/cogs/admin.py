@@ -5,7 +5,8 @@ Comandos (todos con `/` y con `.`, mismo nombre; `tajo` elige dónde se usa `pal
 `slow`, `say`, `nick`, `role`, `bienv`, `niveles`, `cambios`, `catalogo`, `tajo`,
 `informe` (descarga la telemetría interna, ver `bot.cogs.telemetry`), `robuso` (si
 Robuso está en Hong Kong o en Madrid, para sus logros: ver `bot.cogs.robuso`),
-`bloquear`, `crear`, `dinero`, `enchufe` y `amanece`.
+`bloquear`, `crear`, `dinero`, `repicar` (vuelve a jugar una tirada del pico
+para auditarla, sin mover dinero), `enchufe` y `amanece`.
 
 `bloquear` es el freno de emergencia para un fallo o un exploit. Como `reinicio`, solo
 lo usan los IDs de `DEPLOYERS` (Yeyo y Dani), sean o no administradores, y no sale en
@@ -1814,6 +1815,32 @@ class Admin(commands.Cog):
             + ("Ya está el de hoy." if published else "⚠️ El de hoy no se pudo publicar.")
             + " Que sea privado: lleva nombres de canales y cifras de uso."
         )
+
+    # --- repicar ----------------------------------------------------------
+
+    @app_commands.command(
+        name="repicar", description="Vuelve a jugar una tirada del pico para auditarla."
+    )
+    @app_commands.describe(tirada="Número de la tirada (sale al pie de su resultado)")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    async def replay_dig(self, interaction: discord.Interaction, tirada: int) -> None:
+        """Reproduce una tirada de `picar` con su semilla, sin mover dinero."""
+        await self._replay_dig_impl(InteractionResponder(interaction), tirada)
+
+    @commands.command(name="repicar")
+    async def replay_dig_text(self, ctx: commands.Context, tirada: int) -> None:
+        """Versión de texto (`.`) del comando slash homónimo."""
+        await self._replay_dig_impl(ContextResponder(ctx), tirada)
+
+    async def _replay_dig_impl(self, responder: CommandResponder, play_id: int) -> None:
+        from bot.cogs.picar import Picar
+
+        cog = find_cog(self.bot, Picar)
+        if cog is None:
+            await responder.send_error("El pozo (`picar`) no está cargado.")
+            return
+        await cog.replay(responder, play_id)
 
 
 async def setup(bot: commands.Bot) -> None:

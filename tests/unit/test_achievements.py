@@ -538,6 +538,16 @@ PRODUCED_STATS = {
     "crash_close", "crash_last_out", "crash_instant", "crash_greedy", "crash_moon",
     "crash_party_max",
     # Pachinko (cogs/pachinko.py: pachinko_stats, pachinko_autoplay_stats y el botón de Ráfaga)
+    # ⛏️ Pico (`picar_stats`)
+    "picar_digs", "picar_blocks", "picar_minerals", "picar_diamonds", "picar_debris",
+    "picar_crystals", "picar_tnt", "picar_chests", "picar_treasures", "picar_crafts",
+    "picar_mults", "picar_beacons", "picar_nether", "picar_end", "picar_dragon", "picar_zero",
+    "picar_records", "picar_wood_shallow", "picar_gold_shallow", "picar_netherite_no_end",
+    "picar_row_42", "picar_row_69", "picar_row_666", "picar_depth_max",
+    "picar_diamonds_run_max", "picar_chain_max", "picar_multiplier_max", "picar_mult_x100_max",
+    "picar_win_max",
+    *(f"picar_{kind}_{pick}" for kind in ("dig", "nether", "end", "dragon")
+      for pick in ("wood", "stone", "iron", "gold", "diamond", "netherite")),
     "pachinko_volleys", "pachinko_starts", "pachinko_reach", "pachinko_fake_reach",
     "pachinko_atari", "pachinko_rush", "pachinko_super", "pachinko_renchan_max",
     "pachinko_corners", "pachinko_full_hold", "pachinko_wasted", "pachinko_blank",
@@ -990,8 +1000,9 @@ def test_todos_los_juegos_del_casino_van_en_una_sola_entrada_del_menu() -> None:
     keys = {key for key, _title in menu_entries()}
     assert CASINO_GROUP.key in keys
     assert not keys & sections
-    # Un segundo desplegable lista las secciones (más la portada).
-    assert len(sections) + 1 <= 25
+    # Un segundo desplegable lista las secciones (más la portada); si no caben, un tercero
+    # con el resto (`SectionSelect`, `part=1`). Más de dos no caben en la vista.
+    assert len(sections) + 1 <= 2 * 25 - 1
 
 
 def test_la_portada_del_casino_cabe_en_un_embed() -> None:

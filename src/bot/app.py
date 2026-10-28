@@ -42,6 +42,7 @@ from bot.repositories.moderation import ModerationRepository
 from bot.repositories.monte import MonteRepository
 from bot.repositories.news import NewsRepository
 from bot.repositories.pets import PetRepository
+from bot.repositories.picar import PicarRepository
 from bot.repositories.poker import PokerRepository
 from bot.repositories.porras import PorraRepository
 from bot.repositories.rastro import MarketRepository
@@ -95,6 +96,7 @@ INITIAL_EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.timba",
     "bot.cogs.craps",
     "bot.cogs.pachinko",
+    "bot.cogs.picar",
     "bot.cogs.horses",
     "bot.cogs.bacara",
     "bot.cogs.gallos",
@@ -203,6 +205,9 @@ class BotClient(commands.Bot):
         # Maletines y botes de cada jugador en las máquinas de Botes
         # (el Volcán, la Mina y el Olimpo, que se abren con `tragas`); el dinero pasa por `economy`.
         self.hold_win = HoldWinRepository(database_path)
+        # Tiradas de `picar` con su semilla (récords, ranking y auditoría); el dinero
+        # pasa por `economy`.
+        self.picar = PicarRepository(database_path)
         # Calor y giro diario de la tragaperras (`tragas`); el dinero y el
         # bote pasan por `economy`.
         self.slots_repository = SlotsRepository(database_path)
@@ -312,6 +317,7 @@ class BotClient(commands.Bot):
         await self.lottery.initialize()
         await self.todo.initialize()
         await self.hold_win.initialize()
+        await self.picar.initialize()
         await self.slots_repository.initialize()
         await self.horses.initialize()
         await self.gallos.initialize()
