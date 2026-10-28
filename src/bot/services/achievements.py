@@ -21521,8 +21521,8 @@ def _build_catalog() -> tuple[Achievement, ...]:
          "Vuelve de la excedencia.", R),
     ])  # fmt: skip
 
-    # ⛏️ Pico (`picar`). Rarezas medidas con 3.000 tiradas por pico (28/10/2026): lo que
-    # solo sale con los picos caros se mide por lo que cuesta llegar con ellos.
+    # ⛏️ Pico (`picar`). Rarezas de `docs/auditoria_logros.py --juego picar` (28/10/2026),
+    # con un jugador que reparte sus tiradas entre los picos, sobre todo los baratos.
     a += _tiers("picar", "picar_digs", [
         (1, "picar_1", "Picado por la curiosidad", "Juega tu primera tirada en el pozo.", C),
         (10, "picar_10", "Picapedrero en prácticas", "Juega 10 tiradas en el pozo.", C),
@@ -21538,19 +21538,19 @@ def _build_catalog() -> tuple[Achievement, ...]:
         name="Caja de herramientas",
         description="Juega al menos una tirada con cada uno de los seis picos.",
         category="picar",
-        rarity=R,
+        rarity=C,
         conditions=tuple((f"picar_dig_{key}", 1) for key in PICAR_PICKS),
     ))  # fmt: skip
     a += _tiers("picar", "picar_depth_max", [
         (50, "picar_depth_50", "Bajar a por tabaco", "Llega a la capa −50.", C),
-        (120, "picar_depth_120", "Sótano del sótano", "Llega a la capa −120.", R),
-        (250, "picar_depth_250", "Infierno fiscal", "Llega al Nether (capa −250).", R),
-        (500, "picar_depth_500", "Y colorín colorado", "Llega al End (capa −500).", E),
-        (650, "picar_depth_650", "Casi en el fondo", "Llega a la capa −650.", L),
+        (120, "picar_depth_120", "Sótano del sótano", "Llega a la capa −120.", C),
+        (250, "picar_depth_250", "Infierno fiscal", "Llega al Nether (capa −250).", C),
+        (500, "picar_depth_500", "Y colorín colorado", "Llega al End (capa −500).", R),
+        (650, "picar_depth_650", "Casi en el fondo", "Llega a la capa −650.", M),
     ])  # fmt: skip
     a += _tiers("picar", "picar_nether", [
-        (10, "picar_nether_10", "Abono transporte al infierno", "Llega al Nether 10 veces.", E),
-        (50, "picar_nether_50", "Empadronado en el Nether", "Llega al Nether 50 veces.", L),
+        (10, "picar_nether_10", "Abono transporte al infierno", "Llega al Nether 10 veces.", R),
+        (50, "picar_nether_50", "Empadronado en el Nether", "Llega al Nether 50 veces.", E),
     ])  # fmt: skip
     a += _tiers("picar", "picar_end", [
         (10, "picar_end_10", "Fin de semana en el End", "Llega al End 10 veces.", L),
@@ -21559,7 +21559,7 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (1, "picar_dragon_1", "Dracarys al revés", "Mata al dragón del fondo del End.", M),
     ])  # fmt: skip
     a += _tiers("picar", "picar_nether_iron", [
-        (1, "picar_nether_iron", "Hierro candente", "Llega al Nether con el pico de hierro.", E),
+        (1, "picar_nether_iron", "Hierro candente", "Llega al Nether con el pico de hierro.", L),
     ])  # fmt: skip
     a += _tiers("picar", "picar_end_diamond", [
         (1, "picar_end_diamond", "Un diamante es para el fin",
@@ -21575,46 +21575,46 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("picar", "picar_minerals", [
         (100, "picar_minerals_100", "Veta madre", "Rompe 100 minerales en el pozo.", C),
-        (1_000, "picar_minerals_1000", "Fiebre del oro", "Rompe 1.000 minerales en el pozo.", R),
+        (1_000, "picar_minerals_1000", "Fiebre del oro", "Rompe 1.000 minerales en el pozo.", C),
         (10_000, "picar_minerals_10000", "Rodalquilar se te queda corto",
          "Rompe 10.000 minerales en el pozo.", E),
         (50_000, "picar_minerals_50000", "Ministerio de Industria y Minería",
          "Rompe 50.000 minerales en el pozo.", L),
     ])  # fmt: skip
     a += _tiers("picar", "picar_diamonds", [
-        (1, "picar_diamonds_1", "Diamante en bruto", "Rompe tu primer diamante en el pozo.", R),
-        (50, "picar_diamonds_50", "Diamantes de sangre fría", "Rompe 50 diamantes en el pozo.", E),
+        (1, "picar_diamonds_1", "Diamante en bruto", "Rompe tu primer diamante en el pozo.", C),
+        (50, "picar_diamonds_50", "Diamantes de sangre fría", "Rompe 50 diamantes en el pozo.", R),
         (500, "picar_diamonds_500", "Joyería con licencia de obras",
          "Rompe 500 diamantes en el pozo.", L),
     ])  # fmt: skip
     a += _tiers("picar", "picar_diamonds_run_max", [
-        (3, "picar_diamonds_run_3", "Trío de ases", "Rompe 3 diamantes en una tirada.", R),
+        (3, "picar_diamonds_run_3", "Trío de ases", "Rompe 3 diamantes en una tirada.", C),
         (10, "picar_diamonds_run_10", "Escaparate de Tiffany",
-         "Rompe 10 diamantes en una tirada.", L),
+         "Rompe 10 diamantes en una tirada.", M),
     ])  # fmt: skip
     a += _tiers("picar", "picar_debris", [
-        (1, "picar_debris_1", "Escombros con pedigrí", "Rompe un escombro ancestral.", E),
+        (1, "picar_debris_1", "Escombros con pedigrí", "Rompe un escombro ancestral.", C),
         (25, "picar_debris_25", "Arqueología de derribo", "Rompe 25 escombros ancestrales.", L),
     ])  # fmt: skip
     a += _tiers("picar", "picar_crystals", [
         (1, "picar_crystals_1", "Cristalería fina", "Rompe un cristal del End.", E),
-        (25, "picar_crystals_25", "Cristal de Bohemia… del End", "Rompe 25 cristales del End.", L),
+        (25, "picar_crystals_25", "Cristal de Bohemia… del End", "Rompe 25 cristales del End.", M),
     ])  # fmt: skip
     a += _tiers("picar", "picar_tnt", [
         (1, "picar_tnt_1", "La chispa adecuada", "Haz explotar una TNT en el pozo.", C),
-        (100, "picar_tnt_100", "Mascletà en la mina", "Haz explotar 100 TNT en el pozo.", R),
+        (100, "picar_tnt_100", "Mascletà en la mina", "Haz explotar 100 TNT en el pozo.", C),
         (1_000, "picar_tnt_1000", "Nitroglicerina en vena",
-         "Haz explotar 1.000 TNT en el pozo.", E),
+         "Haz explotar 1.000 TNT en el pozo.", R),
     ])  # fmt: skip
     a += _tiers("picar", "picar_chain_max", [
-        (3, "picar_chain_3", "Efecto dominó", "Encadena 3 TNT en una explosión.", R),
-        (5, "picar_chain_5", "Fallas subterráneas", "Encadena 5 TNT en una explosión.", L),
+        (3, "picar_chain_3", "Efecto dominó", "Encadena 3 TNT en una explosión.", C),
+        (5, "picar_chain_5", "Fallas subterráneas", "Encadena 5 TNT en una explosión.", E),
     ])  # fmt: skip
     a += _tiers("picar", "picar_chests", [
         (1, "picar_chests_1", "El arcón de la abuela", "Abre un cofre en el pozo.", C),
-        (50, "picar_chests_50", "Arca de Noé", "Abre 50 cofres en el pozo.", R),
+        (50, "picar_chests_50", "Arca de Noé", "Abre 50 cofres en el pozo.", C),
         (500, "picar_chests_500", "Ali Babá y los cuarenta cofres",
-         "Abre 500 cofres en el pozo.", E),
+         "Abre 500 cofres en el pozo.", R),
     ])  # fmt: skip
     a += _tiers("picar", "picar_treasures", [
         (1, "picar_treasures_1", "El tesoro de Sierra Madre", "Abre un cofre del tesoro.", C),
@@ -21622,22 +21622,22 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("picar", "picar_crafts", [
         (1, "picar_crafts_1", "Hágalo usted mismo", "Rompe una mesa de crafteo.", C),
-        (25, "picar_crafts_25", "Bricomanía", "Rompe 25 mesas de crafteo.", R),
+        (25, "picar_crafts_25", "Bricomanía", "Rompe 25 mesas de crafteo.", C),
         (250, "picar_crafts_250", "Ebanista del inframundo", "Rompe 250 mesas de crafteo.", E),
     ])  # fmt: skip
     a += _tiers("picar", "picar_mults", [
         (1, "picar_mults_1", "Panes y peces", "Rompe un bloque de multiplicador.", C),
         (50, "picar_mults_50", "Tabla del dos de memoria", "Rompe 50 bloques de multiplicador.", R),
         (500, "picar_mults_500", "Multiplicación de los mineros",
-         "Rompe 500 bloques de multiplicador.", E),
+         "Rompe 500 bloques de multiplicador.", L),
     ])  # fmt: skip
     a += _tiers("picar", "picar_beacons", [
         (1, "picar_beacons_1", "Faro de Alejandría", "Rompe una baliza (×10).", L),
     ])  # fmt: skip
     a += _tiers("picar", "picar_multiplier_max", [
-        (10, "picar_multiplier_10", "De diez en diez", "Multiplica una tirada por 10 o más.", R),
-        (30, "picar_multiplier_30", "Treinta y tantos", "Multiplica una tirada por 30 o más.", E),
-        (100, "picar_multiplier_100", "Ciento volando", "Multiplica una tirada por 100 o más.", L),
+        (10, "picar_multiplier_10", "De diez en diez", "Multiplica una tirada por 10 o más.", C),
+        (30, "picar_multiplier_30", "Treinta y tantos", "Multiplica una tirada por 30 o más.", R),
+        (100, "picar_multiplier_100", "Ciento volando", "Multiplica una tirada por 100 o más.", E),
     ])  # fmt: skip
     a += _tiers("picar", "picar_mult_x100_max", [
         (1_000, "picar_x10", "Pepita de oro", "Cobra 10 veces el precio del pico.", R),
@@ -21645,17 +21645,17 @@ def _build_catalog() -> tuple[Achievement, ...]:
         (20_000, "picar_x200", "Vale un Potosí", "Cobra 200 veces el precio del pico.", M),
     ])  # fmt: skip
     a += _tiers("picar", "picar_win_max", [
-        (10_000, "picar_win_10k", "Pico de oro", "Gana 10.000 Y$ netos en una tirada.", E),
-        (100_000, "picar_win_100k", "Mina de oro", "Gana 100.000 Y$ netos en una tirada.", L),
+        (10_000, "picar_win_10k", "Pico de oro", "Gana 10.000 Y$ netos en una tirada.", R),
+        (100_000, "picar_win_100k", "Mina de oro", "Gana 100.000 Y$ netos en una tirada.", M),
         (1_000_000, "picar_win_1m", "Bonanza", "Gana 1.000.000 Y$ netos en una tirada.", M),
     ], unit="money")  # fmt: skip
     a += _tiers("picar", "picar_zero", [
         (1, "picar_zero_1", "Polvo eres", "Termina una tirada sin premio.", C),
-        (50, "picar_zero_50", "Y en polvo te convertirás", "Termina 50 tiradas sin premio.", R),
+        (50, "picar_zero_50", "Y en polvo te convertirás", "Termina 50 tiradas sin premio.", L),
     ])  # fmt: skip
     a += _tiers("picar", "picar_records", [
         (10, "picar_records_10", "Guinness subterráneo",
-         "Bate 10 veces tu récord de profundidad.", R),
+         "Bate 10 veces tu récord de profundidad.", C),
     ])  # fmt: skip
     a += _tiers("picar", "picar_wood_shallow", [
         (1, "picar_wood_shallow", "Ni al sótano",
@@ -21663,13 +21663,13 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("picar", "picar_gold_shallow", [
         (1, "picar_gold_shallow", "Oro parece, mina no es",
-         "Rompe el pico de oro antes de la capa −25.", E),
+         "Rompe el pico de oro antes de la capa −25.", M),
     ])  # fmt: skip
     a += _tiers("picar", "picar_netherite_no_end", [
         (50_000, "picar_netherite_50k", "Lujo para nada",
          "Gasta 50.000 Y$ en picos de netherite que no llegan al End.", R),
         (500_000, "picar_netherite_500k", "Lujo asiático, resultado de saldo",
-         "Gasta 500.000 Y$ en picos de netherite que no llegan al End.", E),
+         "Gasta 500.000 Y$ en picos de netherite que no llegan al End.", L),
     ], unit="money")  # fmt: skip
     a += _tiers("picar", "picar_row_42", [
         (1, "picar_row_42", "La respuesta está bajo tierra",
@@ -21677,11 +21677,11 @@ def _build_catalog() -> tuple[Achievement, ...]:
     ])  # fmt: skip
     a += _tiers("picar", "picar_row_69", [
         (1, "picar_row_69", "Postura del minero",
-         "Termina una tirada justo en la capa −69.", R, True),
+         "Termina una tirada justo en la capa −69.", E, True),
     ])  # fmt: skip
     a += _tiers("picar", "picar_row_666", [
         (1, "picar_row_666", "El número de la bestia… y de la capa",
-         "Termina una tirada justo en la capa −666.", L, True),
+         "Termina una tirada justo en la capa −666.", M, True),
     ])  # fmt: skip
     for prefix, achievement_id, name, description, secret in (
         (CASINO_NIGHT_PREFIX, "picar_madrugada", "Turno de noche en la mina",
