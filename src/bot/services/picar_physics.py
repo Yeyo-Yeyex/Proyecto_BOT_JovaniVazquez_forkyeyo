@@ -19,7 +19,10 @@ fijo `DT`. Las paredes de los lados no se rompen. Contra un bloque:
 - La TNT, al romperse, revienta todo lo que haya a 1 o 2 bloques (otra TNT en el radio
   revienta también, en cadena) y empuja al pico. Lo que revienta cuenta como roto y no
   gasta vida.
-- Un cofre roto le devuelve al pico entre el 15 y el 40 % de su vida inicial.
+- Un cofre roto le devuelve al pico una parte de su vida inicial (`Block.life`: entre
+  el 15 y el 40 % el normal, entre el 80 y el 120 % el del tesoro). Una mesa de crafteo
+  rota le devuelve toda la vida inicial; si ya tenía más, se queda como estaba. Los
+  cofres y las mesas que revienta una TNT cuentan igual.
 
 La partida acaba cuando la vida llega a 0 o cuando el pico llega a la fila del dragón.
 
@@ -62,10 +65,14 @@ from random import Random
 from bot.services.picar_world import (
     AIR,
     BLOCKS,
+    CHUNK,
     COLUMNS,
     DRAGON_ROW,
     LAYERS,
     MINERALS,
+    RAVINE_REGION,
+    RAVINE_ROWS,
+    Block,
     Kind,
     World,
     layer_at,
@@ -101,8 +108,6 @@ BREAK_DAMPING = 0.5
 #: Radios posibles de una TNT (en bloques) y empujón que da al pico.
 TNT_RADII = (1, 2)
 TNT_KICK = 9.0
-#: Vida que da un cofre, en tanto por ciento de la vida inicial del pico.
-CHEST_LIFE_PERCENT = (15, 40)
 #: Ticks sin bajar a una fila nueva antes del empujón, y su fuerza.
 STUCK_TICKS = 600
 NUDGE = 6.0
@@ -148,7 +153,8 @@ class Event:
 
     `kind` es uno de: `hit` (golpe a un bloque que aguanta), `break` (golpe que lo
     rompe), `blast` (bloque reventado por una TNT), `explode` (centro de una TNT),
-    `chest` (vida que da un cofre, en `amount`), `layer` (el pico entra en una capa
+    `chest` (vida que da un cofre, en `amount`), `craft` (vida que devuelve una mesa
+    de crafteo, en `amount`), `layer` (el pico entra en una capa
     nueva, en `layer`), `nudge` (empujón por atasco), `dragon` y `death`.
     """
 
@@ -238,7 +244,6 @@ def params_hash() -> str:
             "BREAK_DAMPING",
             "TNT_RADII",
             "TNT_KICK",
-            "CHEST_LIFE_PERCENT",
             "STUCK_TICKS",
             "NUDGE",
             "MAX_TICKS",
@@ -252,9 +257,11 @@ def params_hash() -> str:
             [p.key, p.life, p.power, repr(p.bounce)]
             for p in sorted(PICKS.values(), key=lambda p: p.key)
         ],
-        "blocks": [[b.key, b.hardness, b.resistance, b.mineral, b.kind.value] for b in BLOCKS],
+        "blocks": [
+            [b.key, b.hardness, b.resistance, b.mineral, b.kind.value, list(b.life)] for b in BLOCKS
+        ],
         "layers": [{**asdict(layer), "dimension": layer.dimension.value} for layer in LAYERS],
-        "world": [COLUMNS, DRAGON_ROW],
+        "world": [COLUMNS, DRAGON_ROW, CHUNK, RAVINE_REGION, list(RAVINE_ROWS)],
     }
     return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
 
@@ -297,7 +304,7 @@ def _explode(
     como rotos y no gastan vida del pico.
     """
     centres: list[tuple[int, int, int]] = []
-    chests: list[tuple[int, int, str]] = []
+    rewards: list[tuple[int, int, Block]] = []
     queue = [(row, col)]
     while queue:
         r0, c0 = queue.pop(0)
@@ -319,9 +326,9 @@ def _explode(
                     run.events.append(Event(tick, "blast", r, c, block.key))
                 if block.kind is Kind.TNT:
                     queue.append((r, c))
-                elif block.kind is Kind.CHEST:
-                    chests.append((r, c, block.key))
-    return centres, chests
+                elif block.kind is not Kind.PLAIN:
+                    rewards.append((r, c, block))
+    return centres, rewards
 
 
 def simulate(seed: int, pick: Pick | str, *, record: bool = True) -> Run:
@@ -338,7 +345,6 @@ def simulate(seed: int, pick: Pick | str, *, record: bool = True) -> Run:
 
     life = pick.life
     power, bounce = pick.power, pick.bounce
-    chest_low, chest_high = CHEST_LIFE_PERCENT
     x = COLUMNS / 2 + rng.uniform(-0.3, 0.3)
     y = -2.0
     vx, vy = rng.uniform(-1.5, 1.5), 0.0
@@ -348,8 +354,11 @@ def simulate(seed: int, pick: Pick | str, *, record: bool = True) -> Run:
     layer = ""
     frames, events = run.frames, run.events
 
-    def chest_life() -> int:
-        return pick.life * rng.randint(chest_low, chest_high) // 100
+    def reward(block: Block, current: int) -> int:
+        """Vida que gana el pico al romper un cofre o una mesa con `current` de vida."""
+        if block.kind is Kind.CRAFT:
+            return max(0, pick.life - current)
+        return pick.life * rng.randint(*block.life) // 100
 
     tick = 0
     while True:
@@ -419,20 +428,19 @@ def simulate(seed: int, pick: Pick | str, *, record: bool = True) -> Run:
                 # Sigue hacia donde iba, frenado.
                 vx -= vn * nx * (1 - BREAK_DAMPING)
                 vy -= vn * ny * (1 - BREAK_DAMPING)
-                if block.kind is Kind.CHEST:
-                    gained = chest_life()
+                centres: list[tuple[int, int, int]] = []
+                rewards: list[tuple[int, int, Block]] = []
+                if block.kind is Kind.TNT:
+                    centres, rewards = _explode(world, run, tick, r, c, rng, record)
+                elif block.kind is not Kind.PLAIN:
+                    rewards = [(r, c, block)]
+                for cr, cc, prize in rewards:
+                    gained = reward(prize, life)
                     life += gained
                     run.life_gained += gained
                     if record:
-                        events.append(Event(tick, "chest", r, c, block.key, gained))
-                elif block.kind is Kind.TNT:
-                    centres, chests = _explode(world, run, tick, r, c, rng, record)
-                    for cr, cc, key in chests:
-                        gained = chest_life()
-                        life += gained
-                        run.life_gained += gained
-                        if record:
-                            events.append(Event(tick, "chest", cr, cc, key, gained))
+                        events.append(Event(tick, prize.kind.value, cr, cc, prize.key, gained))
+                if centres:
                     run.explosions += len(centres)
                     run.longest_chain = max(run.longest_chain, len(centres))
                     for cr, cc, radius in centres:

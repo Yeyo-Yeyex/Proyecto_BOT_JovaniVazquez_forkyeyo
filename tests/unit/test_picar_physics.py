@@ -117,7 +117,7 @@ def test_las_cuentas_de_vida_y_bloques_cuadran(pick: str) -> None:
         struck = [e for e in run.events if e.kind in ("hit", "break")]
         assert len(struck) == run.hits
         spent = sum(BLOCKS[BLOCK_ID[e.block]].hardness for e in struck)
-        gained = sum(e.amount for e in run.events if e.kind == "chest")
+        gained = sum(e.amount for e in run.events if e.kind in ("chest", "craft"))
         assert gained == run.life_gained
         assert run.life == PICKS[pick].life - spent + gained
         broken: dict[str, int] = {}
@@ -127,6 +127,38 @@ def test_las_cuentas_de_vida_y_bloques_cuadran(pick: str) -> None:
         assert broken == run.broken
         assert set(run.minerals) <= {key for key in broken if BLOCKS[BLOCK_ID[key]].mineral}
         assert run.explosions == sum(e.kind == "explode" for e in run.events)
+
+
+def test_la_mesa_de_crafteo_devuelve_la_vida_entera() -> None:
+    pick = PICKS["netherite"]
+    found = 0
+    for seed in range(40):
+        run = simulate(seed, pick)
+        life = pick.life
+        for e in run.events:
+            if e.kind in ("hit", "break"):
+                life -= BLOCKS[BLOCK_ID[e.block]].hardness
+            if e.kind == "chest":
+                life += e.amount
+            elif e.kind == "craft":
+                assert e.block == "crafting_table"
+                assert e.amount == max(0, pick.life - life)
+                life += e.amount
+                assert life >= pick.life
+                found += 1
+    assert found
+
+
+def test_los_cofres_dan_la_vida_de_su_bloque() -> None:
+    seen = set()
+    for seed in range(60):
+        for e in simulate(seed, "netherite").events:
+            if e.kind == "chest":
+                low, high = BLOCKS[BLOCK_ID[e.block]].life
+                assert PICKS["netherite"].life * low // 100 <= e.amount
+                assert e.amount <= PICKS["netherite"].life * high // 100
+                seen.add(e.block)
+    assert {"chest", "treasure"} <= seen
 
 
 def test_la_tnt_revienta_en_cadena() -> None:

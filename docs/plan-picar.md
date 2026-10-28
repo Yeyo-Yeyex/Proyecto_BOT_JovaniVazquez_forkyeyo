@@ -179,3 +179,35 @@ Con las cifras de partida, 1.000 partidas por pico en este contenedor:
 - Hubo un fallo de redondeo que dejaba al pico rozando los bloques y disparaba la red de
   seguridad unas 50 veces por partida (y los empujones por atasco). Se arregló con `SLOP` y
   ahora no salta en 18.000 partidas.
+
+### Colas largas (28/10/2026)
+
+Para que de vez en cuando un pico baje mucho más de lo normal se añadieron tres cosas:
+
+- **Mesas de crafteo** (como en el juego original): devuelven toda la vida inicial. Están en
+  las cuevas y en la profundidad, no en el Nether ni en el End.
+- **Cofres del tesoro**: dan entre el 80 y el 120 % de la vida inicial (los normales, del 15
+  al 40 %).
+- **Barrancos**: grietas de 1 o 2 columnas y de 20 a 60 filas por las que el pico cae libre.
+
+Además, el Nether lleva piedra negra (dureza 3) entre el netherrack, para que cruzarlo
+cueste. Con 2.000 partidas por pico y la vida de partida:
+
+| Pico | Vida | p50 | p99 | Máxima | Nether | End | Dragón |
+|---|---|---|---|---|---|---|---|
+| Madera | 40 | 4 | 10 | 31 | 0 % | 0 % | 0 |
+| Hierro | 300 | 88 | 225 | 512 | 0,55 % | 0,05 % | 0 |
+| Diamante | 350 | 171 | 536 | 605 | 20 % | 6 % | 0 |
+| Netherite | 600 | 516 | 700 | 700 | 75 % | 57 % | 37 |
+
+Lo que se aprende para calibrar:
+
+- **La vida decide cuántos llegan al Nether; lo que cuesta cruzarlo decide cuántos de esos
+  llegan al End.** Con netherite, las metas piden un 60 % al Nether y un 5 % al End: de cada
+  12 que entran, uno sale por abajo. Hoy sale más de la mitad. Hace falta un Nether bastante
+  más caro de cruzar (más piedra negra, más filas o menos cofres) y se ajusta al calibrar.
+- **La madera no llega al Nether** ni con 8 veces su vida (p99 en la fila 113 con 320 de
+  vida). La meta del 0,1 % pide otra cosa o se rebaja; el dragón con madera, si se quiere,
+  entra en la biblioteca con una semilla buscada a propósito y un peso pequeño.
+- La partida se alarga: el netherite con 600 de vida dura 5.000 ticks de media, 83 s de
+  simulación. Cuánto se ve de eso en el GIF lo dice el prototipo del dibujo.

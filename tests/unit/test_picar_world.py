@@ -8,10 +8,13 @@ from bot.services.picar_world import (
     COLUMNS,
     DRAGON_ROW,
     LAYERS,
+    RAVINE_REGION,
+    RAVINE_ROWS,
     Dimension,
     World,
     generate_chunk,
     layer_at,
+    ravines,
 )
 
 
@@ -66,3 +69,29 @@ def test_quitar_un_bloque_lo_deja_en_aire() -> None:
     world.remove(row, 4)
     assert world.block(row, 4) == AIR and world.hp(row)[4] == 0
     assert world.block(row, -1) == AIR and world.block(row, COLUMNS) == AIR
+
+
+def test_los_barrancos_son_aire_aunque_crucen_trozos() -> None:
+    crossing = 0
+    for seed in range(40):
+        world = World(seed)
+        for region in range(DRAGON_ROW // RAVINE_REGION + 1):
+            for ravine in ravines(seed, region):
+                rows = ravine.rows()
+                assert RAVINE_ROWS[0] <= len(rows) <= RAVINE_ROWS[1] or rows.stop == DRAGON_ROW
+                assert rows.start >= 1 and rows.stop <= DRAGON_ROW
+                assert rows.stop <= (region + 2) * RAVINE_REGION
+                crossing += rows.start // CHUNK != (rows.stop - 1) // CHUNK
+                for row, col in zip(rows, ravine.cols, strict=True):
+                    assert 0 <= col <= COLUMNS - ravine.width
+                    cells = world.row(row)[col : col + ravine.width]
+                    assert cells == [AIR] * ravine.width, (seed, row)
+    assert crossing > 10
+
+
+def test_los_barrancos_se_mueven_de_columna_en_columna() -> None:
+    for seed in range(30):
+        for region in range(DRAGON_ROW // RAVINE_REGION + 1):
+            for ravine in ravines(seed, region):
+                steps = {b - a for a, b in zip(ravine.cols, ravine.cols[1:], strict=False)}
+                assert steps <= {-1, 0, 1}

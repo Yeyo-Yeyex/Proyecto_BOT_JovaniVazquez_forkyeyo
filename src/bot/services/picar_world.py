@@ -17,10 +17,19 @@ resistencia (lo que aguanta antes de romperse: cada golpe le quita la potencia d
 pico) y si es mineral. **El valor de los minerales no vive aquí**: la física no puede
 depender de él (ver `docs/plan-picar.md`), y los premios salen de la calibración.
 
-Las capas (`Layer`) fijan qué sale en cada franja de filas y cuántas cuevas hay. Las
-cuevas son huecos en forma de elipse dentro de un trozo y dan ritmo a la caída. Las
-cifras son de partida: cualquier cambio en bloques, capas o cuevas cambia las partidas
-y obliga a recalibrar (`picar_physics.params_hash` lo detecta).
+Las capas (`Layer`) fijan qué sale en cada franja de filas, cuántas cuevas hay y
+cuántos barrancos. Las cuevas son huecos en forma de elipse dentro de un trozo y dan
+ritmo a la caída. Los barrancos (`Ravine`) son grietas de 1 o 2 columnas y de 20 a 60
+filas por las que el pico cae libre: junto con los cofres del tesoro y las mesas de
+crafteo, son lo que de vez en cuando deja a un pico bajar mucho más de lo normal (las
+colas largas de las metas de profundidad, `docs/plan-picar.md`). Un barranco cruza
+trozos, así que no puede salir del generador de un trozo: cada región de
+`RAVINE_REGION` filas tiene su propio generador y decide si empieza uno en ella. Como
+ninguno mide más que una región, en un trozo solo entran los de su región y los de la
+anterior.
+
+Las cifras son de partida: cualquier cambio en bloques, capas, cuevas o barrancos
+cambia las partidas y obliga a recalibrar (`picar_physics.params_hash` lo detecta).
 """
 
 from __future__ import annotations
@@ -28,6 +37,7 @@ from __future__ import annotations
 from bisect import bisect_right
 from dataclasses import dataclass
 from enum import Enum
+from functools import lru_cache
 from itertools import accumulate
 from random import Random
 
@@ -37,6 +47,10 @@ COLUMNS = 9
 CHUNK = 16
 #: Fila del dragón: el pico que llega hasta aquí lo mata y la partida acaba.
 DRAGON_ROW = 700
+#: Filas por región de barrancos y alto de un barranco (ambos incluidos). El alto
+#: máximo no puede pasar de la región (ver la docstring del módulo).
+RAVINE_REGION = 64
+RAVINE_ROWS = (20, 60)
 
 
 class Kind(Enum):
@@ -45,8 +59,10 @@ class Kind(Enum):
     PLAIN = "plain"
     #: Revienta los bloques de alrededor (`picar_physics`).
     TNT = "tnt"
-    #: Le devuelve vida al pico.
+    #: Le devuelve al pico una parte de su vida inicial (`Block.life`).
     CHEST = "chest"
+    #: Mesa de crafteo: le devuelve al pico toda su vida inicial.
+    CRAFT = "craft"
 
 
 class Dimension(Enum):
@@ -69,6 +85,9 @@ class Block:
     resistance: int
     mineral: bool = False
     kind: Kind = Kind.PLAIN
+    #: Solo cofres: vida que dan, en tanto por ciento de la vida inicial del pico
+    #: (un número al azar entre los dos, ambos incluidos).
+    life: tuple[int, int] = (0, 0)
 
 
 BLOCKS: tuple[Block, ...] = (
@@ -82,13 +101,16 @@ BLOCKS: tuple[Block, ...] = (
     Block("redstone", "Redstone", 3, 6, mineral=True),
     Block("lapis", "Lapislázuli", 3, 6, mineral=True),
     Block("tnt", "TNT", 1, 1, kind=Kind.TNT),
-    Block("chest", "Cofre", 1, 3, kind=Kind.CHEST),
+    Block("chest", "Cofre", 1, 3, kind=Kind.CHEST, life=(15, 40)),
+    Block("treasure", "Cofre del tesoro", 1, 4, kind=Kind.CHEST, life=(80, 120)),
+    Block("crafting_table", "Mesa de crafteo", 1, 3, kind=Kind.CRAFT),
     # Profundidad.
     Block("deepslate", "Pizarra profunda", 3, 7),
     Block("diamond", "Diamante", 5, 10, mineral=True),
     Block("emerald", "Esmeralda", 5, 10, mineral=True),
     # Nether.
     Block("netherrack", "Netherrack", 1, 2),
+    Block("blackstone", "Piedra negra", 3, 6),
     Block("quartz", "Cuarzo", 2, 4, mineral=True),
     Block("nether_gold", "Oro del Nether", 2, 4, mineral=True),
     Block("ancient_debris", "Escombros ancestrales", 8, 20, mineral=True),
@@ -96,7 +118,7 @@ BLOCKS: tuple[Block, ...] = (
     Block("end_stone", "Piedra del End", 4, 9),
     Block("obsidian", "Obsidiana", 8, 30),
     Block("end_crystal", "Cristal del End", 6, 14, mineral=True),
-    Block("shulker", "Caja de shulker", 1, 3, kind=Kind.CHEST),
+    Block("shulker", "Caja de shulker", 1, 3, kind=Kind.CHEST, life=(15, 40)),
 )
 
 AIR = 0
@@ -117,6 +139,9 @@ class Layer:
     weights: tuple[tuple[str, int], ...]
     #: Cuevas por trozo: un número al azar entre los dos, ambos incluidos.
     caves: tuple[int, int] = (0, 0)
+    #: Probabilidad, en tanto por mil, de que empiece un barranco en una región cuya
+    #: fila central caiga en esta capa.
+    ravine: int = 0
 
 
 LAYERS: tuple[Layer, ...] = (
@@ -142,8 +167,11 @@ LAYERS: tuple[Layer, ...] = (
             ("lapis", 15),
             ("tnt", 20),
             ("chest", 8),
+            ("treasure", 2),
+            ("crafting_table", 4),
         ),
         caves=(1, 3),
+        ravine=300,
     ),
     Layer(
         "deep",
@@ -160,8 +188,11 @@ LAYERS: tuple[Layer, ...] = (
             ("emerald", 5),
             ("tnt", 25),
             ("chest", 10),
+            ("treasure", 2),
+            ("crafting_table", 3),
         ),
         caves=(1, 2),
+        ravine=300,
     ),
     Layer(
         "nether",
@@ -169,14 +200,17 @@ LAYERS: tuple[Layer, ...] = (
         250,
         Dimension.NETHER,
         (
-            ("netherrack", 800),
+            ("netherrack", 650),
+            ("blackstone", 150),
             ("quartz", 80),
             ("nether_gold", 60),
             ("ancient_debris", 6),
             ("tnt", 15),
             ("chest", 3),
+            ("treasure", 1),
         ),
         caves=(2, 3),
+        ravine=250,
     ),
     Layer(
         "end",
@@ -185,6 +219,7 @@ LAYERS: tuple[Layer, ...] = (
         Dimension.END,
         (("end_stone", 900), ("obsidian", 40), ("end_crystal", 8), ("shulker", 4)),
         caves=(1, 2),
+        ravine=150,
     ),
 )
 
@@ -215,13 +250,59 @@ class _Table:
 _TABLES = {layer.key: _Table.of(layer) for layer in LAYERS}
 
 
+@dataclass(frozen=True)
+class Ravine:
+    """Un barranco: desde la fila `top`, una franja de aire por fila.
+
+    `cols[i]` es la primera columna de la franja en la fila `top + i` y `width`, cuántas
+    columnas mide.
+    """
+
+    top: int
+    width: int
+    cols: tuple[int, ...]
+
+    def rows(self) -> range:
+        return range(self.top, self.top + len(self.cols))
+
+
+@lru_cache(maxsize=512)
+def ravines(seed: int, region: int) -> tuple[Ravine, ...]:
+    """Barrancos que empiezan en una región (ninguno o uno).
+
+    Empiezan por debajo de la fila 0 (la superficie no se abre) y acaban antes del
+    dragón. La franja se desplaza una columna a un lado o al otro en una de cada tres
+    filas, sin salirse del mundo.
+    """
+    first = region * RAVINE_REGION
+    if first < 0 or first >= DRAGON_ROW:
+        return ()
+    rng = Random(f"picar:barranco:{seed}:{region}")
+    if rng.randrange(1000) >= layer_at(first + RAVINE_REGION // 2).ravine:
+        return ()
+    top = max(1, first + rng.randrange(RAVINE_REGION))
+    height = min(rng.randint(*RAVINE_ROWS), DRAGON_ROW - top)
+    width = rng.randint(1, 2)
+    col = rng.randrange(COLUMNS - width + 1)
+    cols = []
+    for _ in range(height):
+        cols.append(col)
+        step = rng.randrange(6)
+        if step == 0 and col > 0:
+            col -= 1
+        elif step == 1 and col < COLUMNS - width:
+            col += 1
+    return (Ravine(top, width, tuple(cols)),) if cols else ()
+
+
 def generate_chunk(seed: int, chunk: int) -> list[list[int]]:
     """Bloques de las filas `chunk * CHUNK` a `(chunk + 1) * CHUNK - 1`, sin romper.
 
-    Primero se sortea cada casilla con los pesos de su capa y luego se excavan las
-    cuevas de la capa de la primera fila del trozo: elipses de 1 a 3 bloques de radio
-    horizontal y de 1 a 2 de vertical, que no salen del trozo. Las filas del dragón y
-    las de más abajo son aire (el dragón no es un bloque).
+    Primero se sortea cada casilla con los pesos de su capa, luego se excavan las cuevas
+    de la capa de la primera fila del trozo (elipses de 1 a 3 bloques de radio
+    horizontal y de 1 a 2 de vertical, que no salen del trozo) y al final los trozos de
+    barranco que caigan en él. Las filas del dragón y las de más abajo son aire (el
+    dragón no es un bloque).
     """
     rng = Random(f"picar:mundo:{seed}:{chunk}")
     first = chunk * CHUNK
@@ -246,6 +327,13 @@ def generate_chunk(seed: int, chunk: int) -> list[list[int]]:
             for dx in range(-rx, rx + 1):
                 c = cx + dx
                 if 0 <= c < COLUMNS and dx * dx * ry * ry + dy * dy * rx * rx <= limit:
+                    rows[r][c] = AIR
+    region = first // RAVINE_REGION
+    for ravine in ravines(seed, region - 1) + ravines(seed, region):
+        for i, col in enumerate(ravine.cols):
+            r = ravine.top + i - first
+            if 0 <= r < CHUNK:
+                for c in range(col, col + ravine.width):
                     rows[r][c] = AIR
     return rows
 
