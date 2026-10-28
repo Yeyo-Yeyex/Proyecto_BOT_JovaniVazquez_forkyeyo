@@ -15,6 +15,7 @@ import discord
 from bot.app import BotClient
 from bot.cogs.admin import MAX_DINERO
 from bot.cogs.deploy import DEPLOYERS
+from bot.services.economy import format_amount
 
 GUILD_ID = 10
 #: Solo Yeyo y Dani dan dinero, como con `crear`.
@@ -39,9 +40,13 @@ def member(user_id: int, *, bot: bool = False) -> MagicMock:
 
 
 async def dinero(
-    client: BotClient, amount: int, to: MagicMock | None = None, user_id: int = DEPLOYER_ID
+    client: BotClient,
+    amount: int,
+    to: MagicMock | None = None,
+    user_id: int = DEPLOYER_ID,
+    quitar: str | None = None,
 ) -> str:
-    """Ejecuta `.dinero <amount> [@to]` como `user_id` y devuelve lo que contesta."""
+    """Ejecuta `.dinero [quitar] <amount> [@to]` como `user_id` y devuelve lo que contesta."""
     admin = client.get_cog("Admin")
     ctx = MagicMock()
     ctx.bot = client
@@ -49,7 +54,7 @@ async def dinero(
     ctx.author = member(user_id)
     ctx.command = client.get_command("dinero")
     ctx.send = AsyncMock(return_value=MagicMock(edit=AsyncMock()))
-    await admin.dinero_text.callback(admin, ctx, amount, to)  # type: ignore[union-attr]
+    await admin.dinero_text.callback(admin, ctx, quitar, amount, to)  # type: ignore[union-attr]
     progress = ctx.send.return_value
     if progress.edit.await_count:
         return progress.edit.await_args.kwargs["content"]
@@ -88,5 +93,21 @@ async def test_solo_yeyo_y_dani_y_con_cantidades_que_tengan_sentido(tmp_path: Pa
         assert "va de 1 a" in await dinero(client, MAX_DINERO + 1, member(GUILLE))
         assert "bots" in await dinero(client, 5000, member(99, bot=True))
         assert await balance(client, GUILLE) == before
+    finally:
+        await client.close()
+
+
+async def test_dinero_quitar_saca_y_si_no_le_llega_todo(tmp_path: Path) -> None:
+    client = await load_bot(tmp_path)
+    try:
+        await dinero(client, 5000, member(GUILLE))
+        before = await balance(client, GUILLE)
+        assert "3.000 Y$ menos" in await dinero(client, 3000, member(GUILLE), quitar="quitar")
+        assert await balance(client, GUILLE) == before - 3000
+        left = before - 3000
+        answer = await dinero(client, MAX_DINERO, member(GUILLE), quitar="quitar")
+        assert f"{format_amount(left)} menos" in answer
+        assert await balance(client, GUILLE) == 0
+        assert "0 Y$ menos" in await dinero(client, 10, member(GUILLE), quitar="quitar")
     finally:
         await client.close()

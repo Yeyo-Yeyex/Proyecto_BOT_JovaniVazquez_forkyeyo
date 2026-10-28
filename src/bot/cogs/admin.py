@@ -28,6 +28,7 @@ No cobra nada ni gasta existencias, y lo que da llega sin número de serie.
 IDs y sin salir en `ayuda`: para devolver lo perdido por un fallo o dar un premio.
 Salen de la nada, como un regalo de cumpleaños: exentos de IRPF (`EconomyService.grant`)
 y, si debe a Hacienda, con su embargo. Quedan en el libro con su motivo (`admin:dinero`).
+Con `quitar` (`.dinero quitar 5000`) los saca en vez de darlos; si no le llega, se queda a cero.
 
 `enchufe` sube de puesto en `pala` a un miembro sin pedirle barra, días, tareas ni
 formación. `amanece` le vacía las franjas de hoy (curro y negocio) y las horas extra
@@ -68,7 +69,7 @@ import sqlite3
 import time
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
-from typing import Any
+from typing import Any, Literal
 
 import discord
 from discord import app_commands
@@ -1515,34 +1516,45 @@ class Admin(commands.Cog):
 
     # --- dinero -----------------------------------------------------------
 
-    @app_commands.command(name="dinero", description="Da yapdollars a un miembro o a ti.")
+    @app_commands.command(name="dinero", description="Da o quita yapdollars a un miembro o a ti.")
     @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
-    @app_commands.describe(cantidad="Cuántos Y$.", miembro="A quién (si no, a ti).")
+    @app_commands.describe(
+        cantidad="Cuántos Y$.", miembro="A quién (si no, a ti).", quitar="Quitar en vez de dar."
+    )
     async def dinero(
         self,
         interaction: discord.Interaction,
         cantidad: app_commands.Range[int, 1, MAX_DINERO],
         miembro: discord.Member | None = None,
+        quitar: bool = False,
     ) -> None:
-        """Da dinero sin quitárselo a nadie (solo lo ves tú).
+        """Da dinero sin quitárselo a nadie, o lo quita (solo lo ves tú).
 
         Solo para los IDs de `DEPLOYERS`; que Discord oculte el `/` a quien no es
         administrador es solo estética.
         """
-        await self._dinero_impl(InteractionResponder(interaction), miembro, cantidad)
+        await self._dinero_impl(InteractionResponder(interaction), miembro, cantidad, quitar)
 
     @commands.command(name="dinero", hidden=True)
     async def dinero_text(
-        self, ctx: commands.Context, cantidad: int, miembro: discord.Member | None = None
+        self,
+        ctx: commands.Context,
+        quitar: Literal["quitar"] | None,
+        cantidad: int,
+        miembro: discord.Member | None = None,
     ) -> None:
-        """Versión de texto: `.dinero 5000` (a ti) o `.dinero 5000 @miembro`."""
-        await self._dinero_impl(ContextResponder(ctx), miembro, cantidad)
+        """Versión de texto: `.dinero [quitar] 5000` (a ti) o `.dinero [quitar] 5000 @miembro`."""
+        await self._dinero_impl(ContextResponder(ctx), miembro, cantidad, quitar is not None)
 
     async def _dinero_impl(
-        self, responder: CommandResponder, member: discord.Member | None, amount: int
+        self,
+        responder: CommandResponder,
+        member: discord.Member | None,
+        amount: int,
+        take: bool = False,
     ) -> None:
-        """Mete `amount` en la cuenta de `member` (o de quien lo pide) y responde cómo queda."""
+        """Mete (o con `take`, saca) `amount` en la cuenta de `member` o de quien lo pide."""
         guild = responder.guild
         if guild is None:
             await responder.send_error("Esto solo funciona en un servidor.")
@@ -1561,16 +1573,25 @@ class Admin(commands.Cog):
             return
         await responder.start_progress(ephemeral=True)
         try:
-            balance = await self.bot.economy.grant(  # type: ignore[attr-defined]
-                guild.id, member.id, amount=amount, reason="admin:dinero"
-            )
+            economy = self.bot.economy  # type: ignore[attr-defined]
+            if take:
+                amount, balance = await economy.revoke(
+                    guild.id, member.id, amount=amount, reason="admin:dinero"
+                )
+            else:
+                balance = await economy.grant(
+                    guild.id, member.id, amount=amount, reason="admin:dinero"
+                )
         except sqlite3.Error:
             logger.exception("No se pudo dar dinero en %s", guild.id)
             await responder.finish("No se ha podido guardar ahora mismo. Prueba en un rato.")
             return
-        logger.info("%s da %s Y$ a %s en %s", responder.member.id, amount, member.id, guild.id)
+        verb, word = ("quita", "menos") if take else ("da", "para")
+        logger.info(
+            "%s %s %s Y$ a %s en %s", responder.member.id, verb, amount, member.id, guild.id
+        )
         await responder.finish(
-            f"💸 {format_amount(amount)} para {member.mention}. Su saldo: "
+            f"💸 {format_amount(amount)} {word} {member.mention}. Su saldo: "
             f"{format_amount(balance)}.",
             allowed_mentions=discord.AllowedMentions.none(),
         )

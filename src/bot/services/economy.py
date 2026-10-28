@@ -1132,6 +1132,26 @@ class EconomyService:
             guild_id, user_id, [LedgerEntry(amount, reason)], garnish_at=self._clock()
         )
 
+    async def revoke(
+        self, guild_id: int, user_id: int, *, amount: int, reason: str
+    ) -> tuple[int, int]:
+        """Quita dinero sin dárselo a nadie: lo contrario de `grant`. Si no le llega, todo.
+
+        Returns:
+            Lo quitado y el saldo final.
+        """
+        if amount <= 0:
+            raise ValueError("La cantidad debe ser positiva.")
+        try:
+            balance = await self.repository.apply(guild_id, user_id, [LedgerEntry(-amount, reason)])
+        except InsufficientFundsError as error:
+            if error.balance <= 0:
+                return 0, error.balance
+            # shortcut: si el saldo baja entre los dos intentos, el segundo lanza; basta para admin.
+            amount = error.balance
+            balance = await self.repository.apply(guild_id, user_id, [LedgerEntry(-amount, reason)])
+        return amount, balance
+
     def _week(self, now: float | None = None) -> FiscalWeek:
         """La semana fiscal en curso (o la de `now`)."""
         return fiscal_week(local_day(self._clock() if now is None else now))
