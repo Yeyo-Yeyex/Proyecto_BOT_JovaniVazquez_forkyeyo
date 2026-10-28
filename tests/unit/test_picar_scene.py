@@ -24,7 +24,9 @@ from bot.services.picar_scene import (
     SCENE,
     TRANSITION_HOLD_MS,
     WIDTH,
+    Part,
     PicarScene,
+    next_part_frames,
     _rows_for,
     camera_path,
     segment_meta,
@@ -73,6 +75,29 @@ def test_la_camara_nunca_deja_al_pico_fuera(deep: Outcome) -> None:
     camera = camera_path(deep.run)
     for (_, y, _), top in zip(deep.run.frames, camera[1:], strict=True):
         assert top < y * 32 < top + HEIGHT
+
+
+def test_la_camara_no_da_tirones(cal: Calibration, deep: Outcome) -> None:
+    """Antes saltaba 72 px de un fotograma a otro al recolocarse; ahora acelera y frena."""
+    for outcome in (deep, play("iron", cal, seed=1), play("netherite", cal, seed=3)):
+        camera = camera_path(outcome.run)[::3]  # un fotograma de cada tres ticks
+        steps = [b - a for a, b in zip(camera, camera[1:], strict=False)]
+        assert max(abs(step) for step in steps) <= 45
+        assert max(abs(b - a) for a, b in zip(steps, steps[1:], strict=False)) <= 30
+
+
+def test_los_gif_crecen_segun_lo_que_da_tiempo_a_pintar_y_subir() -> None:
+    first = Part(b"x" * 1_000_000, ms=6_000, hold_ms=2_000, last=False, frames=80, cut=True)
+    second = next_part_frames(first, paint_ms=10)
+    # 4 s en movimiento, menos la subida fija y el margen: unos 2,2 s para pintar y subir.
+    assert 90 <= second < 200
+    after = Part(b"x" * 2_000_000, ms=second * 50 + 2_000, hold_ms=2_000, last=False,
+                 frames=second, cut=True)  # fmt: skip
+    assert next_part_frames(after, paint_ms=10) > second
+    # Más lento pintando, menos fotogramas; un rótulo de dimensión también da tiempo.
+    assert next_part_frames(first, paint_ms=40) < second
+    banner = Part(first.gif, ms=6_000, hold_ms=2_000, last=False, frames=80)
+    assert next_part_frames(banner, paint_ms=10) > second
 
 
 def test_la_meta_lleva_el_trozo_de_mundo_que_se_ve(cal: Calibration, deep: Outcome) -> None:

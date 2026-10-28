@@ -73,7 +73,7 @@ from bot.services.picar import (
     format_mult,
     play,
 )
-from bot.services.picar_scene import Part, PicarScene
+from bot.services.picar_scene import UPLOAD_FIXED_MS, Part, PicarScene, upload_ms
 from bot.services.picar_world import DRAGON_ROW, layer_at
 from bot.services.taxes import TAX_COLLECTOR
 from bot.utils.interactions import ack, edit, notify
@@ -517,30 +517,47 @@ class Picar(commands.Cog, name="Pico"):
     ) -> None:  # fmt: skip
         """Enseña los GIF de una tirada uno detrás de otro en el mismo mensaje.
 
-        Mientras se ve uno se pinta el siguiente; se pone cuando el anterior llega a su
-        pausa final. Vuelve cuando el último ha llegado a la suya.
+        Mientras se ve uno se pinta el siguiente. Si el anterior acaba en un corte, el
+        siguiente se empieza a subir antes de que llegue a esa pausa, lo que se espera que
+        tarde la subida (`upload_ms`), para que llegue justo cuando el anterior se para:
+        esperar a la pausa dejaba al pico quieto lo que tardaba en subirse (unos 3 s con un
+        GIF de 6 MB). Si acaba en el rótulo de una dimensión, se sube al empezar el rótulo,
+        que así se ve. Vuelve cuando el último ha llegado a su pausa.
         """
         assert self.calibration is not None
         values = self.calibration.picks[outcome.pick].values
         parts = self.scene.parts(outcome, values, budget=limit)
         try:
             pending: asyncio.Task[Part] | None = asyncio.ensure_future(anext(parts))
+            # El último GIF puesto y cuándo dejó Discord de subirlo (empieza a verse).
+            previous: tuple[Part, float] | None = None
             index = 0
             while pending is not None:
                 try:
                     part = await pending
                 except StopAsyncIteration:
                     return
-                shown = time.monotonic()
+                if previous is not None:
+                    before, on_screen = previous
+                    moving = before.ms - before.hold_ms
+                    if before.cut:
+                        moving -= upload_ms(len(part.gif))
+                    start = on_screen + moving / 1000 + REVEAL_MARGIN_SECONDS
+                    await asyncio.sleep(max(0.0, start - time.monotonic()))
                 await edit_fn(
                     embed=embed_for(index),
                     attachments=[discord.File(io.BytesIO(part.gif), filename=GIF_NAME)],
                     view=view,
                 )
+                previous = (part, time.monotonic())
                 pending = None if part.last else asyncio.ensure_future(anext(parts))
-                wait = (part.ms - part.hold_ms) / 1000 + REVEAL_MARGIN_SECONDS
-                await asyncio.sleep(max(0.0, shown + wait - time.monotonic()))
                 index += 1
+            if previous is not None:
+                # Lo que sigue (la imagen final) también tarda en subirse.
+                last, on_screen = previous
+                moving = last.ms - last.hold_ms - UPLOAD_FIXED_MS
+                start = on_screen + moving / 1000 + REVEAL_MARGIN_SECONDS
+                await asyncio.sleep(max(0.0, start - time.monotonic()))
         finally:
             await parts.aclose()
 
