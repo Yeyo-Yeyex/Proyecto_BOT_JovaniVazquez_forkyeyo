@@ -5,6 +5,8 @@ Tabla (en el mismo archivo SQLite que el resto del bot):
 - `picar_plays`: una fila por tirada, con el pico, la semilla de la biblioteca, el hash
   de la calibración con la que se jugó, lo que costó y pagó, el multiplicador, la fila
   más honda a la que llegó y si mató al dragón.
+- `picar_days`: por miembro, el último día (local) en que jugó y cuántos días seguidos
+  lleva (los logros de racha).
 
 Se guarda antes de dibujar (el dinero ya se ha movido): si el bot se cae a mitad del GIF,
 la tirada está apuntada. De aquí salen el récord de profundidad de cada miembro con cada
@@ -20,6 +22,7 @@ import sqlite3
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date, timedelta
 from pathlib import Path
 from typing import TypeVar
 
@@ -45,6 +48,19 @@ class PlayRecord:
     max_row: int
     dragon: bool
     created_at: float
+
+
+@dataclass(frozen=True, slots=True)
+class Saved:
+    """Lo que devuelve apuntar una tirada."""
+
+    id: int
+    #: Récord de profundidad del miembro con ese pico antes de esta tirada.
+    best: int | None
+    #: Récord del servidor con ese pico antes de esta tirada.
+    server_best: int | None
+    #: Días seguidos que lleva jugando, contando hoy.
+    streak: int
 
 
 class PicarRepository:
@@ -91,6 +107,13 @@ class PicarRepository:
                     ON picar_plays (guild_id, user_id, pick, max_row);
                 CREATE INDEX IF NOT EXISTS picar_plays_depth
                     ON picar_plays (guild_id, pick, max_row);
+                CREATE TABLE IF NOT EXISTS picar_days (
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    last_day TEXT NOT NULL,
+                    streak INTEGER NOT NULL,
+                    PRIMARY KEY (guild_id, user_id)
+                );
                 """
             )
 
@@ -108,16 +131,45 @@ class PicarRepository:
         multiplier: int,
         max_row: int,
         dragon: bool,
-    ) -> int:
-        """Apunta una tirada y devuelve su número."""
+        day: date,
+    ) -> Saved:
+        """Apunta una tirada (jugada el día local `day`) y devuelve su número y récords."""
         return await self._run(
             self._record_sync,
             (guild_id, user_id, pick, seed, params, cost, payout, units, multiplier, max_row,
              int(dragon), time.time()),
+            day,
         )  # fmt: skip
 
-    def _record_sync(self, values: tuple[object, ...]) -> int:
+    def _record_sync(self, values: tuple[object, ...], day: date) -> Saved:
+        guild_id, user_id, pick = values[:3]
         with self._connect() as connection:
+            best, server_best = connection.execute(
+                """
+                SELECT MAX(CASE WHEN user_id = ? THEN max_row END), MAX(max_row)
+                FROM picar_plays WHERE guild_id = ? AND pick = ?
+                """,
+                (user_id, guild_id, pick),
+            ).fetchone()
+            row = connection.execute(
+                "SELECT last_day, streak FROM picar_days WHERE guild_id = ? AND user_id = ?",
+                (guild_id, user_id),
+            ).fetchone()
+            streak = 1
+            if row is not None:
+                last = date.fromisoformat(str(row["last_day"]))
+                if last == day:
+                    streak = int(row["streak"])
+                elif last == day - timedelta(days=1):
+                    streak = int(row["streak"]) + 1
+            connection.execute(
+                """
+                INSERT INTO picar_days (guild_id, user_id, last_day, streak) VALUES (?, ?, ?, ?)
+                ON CONFLICT (guild_id, user_id)
+                DO UPDATE SET last_day = excluded.last_day, streak = excluded.streak
+                """,
+                (guild_id, user_id, day.isoformat(), streak),
+            )
             cursor = connection.execute(
                 """
                 INSERT INTO picar_plays
@@ -127,7 +179,12 @@ class PicarRepository:
                 """,
                 values,
             )
-            return int(cursor.lastrowid or 0)
+            return Saved(
+                int(cursor.lastrowid or 0),
+                None if best is None else int(best),
+                None if server_best is None else int(server_best),
+                streak,
+            )
 
     async def get(self, guild_id: int, play_id: int) -> PlayRecord | None:
         """Una tirada del servidor por su número; `None` si no existe."""
@@ -212,3 +269,4 @@ class PicarRepository:
     def _delete_guild_sync(self, guild_id: int) -> None:
         with self._connect() as connection:
             connection.execute("DELETE FROM picar_plays WHERE guild_id = ?", (guild_id,))
+            connection.execute("DELETE FROM picar_days WHERE guild_id = ?", (guild_id,))

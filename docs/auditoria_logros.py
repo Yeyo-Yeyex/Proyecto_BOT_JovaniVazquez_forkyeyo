@@ -395,9 +395,15 @@ def _jugar_picar(j: Jugador) -> StatDelta:
     best: dict[str, int] = j.extra.setdefault("picar_best", {})  # type: ignore[assignment]
     new_record = run.max_row > best.get(key, -1)
     best[key] = max(best.get(key, -1), run.max_row)
+    plays = int(j.extra.get("picar_plays", 0)) + 1  # type: ignore[call-overload]
+    j.extra["picar_plays"] = plays
     delta = picar_stats(
-        run, pick=key, cost=cost, payout=outcome.payout, new_record=new_record, when=NOON
-    )
+        run, pick=key, cost=cost, payout=outcome.payout, new_record=new_record, when=NOON,
+        capped=outcome.capped,
+        # Juega todos los días a su ritmo; la retención, al 19 % de lo ganado.
+        streak=(plays - 1) // RITMO_CASINO["picar"] + 1,
+        tax=max(0, outcome.payout - cost) * 19 // 100,
+    )  # fmt: skip
     return _con_casino(delta, stake=cost, net=outcome.payout - cost)
 
 

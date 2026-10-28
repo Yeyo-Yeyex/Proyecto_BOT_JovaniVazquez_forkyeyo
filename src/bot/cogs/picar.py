@@ -159,6 +159,10 @@ class Dig:
     play_id: int
     record: int | None
     when: datetime
+    #: Récord del servidor con ese pico antes de la tirada (`None` si nadie lo había usado).
+    server_record: int | None = None
+    #: Días seguidos que lleva el miembro jugando en el pozo, contando hoy.
+    streak: int = 1
 
     @property
     def cost(self) -> int:
@@ -175,6 +179,11 @@ class Dig:
     @property
     def new_record(self) -> bool:
         return self.record is None or self.outcome.run.max_row > self.record
+
+    @property
+    def server_record_beaten(self) -> bool:
+        """Si bate el récord que ya tenía alguien del servidor con ese pico."""
+        return self.server_record is not None and self.outcome.run.max_row > self.server_record
 
 
 def _plural_layer(row: int) -> str:
@@ -481,9 +490,9 @@ class Picar(commands.Cog, name="Pico"):
         settlement = await self.economy.settle_bet(
             guild_id, user_id, game=GAME, stake=OFFERS[pick].cost, payout=outcome.payout
         )
-        records = await self.repository.records(guild_id, user_id)
         run = outcome.run
-        play_id = await self.repository.record(
+        when = datetime.now(TIMEZONE)
+        saved = await self.repository.record(
             guild_id,
             user_id,
             pick=pick,
@@ -495,8 +504,12 @@ class Picar(commands.Cog, name="Pico"):
             multiplier=run.multiplier,
             max_row=run.max_row,
             dragon=run.dragon,
+            day=when.date(),
         )
-        return Dig(outcome, settlement, play_id, records.get(pick), datetime.now(TIMEZONE))
+        return Dig(
+            outcome, settlement, saved.id, saved.best, when,
+            server_record=saved.server_best, streak=saved.streak,
+        )  # fmt: skip
 
     async def play_parts(
         self, outcome: Outcome, *, edit_fn: EditFn, embed_for: Callable[[int], discord.Embed],
@@ -582,6 +595,10 @@ class Picar(commands.Cog, name="Pico"):
             payout=outcome.payout,
             new_record=dig.new_record,
             when=dig.when,
+            capped=outcome.capped,
+            server_record=dig.server_record_beaten,
+            streak=dig.streak,
+            tax=dig.settlement.tax_delta,
         )
         delta.merge(
             casino_stats(

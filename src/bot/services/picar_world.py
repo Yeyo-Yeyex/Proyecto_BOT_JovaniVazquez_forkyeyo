@@ -238,6 +238,7 @@ LAYERS: tuple[Layer, ...] = (
             ("beacon", 1),
         ),
         caves=(0, 1),
+        ravine=500,
     ),
 )
 

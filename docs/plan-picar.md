@@ -277,8 +277,13 @@ Acordadas en el chat y conseguidas con el millón de semillas (`docs/picar-calib
   de Python y 15-28 veces más rápido. Una calibración completa con un millón de semillas
   de los seis picos tarda ~9 minutos en 4 núcleos (antes, ~4 horas). Cada barrido de
   parámetros de 300.000 partidas, ~20 s.
-- **Pendiente: el dragón.** El End es hoy una muralla y el dragón no sale en el millón.
-  Su frecuencia y los topes están por decidir.
+- **El dragón.** El End tiene barrancos (el vacío entre islas, 500 de cada 1.000
+  regiones). Solo el netherite llega: 15 veces en el millón de semillas, 1 de cada 66.667
+  tiradas, y se lleva el 7,5 % de su RTP (con vacío en todas las regiones salían 28 y el
+  14 %, y el resto de tiradas pagaba demasiado poco). El diamante no llega nunca, así que
+  no tiene logro de dragón. Los topes siguen como estaban: con ×5.000, el dragón paga
+  25 M de Y$ brutos, unos 13 M netos tras el IRPF, lejos de los 53,5 M del Falcon. Si se
+  quiere un dragón que se vea varias veces al año, hay que bajar el tope a ×200-300.
 - **Fiscalidad de los premios gordos.** El pico es juego de casino (operador privado), no
   una lotería del Estado: el gravamen especial del 20 % de la DA 33ª LIRPF no aplica. El
   premio es ganancia patrimonial de la base general (art. 33.1 y 46 LIRPF): retención
