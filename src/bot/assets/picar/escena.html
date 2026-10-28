@@ -22,7 +22,7 @@ cámara y el pico, qué efectos se ven y qué dice el marcador. Funciones que ll
 
 Cómo se ve, de atrás adelante:
 
-1. Mundo. Cada bloque con su textura (16 px pintados a 32, sin suavizar) y relieve: luz
+1. Mundo. Cada bloque con su textura (16 px pintados a 48, sin suavizar) y relieve: luz
    en la cara de arriba y sombra en las de los lados y abajo cuando dan al aire. Los
    huecos enseñan la pared de la capa, oscurecida y con sombra junto a los bloques que
    los rodean (oclusión ambiental). Cada capa tiñe un poco lo suyo: la profundidad, de
@@ -37,7 +37,8 @@ Cómo se ve, de atrás adelante:
 6. Rótulos en cinta (cambio de dimensión) y la tarjeta del final.
 
 Coordenadas de mundo en píxeles: la columna c empieza en c * B y la fila r en r * B, con
-B = 32. Sin emojis: el Chromium del Docker no trae su fuente.
+B = 48 (K = B / 32 escala lo que se pensó para bloques de 32). Sin emojis: el Chromium del
+Docker no trae su fuente.
 -->
 <html lang="es">
 <head>
@@ -52,7 +53,7 @@ B = 32. Sin emojis: el Chromium del Docker no trae su fuente.
 <script>
 "use strict";
 window.exportFrame ??= (c) => c.toDataURL("image/png");
-const B = 32, T = 16, COLS = 9;
+const B = 48, T = 16, COLS = 6, K = B / 32;
 const W = COLS * B, H = 512;
 const HUD = 40;
 const GAUGE_X = W - 9, GAUGE_TOP = HUD + 10, GAUGE_BOTTOM = H - 12;
@@ -143,11 +144,11 @@ function drawSky(s) {
   grad.addColorStop(0, "#3d7fd6"); grad.addColorStop(0.7, "#8cc4f5"); grad.addColorStop(1, "#cfe9ff");
   g.fillStyle = grad; g.fillRect(0, 0, W, top);
   // Sol y nubes de pixel art, quietos.
-  const sx = 56, sy = top - 150;
+  const sx = 56, sy = top - 92;
   g.fillStyle = "rgba(255,244,190,0.35)"; g.fillRect(sx - 6, sy - 6, 36, 36);
   g.fillStyle = "#fff3a6"; g.fillRect(sx, sy, 24, 24);
   g.fillStyle = "#ffe066"; g.fillRect(sx + 4, sy + 4, 16, 16);
-  for (const [cx, cy, w] of [[150, 120, 64], [214, 74, 48], [20, 64, 40]]) {
+  for (const [cx, cy, w] of [[150, 76, 64], [214, 44, 48], [20, 96, 40]]) {
     const y = top - cy;
     g.fillStyle = "#ffffff"; g.fillRect(cx, y, w, 12); g.fillRect(cx + 8, y - 8, w - 24, 8);
     g.fillStyle = "#dcecff"; g.fillRect(cx, y + 12, w, 4);
@@ -168,28 +169,28 @@ function drawVoid(row, sy, s) {
 
 function shadeBlock(row, c, x, sy, t) {
   // Relieve: luz arriba y sombra abajo y a los lados donde el bloque da al aire.
-  if (!solid(row - 1, c, t)) { g.fillStyle = "rgba(255,255,255,0.22)"; g.fillRect(x, sy, B, 2); }
-  if (!solid(row + 1, c, t)) { g.fillStyle = "rgba(0,0,0,0.42)"; g.fillRect(x, sy + B - 4, B, 4); }
-  if (!solid(row, c - 1, t)) { g.fillStyle = "rgba(255,255,255,0.10)"; g.fillRect(x, sy, 2, B); }
-  if (!solid(row, c + 1, t)) { g.fillStyle = "rgba(0,0,0,0.28)"; g.fillRect(x + B - 3, sy, 3, B); }
+  if (!solid(row - 1, c, t)) { g.fillStyle = "rgba(255,255,255,0.22)"; g.fillRect(x, sy, B, 3); }
+  if (!solid(row + 1, c, t)) { g.fillStyle = "rgba(0,0,0,0.42)"; g.fillRect(x, sy + B - 6, B, 6); }
+  if (!solid(row, c - 1, t)) { g.fillStyle = "rgba(255,255,255,0.10)"; g.fillRect(x, sy, 3, B); }
+  if (!solid(row, c + 1, t)) { g.fillStyle = "rgba(0,0,0,0.28)"; g.fillRect(x + B - 5, sy, 5, B); }
 }
 
 function shadeHole(row, c, x, sy, t) {
   // Oclusión ambiental: el hueco se oscurece junto a los bloques que lo rodean.
   if (solid(row - 1, c, t)) {
-    const grad = g.createLinearGradient(0, sy, 0, sy + 14);
+    const grad = g.createLinearGradient(0, sy, 0, sy + 21);
     grad.addColorStop(0, "rgba(0,0,0,0.55)"); grad.addColorStop(1, "rgba(0,0,0,0)");
-    g.fillStyle = grad; g.fillRect(x, sy, B, 14);
+    g.fillStyle = grad; g.fillRect(x, sy, B, 21);
   }
   if (solid(row, c - 1, t)) {
-    const grad = g.createLinearGradient(x, 0, x + 10, 0);
+    const grad = g.createLinearGradient(x, 0, x + 15, 0);
     grad.addColorStop(0, "rgba(0,0,0,0.35)"); grad.addColorStop(1, "rgba(0,0,0,0)");
-    g.fillStyle = grad; g.fillRect(x, sy, 10, B);
+    g.fillStyle = grad; g.fillRect(x, sy, 15, B);
   }
   if (solid(row, c + 1, t)) {
-    const grad = g.createLinearGradient(x + B, 0, x + B - 10, 0);
+    const grad = g.createLinearGradient(x + B, 0, x + B - 15, 0);
     grad.addColorStop(0, "rgba(0,0,0,0.35)"); grad.addColorStop(1, "rgba(0,0,0,0)");
-    g.fillStyle = grad; g.fillRect(x + B - 10, sy, 10, B);
+    g.fillStyle = grad; g.fillRect(x + B - 15, sy, 15, B);
   }
 }
 
@@ -228,7 +229,7 @@ function drawWorld(s) {
           const phase = Math.floor(hash(row, c) * 60);
           const k = (s.frame + phase) % 60;
           if (k < 4) {
-            const px = x + 6 + Math.floor(hash(c, row) * 20), py = sy + 6 + Math.floor(hash(row + 7, c) * 20);
+            const px = x + 9 + Math.floor(hash(c, row) * 30), py = sy + 9 + Math.floor(hash(row + 7, c) * 30);
             const size = k === 1 || k === 2 ? 3 : 2;
             g.fillStyle = "#ffffff";
             g.fillRect(px - size, py, size * 2 + 1, 1); g.fillRect(px, py - size, 1, size * 2 + 1);
@@ -244,9 +245,9 @@ function drawWorld(s) {
     }
     const tint = TINT[layerOf(row)];
     if (tint) { g.fillStyle = tint; g.fillRect(0, sy, W, B); }
-    if (row > 4 && row < 250) {
+    if (row > 2 && row < m.dragonRow) {
       // Cuanto más hondo, más oscuro.
-      g.fillStyle = `rgba(0,0,0,${Math.min(0.22, row / 900).toFixed(3)})`; g.fillRect(0, sy, W, B);
+      g.fillStyle = `rgba(0,0,0,${Math.min(0.22, row / 300).toFixed(3)})`; g.fillRect(0, sy, W, B);
     }
   }
   if (last >= m.dragonRow) drawDragon(s);
@@ -303,9 +304,9 @@ function drawDebris(x, y, age, index, seed) {
   // Trozos de la textura del bloque que saltan, giran un poco y caen.
   const r = rng(seed);
   for (let i = 0; i < 8; i++) {
-    const vx = (r() - 0.5) * 7, vy = -2 - r() * 4, sx = Math.floor(r() * 12), sy = Math.floor(r() * 12);
-    const size = r() < 0.5 ? 6 : 8;
-    const px = x + vx * age, py = y + vy * age + 0.45 * age * age;
+    const vx = (r() - 0.5) * 7 * K, vy = (-2 - r() * 4) * K, sx = Math.floor(r() * 12), sy = Math.floor(r() * 12);
+    const size = (r() < 0.5 ? 6 : 8) * K;
+    const px = x + vx * age, py = y + vy * age + 0.45 * K * age * age;
     g.drawImage(ATLAS, index * T + sx, sy, 4, 4, Math.round(px - size / 2), Math.round(py - size / 2), size, size);
   }
 }
@@ -354,7 +355,7 @@ function drawBurst(x, y, age, colour, seed, count = 12) {
   g.save();
   g.globalAlpha = clamp(1 - age / 14, 0, 1);
   g.strokeStyle = colour; g.lineWidth = 3;
-  g.beginPath(); g.arc(x, y, 6 + 40 * k, 0, Math.PI * 2); g.stroke();
+  g.beginPath(); g.arc(x, y, (6 + 40 * k) * K, 0, Math.PI * 2); g.stroke();
   for (let i = 0; i < count; i++) {
     const a = i * Math.PI * 2 / count + r() * 0.4, d = 8 + age * (3 + r() * 2);
     const px = Math.round(x + Math.cos(a) * d), py = Math.round(y + Math.sin(a) * d);
@@ -386,8 +387,8 @@ function pickImage(s) {
   if (META.glint) {
     tg.save();
     tg.globalCompositeOperation = "source-atop";
-    const shift = (s.frame * 3) % 64 - 32;
-    const grad = tg.createLinearGradient(shift, 0, shift + 32, 32);
+    const shift = (s.frame * 3 * K) % (2 * B) - B;
+    const grad = tg.createLinearGradient(shift, 0, shift + B, B);
     grad.addColorStop(0, "rgba(170,90,255,0)"); grad.addColorStop(0.5, "rgba(200,140,255,0.55)"); grad.addColorStop(1, "rgba(170,90,255,0)");
     tg.fillStyle = grad; tg.fillRect(0, 0, B, B);
     tg.restore();
@@ -477,7 +478,7 @@ function drawHud(s) {
   // Pico, corazón y vida por segmentos.
   g.fillStyle = "rgba(0,0,0,0.45)"; g.fillRect(4, 4, 32, 32);
   g.strokeStyle = "#5c5873"; g.lineWidth = 1; g.strokeRect(4.5, 4.5, 31, 31);
-  tile(META.tiles[META.pick], 4, 4, B);
+  tile(META.tiles[META.pick], 4, 4, 32);
   const k = clamp(s.life / s.max, 0, 1);
   const colour = k > 0.5 ? "#e8373d" : k > 0.25 ? "#f08a24" : "#ff2b2b";
   heart(42, 7, colour);
@@ -563,6 +564,23 @@ function drawCard(s) {
   g.restore();
 }
 
+function drawCoins(s) {
+  // Lluvia de monedas al cobrar (cualquier premio): caen por delante de la tarjeta.
+  if (!s.coins) return;
+  const [age, seed] = s.coins;
+  const r = rng(seed + 11);
+  for (let i = 0; i < 26; i++) {
+    const x = Math.floor(r() * (W - 20)), speed = (7 + r() * 6) * K, delay = r() * 10;
+    const y = Math.floor(-24 + (age - delay) * speed);
+    if (age < delay || y > H) continue;
+    const flip = Math.floor(age / 2 + i) % 4;
+    const w = [14, 10, 4, 10][flip];
+    g.fillStyle = "#6b4a00"; g.fillRect(x + (14 - w) / 2, y, w, 14);
+    if (w > 4) { g.fillStyle = "#ffd75e"; g.fillRect(x + (14 - w) / 2 + 2, y + 2, w - 4, 10); }
+    g.fillStyle = "#fff1a8"; g.fillRect(x + 6, y + 3, 2, 3);
+  }
+}
+
 function paint(s) {
   g.imageSmoothingEnabled = false;
   g.globalAlpha = 1;
@@ -579,6 +597,7 @@ function paint(s) {
   drawHud(s);
   drawBanner(s);
   drawCard(s);
+  drawCoins(s);
 }
 
 function renderFrames(states, first) {

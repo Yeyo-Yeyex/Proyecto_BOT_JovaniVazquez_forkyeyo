@@ -176,20 +176,72 @@ def solve(key: str, data: dict[str, np.ndarray]) -> tuple[dict[str, int], Fracti
             lo = mid
         else:
             hi = mid
-    values = values_for(key, lo)
-    rtp = rtp_of(key, data, values)
-    # Afinado: un mineral más de cada vez, el que más se acerca sin pasarse.
+    return _fine_tune(key, data, values_for(key, lo))
+
+
+def _fine_tune(
+    key: str, data: dict[str, np.ndarray], values: dict[str, int]
+) -> tuple[dict[str, int], Fraction]:
+    """Afinado: se sube el mineral cuyo siguiente salto más se acerca sin pasarse.
+
+    Los premios se redondean a Y$ enteros, así que subir un mineral en 1 casi nunca cambia
+    nada (con la madera, de 10 Y$, el afinado se paraba en el 99,1 %): se busca lo mínimo
+    que hay que subirlo para que cambie algún premio, doblando y acotando. Para que sea
+    rápido, de cada mineral solo se miran las tiradas en las que sale, y el resto se queda
+    como estaba.
+    """
+    offer = OFFERS[key]
+    cost, top = offer.cost, offer.cost * offer.top
+    dragon = data["dragon"].astype(bool)
+    counts = data["counts"][~dragon].astype(np.int64)
+    mult = data["mult"][~dragon].astype(np.int64)
+    n = len(dragon)
+    limit = TARGET_RTP * n * cost
+    vector = np.array([values[m] for m in MINERALS], dtype=np.int64)
+    units = (counts @ vector) * mult
+    pay = np.minimum(top, cost * units // SCALE)
+    total = int(pay.sum()) + int(dragon.sum()) * top
+    rows, columns = [], []
+    for i in range(len(MINERALS)):
+        column = counts[:, i] * mult
+        index = np.nonzero(column)[0]
+        rows.append(index)
+        columns.append(column[index])
+
+    def gain(i: int, step: int) -> tuple[int, np.ndarray]:
+        new = np.minimum(top, cost * (units[rows[i]] + step * columns[i]) // SCALE)
+        return int(new.sum() - pay[rows[i]].sum()), new
+
+    def next_step(i: int) -> int | None:
+        lo, hi = 0, 1
+        while gain(i, hi)[0] == 0:
+            if hi >= SCALE:
+                return None
+            lo, hi = hi, min(SCALE, hi * 2)
+        while hi - lo > 1:  # gain(lo) es 0 y gain(hi), no
+            mid = (lo + hi) // 2
+            if gain(i, mid)[0]:
+                hi = mid
+            else:
+                lo = mid
+        return hi
+
     while True:
-        best: tuple[Fraction, str] | None = None
-        for mineral in MINERALS:
-            trial = {**values, mineral: values[mineral] + 1}
-            value = rtp_of(key, data, trial)
-            if rtp < value <= TARGET_RTP and (best is None or value > best[0]):
-                best = (value, mineral)
+        best: tuple[int, int, int] | None = None
+        for i in range(len(MINERALS)):
+            step = next_step(i)
+            if step is None:
+                continue
+            extra = gain(i, step)[0]
+            if total + extra <= limit and (best is None or extra > best[0]):
+                best = (extra, i, step)
         if best is None:
-            return values, rtp
-        rtp, mineral = best
-        values[mineral] += 1
+            return values, Fraction(total, n * cost)
+        extra, i, step = best
+        units[rows[i]] += step * columns[i]
+        pay[rows[i]] = gain(i, 0)[1]
+        total += extra
+        values[MINERALS[i]] += step
 
 
 def stats(key: str, data: dict[str, np.ndarray], values: dict[str, int]) -> dict[str, float]:

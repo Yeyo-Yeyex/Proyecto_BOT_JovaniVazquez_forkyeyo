@@ -37,7 +37,7 @@ def test_las_capas_van_en_orden_y_cubren_hasta_el_dragon() -> None:
     for layer in LAYERS:
         assert layer_at(layer.top) is layer
     assert layer_at(DRAGON_ROW - 1).dimension is Dimension.END
-    assert layer_at(260).dimension is Dimension.NETHER
+    assert layer_at(100).dimension is Dimension.NETHER
 
 
 def test_cada_capa_solo_saca_sus_bloques() -> None:

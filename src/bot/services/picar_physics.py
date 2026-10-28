@@ -11,9 +11,12 @@ fijo `DT`. Las paredes de los lados no se rompen. Contra un bloque:
 
 - Si el pico se acerca a una cara (o se apoya en un suelo), es un golpe: el bloque
   pierde la potencia del pico y el pico pierde la dureza del bloque.
-- Si el bloque se rompe, desaparece y el pico sigue con la mitad de la velocidad hacia
-  él. Si aguanta, el pico rebota con la elasticidad del pico (`Pick.bounce`) y con un
-  poco de ruido en la componente tangencial, para que dos caídas no se repitan.
+- Si el bloque aguanta, el pico rebota con la elasticidad del pico (`Pick.bounce`) y con
+  un poco de ruido en la componente tangencial, para que dos caídas no se repitan. Si se
+  rompe, desaparece y el pico rebota igual pero más flojo (`BREAK_BOUNCE`): así va
+  excavando una cueva a su alrededor, a saltos, como en los juegos de este tipo, en vez
+  de atravesar los bloques. Hasta el 29/10/2026 seguía de largo al romper, con la mitad
+  de su velocidad, y los picos buenos caían a plomo.
 - Contra un suelo, el rebote nunca baja de `MIN_BOUNCE`: el pico no puede quedarse
   quieto apoyado, así que cada vez que toca suelo es un golpe y le cuesta vida.
 - La TNT, al romperse, revienta todo lo que haya a 1 o 2 bloques (otra TNT en el radio
@@ -71,6 +74,7 @@ from bot.services.picar_world import (
     DRAGON_ROW,
     LAYERS,
     MINERALS,
+    MYSTERY_MULTS,
     RAVINE_REGION,
     RAVINE_ROWS,
     Block,
@@ -81,19 +85,20 @@ from bot.services.picar_world import (
 
 #: Se sube al cambiar la lógica de `simulate` (no hace falta al tocar constantes:
 #: ya entran en `params_hash`).
-ENGINE_VERSION = 1
+ENGINE_VERSION = 2
 
 #: Ticks por segundo de simulación. El dibujo elige cuántos enseña.
 TICKS_PER_SECOND = 60
 DT = 1 / TICKS_PER_SECOND
-#: Bloques por segundo al cuadrado.
-GRAVITY = 60.0
+#: Bloques por segundo al cuadrado. Baja (antes 60) para que el pico flote y bote entre
+#: golpe y golpe en vez de caer a plomo.
+GRAVITY = 25.0
 RADIUS = 0.4
-#: Velocidad máxima, en bloques por segundo. A 60 ticks por segundo son 0,22 bloques
+#: Velocidad máxima, en bloques por segundo. A 60 ticks por segundo son 0,12 bloques
 #: por tick, menos que el radio: el pico no puede saltarse un bloque.
-MAX_SPEED = 13.0
+MAX_SPEED = 7.0
 #: Velocidad mínima con la que rebota en un suelo.
-MIN_BOUNCE = 5.0
+MIN_BOUNCE = 3.5
 #: Por debajo de esta velocidad hacia una cara que no es suelo, el roce no es golpe.
 HIT_SPEED = 1.0
 #: Elasticidad de las paredes de los lados.
@@ -104,8 +109,8 @@ FRICTION = 0.85
 NOISE = 1.4
 #: Una normal con la componente vertical por debajo de esto (hacia arriba) es suelo.
 FLOOR_NORMAL = -0.5
-#: Lo que conserva el pico de la velocidad hacia un bloque que rompe.
-BREAK_DAMPING = 0.5
+#: Parte del rebote que da el pico al romper un bloque (1 sería como si aguantara).
+BREAK_BOUNCE = 0.6
 #: Radios posibles de una TNT (en bloques) y empujón que da al pico.
 TNT_RADII = (1, 2)
 TNT_KICK = 9.0
@@ -129,24 +134,26 @@ class Pick:
     name: str
     #: Vida inicial.
     life: int
-    #: Lo que le quita a un bloque en cada golpe.
+    #: Lo que le quita a un bloque en cada golpe. Ningún bloque normal aguanta menos que
+    #: el del más fuerte (7): todos piden al menos dos golpes, con grietas y rebotes.
     power: int
     #: Elasticidad de sus rebotes (0 a 1).
     bounce: float
 
 
-#: Vidas ajustadas el 28/10/2026 (`docs/plan-picar.md`, «Metas de profundidad»): los
-#: picos pequeños por lo que dura una partida (madera ~8 s, oro ~10, piedra ~15, hierro
-#: ~18) y los grandes por cuántos llegan al Nether (diamante ~21 %, netherite ~52 %).
+#: Vidas ajustadas el 29/10/2026 con la física de rebotes (`docs/plan-picar.md`, «Metas
+#: de profundidad»): los picos pequeños por lo que dura una partida (madera ~11 s, oro
+#: ~18, piedra y hierro ~22) y los grandes por cuántos llegan al Nether (diamante ~22 %,
+#: netherite ~52 %).
 PICKS: dict[str, Pick] = {
     pick.key: pick
     for pick in (
-        Pick("wood", "Madera", 130, 1, 0.45),
-        Pick("stone", "Piedra", 230, 2, 0.45),
-        Pick("iron", "Hierro", 235, 3, 0.4),
-        Pick("gold", "Oro", 145, 4, 0.5),
-        Pick("diamond", "Diamante", 365, 4, 0.4),
-        Pick("netherite", "Netherite", 495, 5, 0.35),
+        Pick("wood", "Madera", 60, 2, 0.7),
+        Pick("stone", "Piedra", 175, 3, 0.7),
+        Pick("iron", "Hierro", 180, 4, 0.65),
+        Pick("gold", "Oro", 125, 6, 0.8),
+        Pick("diamond", "Diamante", 380, 6, 0.65),
+        Pick("netherite", "Netherite", 525, 7, 0.6),
     )
 }
 
@@ -201,6 +208,8 @@ class Run:
     longest_chain: int = 0
     #: Producto de los bloques de multiplicador rotos.
     multiplier: int = 1
+    #: Lo que valió cada bloque misterioso roto, en orden.
+    mysteries: list[int] = field(default_factory=list)
     nudges: int = 0
     #: Ticks en que no salió de los bloques y volvió a donde estaba (debería ser 0).
     stalls: int = 0
@@ -249,7 +258,7 @@ def params_hash() -> str:
             "FRICTION",
             "NOISE",
             "FLOOR_NORMAL",
-            "BREAK_DAMPING",
+            "BREAK_BOUNCE",
             "TNT_RADII",
             "TNT_KICK",
             "STUCK_TICKS",
@@ -270,7 +279,14 @@ def params_hash() -> str:
             for b in BLOCKS
         ],
         "layers": [{**asdict(layer), "dimension": layer.dimension.value} for layer in LAYERS],
-        "world": [COLUMNS, DRAGON_ROW, CHUNK, RAVINE_REGION, list(RAVINE_ROWS)],
+        "world": [
+            COLUMNS,
+            DRAGON_ROW,
+            CHUNK,
+            RAVINE_REGION,
+            list(RAVINE_ROWS),
+            list(MYSTERY_MULTS),
+        ],
     }
     return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
 
@@ -434,9 +450,14 @@ def simulate(seed: int, pick: Pick | str, *, record: bool = True) -> Run:
                 run.broken[block.key] = run.broken.get(block.key, 0) + 1
                 if record:
                     events.append(Event(tick, "break", r, c, block.key))
-                # Sigue hacia donde iba, frenado.
-                vx -= vn * nx * (1 - BREAK_DAMPING)
-                vy -= vn * ny * (1 - BREAK_DAMPING)
+                # Rebota, más flojo que si aguantara (el bloque ya no está: no hay que
+                # sacarlo de él).
+                out = -vn * bounce * BREAK_BOUNCE
+                if floor_hit and out < MIN_BOUNCE * BREAK_BOUNCE:
+                    out = MIN_BOUNCE * BREAK_BOUNCE
+                vt = vt * FRICTION + rng.uniform(-NOISE, NOISE) * -vn
+                vx = nx * out + tx * vt
+                vy = ny * out + ty * vt
                 centres: list[tuple[int, int, int]] = []
                 rewards: list[tuple[int, int, Block]] = []
                 if block.kind is Kind.TNT:
@@ -444,10 +465,14 @@ def simulate(seed: int, pick: Pick | str, *, record: bool = True) -> Run:
                 elif block.kind is not Kind.PLAIN:
                     rewards = [(r, c, block)]
                 for cr, cc, prize in rewards:
-                    if prize.kind is Kind.MULT:
-                        run.multiplier *= prize.mult
+                    if prize.kind is Kind.MULT or prize.kind is Kind.MYSTERY:
+                        mult = prize.mult
+                        if prize.kind is Kind.MYSTERY:
+                            mult = MYSTERY_MULTS[rng.randint(0, len(MYSTERY_MULTS) - 1)]
+                            run.mysteries.append(mult)
+                        run.multiplier *= mult
                         if record:
-                            events.append(Event(tick, "mult", cr, cc, prize.key, prize.mult))
+                            events.append(Event(tick, "mult", cr, cc, prize.key, mult))
                         continue
                     gained = reward(prize, life)
                     life += gained

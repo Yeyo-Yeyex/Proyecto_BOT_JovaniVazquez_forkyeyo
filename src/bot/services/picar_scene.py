@@ -70,6 +70,7 @@ from bot.services.picar_world import (
     AIR,
     BLOCK_ID,
     BLOCKS,
+    COLUMNS,
     DRAGON_ROW,
     LAYERS,
     Dimension,
@@ -82,9 +83,11 @@ ASSETS = Path(__file__).resolve().parent.parent / "assets" / "picar"
 SCENE = ASSETS / "escena.html"
 FONT = Path(__file__).resolve().parent.parent / "assets" / "memes" / "fonts" / "MontserratBold.ttf"
 
-#: Lado de un bloque en la escena (las texturas de 16 al doble).
-BLOCK_PX = 32
-WIDTH = 9 * BLOCK_PX
+#: Lado de un bloque en la escena (las texturas de 16, por tres). Con 6 columnas de 48 px
+#: el GIF mide lo mismo de ancho que con las 9 de 32 de antes, y bloques y pico se ven un
+#: 50 % más grandes, como en los juegos de este tipo.
+BLOCK_PX = 48
+WIDTH = COLUMNS * BLOCK_PX
 HEIGHT = 512
 #: Alto del marcador de arriba.
 HUD_PX = 38
@@ -105,7 +108,7 @@ _EFFECT_FRAMES = {
     "m": BURST_FRAMES,
 }
 #: Velocidad máxima de la cámara y lo que acelera o frena, en píxeles por tick. Va el
-#: doble de rápida que el pico (13 bloques por segundo son 6,9 px por tick): cada
+#: doble de rápida que el pico a tope (7 bloques por segundo son 5,6 px por tick): cada
 #: fotograma con la cámara en marcha pesa como uno entero, y más despacio se mueve en más
 #: fotogramas. Así arranca con 12, 30 y 42 px en tres fotogramas y se mueve en un 5 % más
 #: de fotogramas que la de antes (8 px y 0,6 eran 1,8 veces más: el diamante pasaba de
@@ -120,7 +123,7 @@ CAMERA_BOTTOM_MARGIN = 72
 #: Franja de la pantalla (en píxeles desde arriba) en la que el pico no mueve la cámara.
 CAMERA_BAND = (HUD_PX + 50, HEIGHT - 120)
 #: Fila más alta que se ve al empezar (el cielo).
-SKY_ROWS = 5
+SKY_ROWS = 3
 
 #: Cambio de dimensión: fotogramas oscureciendo, pausa con el rótulo y fotogramas
 #: aclarando al empezar el GIF siguiente.
@@ -143,6 +146,10 @@ CUT_HOLD_MS = 900
 UPLOAD_FIXED_MS = 1_100
 UPLOAD_PER_MB_MS = 400
 CLIENT_MARGIN_MS = 700
+#: Fotogramas que tarda en enseñar lo que vale un bloque misterioso.
+MYSTERY_REVEAL_FRAMES = 8
+#: Fotogramas de la lluvia de monedas del final (sale con cualquier premio).
+COINS_FRAMES = 24
 #: Fotogramas del primer GIF y de cada tramo que se pinta de una vez.
 FIRST_PART_FRAMES = 80
 CHUNK_FRAMES = 90
@@ -299,9 +306,19 @@ def timeline(run: Run, *, pick: str, values: dict[str, int]) -> Timeline:
                 tl.effects.append((tick, ["c", cx, cy, 0, _TEXT_CRAFT, seed]))
                 tl.texts.append((tick, [cx, cy, "¡Vida a tope!", 0, _TEXT_CRAFT, 15]))
             elif e.kind == "mult":
-                multiplier *= e.amount
+                before, multiplier = multiplier, multiplier * e.amount
                 tl.effects.append((tick, ["m", cx, cy, 0, _TEXT_MULT, seed]))
-                tl.texts.append((tick, [cx, cy, f"¡TODO ×{e.amount}!", 0, _TEXT_MULT, 22]))
+                reveal = tick
+                if e.block == "mystery":
+                    # El misterioso enseña primero la interrogación y luego lo que vale.
+                    tl.texts.append((tick, [cx, cy, "?", 0, _TEXT_MULT, 34]))
+                    reveal = tick + MYSTERY_REVEAL_FRAMES * TICKS_PER_FRAME
+                if before > 1:
+                    # Los multiplicadores se apilan a la vista: ×2 · ×3 = ×6.
+                    text = f"×{before} · ×{e.amount} = ×{multiplier}"
+                    tl.texts.append((reveal, [cx, cy, text, 0, _TEXT_MULT, 20]))
+                else:
+                    tl.texts.append((reveal, [cx, cy, f"¡TODO ×{e.amount}!", 0, _TEXT_MULT, 22]))
             elif e.kind == "layer" and e.layer in _DIMENSION_LAYERS:
                 tl.dimensions.append((tick, e.layer))
             event = next(events, None)
@@ -443,8 +460,9 @@ def result_card(outcome: Outcome) -> dict[str, Any]:
             "info": info,
             "extra": extra,
         }
-    colour = "#ffd75e" if outcome.payout > offer.cost else "#cfcbe0"
-    return {"title": prize, "sub": mult, "colour": colour, "info": info, "extra": extra}
+    # Cualquier premio se celebra igual, también si no llega a lo que costó el pico (como
+    # en las tragaperras): el título es lo cobrado y el neto lo dice el mensaje.
+    return {"title": prize, "sub": mult, "colour": "#ffd75e", "info": info, "extra": extra}
 
 
 def story(outcome: Outcome, values: dict[str, int]) -> tuple[list[Shot], Timeline]:
@@ -507,8 +525,12 @@ def story(outcome: Outcome, values: dict[str, int]) -> tuple[list[Shot], Timelin
         "prize": format_coins(outcome.payout),
     }
     card = result_card(outcome)
-    for i in range(1, RESULT_FRAMES + 1):
-        state = {**final, "card": {**card, "alpha": round(i / RESULT_FRAMES, 3)}}
+    frames = COINS_FRAMES if outcome.payout and not outcome.dragon else RESULT_FRAMES
+    for i in range(1, frames + 1):
+        alpha = round(min(1.0, i / RESULT_FRAMES), 3)
+        state = {**final, "card": {**card, "alpha": alpha}}
+        if frames == COINS_FRAMES:
+            state["coins"] = [i, run.seed % 997]
         shots.append(Shot({**state, "frame": len(shots)}))
     shots[-1].ms = FINAL_HOLD_MS
     return shots, tl
@@ -525,13 +547,13 @@ def segment_meta(tl_run: Run, gone: dict, cracks: list, rows: range, *, pick: st
     grid, gone_rows, bg = [], [], []
     for row in rows:
         if row < 0 or row >= DRAGON_ROW:
-            grid.append([-1] * 9)
-            gone_rows.append([0] * 9)
+            grid.append([-1] * COLUMNS)
+            gone_rows.append([0] * COLUMNS)
             bg.append(-2)
             continue
         cells = world.row(row)
         grid.append([-1 if b == AIR else tiles[tile_key(BLOCKS[b].key, row)] for b in cells])
-        gone_rows.append([gone.get((row, c), 0) for c in range(9)])
+        gone_rows.append([gone.get((row, c), 0) for c in range(COLUMNS)])
         key = background_key(row)
         bg.append(-2 if key is None else tiles[key])
     return {
@@ -752,7 +774,7 @@ def pillow_still(outcome: Outcome, state: dict[str, Any], tl: Timeline) -> bytes
     cam = state["cam"]
     for row in range(cam // BLOCK_PX, (cam + HEIGHT) // BLOCK_PX + 1):
         sy = row * BLOCK_PX - cam
-        for col in range(9):
+        for col in range(COLUMNS):
             x = col * BLOCK_PX
             if row < 0:
                 image.paste((120, 180, 240, 255), (x, sy, x + BLOCK_PX, sy + BLOCK_PX))
@@ -764,7 +786,8 @@ def pillow_still(outcome: Outcome, state: dict[str, Any], tl: Timeline) -> bytes
                 image.alpha_composite(tile(tile_key(BLOCKS[block].key, row)), (x, sy))
     if not state.get("hidePick"):
         pick = tile(f"pick_{outcome.pick}")
-        image.alpha_composite(pick, (int(state["x"]) - 16, int(state["y"]) - cam - 16))
+        half = BLOCK_PX // 2
+        image.alpha_composite(pick, (int(state["x"]) - half, int(state["y"]) - cam - half))
     draw = ImageDraw.Draw(image)
     draw.rectangle((0, 0, WIDTH, HUD_PX), fill=(10, 10, 16, 230))
     font = ImageFont.truetype(str(FONT), 14)

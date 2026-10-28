@@ -36,7 +36,8 @@ from bot.services import picar_world as pw  # noqa: E402
 
 SOURCE = Path(__file__).resolve().parent / "picar_rapido.c"
 FLAGS = ["-O2", "-ffp-contract=off", "-fno-fast-math", "-shared", "-fPIC"]
-KINDS = {pw.Kind.PLAIN: 0, pw.Kind.TNT: 1, pw.Kind.CHEST: 2, pw.Kind.CRAFT: 3, pw.Kind.MULT: 4}
+KINDS = {pw.Kind.PLAIN: 0, pw.Kind.TNT: 1, pw.Kind.CHEST: 2, pw.Kind.CRAFT: 3, pw.Kind.MULT: 4,
+         pw.Kind.MYSTERY: 5}  # fmt: skip
 
 
 def header() -> str:
@@ -67,6 +68,8 @@ def header() -> str:
         array("long long", "BLOCK_MULT", [b.mult for b in blocks]),
         array("long long", "BLOCK_LIFE_LO", [b.life[0] for b in blocks]),
         array("long long", "BLOCK_LIFE_HI", [b.life[1] for b in blocks]),
+        f"#define NMYSTERY {len(pw.MYSTERY_MULTS)}",
+        array("long long", "MYSTERY_MULTS", list(pw.MYSTERY_MULTS)),
         f"#define NLAYERS {len(layers)}",
         array("int", "LAYER_TOP", [layer.top for layer in layers]),
         array("int", "LAYER_RAVINE", [layer.ravine for layer in layers]),
@@ -84,7 +87,7 @@ def header() -> str:
         f"static const long long TABLE_CUM[NLAYERS][{width}] = {{{cum}}};",
     ]
     for name in ("GRAVITY", "DT", "RADIUS", "MAX_SPEED", "MIN_BOUNCE", "HIT_SPEED",
-                 "WALL_BOUNCE", "FRICTION", "NOISE", "FLOOR_NORMAL", "BREAK_DAMPING",
+                 "WALL_BOUNCE", "FRICTION", "NOISE", "FLOOR_NORMAL", "BREAK_BOUNCE",
                  "TNT_KICK", "NUDGE", "SLOP"):  # fmt: skip
         # `repr` da el float exacto: C lo lee como el mismo double.
         lines.append(f"#define {name} ({float(getattr(ph, name))!r})")

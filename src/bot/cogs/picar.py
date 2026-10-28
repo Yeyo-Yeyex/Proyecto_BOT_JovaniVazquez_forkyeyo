@@ -195,8 +195,9 @@ def panel_embed(owner: str, *, balance: int, records: dict[str, int]) -> discord
     embed = discord.Embed(
         title="⛏️ El pozo",
         description=(
-            "Elige un pico y paga su precio. Cae rompiendo bloques: cada mineral suma premio "
-            "y los bloques de oro, diamante, netherite y la baliza lo multiplican todo. "
+            "Elige un pico y paga su precio. Cae rebotando y rompiendo bloques: cada mineral "
+            "suma premio y los bloques de oro, diamante, netherite, la baliza y el misterioso "
+            "(no dice cuánto hasta romperlo) lo multiplican todo. "
             "Cuando se queda sin vida, cobras lo acumulado. En el fondo del End espera el "
             "dragón, que paga el máximo."
         ),
