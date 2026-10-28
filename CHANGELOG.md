@@ -17,6 +17,10 @@ criterio.
 - Logros: 8 nuevos en ⛏️ Pico (bloque misterioso, ×10 del misterioso, multiplicadores en una tirada, premios menores que el precio); los de capas se ajustan al mundo nuevo y las capas −300, −404 y −666, que ya no existen, pasan a 300 golpes y a cobrar 404 y 666 Y$
 - Interno: el calibrador del pico ya no se para antes de tiempo con los picos baratos
 
+### 9.33.1 · 2026-10-28
+
+- Hotfix: arreglo menor de la 9.33.0
+
 ### 9.33.0 · 2026-10-28
 
 - Pico: `picar`, un pico que cae rompiendo bloques hasta el dragón

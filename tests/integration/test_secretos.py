@@ -17,7 +17,7 @@ import pytest
 from discord.ext import commands
 
 from bot.app import BotClient
-from bot.cogs.admin import AMANECE_USAGE, ENCHUFE_USAGE, SECRET_OWNER
+from bot.cogs.admin import AMANECE_USAGE, ENCHUFE_USAGE, SECRET_GUILD_ERROR, SECRET_OWNER
 from bot.cogs.deploy import DEPLOYERS
 from bot.services.business import Business
 from bot.services.levels import local_day
@@ -131,7 +131,7 @@ async def test_con_cualquier_otro_no_pasa_nada_a_la_vista(tmp_path: Path) -> Non
             await enchufe(client, f"<@{GUILLE}>", dani),
             await enchufe(client, f"<@{GUILLE}>", GUILLE),
             await enchufe(client, "", GUILLE),
-            await enchufe(client, f"<@{GUILLE}>", guild=False),
+            await enchufe(client, f"<@{GUILLE}>", GUILLE, guild=False),
         ):
             ctx.send.assert_not_awaited()
             ctx.author.send.assert_not_awaited()
@@ -182,12 +182,63 @@ async def test_amanece_vacia_las_franjas_de_hoy_del_curro_y_del_negocio(tmp_path
 
         # Con cualquier otro, nada; sin mención, el suyo; una mención rara, el uso.
         await client.work.spend_battery(GUILD_ID, GUILLE, 50)
-        for ctx in (await amanece(client, "", GUILLE), await amanece(client, "", guild=False)):
+        for ctx in (
+            await amanece(client, "", GUILLE),
+            await amanece(client, "", GUILLE, guild=False),
+        ):
             ctx.send.assert_not_awaited()
             ctx.author.send.assert_not_awaited()
             ctx.message.delete.assert_not_awaited()
         assert await client.work.battery(GUILD_ID, GUILLE) < BATTERY_MAX
         assert "no tiene curro" in whisper(await amanece(client, ""))
         assert whisper(await amanece(client, "nadie")) == AMANECE_USAGE
+    finally:
+        await client.close()
+
+
+def shared_guilds(monkeypatch: pytest.MonkeyPatch, *ids: int) -> None:
+    """El bot está en los servidores `ids`, y Guille en todos."""
+    guilds = [
+        SimpleNamespace(id=i, get_member=lambda uid: member(uid) if uid == GUILLE else None)
+        for i in ids
+    ]
+    monkeypatch.setattr(BotClient, "guilds", property(lambda self: guilds))
+
+
+async def test_por_privado_vale_en_el_unico_servidor_que_compartimos(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = await load_bot(tmp_path)
+    try:
+        await client.work.hire(GUILD_ID, GUILLE, "politica")
+        await client.work.spend_battery(GUILD_ID, GUILLE, 50)
+        shared_guilds(monkeypatch, GUILD_ID)
+
+        ctx = await amanece(client, f"<@{GUILLE}>", guild=False)
+        ctx.message.delete.assert_not_awaited()  # Discord no deja borrar en un privado.
+        assert "franjas de hoy a cero" in whisper(ctx)
+        assert await client.work.battery(GUILD_ID, GUILLE) == BATTERY_MAX
+
+        ctx = await enchufe(client, f"<@{GUILLE}>", guild=False)
+        assert "sube 1 puesto:" in whisper(ctx)
+        assert await level(client) == 2
+    finally:
+        await client.close()
+
+
+async def test_por_privado_con_varios_servidores_pregunta_y_no_toca_nada(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = await load_bot(tmp_path)
+    try:
+        await client.work.hire(GUILD_ID, GUILLE, "politica")
+        await client.work.spend_battery(GUILD_ID, GUILLE, 50)
+        error = SECRET_GUILD_ERROR.format(name=f"Miembro {GUILLE}")
+        for ids in ((GUILD_ID, GUILD_ID + 1), ()):
+            shared_guilds(monkeypatch, *ids)
+            assert whisper(await amanece(client, f"<@{GUILLE}>", guild=False)) == error
+            assert whisper(await enchufe(client, f"<@{GUILLE}>", guild=False)) == error
+        assert await client.work.battery(GUILD_ID, GUILLE) < BATTERY_MAX
+        assert await level(client) == 1
     finally:
         await client.close()
