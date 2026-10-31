@@ -157,7 +157,7 @@ async def test_el_almacen_guarda_lee_lista_y_borra(tmp_path: Path) -> None:
     await store.save(GUILD, "playa", "avatar", b"tres")
     assert await store.load(GUILD, "playa", "avatar") == b"tres"
     assert await store.kinds(GUILD, "playa") == {"avatar", "banner"}
-    assert (tmp_path / "looks" / str(GUILD) / "playa.banner.png").read_bytes() == b"dos"
+    assert (tmp_path / "looks" / str(GUILD) / "playa.banner.img").read_bytes() == b"dos"
     await store.delete(GUILD, "playa", "avatar")
     await store.delete(GUILD, "playa", "avatar")
     assert await store.kinds(GUILD, "playa") == {"banner"}
@@ -169,7 +169,7 @@ async def test_el_almacen_guarda_lee_lista_y_borra(tmp_path: Path) -> None:
 async def test_guardar_no_deja_temporales(tmp_path: Path) -> None:
     store = LookImageStore(tmp_path)
     await store.save(GUILD, "playa", "avatar", b"x")
-    assert [path.name for path in (tmp_path / str(GUILD)).iterdir()] == ["playa.avatar.png"]
+    assert [path.name for path in (tmp_path / str(GUILD)).iterdir()] == ["playa.avatar.img"]
 
 
 async def test_el_almacen_separa_servidores_y_borra_un_servidor(tmp_path: Path) -> None:
@@ -210,3 +210,10 @@ async def test_un_tipo_de_imagen_desconocido_da_error(tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="Tipo"):
             await call
     assert not (tmp_path / "looks").exists()
+
+
+async def test_el_almacen_devuelve_identicos_unos_bytes_gif(tmp_path: Path) -> None:
+    gif = bytes(range(256)) + b"GIF89a"
+    store = LookImageStore(tmp_path)
+    await store.save(GUILD, "playa", "avatar", gif)
+    assert await store.load(GUILD, "playa", "avatar") == gif

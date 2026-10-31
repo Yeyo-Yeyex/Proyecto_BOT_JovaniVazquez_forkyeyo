@@ -9,7 +9,7 @@ from PIL import Image, ImageChops
 
 from bot.services import aspecto_render as render
 from bot.services.aspecto import CANARIAS, CASINO
-from bot.services.image_input import InvalidImageError
+from bot.services.image_input import ImageTooLargeError, InvalidImageError
 
 
 def _png(size: tuple[int, int], mode: str = "RGB", color: object = (200, 40, 40)) -> bytes:
@@ -147,3 +147,83 @@ def test_las_lineas_de_datos_comparten_tamano_aunque_una_sea_corta() -> None:
 
 def test_sin_lineas_el_tamano_no_cambia() -> None:
     assert render.shared_size([], 38, 704) == 38
+
+
+def _gif(size: tuple[int, int], frames: int = 4, durations: list[int] | None = None) -> bytes:
+    images = [Image.new("RGB", size, (40 * index, 200 - 40 * index, 90)) for index in range(frames)]
+    for index, image in enumerate(images):
+        image.paste((255, 255, 255), (index * 3, 0, index * 3 + size[0] // 4, size[1] // 4))
+    buffer = io.BytesIO()
+    images[0].save(
+        buffer,
+        format="GIF",
+        save_all=True,
+        append_images=images[1:],
+        duration=durations or [60 + 10 * index for index in range(frames)],
+        loop=0,
+    )
+    return buffer.getvalue()
+
+
+def _gif_info(data: bytes) -> tuple[str, tuple[int, int], list[int], list[bytes]]:
+    durations, pixels = [], []
+    with Image.open(io.BytesIO(data)) as image:
+        for index in range(image.n_frames):
+            image.seek(index)
+            durations.append(image.info["duration"])
+            pixels.append(image.convert("RGB").tobytes())
+        return str(image.format), image.size, durations, pixels
+
+
+def test_un_gif_animado_cuadrado_devuelve_los_mismos_bytes() -> None:
+    data = _gif((64, 64))
+    assert render.prepare_avatar(data) == data
+
+
+@pytest.mark.parametrize("size", [(120, 60), (60, 120)])
+def test_un_gif_animado_no_cuadrado_sale_como_gif_cuadrado_animado(
+    size: tuple[int, int],
+) -> None:
+    durations = [50, 70, 90, 110]
+    result = render.prepare_avatar(_gif(size, 4, durations))
+    format_, out_size, out_durations, pixels = _gif_info(result)
+    assert format_ == "GIF"
+    assert out_size == (render.AVATAR_SIDE, render.AVATAR_SIDE)
+    assert out_durations == durations
+    assert len(pixels) == 4
+    assert len(set(pixels)) > 1
+
+
+def test_un_gif_de_un_fotograma_sale_como_png() -> None:
+    result = render.prepare_avatar(_gif((120, 60), frames=1))
+    with Image.open(io.BytesIO(result)) as image:
+        assert image.format == "PNG"
+        assert image.size == (render.AVATAR_SIDE, render.AVATAR_SIDE)
+
+
+def test_un_gif_con_demasiados_fotogramas_se_rechaza(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(render, "MAX_AVATAR_FRAMES", 3)
+    with pytest.raises(ImageTooLargeError, match="demasiados fotogramas"):
+        render.prepare_avatar(_gif((120, 60), frames=4))
+    assert render.prepare_avatar(_gif((64, 64), frames=3))
+
+
+def test_un_gif_truncado_es_una_imagen_invalida() -> None:
+    data = _gif((120, 60), frames=6)
+    with pytest.raises(InvalidImageError):
+        render.prepare_avatar(data[: len(data) * 2 // 3])
+
+
+def test_png_y_jpeg_siguen_dando_png_de_avatar() -> None:
+    jpeg = io.BytesIO()
+    Image.new("RGB", (300, 200), (10, 20, 30)).save(jpeg, format="JPEG")
+    for data in (_png((300, 200)), jpeg.getvalue()):
+        with Image.open(io.BytesIO(render.prepare_avatar(data))) as image:
+            assert image.format == "PNG"
+            assert image.size == (render.AVATAR_SIDE, render.AVATAR_SIDE)
+
+
+def test_el_banner_de_un_gif_animado_es_un_png() -> None:
+    with Image.open(io.BytesIO(render.prepare_banner(_gif((120, 60))))) as image:
+        assert image.format == "PNG"
+        assert image.size == render.BANNER_SIZE

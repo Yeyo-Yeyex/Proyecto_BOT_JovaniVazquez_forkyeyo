@@ -9,7 +9,7 @@ Tablas (en el mismo archivo SQLite que el resto del bot):
 - `aspecto_totals_day`: último día ya sumado en `aspecto_totals` de cada servidor.
 
 Las imágenes de los looks no van en la base: `LookImageStore` las guarda en disco, en
-`<base>/<guild_id>/<key>.<kind>.png`. Las reglas viven en `bot.services.aspecto`.
+`<base>/<guild_id>/<key>.<kind>.img`. Las reglas viven en `bot.services.aspecto`.
 """
 
 from __future__ import annotations
@@ -275,7 +275,8 @@ IMAGE_KINDS = ("avatar", "banner")
 class LookImageStore:
     """Almacén en disco de los avatares y banners de los looks.
 
-    Los archivos están en `<base>/<guild_id>/<key>.<kind>.png`. Toda la E/S sale del
+    Los archivos están en `<base>/<guild_id>/<key>.<kind>.img` (PNG o GIF según el
+    contenido, por eso la extensión no dice el formato). Toda la E/S sale del
     event loop con `asyncio.to_thread`. La clave acaba en un nombre de archivo, así
     que se valida con `valid_key` antes de construir ninguna ruta.
 
@@ -298,7 +299,7 @@ class LookImageStore:
 
     def _path(self, guild_id: int, key: str, kind: str) -> Path:
         self._check(key, kind)
-        return self._directory(guild_id) / f"{key}.{kind}.png"
+        return self._directory(guild_id) / f"{key}.{kind}.img"
 
     async def save(self, guild_id: int, key: str, kind: str, data: bytes) -> None:
         """Guarda la imagen de forma atómica (archivo temporal y `os.replace`)."""
@@ -308,7 +309,7 @@ class LookImageStore:
     @staticmethod
     def _save_sync(path: Path, data: bytes) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=".tmp-", suffix=".png")
+        descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=".tmp-", suffix=".img")
         try:
             with os.fdopen(descriptor, "wb") as handle:
                 handle.write(data)

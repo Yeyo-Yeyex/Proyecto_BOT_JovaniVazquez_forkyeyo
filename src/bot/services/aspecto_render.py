@@ -8,6 +8,10 @@ el texto va alineado a la derecha y dentro del `TEXT_AREA` derecho de la imagen.
 fuente (`MontserratBold.ttf`) no tiene emojis: `printable` quita lo que no puede pintar
 para que no salgan cuadraditos. El PNG usa `compress_level=6`, no `optimize=True`
 (en el NAS `optimize` multiplica por seis el tiempo de guardado).
+
+El avatar conserva la animación si es un GIF animado (Discord la admite en el avatar de
+un bot); el banner no, porque lleva texto dibujado encima y sale siempre de un único
+fotograma.
 """
 
 from __future__ import annotations
@@ -18,14 +22,16 @@ from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageSequence
 
 import bot.services
 from bot.services.aspecto import Look
-from bot.services.image_input import open_image
+from bot.services.image_input import ImageTooLargeError, InvalidImageError, open_image
 
 AVATAR_SIDE = 512
 BANNER_SIZE = (1200, 480)
+#: Máximo de fotogramas de un avatar GIF animado.
+MAX_AVATAR_FRAMES = 300
 
 FONT_PATH = (
     Path(bot.services.__file__).parent.parent / "assets" / "memes" / "fonts" / "MontserratBold.ttf"
@@ -102,20 +108,81 @@ def _png(image: Image.Image) -> bytes:
     return buffer.getvalue()
 
 
+def _animated_gif(data: bytes) -> Image.Image | None:
+    """Abre `data` si es un GIF con más de un fotograma; si no, `None`."""
+    try:
+        image = Image.open(io.BytesIO(data))
+        if image.format == "GIF" and getattr(image, "n_frames", 1) > 1:
+            return image
+    except (OSError, EOFError, ValueError, SyntaxError) as error:
+        raise InvalidImageError("No se pudo leer el archivo como imagen.") from error
+    return None
+
+
+def _square_gif(image: Image.Image) -> bytes:
+    """Recorta cada fotograma a un cuadrado de `AVATAR_SIDE` y lo recodifica como GIF."""
+    frames: list[Image.Image] = []
+    durations: list[int] = []
+    try:
+        for frame in ImageSequence.Iterator(image):
+            durations.append(int(frame.info.get("duration", 100)))
+            frames.append(
+                _square_crop(frame.convert("RGBA")).resize(
+                    (AVATAR_SIDE, AVATAR_SIDE), Image.Resampling.LANCZOS
+                )
+            )
+    except (OSError, EOFError, ValueError, SyntaxError) as error:
+        raise InvalidImageError("No se pudo leer el GIF.") from error
+    options: dict[str, object] = {}
+    if "loop" in image.info:
+        options["loop"] = image.info["loop"]
+    # Excepción de la Biblia a `bot.utils.gif`: los fotogramas vienen de fuera. Tampoco
+    # sirve `memes.encode_gif`, que fuerza `optimize=True` y un bucle infinito.
+    buffer = io.BytesIO()
+    frames[0].save(
+        buffer,
+        format="GIF",
+        save_all=True,
+        append_images=frames[1:],
+        duration=durations,
+        disposal=2,
+        **options,
+    )
+    return buffer.getvalue()
+
+
 def prepare_avatar(data: bytes) -> bytes:
-    """Recorte cuadrado centrado, a `AVATAR_SIDE` de lado, en PNG.
+    """Prepara el avatar: cuadrado de `AVATAR_SIDE` de lado, animado si el original lo es.
+
+    - Imagen no animada (también un GIF de un solo fotograma): recorte cuadrado centrado
+      en PNG.
+    - GIF animado ya cuadrado: se devuelve `data` tal cual, sin recodificar.
+    - Otro GIF animado: recorte cuadrado centrado de cada fotograma, conservando
+      duraciones y bucle, en GIF.
 
     Raises:
-        InvalidImageError: Si `data` no es una imagen legible.
-        ImageTooLargeError: Si supera los límites de `open_image`.
+        InvalidImageError: Si `data` no es una imagen legible o el GIF está corrupto.
+        ImageTooLargeError: Si supera los límites de `open_image` o el GIF tiene más de
+            `MAX_AVATAR_FRAMES` fotogramas.
     """
     image = open_image(data).convert("RGBA")
-    image = _square_crop(image).resize((AVATAR_SIDE, AVATAR_SIDE), Image.Resampling.LANCZOS)
-    return _png(image)
+    # `open_image` se queda con el primer fotograma, así que el GIF se vuelve a abrir.
+    animated = _animated_gif(data)
+    if animated is None:
+        image = _square_crop(image).resize((AVATAR_SIDE, AVATAR_SIDE), Image.Resampling.LANCZOS)
+        return _png(image)
+    with animated:
+        if animated.n_frames > MAX_AVATAR_FRAMES:
+            raise ImageTooLargeError("El GIF tiene demasiados fotogramas.")
+        if animated.width == animated.height:
+            return data
+        return _square_gif(animated)
 
 
 def prepare_banner(data: bytes) -> bytes:
     """Recorte centrado a la proporción de `BANNER_SIZE`, a ese tamaño, en PNG.
+
+    Usa solo el primer fotograma, aunque sea un GIF animado: el banner lleva texto encima.
 
     Raises:
         InvalidImageError: Si `data` no es una imagen legible.
