@@ -188,7 +188,7 @@ def test_un_gif_animado_no_cuadrado_sale_como_gif_cuadrado_animado(
     result = render.prepare_avatar(_gif(size, 4, durations))
     format_, out_size, out_durations, pixels = _gif_info(result)
     assert format_ == "GIF"
-    assert out_size == (render.AVATAR_SIDE, render.AVATAR_SIDE)
+    assert out_size == (render.AVATAR_GIF_SIDE, render.AVATAR_GIF_SIDE)
     assert out_durations == durations
     assert len(pixels) == 4
     assert len(set(pixels)) > 1
@@ -227,3 +227,20 @@ def test_el_banner_de_un_gif_animado_es_un_png() -> None:
     with Image.open(io.BytesIO(render.prepare_banner(_gif((120, 60))))) as image:
         assert image.format == "PNG"
         assert image.size == render.BANNER_SIZE
+
+
+def test_un_gif_enorme_que_no_es_cuadrado_se_rechaza_antes_de_recodificarlo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(render, "MAX_GIF_PIXELS", 10)
+    monkeypatch.setattr(render, "_square_gif", None)
+    with pytest.raises(ImageTooLargeError, match="demasiado grande"):
+        render.prepare_avatar(_gif((64, 32)))
+
+
+def test_el_tope_de_pixeles_no_afecta_a_un_gif_cuadrado(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(render, "MAX_GIF_PIXELS", 10)
+    data = _gif((64, 64))
+    assert render.prepare_avatar(data) == data

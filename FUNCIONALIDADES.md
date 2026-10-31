@@ -1142,7 +1142,7 @@ Comando de administración (cog `Admin`): `/aspecto` con `accion`, `look`, `imag
 - `auto`: quita lo fijado.
 - `crear`: crea un look propio con el nombre de `texto` (32 caracteres como mucho, 20 looks por servidor). Solo sale si se fija.
 - `borrar`: borra un look propio y sus imágenes. Los de serie no se borran.
-- `avatar` y `banner`: cambian la imagen de un look, adjunta en el mensaje en `.aspecto`; sin imagen, la quitan. Se aceptan adjuntos de hasta 8 MB, se recortan al centro y los GIF se quedan en su primer fotograma.
+- `avatar` y `banner`: cambian la imagen de un look, adjunta en el mensaje en `.aspecto`; sin imagen, la quitan. Se aceptan adjuntos de hasta 8 MB y se recortan al centro. El avatar conserva la animación de un GIF (hasta 300 fotogramas; si no es cuadrado, se recorta a 256 px y uno muy grande se rechaza). El banner usa su primer fotograma, porque lleva texto dibujado encima.
 - `bio` y `estado`: cambian el texto de un look, que admite `{version}` y `{dato}`; sin texto, vuelven los de serie. Una variable desconocida se rechaza.
 - `apagar`: quita avatar, banner y bio del servidor, de forma que se vea el perfil global, y deja de cambiarlos.
 - `encender`: vuelve a lo automático.

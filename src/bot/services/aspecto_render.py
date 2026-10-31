@@ -32,6 +32,12 @@ AVATAR_SIDE = 512
 BANNER_SIZE = (1200, 480)
 #: Máximo de fotogramas de un avatar GIF animado.
 MAX_AVATAR_FRAMES = 300
+#: Lado de un GIF recodificado. Discord enseña el avatar pequeño y el GIF se monta en
+#: memoria: a 512 px, 300 fotogramas ocupan ~300 MB; a 256, una cuarta parte.
+AVATAR_GIF_SIDE = 256
+#: Píxeles totales (ancho × alto × fotogramas) de un GIF que se puede recodificar.
+#: Un GIF pesa poco aunque descomprimido sea enorme, y cada fotograma gasta CPU del NAS.
+MAX_GIF_PIXELS = 300_000_000
 
 FONT_PATH = (
     Path(bot.services.__file__).parent.parent / "assets" / "memes" / "fonts" / "MontserratBold.ttf"
@@ -120,7 +126,7 @@ def _animated_gif(data: bytes) -> Image.Image | None:
 
 
 def _square_gif(image: Image.Image) -> bytes:
-    """Recorta cada fotograma a un cuadrado de `AVATAR_SIDE` y lo recodifica como GIF."""
+    """Recorta cada fotograma a un cuadrado de `AVATAR_GIF_SIDE` y lo recodifica como GIF."""
     frames: list[Image.Image] = []
     durations: list[int] = []
     try:
@@ -128,7 +134,7 @@ def _square_gif(image: Image.Image) -> bytes:
             durations.append(int(frame.info.get("duration", 100)))
             frames.append(
                 _square_crop(frame.convert("RGBA")).resize(
-                    (AVATAR_SIDE, AVATAR_SIDE), Image.Resampling.LANCZOS
+                    (AVATAR_GIF_SIDE, AVATAR_GIF_SIDE), Image.Resampling.LANCZOS
                 )
             )
     except (OSError, EOFError, ValueError, SyntaxError) as error:
@@ -152,18 +158,18 @@ def _square_gif(image: Image.Image) -> bytes:
 
 
 def prepare_avatar(data: bytes) -> bytes:
-    """Prepara el avatar: cuadrado de `AVATAR_SIDE` de lado, animado si el original lo es.
+    """Prepara el avatar: cuadrado y animado si el original lo es.
 
     - Imagen no animada (también un GIF de un solo fotograma): recorte cuadrado centrado
-      en PNG.
+      en PNG, de `AVATAR_SIDE` de lado.
     - GIF animado ya cuadrado: se devuelve `data` tal cual, sin recodificar.
-    - Otro GIF animado: recorte cuadrado centrado de cada fotograma, conservando
-      duraciones y bucle, en GIF.
+    - Otro GIF animado: recorte cuadrado centrado de cada fotograma, de `AVATAR_GIF_SIDE`
+      de lado, conservando duraciones y bucle, en GIF.
 
     Raises:
         InvalidImageError: Si `data` no es una imagen legible o el GIF está corrupto.
-        ImageTooLargeError: Si supera los límites de `open_image` o el GIF tiene más de
-            `MAX_AVATAR_FRAMES` fotogramas.
+        ImageTooLargeError: Si supera los límites de `open_image`, el GIF tiene más de
+            `MAX_AVATAR_FRAMES` fotogramas o, al recodificarlo, más de `MAX_GIF_PIXELS`.
     """
     image = open_image(data).convert("RGBA")
     # `open_image` se queda con el primer fotograma, así que el GIF se vuelve a abrir.
@@ -176,6 +182,8 @@ def prepare_avatar(data: bytes) -> bytes:
             raise ImageTooLargeError("El GIF tiene demasiados fotogramas.")
         if animated.width == animated.height:
             return data
+        if animated.width * animated.height * animated.n_frames > MAX_GIF_PIXELS:
+            raise ImageTooLargeError("El GIF es demasiado grande; prueba con uno cuadrado.")
         return _square_gif(animated)
 
 

@@ -4,7 +4,8 @@ Cada 10 minutos el bot mira qué look toca en cada servidor (reglas en
 `bot.services.aspecto`), cambia su perfil de ese servidor si hace falta y turna su
 estado. El perfil por servidor (avatar, banner y bio) no toca el perfil global del
 bot; si un look no tiene avatar, se usa el del look 🎤 De diario y, si tampoco lo
-tiene, el global.
+tiene, el global. Un avatar puede ser un GIF animado; el banner no, porque lleva texto
+dibujado encima.
 
 - **Estado:** Discord solo admite uno por bot, no uno por servidor, así que sale de
   los datos del servidor con más miembros.

@@ -14,7 +14,7 @@ criterio.
 - Jovani: 12 looks de serie que salen solos: de diario, pijama, noche de casino, lunes de Hacienda, recién actualizado, beernight, matadragones, Carnaval, Día de Canarias, Halloween, Navidad y aniversario
 - Jovani: el banner lleva dibujados la versión y tres datos curiosos del servidor, y el estado los va turnando
 - Jovani: `jovani`, ficha pública con la versión, el look, cuánto lleva encendido y las cifras de la semana y de siempre
-- Admin: `aspecto` fija un look, crea looks propios y cambia su avatar, banner, bio y estado
+- Admin: `aspecto` fija un look, crea looks propios y cambia su avatar (también GIF animado), banner, bio y estado
 - Logros: 24 nuevos en 🎤 Jovani
 
 ### 9.34.0 · 2026-10-29

@@ -165,6 +165,22 @@ async def test_el_texto_de_aspecto_no_fija_para_siempre_si_las_horas_no_son_un_n
     assert (await client.aspecto.state(GUILD_ID)).pinned_key is None
 
 
+async def test_un_gif_animado_llega_a_discord_sin_perder_la_animacion(client) -> None:  # noqa: ANN001
+    cog = client.get_cog("Aspecto")
+    guild = fake_guild()
+    responder = fake_responder(guild)
+    frames = [Image.new("RGB", (64, 64), color) for color in ((200, 0, 0), (0, 200, 0))]
+    buffer = io.BytesIO()
+    frames[0].save(buffer, format="GIF", save_all=True, append_images=frames[1:], duration=80)
+    gif = buffer.getvalue()
+    await cog.manage(responder, "fijar", "casino", None, "", None)
+    guild.me.edit.reset_mock()
+    await cog.manage(responder, "avatar", "casino", attachment(gif, "image/gif"), "", None)
+    avatars = [c.kwargs["avatar"] for c in guild.me.edit.await_args_list if "avatar" in c.kwargs]
+    assert avatars == [gif]
+    assert discord.utils._get_mime_type_for_image(avatars[0]) == "image/gif"
+
+
 async def test_un_look_sin_avatar_usa_el_de_diario(client) -> None:  # noqa: ANN001
     cog = client.get_cog("Aspecto")
     guild = fake_guild()
