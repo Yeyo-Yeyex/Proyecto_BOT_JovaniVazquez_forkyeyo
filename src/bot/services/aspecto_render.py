@@ -159,6 +159,16 @@ def _fit(text: str, size: int, max_width: int, stroke: int) -> tuple[str, ImageF
     return text[:low].rstrip() + _ELLIPSIS, font
 
 
+def shared_size(texts: Sequence[str], size: int, max_width: int) -> int:
+    """Tamaño común para varias líneas: el de la que más haya que reducir.
+
+    Si cada línea se redujera por su cuenta, las cortas se verían más grandes que las
+    largas y el bloque de datos quedaría desigual.
+    """
+    stroke = max(2, size // 14)
+    return min((int(_fit(text, size, max_width, stroke)[1].size) for text in texts), default=size)
+
+
 def draw_banner(
     look: Look,
     base: bytes | None,
@@ -197,10 +207,9 @@ def draw_banner(
         entries.append((clean_title, _TITLE_SIZE))
     if version:
         entries.append((f"v{printable(version)}", _VERSION_SIZE))
-    for line in lines[:MAX_LINES]:
-        clean = printable(line)
-        if clean:
-            entries.append((clean, _LINE_SIZE))
+    data = [clean for line in lines[:MAX_LINES] if (clean := printable(line))]
+    line_size = shared_size(data, _LINE_SIZE, max_width)
+    entries += [(text, line_size) for text in data]
 
     draw = ImageDraw.Draw(canvas)
     fitted = []

@@ -134,3 +134,14 @@ def test_el_texto_se_alinea_a_la_derecha_y_deja_margen() -> None:
     assert box is not None
     assert box[2] <= width - render.MARGIN + 6
     assert box[0] >= int(width * 0.38)
+
+
+def test_las_lineas_de_datos_comparten_tamano_aunque_una_sea_corta() -> None:
+    short = shared_size(["Corta"], 38, 704)
+    both = shared_size(["Corta", "Una línea bastante más larga que no cabe en el banner"], 38, 704)
+    assert short == 38
+    assert both < short
+
+
+def test_sin_lineas_el_tamano_no_cambia() -> None:
+    assert shared_size([], 38, 704) == 38
