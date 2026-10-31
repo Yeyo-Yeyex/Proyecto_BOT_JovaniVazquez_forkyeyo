@@ -477,8 +477,11 @@ int picar_simulate(long long seed, long long life0, long long power, double boun
             if (hps[c] <= 0) {
                 cells[c] = 0; hps[c] = 0;
                 out->broken[block] += 1;
-                vx -= vn * nx * (1 - BREAK_DAMPING);
-                vy -= vn * ny * (1 - BREAK_DAMPING);
+                double outb = -vn * bounce * BREAK_BOUNCE;
+                if (floor_hit && outb < MIN_BOUNCE * BREAK_BOUNCE) outb = MIN_BOUNCE * BREAK_BOUNCE;
+                vt = vt * FRICTION + uniform(&rng, -NOISE, NOISE) * -vn;
+                vx = nx * outb + tx * vt;
+                vy = ny * outb + ty * vt;
                 int ncentres = 0, nprizes = 0;
                 if (BLOCK_KIND[block] == KIND_TNT) {
                     int head = 0, tail = 0;
@@ -516,6 +519,10 @@ int picar_simulate(long long seed, long long life0, long long power, double boun
                 for (int i = 0; i < nprizes; i++) {
                     int b = prizes[i].block;
                     if (BLOCK_KIND[b] == KIND_MULT) { out->multiplier *= BLOCK_MULT[b]; continue; }
+                    if (BLOCK_KIND[b] == KIND_MYSTERY) {
+                        out->multiplier *= MYSTERY_MULTS[randint(&rng, 0, NMYSTERY - 1)];
+                        continue;
+                    }
                     long long gained;
                     if (BLOCK_KIND[b] == KIND_CRAFT) {
                         gained = life0 - life;

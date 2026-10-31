@@ -780,14 +780,15 @@ python -m bot
   Empate (`docs/rtp_bacara.py`). Tributa como el resto del casino.
 - **Pico** (`/picar`, `.picar`): un pozo propio con un botón por pico (🪵 Madera
   10 Y$, 🪨 Piedra 50, ⛓️ Hierro 200, 🥇 Oro 200, 💎 Diamante 1.000 y 🖤 Netherite
-  5.000). El pico cae por un mundo de bloques con físicas: rebota, gira y rompe lo
-  que pilla. Cada golpe le quita vida; cada mineral suma premio, y los bloques de
-  oro (×2), diamante (×3), netherite (×5) y la baliza (×10) multiplican todo lo
-  acumulado. Los cofres devuelven vida y las mesas de crafteo la devuelven entera;
-  la TNT revienta lo de alrededor, en cadena. Si baja lo bastante pasa al Nether
-  (capa −250) y al End (−500); en el fondo espera el dragón, que paga el tope del
-  pico (de ×50 con madera a ×5.000 con netherite). Todos devuelven el 99,5 %:
-  cambia el riesgo. La partida se ve entera en uno o varios GIF seguidos (uno por
+  5.000). El pico cae por un mundo de bloques con físicas: rebota en cada golpe,
+  gira y va excavando su hueco a saltos; ningún bloque normal cae de un golpe. Cada
+  golpe le quita vida; cada mineral suma premio, y los bloques de oro (×2), diamante
+  (×3), netherite (×5), la baliza (×10) y el misterioso (×2 a ×10, no lo dice hasta
+  romperlo) multiplican todo lo acumulado. Los cofres devuelven vida y las mesas de
+  crafteo la devuelven entera; la TNT revienta lo de alrededor, en cadena. Si baja lo
+  bastante pasa al Nether (capa −80) y al End (−160); en el fondo, en la −220, espera
+  el dragón, que paga el tope del pico (de ×50 con madera a ×5.000 con netherite).
+  Todos devuelven el 99,5 %: cambia el riesgo. La partida se ve entera en uno o varios GIF seguidos (uno por
   dimensión, con un rótulo entre ellas) y al final queda un PNG con el premio, la
   capa a la que llegó y el récord. 📋 Premios y 🏆 Récords (los tuyos y el ranking
   del servidor). Las texturas son de Pixel Perfection CE (CC BY-SA 4.0,

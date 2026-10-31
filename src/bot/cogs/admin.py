@@ -35,6 +35,8 @@ formación. `amanece` le vacía las franjas de hoy (curro y negocio) y las horas
 de la semana, y le llena la batería. Los dos son solo para Yeyo (`SECRET_OWNER`), solo
 con `.` y en secreto: no salen en `ayuda` ni en la telemetría, con cualquier otro el
 bot calla como ante un comando que no existe, borran el mensaje y contestan por privado.
+También se escriben por privado al bot: valen para el único servidor que comparten el
+bot y el miembro (`_secret_guild`), y el miembro va por su ID o su nombre de usuario.
 
 Autorización: solo miembros con el permiso **Administrador** del servidor.
 Se comprueba en el servidor en cada invocación (`cog_check` para `.` e
@@ -131,8 +133,10 @@ DEPLOYER_COMMANDS = {"bloquear", "crear", "dinero"}
 MAX_DINERO = 100_000_000
 # Único que puede usar los comandos secretos (`enchufe`, `amanece`): Yeyo (Dani no).
 SECRET_OWNER = 403646452414545921
-ENCHUFE_USAGE = "Uso: `.enchufe @miembro [puestos] [rama]`."
-AMANECE_USAGE = "Uso: `.amanece` (a ti) o `.amanece @miembro`."
+ENCHUFE_USAGE = "Uso: `.enchufe @miembro [puestos] [rama]` (por privado, su ID o su nombre)."
+AMANECE_USAGE = "Uso: `.amanece` (a ti) o `.amanece @miembro` (por privado, su ID o su nombre)."
+# Por privado, el secreto no sabe de qué servidor hablas si compartís más de uno.
+SECRET_GUILD_ERROR = "No sé en qué servidor: compartimos más de uno o ninguno con {name}."
 # Marca de los métodos de discord.py ya envueltos por `install_click_block`.
 _BLOCK_GUARD = "_blocked_command_guard"
 
@@ -1615,24 +1619,24 @@ class Admin(commands.Cog):
         if member is None:
             await self._whisper(ctx, ENCHUFE_USAGE)
             return
+        if (guild := await self._secret_guild(ctx, member)) is None:
+            return
         rest = words[1:]
         steps = max(1, int(rest.pop(0))) if rest and rest[0].isdigit() else 1
         try:
             done, status = await self.bot.work.force_promotion(  # type: ignore[attr-defined]
-                ctx.guild.id, member.id, steps, " ".join(rest)
+                guild.id, member.id, steps, " ".join(rest)
             )
         except WorkError as error:
             await self._whisper(ctx, f"{member.display_name}: {error}")
             return
         except sqlite3.Error:
-            logger.exception("No se pudo guardar el ascenso de %s en %s", member.id, ctx.guild.id)
+            logger.exception("No se pudo guardar el ascenso de %s en %s", member.id, guild.id)
             await self._whisper(ctx, "No se ha podido guardar ahora mismo. Prueba en un rato.")
             return
         lines = []
         if done:
-            logger.info(
-                "%s sube %s puestos a %s en %s", ctx.author.id, done, member.id, ctx.guild.id
-            )
+            logger.info("%s sube %s puestos a %s en %s", ctx.author.id, done, member.id, guild.id)
             plural = "s" if done > 1 else ""
             lines.append(
                 f"📈 {member.display_name} sube {done} puesto{plural}: "
@@ -1664,13 +1668,15 @@ class Admin(commands.Cog):
             if member is None:
                 await self._whisper(ctx, AMANECE_USAGE)
                 return
+        if (guild := await self._secret_guild(ctx, member)) is None:
+            return
         try:
-            hired = await self.bot.work.reset_day(ctx.guild.id, member.id)  # type: ignore[attr-defined]
+            hired = await self.bot.work.reset_day(guild.id, member.id)  # type: ignore[attr-defined]
         except sqlite3.Error:
-            logger.exception("No se pudo reiniciar el día de %s en %s", member.id, ctx.guild.id)
+            logger.exception("No se pudo reiniciar el día de %s en %s", member.id, guild.id)
             await self._whisper(ctx, "No se ha podido guardar ahora mismo. Prueba en un rato.")
             return
-        logger.info("%s reinicia el día de %s en %s", ctx.author.id, member.id, ctx.guild.id)
+        logger.info("%s reinicia el día de %s en %s", ctx.author.id, member.id, guild.id)
         await self._whisper(
             ctx,
             f"🌅 {member.display_name}: franjas de hoy a cero, horas extra de la semana libres "
@@ -1683,12 +1689,31 @@ class Admin(commands.Cog):
     # --- secretos -----------------------------------------------------------
 
     async def _secret_start(self, ctx: commands.Context) -> bool:
-        """Si lo escribe Yeyo en un servidor, y entonces borra su mensaje; si no, nada."""
-        if ctx.guild is None or ctx.author.id != SECRET_OWNER:
+        """Si lo escribe Yeyo, y borra su mensaje salvo en un privado; si no, nada."""
+        if ctx.author.id != SECRET_OWNER:
+            # Solo en el log del NAS: dice qué ID ve el bot si a Yeyo no le responde.
+            logger.info("%s ignorado: lo escribe %s, no Yeyo", ctx.command, ctx.author.id)
             return False
-        with contextlib.suppress(discord.HTTPException):
-            await ctx.message.delete()
+        if ctx.guild is not None:
+            with contextlib.suppress(discord.HTTPException):
+                await ctx.message.delete()
         return True
+
+    async def _secret_guild(
+        self, ctx: commands.Context, member: discord.abc.User
+    ) -> discord.Guild | None:
+        """Servidor del secreto: el del mensaje o, por privado, el único con `member`.
+
+        Si por privado no hay uno solo (el bot y el miembro comparten varios o ninguno),
+        se lo dice a Yeyo y devuelve `None`.
+        """
+        if ctx.guild is not None:
+            return ctx.guild
+        shared = [g for g in self.bot.guilds if g.get_member(member.id) is not None]
+        if len(shared) == 1:
+            return shared[0]
+        await self._whisper(ctx, SECRET_GUILD_ERROR.format(name=member.display_name))
+        return None
 
     async def _whisper(self, ctx: commands.Context, text: str) -> None:
         """Contesta a un secreto por privado; si no admite privados, solo queda en el log."""

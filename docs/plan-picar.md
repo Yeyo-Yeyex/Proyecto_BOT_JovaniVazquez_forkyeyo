@@ -289,3 +289,37 @@ Acordadas en el chat y conseguidas con el millón de semillas (`docs/picar-calib
   premio es ganancia patrimonial de la base general (art. 33.1 y 46 LIRPF): retención
   diaria del 19 % y la declaración de los lunes, con la escala progresiva (hasta el 50,5 %
   marginal, estatal 24,5 % y canaria 26 %).
+
+### Física de rebotes y mundo pequeño (29/10/2026)
+
+El referente es el anuncio que mandó el usuario: el pico flota, bota en cada golpe y va
+excavando una cueva a su alrededor; bloques y pico se ven grandes (unas 6 columnas).
+
+- **Física.** Gravedad 25 (antes 60), velocidad máxima 7 bloques/s (antes 13) y rebote
+  0,6-0,8 según el pico. Al romper un bloque también rebota, con el 60 % del rebote
+  (`BREAK_BOUNCE`); antes seguía de largo con la mitad de la velocidad y los picos buenos
+  rompían más de la mitad de los bloques al primer golpe (el oro, el 92 %).
+- **Daño fijo por pico, nunca de un golpe.** Madera 2, piedra 3, hierro 4, oro y diamante
+  6, netherite 7; la vida de los bloques va de 8 (tierra, netherrack) a 60 (obsidiana), y
+  la TNT revienta al tocarla. El pico pierde la dureza del bloque en cada golpe, como antes.
+- **Mundo.** 6 columnas de 48 px (el GIF mide lo mismo de ancho), Nether en la −80, End en
+  la −160 y dragón en la −220; barrancos de 10 a 40 filas en regiones de 48 (múltiplo del
+  trozo de 16: si no, un trozo no veía los barrancos que empiezan en mitad de él). Con la
+  física nueva, el mundo de antes (Nether en la −250) pedía 4 minutos de partida.
+- **Bloque misterioso** (`Kind.MYSTERY`): multiplica por uno de `MYSTERY_MULTS`
+  (2, 2, 2, 3, 3, 5, 10), sorteado con el azar de la física al romperlo. Dos por cada mil
+  bloques en cuevas, profundidad, Nether y End.
+- **Lo que engancha, en el dibujo.** Los multiplicadores se apilan a la vista, el
+  misterioso enseña una «?» antes de su valor y cualquier premio sale con lluvia de
+  monedas, también si no llega al precio (las «pérdidas disfrazadas de ganancia» de las
+  tragaperras). El neto sigue claro en el mensaje.
+- **Metas cumplidas** (millón de semillas, `docs/picar-calibracion.md`): diamante al Nether
+  21 % y al End 0,5 %; netherite 51 % y 5,4 %, y el dragón 1 de cada 52.632 (el 9,5 % de su
+  RTP; el End lleva barrancos en 60 de cada 1.000 regiones). Hierro al Nether 1 de cada
+  2.500; piedra y oro, menos. Duraciones: madera ~9 s, piedra, hierro y oro ~20 s,
+  diamante ~50 s y netherite ~70 s. Todos devuelven entre el 99,4998 y el 99,5 %.
+- **Calibrador.** El afinado subía cada mineral de 1 en 1 y paraba en cuanto ninguna
+  subida movía el RTP: con la madera, de 10 Y$ y premios en Y$ enteros, se quedaba en el
+  99,1 %. Ahora busca lo mínimo que hay que subir cada mineral para que cambie algún
+  premio, y de cada mineral solo mira las tiradas en las que sale: el millón de los seis
+  picos se resuelve en ~80 s con las tablas ya simuladas (`--reusar`).

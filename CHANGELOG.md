@@ -8,6 +8,22 @@ criterio.
 
 ## 9.x
 
+### 9.34.0 · 2026-10-29
+
+- Pico: el pico rebota y va excavando su hueco a saltos, como en los juegos de este tipo, en vez de caer a plomo; ningún bloque normal cae de un golpe y se ven las grietas
+- Pico: bloques y pico un 50 % más grandes (6 columnas de 48 px) y un mundo más corto: el Nether en la −80, el End en la −160 y el dragón en la −220
+- Pico: bloque misterioso, que multiplica por ×2, ×3, ×5 o ×10 y no lo dice hasta romperlo; los multiplicadores se apilan a la vista («×2 · ×3 = ×6») y cualquier premio sale con lluvia de monedas
+- Pico: los GIF ya no se paran entre una parte y la siguiente ni dan tirones de cámara
+- Pico: 🏆 Récords y el ranking solo cuentan las tiradas del mundo nuevo (las de la 9.33 llegaban a capas que ya no existen)
+- Logros: 8 nuevos en ⛏️ Pico (bloque misterioso, ×10 del misterioso, multiplicadores en una tirada, premios menores que el precio); los de capas se ajustan al mundo nuevo y las capas −300, −404 y −666, que ya no existen, pasan a 300 golpes y a cobrar 404 y 666 Y$
+- Interno: el calibrador del pico ya no se para antes de tiempo con los picos baratos
+- Administración: `dinero` también quita yapdollars con `quitar` (si no le llega, deja el saldo a cero)
+- Administración: `repicar` va solo con punto (`.repicar`), sin comando de barra
+
+### 9.33.1 · 2026-10-28
+
+- Hotfix: arreglo menor de la 9.33.0
+
 ### 9.33.0 · 2026-10-28
 
 - Pico: `picar`, un pico que cae rompiendo bloques hasta el dragón

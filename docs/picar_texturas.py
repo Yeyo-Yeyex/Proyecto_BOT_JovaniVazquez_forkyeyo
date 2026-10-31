@@ -21,6 +21,8 @@ Lo que el pack no trae (es de la 1.16) se saca de lo que sí trae:
 - El cristal del End es la mena del diamante, en morado, sobre la piedra del End.
 - Los cofres son la cara del cofre del pack (tapa y caja juntas, con el cierre); el del
   tesoro y la caja de shulker, el mismo teñido de oro y de morado.
+- El bloque misterioso es el bloque de oro, más naranja, con un marco oscuro y una «?»
+  de píxeles (`QUESTION`), a la manera de los «lucky blocks».
 
 El dragón es dibujo propio (`DRAGON`, más abajo) y va con la misma licencia.
 
@@ -120,6 +122,36 @@ def _chest(pack: Path) -> Image.Image:
     return face
 
 
+#: La «?» del bloque misterioso, 6 × 9 píxeles («#» es tinta).
+QUESTION = (
+    ".####.",
+    "##..##",
+    "....##",
+    "...##.",
+    "..##..",
+    "..##..",
+    "......",
+    "..##..",
+    "..##..",
+)
+
+
+def _mystery(gold: Image.Image) -> Image.Image:
+    """El bloque misterioso: el de oro, más naranja, con marco y una «?» en medio."""
+    tile = _tint(gold, (1.05, 0.82, 0.45))
+    ink, shade = (70, 34, 8, 255), (255, 236, 150, 255)
+    for i in range(TILE):
+        for x, y in ((i, 0), (i, TILE - 1), (0, i), (TILE - 1, i)):
+            tile.putpixel((x, y), ink)
+    left, top = (TILE - len(QUESTION[0])) // 2, (TILE - len(QUESTION)) // 2
+    for dy, line in enumerate(QUESTION):
+        for dx, char in enumerate(line):
+            if char == "#":
+                tile.putpixel((left + dx + 1, top + dy + 1), ink)
+                tile.putpixel((left + dx, top + dy), shade)
+    return tile
+
+
 def _dragon() -> Image.Image:
     """El dragón del fondo del End: alas abiertas, cuernos y ojos morados.
 
@@ -187,6 +219,7 @@ def main(pack: Path) -> None:
     tiles["chest"] = chest
     tiles["treasure"] = _tint(chest, (1.6, 1.25, 0.35))
     tiles["shulker"] = _tint(chest, (1.0, 0.6, 1.25))
+    tiles["mystery"] = _mystery(tiles["gold_block"])
 
     keys = sorted(tiles)
     atlas = Image.new("RGBA", (TILE * len(keys), TILE), (0, 0, 0, 0))

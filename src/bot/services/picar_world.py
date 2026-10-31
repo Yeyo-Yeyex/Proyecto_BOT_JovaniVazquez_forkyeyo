@@ -21,7 +21,9 @@ Las capas (`Layer`) fijan qué sale en cada franja de filas, cuántas cuevas hay
 cuántos barrancos. Las cuevas son huecos en forma de elipse dentro de un trozo y dan
 ritmo a la caída. Los bloques de multiplicador (oro ×2, diamante ×3, netherite ×5 y la
 baliza ×10, `Kind.MULT`) multiplican todo el premio y se multiplican entre sí: son lo que
-da colas largas a los premios. Los barrancos (`Ravine`) son grietas de 1 o 2 columnas y de 30 a 128
+da colas largas a los premios. El bloque misterioso (`Kind.MYSTERY`) multiplica también,
+pero no se sabe cuánto hasta romperlo (`MYSTERY_MULTS`, sorteado con el azar de la
+física). Los barrancos (`Ravine`) son grietas de 1 o 2 columnas y de 10 a 40
 filas por las que el pico cae libre: junto con los cofres del tesoro y las mesas de
 crafteo, son lo que de vez en cuando deja a un pico bajar mucho más de lo normal (las
 colas largas de las metas de profundidad, `docs/plan-picar.md`). Un barranco cruza
@@ -44,15 +46,17 @@ from itertools import accumulate
 from random import Random
 
 #: Ancho del mundo, en bloques.
-COLUMNS = 9
+COLUMNS = 6
 #: Filas por trozo de generación.
 CHUNK = 16
 #: Fila del dragón: el pico que llega hasta aquí lo mata y la partida acaba.
-DRAGON_ROW = 700
+DRAGON_ROW = 220
 #: Filas por región de barrancos y alto de un barranco (ambos incluidos). El alto
 #: máximo no puede pasar de la región (ver la docstring del módulo).
-RAVINE_REGION = 128
-RAVINE_ROWS = (30, 128)
+RAVINE_REGION = 48
+RAVINE_ROWS = (10, 40)
+#: Lo que puede valer un bloque misterioso; sale uno de ellos, todos igual de probables.
+MYSTERY_MULTS = (2, 2, 2, 3, 3, 5, 10)
 
 
 class Kind(Enum):
@@ -67,6 +71,8 @@ class Kind(Enum):
     CRAFT = "craft"
     #: Multiplica todo el premio de la partida por `Block.mult`.
     MULT = "mult"
+    #: Multiplica todo el premio por uno de `MYSTERY_MULTS`, que se sortea al romperlo.
+    MYSTERY = "mystery"
 
 
 class Dimension(Enum):
@@ -99,36 +105,37 @@ class Block:
 BLOCKS: tuple[Block, ...] = (
     Block("air", "Aire", 0, 0),
     # Superficie y cuevas.
-    Block("dirt", "Tierra", 1, 2),
-    Block("stone", "Piedra", 2, 4),
-    Block("coal", "Carbón", 2, 4, mineral=True),
-    Block("iron", "Hierro", 3, 6, mineral=True),
-    Block("gold", "Oro", 3, 6, mineral=True),
-    Block("redstone", "Redstone", 3, 6, mineral=True),
-    Block("lapis", "Lapislázuli", 3, 6, mineral=True),
+    Block("dirt", "Tierra", 1, 8),
+    Block("stone", "Piedra", 2, 12),
+    Block("coal", "Carbón", 2, 12, mineral=True),
+    Block("iron", "Hierro", 3, 16, mineral=True),
+    Block("gold", "Oro", 3, 16, mineral=True),
+    Block("redstone", "Redstone", 3, 16, mineral=True),
+    Block("lapis", "Lapislázuli", 3, 16, mineral=True),
     Block("tnt", "TNT", 1, 1, kind=Kind.TNT),
-    Block("chest", "Cofre", 1, 3, kind=Kind.CHEST, life=(15, 40)),
-    Block("treasure", "Cofre del tesoro", 1, 4, kind=Kind.CHEST, life=(80, 120)),
-    Block("crafting_table", "Mesa de crafteo", 1, 3, kind=Kind.CRAFT),
-    Block("gold_block", "Bloque de oro", 2, 6, kind=Kind.MULT, mult=2),
-    Block("diamond_block", "Bloque de diamante", 3, 8, kind=Kind.MULT, mult=3),
-    Block("netherite_block", "Bloque de netherite", 4, 10, kind=Kind.MULT, mult=5),
-    Block("beacon", "Baliza", 2, 6, kind=Kind.MULT, mult=10),
+    Block("chest", "Cofre", 1, 8, kind=Kind.CHEST, life=(15, 40)),
+    Block("treasure", "Cofre del tesoro", 1, 10, kind=Kind.CHEST, life=(80, 120)),
+    Block("crafting_table", "Mesa de crafteo", 1, 8, kind=Kind.CRAFT),
+    Block("gold_block", "Bloque de oro", 2, 16, kind=Kind.MULT, mult=2),
+    Block("diamond_block", "Bloque de diamante", 3, 20, kind=Kind.MULT, mult=3),
+    Block("netherite_block", "Bloque de netherite", 4, 28, kind=Kind.MULT, mult=5),
+    Block("beacon", "Baliza", 2, 16, kind=Kind.MULT, mult=10),
     # Profundidad.
-    Block("deepslate", "Pizarra profunda", 3, 7),
-    Block("diamond", "Diamante", 5, 10, mineral=True),
-    Block("emerald", "Esmeralda", 5, 10, mineral=True),
+    Block("deepslate", "Pizarra profunda", 3, 18),
+    Block("diamond", "Diamante", 5, 24, mineral=True),
+    Block("emerald", "Esmeralda", 5, 24, mineral=True),
     # Nether.
-    Block("netherrack", "Netherrack", 1, 2),
-    Block("blackstone", "Piedra negra", 3, 6),
-    Block("quartz", "Cuarzo", 2, 4, mineral=True),
-    Block("nether_gold", "Oro del Nether", 2, 4, mineral=True),
-    Block("ancient_debris", "Escombros ancestrales", 8, 20, mineral=True),
+    Block("netherrack", "Netherrack", 1, 8),
+    Block("blackstone", "Piedra negra", 3, 16),
+    Block("quartz", "Cuarzo", 2, 12, mineral=True),
+    Block("nether_gold", "Oro del Nether", 2, 12, mineral=True),
+    Block("ancient_debris", "Escombros ancestrales", 8, 40, mineral=True),
     # End.
-    Block("end_stone", "Piedra del End", 4, 9),
-    Block("obsidian", "Obsidiana", 8, 30),
-    Block("end_crystal", "Cristal del End", 6, 14, mineral=True),
-    Block("shulker", "Caja de shulker", 1, 3, kind=Kind.CHEST, life=(15, 40)),
+    Block("end_stone", "Piedra del End", 4, 20),
+    Block("obsidian", "Obsidiana", 8, 60),
+    Block("end_crystal", "Cristal del End", 6, 30, mineral=True),
+    Block("shulker", "Caja de shulker", 1, 8, kind=Kind.CHEST, life=(15, 40)),
+    Block("mystery", "Bloque misterioso", 2, 16, kind=Kind.MYSTERY),
 )
 
 AIR = 0
@@ -160,7 +167,7 @@ LAYERS: tuple[Layer, ...] = (
         "Superficie",
         0,
         Dimension.OVERWORLD,
-        (("dirt", 85), ("stone", 10), ("coal", 4), ("chest", 1)),
+        (("dirt", 64), ("stone", 10), ("coal", 20), ("iron", 5), ("chest", 1)),
     ),
     Layer(
         "caves",
@@ -180,6 +187,7 @@ LAYERS: tuple[Layer, ...] = (
             ("treasure", 2),
             ("crafting_table", 4),
             ("gold_block", 3),
+            ("mystery", 2),
         ),
         caves=(1, 3),
         ravine=1000,
@@ -187,7 +195,7 @@ LAYERS: tuple[Layer, ...] = (
     Layer(
         "deep",
         "Profundidad",
-        120,
+        40,
         Dimension.OVERWORLD,
         (
             ("deepslate", 700),
@@ -203,6 +211,7 @@ LAYERS: tuple[Layer, ...] = (
             ("crafting_table", 3),
             ("gold_block", 2),
             ("diamond_block", 2),
+            ("mystery", 2),
         ),
         caves=(1, 2),
         ravine=1000,
@@ -210,7 +219,7 @@ LAYERS: tuple[Layer, ...] = (
     Layer(
         "nether",
         "Nether",
-        250,
+        80,
         Dimension.NETHER,
         (
             ("netherrack", 350),
@@ -221,6 +230,7 @@ LAYERS: tuple[Layer, ...] = (
             ("tnt", 10),
             ("netherite_block", 2),
             ("chest", 4),
+            ("mystery", 2),
         ),
         caves=(1, 2),
         ravine=450,
@@ -228,7 +238,7 @@ LAYERS: tuple[Layer, ...] = (
     Layer(
         "end",
         "End",
-        500,
+        160,
         Dimension.END,
         (
             ("end_stone", 880),
@@ -236,9 +246,10 @@ LAYERS: tuple[Layer, ...] = (
             ("end_crystal", 8),
             ("shulker", 2),
             ("beacon", 1),
+            ("mystery", 2),
         ),
         caves=(0, 1),
-        ravine=500,
+        ravine=60,
     ),
 )
 

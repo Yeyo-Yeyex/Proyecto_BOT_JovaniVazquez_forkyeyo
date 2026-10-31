@@ -19,20 +19,26 @@ from bot.services.browser_scene import BrowserScene
 from bot.services.node_scene import NodeScene
 from bot.services.picar import Calibration, Outcome, play
 from bot.services.picar_scene import (
+    BLOCK_PX,
     FINAL_HOLD_MS,
     HEIGHT,
     SCENE,
     TRANSITION_HOLD_MS,
     WIDTH,
+    Part,
     PicarScene,
     _rows_for,
     camera_path,
+    next_part_frames,
     segment_meta,
     story,
     swap_ms,
 )
+from bot.services.picar_world import LAYERS
 
 module_loop = pytest.mark.asyncio(loop_scope="module")
+NETHER_ROW = next(layer.top for layer in LAYERS if layer.key == "nether")
+END_ROW = next(layer.top for layer in LAYERS if layer.key == "end")
 LOCAL_CHROMIUM = Path("/opt/pw-browsers/chromium")
 
 
@@ -46,7 +52,7 @@ def deep(cal: Calibration) -> Outcome:
     """La primera tirada de diamante de la biblioteca que cruza al Nether (y no al End)."""
     for seed in range(500):
         outcome = play("diamond", cal, seed=seed)
-        if 250 <= outcome.run.max_row < 500:
+        if NETHER_ROW <= outcome.run.max_row < END_ROW:
             return outcome
     raise AssertionError("ninguna de las 500 primeras semillas de diamante llega al Nether")
 
@@ -72,7 +78,30 @@ def test_el_guion_tiene_una_pausa_por_dimension_y_el_cartel_al_final(
 def test_la_camara_nunca_deja_al_pico_fuera(deep: Outcome) -> None:
     camera = camera_path(deep.run)
     for (_, y, _), top in zip(deep.run.frames, camera[1:], strict=True):
-        assert top < y * 32 < top + HEIGHT
+        assert top < y * BLOCK_PX < top + HEIGHT
+
+
+def test_la_camara_no_da_tirones(cal: Calibration, deep: Outcome) -> None:
+    """Antes saltaba 72 px de un fotograma a otro al recolocarse; ahora acelera y frena."""
+    for outcome in (deep, play("iron", cal, seed=1), play("netherite", cal, seed=3)):
+        camera = camera_path(outcome.run)[::3]  # un fotograma de cada tres ticks
+        steps = [b - a for a, b in zip(camera, camera[1:], strict=False)]
+        assert max(abs(step) for step in steps) <= 45
+        assert max(abs(b - a) for a, b in zip(steps, steps[1:], strict=False)) <= 30
+
+
+def test_los_gif_crecen_segun_lo_que_da_tiempo_a_pintar_y_subir() -> None:
+    first = Part(b"x" * 1_000_000, ms=6_000, hold_ms=2_000, last=False, frames=80, cut=True)
+    second = next_part_frames(first, paint_ms=10)
+    # 4 s en movimiento, menos la subida fija y el margen: unos 2,2 s para pintar y subir.
+    assert 90 <= second < 200
+    after = Part(b"x" * 2_000_000, ms=second * 50 + 2_000, hold_ms=2_000, last=False,
+                 frames=second, cut=True)  # fmt: skip
+    assert next_part_frames(after, paint_ms=10) > second
+    # Más lento pintando, menos fotogramas; un rótulo de dimensión también da tiempo.
+    assert next_part_frames(first, paint_ms=40) < second
+    banner = Part(first.gif, ms=6_000, hold_ms=2_000, last=False, frames=80)
+    assert next_part_frames(banner, paint_ms=10) > second
 
 
 def test_la_meta_lleva_el_trozo_de_mundo_que_se_ve(cal: Calibration, deep: Outcome) -> None:
@@ -82,7 +111,9 @@ def test_la_meta_lleva_el_trozo_de_mundo_que_se_ve(cal: Calibration, deep: Outco
     meta = segment_meta(tl.run, tl.gone, tl.cracks, rows, pick="diamond")
     assert len(meta["grid"]) == len(rows) and meta["top"] == rows.start
     for state in states:
-        assert rows.start * 32 <= state["cam"] and state["cam"] + HEIGHT <= rows.stop * 32
+        assert (
+            rows.start * BLOCK_PX <= state["cam"] and state["cam"] + HEIGHT <= rows.stop * BLOCK_PX
+        )
 
 
 def test_la_pausa_tapa_lo_que_tarda_en_subirse_el_siguiente() -> None:
