@@ -226,6 +226,16 @@ def test_los_datos_no_enseñan_cifras_a_cero() -> None:
     assert not any("canciones saltadas" in line for line in lines)
 
 
+def test_una_sola_unidad_va_en_singular() -> None:
+    lines = aspecto.facts(Snapshot(week=WeekStats(mistyped=1, songs=1), dragons=1, restarts=1))
+    assert lines == [
+        "🤦 1 comando mal escrito esta semana",
+        "🎵 1 canción escuchada esta semana",
+        "🐉 1 dragón matado",
+        "🔁 1 reinicio",
+    ]
+
+
 def test_si_la_casa_pierde_se_dice_sin_signo() -> None:
     lines = aspecto.facts(Snapshot(house_net=-500))
     assert lines == ["🎰 La casa pierde 500 Y$ esta semana"]
@@ -284,3 +294,32 @@ def test_un_look_propio_tiene_el_nombre_que_le_dieron() -> None:
     look = aspecto.custom_look(LookOverride("tortilla", name="🥔 Tortilla"))
     assert (look.key, look.name) == ("tortilla", "🥔 Tortilla")
     assert look.bios == aspecto.NORMAL.bios
+
+
+def test_las_cifras_de_uso_salen_de_la_telemetria() -> None:
+    counts = {
+        "slash": {"tragas": 5, "ruleta": 6},
+        "text": {"tragas": 3},
+        "uso_mal": {"tragas": 2},
+        "render": {"moneda": 4},
+        "musica": {"escuchada": 7, "saltada": 1, "búsqueda": 90},
+        "message": {"123": 11},
+        "arranque": {"9.0.0": 2},
+    }
+    totals = aspecto.usage_totals(counts)
+    assert totals == {
+        "commands": 14,
+        "mistyped": 2,
+        "drawings": 4,
+        "songs": 7,
+        "skipped": 1,
+        "messages": 11,
+        "restarts": 2,
+    }
+    assert aspecto.top_command(counts) == "tragas"
+    assert aspecto.stats_from(totals, top="tragas") == WeekStats(14, 2, 4, 7, 1, 11, "tragas")
+
+
+def test_sin_comandos_no_hay_comando_estrella() -> None:
+    assert aspecto.top_command({}) is None
+    assert aspecto.usage_totals({})["commands"] == 0

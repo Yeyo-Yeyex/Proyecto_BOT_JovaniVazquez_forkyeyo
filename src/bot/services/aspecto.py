@@ -19,7 +19,8 @@ Discord rechaza una bio, se ve en el panel de `aspecto` y el resto sigue funcion
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections import Counter
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 
@@ -54,6 +55,17 @@ TEMPLATE_VARIABLES = frozenset({"version", "dato"})
 
 _VARIABLE = re.compile(r"\{([^{}]*)\}")
 _KEY = re.compile(r"^[a-z0-9][a-z0-9_-]{0,23}$")
+
+#: Tipos de la telemetría de los que salen las cifras de uso.
+USAGE_KINDS: tuple[str, ...] = (
+    "slash",
+    "text",
+    "uso_mal",
+    "render",
+    "musica",
+    "message",
+    "arranque",
+)
 
 Color = tuple[int, int, int]
 
@@ -190,7 +202,6 @@ class Snapshot:
         achievements: Logros desbloqueados en el servidor.
         dragons: Dragones matados en `picar`.
         restarts: Veces que ha arrancado el bot.
-        versions: Versiones distintas que han arrancado.
     """
 
     week: WeekStats = field(default_factory=WeekStats)
@@ -200,7 +211,6 @@ class Snapshot:
     achievements: int = 0
     dragons: int = 0
     restarts: int = 0
-    versions: int = 0
 
 
 # Las frases siguen la Biblia: la mayoría normales, las de Jovani espaciadas y ninguna
@@ -618,8 +628,9 @@ def clip(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
-def _number(value: int) -> str:
-    return f"{value:,}".replace(",", ".")
+def _count(value: int, one: str, many: str) -> str:
+    """Una cifra con puntos de miles y su nombre en singular o en plural."""
+    return f"{value:,}".replace(",", ".") + f" {one if value == 1 else many}"
 
 
 def facts(snapshot: Snapshot) -> list[str]:
@@ -630,28 +641,32 @@ def facts(snapshot: Snapshot) -> list[str]:
     week = snapshot.week
     lines = []
     if week.commands:
-        lines.append(f"⌨️ {_number(week.commands)} comandos esta semana")
+        lines.append(f"⌨️ {_count(week.commands, 'comando', 'comandos')} esta semana")
     if week.top_command:
         lines.append(f"🏆 Comando de la semana: {week.top_command}")
     if week.mistyped:
-        lines.append(f"🤦 {_number(week.mistyped)} comandos mal escritos esta semana")
+        wrong = _count(week.mistyped, "comando mal escrito", "comandos mal escritos")
+        lines.append(f"🤦 {wrong} esta semana")
     if week.drawings:
-        lines.append(f"🖼️ {_number(week.drawings)} dibujos esta semana")
+        lines.append(f"🖼️ {_count(week.drawings, 'dibujo', 'dibujos')} esta semana")
     if week.songs:
-        lines.append(f"🎵 {_number(week.songs)} canciones escuchadas esta semana")
+        heard = _count(week.songs, "canción escuchada", "canciones escuchadas")
+        lines.append(f"🎵 {heard} esta semana")
     if week.skipped:
-        lines.append(f"⏭️ {_number(week.skipped)} canciones saltadas esta semana")
+        skipped = _count(week.skipped, "canción saltada", "canciones saltadas")
+        lines.append(f"⏭️ {skipped} esta semana")
     if snapshot.house_net:
         verb = "gana" if snapshot.house_net > 0 else "pierde"
         lines.append(f"🎰 La casa {verb} {format_amount(abs(snapshot.house_net))} esta semana")
     if snapshot.state_balance:
         lines.append(f"🏛️ El Estado guarda {format_amount(snapshot.state_balance)}")
     if snapshot.achievements:
-        lines.append(f"🏅 {_number(snapshot.achievements)} logros desbloqueados")
+        done = _count(snapshot.achievements, "logro desbloqueado", "logros desbloqueados")
+        lines.append(f"🏅 {done}")
     if snapshot.dragons:
-        lines.append(f"🐉 {_number(snapshot.dragons)} dragones matados")
+        lines.append(f"🐉 {_count(snapshot.dragons, 'dragón matado', 'dragones matados')}")
     if snapshot.restarts:
-        lines.append(f"🔁 {_number(snapshot.restarts)} reinicios")
+        lines.append(f"🔁 {_count(snapshot.restarts, 'reinicio', 'reinicios')}")
     return lines
 
 
@@ -713,6 +728,46 @@ def banner_lines(snapshot: Snapshot, *, seed: int, count: int = 3) -> list[str]:
         return lines
     start = seed % len(lines)
     return [lines[(start + index) % len(lines)] for index in range(count)]
+
+
+def usage_totals(counts: Mapping[str, Mapping[str, int]]) -> dict[str, int]:
+    """Convierte los contadores de la telemetría en las cifras que se acumulan.
+
+    Args:
+        counts: Eventos por tipo y nombre (`TelemetryRepository.usage_counts`).
+
+    Returns:
+        Totales con las claves de `WeekStats`, más `restarts`.
+    """
+    return {
+        "commands": sum(counts.get("slash", {}).values()) + sum(counts.get("text", {}).values()),
+        "mistyped": sum(counts.get("uso_mal", {}).values()),
+        "drawings": sum(counts.get("render", {}).values()),
+        "songs": counts.get("musica", {}).get("escuchada", 0),
+        "skipped": counts.get("musica", {}).get("saltada", 0),
+        "messages": sum(counts.get("message", {}).values()),
+        "restarts": sum(counts.get("arranque", {}).values()),
+    }
+
+
+def top_command(counts: Mapping[str, Mapping[str, int]]) -> str | None:
+    """Comando más usado sumando `/` y `.`; a igualdad, el primero por orden alfabético."""
+    used = Counter(counts.get("slash", {}))
+    used.update(counts.get("text", {}))
+    return min(used, key=lambda name: (-used[name], name)) if used else None
+
+
+def stats_from(totals: Mapping[str, int], *, top: str | None = None) -> WeekStats:
+    """`WeekStats` a partir de unos totales de `usage_totals`."""
+    return WeekStats(
+        commands=totals.get("commands", 0),
+        mistyped=totals.get("mistyped", 0),
+        drawings=totals.get("drawings", 0),
+        songs=totals.get("songs", 0),
+        skipped=totals.get("skipped", 0),
+        messages=totals.get("messages", 0),
+        top_command=top,
+    )
 
 
 def custom_look(override: LookOverride) -> Look:
